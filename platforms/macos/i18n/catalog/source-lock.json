@@ -6,1582 +6,3164 @@
       "source": "3ab946673643b77cb1c6037cb76ad05ffeccb77b57316832be4b8d355c6e68e8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "3ab946673643b77cb1c6037cb76ad05ffeccb77b57316832be4b8d355c6e68e8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.admin.terminal.menu.item.title",
       "source": "29157693f04fa81bf07c1878181de15aad33fb3895fb4b4c55feb2f5fc7a37b5",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "29157693f04fa81bf07c1878181de15aad33fb3895fb4b4c55feb2f5fc7a37b5",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.app.journal",
       "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.backup.setup.hint",
       "source": "8ef9b32c45b3e77d0fcfd191167debbf2e9c431d7b5289ddb0001ff5967fe1a4",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8ef9b32c45b3e77d0fcfd191167debbf2e9c431d7b5289ddb0001ff5967fe1a4",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.connection.invalid.response",
       "source": "0a1e405d4c636083f4c15c067d1b3552462ba48559a0cb7e2d029747f4900bf5",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "0a1e405d4c636083f4c15c067d1b3552462ba48559a0cb7e2d029747f4900bf5",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.connection.link.failed",
       "source": "582a1e9393027f22abdeb1b5242087d9d07483ce703c1c2f238b2a50fa89d89f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "582a1e9393027f22abdeb1b5242087d9d07483ce703c1c2f238b2a50fa89d89f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.connection.refused",
       "source": "54e73ba874bbdaed02cff4f92dbb8653cfee8744e72965169c7198daf924ec45",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "54e73ba874bbdaed02cff4f92dbb8653cfee8744e72965169c7198daf924ec45",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.connection.timed.out",
       "source": "a0165ce418c3510bf8a0c5c36669fda298fe7535babe4336e303840daaef2c90",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a0165ce418c3510bf8a0c5c36669fda298fe7535babe4336e303840daaef2c90",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.connection.unavailable",
       "source": "2bc80b2b757ed6adfb4a114bfaa32897b77ce993955660be7851782a79910445",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2bc80b2b757ed6adfb4a114bfaa32897b77ce993955660be7851782a79910445",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.add.device",
       "source": "2b50268026aebd328925dfc9b484df4f8aef5680c1cb86c7b162788a424648b8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2b50268026aebd328925dfc9b484df4f8aef5680c1cb86c7b162788a424648b8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.cancel",
       "source": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.close",
       "source": "a1f34abf437ec17e427804fd2f06f257c671423b17b647a1bd82dd7ac195af73",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a1f34abf437ec17e427804fd2f06f257c671423b17b647a1bd82dd7ac195af73",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.copied",
       "source": "3b730de67e680f70db79d8fc21a594ce22e47f02c75e2af872f67d8b1f567120",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "3b730de67e680f70db79d8fc21a594ce22e47f02c75e2af872f67d8b1f567120",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.copy.link",
       "source": "246dd7c326bc6a55f009bbd2b0005318dad2835ad577b4594d38b73fdc20f9a9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "246dd7c326bc6a55f009bbd2b0005318dad2835ad577b4594d38b73fdc20f9a9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.detail.network",
       "source": "896bb1869184cccdc4274e7703e1fc029ebbfa719b40598f342e60120abe8c68",
       "contract": "ec8dc88698a3e7e0e2e2f286585cfb64aed3d4c62a10c62b9f498f426d60824f",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "896bb1869184cccdc4274e7703e1fc029ebbfa719b40598f342e60120abe8c68",
+          "contract": "ec8dc88698a3e7e0e2e2f286585cfb64aed3d4c62a10c62b9f498f426d60824f",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.detail.network.paired",
       "source": "548ff16ffdbcbb501694ac38e23077bff90b09d77bad48dc0edfa5b0643ce589",
       "contract": "35279c09dbe77c8bd2dddfa931c01998cb419c15734e1107428cbaa7696e5bc8",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "548ff16ffdbcbb501694ac38e23077bff90b09d77bad48dc0edfa5b0643ce589",
+          "contract": "35279c09dbe77c8bd2dddfa931c01998cb419c15734e1107428cbaa7696e5bc8",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.detail.paired",
       "source": "25c6d73902ef73b66c0b39e70690ef03ee9ac432fffec382519c16442ebbea52",
       "contract": "8dbf2efc20664de24a7230080bb32c06c5931f2d1ceb8e2c4588a19b047b9b84",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "25c6d73902ef73b66c0b39e70690ef03ee9ac432fffec382519c16442ebbea52",
+          "contract": "8dbf2efc20664de24a7230080bb32c06c5931f2d1ceb8e2c4588a19b047b9b84",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.empty.body",
       "source": "9251777fbf26d932018d48d1126a899b7083efefff7975113bb214d1cbf45fba",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "9251777fbf26d932018d48d1126a899b7083efefff7975113bb214d1cbf45fba",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.empty.title",
       "source": "af032840a3852dfe68bf5a7baec8588fccd260ba9d508e11fc212b832e5941bb",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "af032840a3852dfe68bf5a7baec8588fccd260ba9d508e11fc212b832e5941bb",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.expires.in",
       "source": "84c7c0b9ad7888adb0da990bf898ceb13f5f2deba336f56697e02158771952ff",
       "contract": "3289d894744dd1f1b687e73d8d890e2cbb6dace3d9f6624637f0279cd52cf810",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "84c7c0b9ad7888adb0da990bf898ceb13f5f2deba336f56697e02158771952ff",
+          "contract": "3289d894744dd1f1b687e73d8d890e2cbb6dace3d9f6624637f0279cd52cf810",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.link.expired.body",
       "source": "35062f7d4c60db1d1405f3bd27a5d34d782abebd1c2f5817cab8fbbfb4d3dc4a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "35062f7d4c60db1d1405f3bd27a5d34d782abebd1c2f5817cab8fbbfb4d3dc4a",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.link.expired.title",
       "source": "099c36991b03e73be9930ef7a818105596bf49bb8b7703352ed9c5d29d817d60",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "099c36991b03e73be9930ef7a818105596bf49bb8b7703352ed9c5d29d817d60",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.loading",
       "source": "96d73179ccf7605cb4c8a38c6f0d3c6fb5b8860db0eb7e97b30816b4887e8d7d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "96d73179ccf7605cb4c8a38c6f0d3c6fb5b8860db0eb7e97b30816b4887e8d7d",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.model.last.seen",
       "source": "5237a428011ce65a90c54c07680e92d1d89e790946d291cbb2deaff3c6798f02",
       "contract": "2d16102d08e2b249b186681a706dc45ccfbe2fb586e6c90258b722d5814b8535",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5237a428011ce65a90c54c07680e92d1d89e790946d291cbb2deaff3c6798f02",
+          "contract": "2d16102d08e2b249b186681a706dc45ccfbe2fb586e6c90258b722d5814b8535",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.model.last.seen.just.now",
       "source": "23b801df2eda671b5db98fd493b6123e7dbd2d032ae6b1e88f06901f18f84fd9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "23b801df2eda671b5db98fd493b6123e7dbd2d032ae6b1e88f06901f18f84fd9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.model.last.seen.unknown",
       "source": "5829e636b45109addc1e1d07b184855cb1def8a0a8d14b8d586bf7d4fbbcd642",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5829e636b45109addc1e1d07b184855cb1def8a0a8d14b8d586bf7d4fbbcd642",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.model.never.connected",
       "source": "f50cf6b3c25ac57f49b015fa291186e5bb0a36ef4f72bdee095539877c922fda",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "f50cf6b3c25ac57f49b015fa291186e5bb0a36ef4f72bdee095539877c922fda",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.model.status",
       "source": "48554c4bdc41637260e46594b8438e78fd5b4a3ed5cba26432b3b9a59c6463cb",
       "contract": "632d2ec147898b3d85161a426ae9dda5ecd965642bb199d0f8d9cdbbd0379482",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "48554c4bdc41637260e46594b8438e78fd5b4a3ed5cba26432b3b9a59c6463cb",
+          "contract": "632d2ec147898b3d85161a426ae9dda5ecd965642bb199d0f8d9cdbbd0379482",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.not.ready.body",
       "source": "1c6efe4f5636561f5e75f1de42fd7047998a6b56860c1455a66c43231e5cdad4",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1c6efe4f5636561f5e75f1de42fd7047998a6b56860c1455a66c43231e5cdad4",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.not.ready.title",
       "source": "ff27e22b51e8fbb44bd3644eed8bb633cdf8454028c00dd41bed03d23b1525d0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "ff27e22b51e8fbb44bd3644eed8bb633cdf8454028c00dd41bed03d23b1525d0",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.not.running.body",
       "source": "ab341a2eab3f51e44e37120c0de93b4dea3042417edc3acba88ede990fb342b6",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "ab341a2eab3f51e44e37120c0de93b4dea3042417edc3acba88ede990fb342b6",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.not.running.title",
       "source": "61d8970de5b8665c5929cc18ebbcdbadac8d12772e97e5d7dbd6611692df423c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "61d8970de5b8665c5929cc18ebbcdbadac8d12772e97e5d7dbd6611692df423c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.open.fresh.link",
       "source": "31abce1af936fea3a511ec6aa68f1a5dedf3d62620abc3051c5b1f3b4d13a23c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "31abce1af936fea3a511ec6aa68f1a5dedf3d62620abc3051c5b1f3b4d13a23c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.done",
       "source": "d73e995d8e06641547f0fc9d9da8046932e0d18d65854c93bcd7370fed8f7485",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d73e995d8e06641547f0fc9d9da8046932e0d18d65854c93bcd7370fed8f7485",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.heading",
       "source": "8743c314b7cac7ecabd5cf54cc888d3b8209bcbcc95d9ac2f36cb48f66cbb439",
       "contract": "cec471e840bbb44a2ffe2a72b3d629e67302e1f35a2a8c15824f8a1875e37d11",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8743c314b7cac7ecabd5cf54cc888d3b8209bcbcc95d9ac2f36cb48f66cbb439",
+          "contract": "cec471e840bbb44a2ffe2a72b3d629e67302e1f35a2a8c15824f8a1875e37d11",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.heading.unnamed",
       "source": "e351d55d83f591e5bfd43b94bd8411ce61f35898660f10945c1f80a1050c4150",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "e351d55d83f591e5bfd43b94bd8411ce61f35898660f10945c1f80a1050c4150",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.note",
       "source": "e8a128f3eec24a31d0572b730cf01ed4af22c65eee50ea6bcf173ce9fc9104c0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "e8a128f3eec24a31d0572b730cf01ed4af22c65eee50ea6bcf173ce9fc9104c0",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.note.anywhere",
       "source": "7fd2828cbd471f38d58c2406a690d81a71b08fc956a3f517dc4b8a041ac4e9e1",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7fd2828cbd471f38d58c2406a690d81a71b08fc956a3f517dc4b8a041ac4e9e1",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.remove.failed",
       "source": "082597f1433281ff359794cf47f73ec20531eccc49656167ea00f52ba6c26994",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "082597f1433281ff359794cf47f73ec20531eccc49656167ea00f52ba6c26994",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.removed",
       "source": "7edc603a62266f5a41b0deafb9185e63ed1c876c16db6b7a25240437e629b114",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7edc603a62266f5a41b0deafb9185e63ed1c876c16db6b7a25240437e629b114",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.paired.unpair",
       "source": "b54afe5dd44cb339516496f47347aa83aa0d5078682dcdbf255a0756ad5b9e9f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b54afe5dd44cb339516496f47347aa83aa0d5078682dcdbf255a0756ad5b9e9f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pairing.code",
       "source": "92e6be0dd9e3023223bad9dcf4424fc67ed5b3f6e692de42519db8d3e8283ea6",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "92e6be0dd9e3023223bad9dcf4424fc67ed5b3f6e692de42519db8d3e8283ea6",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pairing.failed.title",
       "source": "fef89067740bb6fb1540ffb6a0048915fe59548eeb5ebf6ddf4b4c85a846d916",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "fef89067740bb6fb1540ffb6a0048915fe59548eeb5ebf6ddf4b4c85a846d916",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pairing.instructions",
       "source": "d23909a0de9e7aacd502b63be0b176f5ae3e6052f20f910f48de7fd40b397c28",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d23909a0de9e7aacd502b63be0b176f5ae3e6052f20f910f48de7fd40b397c28",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pairing.link.label",
       "source": "b42839d232a0383ca48bc748ea3db184d478bb0a06065b89c592cf94ecb25a21",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b42839d232a0383ca48bc748ea3db184d478bb0a06065b89c592cf94ecb25a21",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pairing.opening",
       "source": "16e207517bd238c135124988b20ba982d80bfb0d2d96ccbe698d832417797361",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "16e207517bd238c135124988b20ba982d80bfb0d2d96ccbe698d832417797361",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pairing.title",
       "source": "2b50268026aebd328925dfc9b484df4f8aef5680c1cb86c7b162788a424648b8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2b50268026aebd328925dfc9b484df4f8aef5680c1cb86c7b162788a424648b8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.pane.title",
       "source": "d48e648e6c0b144d6fde462418c0bf77f0b6a2b5e66a080b8b883d534291feff",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d48e648e6c0b144d6fde462418c0bf77f0b6a2b5e66a080b8b883d534291feff",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.peer.journals.header",
       "source": "a7694ae27623e736d3efa5df24445e1c86a439aaaff5d4780f522ef81da345aa",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a7694ae27623e736d3efa5df24445e1c86a439aaaff5d4780f522ef81da345aa",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.remove",
       "source": "d257dacfdc4ab27815b38826a31678bbb77e1a516b0c365afa7277a9515652a1",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d257dacfdc4ab27815b38826a31678bbb77e1a516b0c365afa7277a9515652a1",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.revoke.body",
       "source": "0b56a438e9173d3279559dd473790b7aa587545140e9975a8ee00f0046f7c525",
       "contract": "e33e535f0d084bf820f6d5ae600aa8aee4c31299e147c65ba77333041518db5e",
       "protected": "313eaff3362766cccd99edfef35fe5cfdb5e63ee7575c43609bcdb9ba0a44d24",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "0b56a438e9173d3279559dd473790b7aa587545140e9975a8ee00f0046f7c525",
+          "contract": "e33e535f0d084bf820f6d5ae600aa8aee4c31299e147c65ba77333041518db5e",
+          "protected": "313eaff3362766cccd99edfef35fe5cfdb5e63ee7575c43609bcdb9ba0a44d24"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.revoke.failed",
       "source": "0590f797a33c954704df90190165566626922d8f43c94aed92238ede67eada1b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "0590f797a33c954704df90190165566626922d8f43c94aed92238ede67eada1b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.revoke.title",
       "source": "80462bad3cf9fec9e89a89f36ab4fa236e8ac14e6eb9c474f741f26e33161266",
       "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "80462bad3cf9fec9e89a89f36ab4fa236e8ac14e6eb9c474f741f26e33161266",
+          "contract": "85053d723b7e1f28ae28297c665d0d09f73ecf55449bd50a1109e25a8c40f725",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.try.again",
       "source": "792b970ee1cc04df695b3cc5b2f74194c23593ca0544074d1273612a9894e871",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "792b970ee1cc04df695b3cc5b2f74194c23593ca0544074d1273612a9894e871",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.unnamed.device",
       "source": "389a808a609fd709905d5673616c49951eef8f833c47c046c088fd2371269cf0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "389a808a609fd709905d5673616c49951eef8f833c47c046c088fd2371269cf0",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.unnamed.journal",
       "source": "64bde769f77234ea68238e7b76d5c5a87b00c9a5255014aba8502ec918ccbd93",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "64bde769f77234ea68238e7b76d5c5a87b00c9a5255014aba8502ec918ccbd93",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.devices.your.devices.header",
       "source": "d4f5ca6546a433cd8d99ee1f4f9ead2db63547f26ddfa204743c2efe7b8ab2a3",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d4f5ca6546a433cd8d99ee1f4f9ead2db63547f26ddfa204743c2efe7b8ab2a3",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.completed",
       "source": "56c29e2a58f7b30a79534603d4ef193eff0642a2a57932b7677f448c3ae740b3",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "56c29e2a58f7b30a79534603d4ef193eff0642a2a57932b7677f448c3ae740b3",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.completed.duration",
       "source": "6f8ccaed4883e10af3a3429b2ed5f9a689c8fc34ffcc2765b69fedc59bbc5dfd",
       "contract": "8ca88ee2ec1bad9c7df3463cbd05d7e692bc6e7f47f58419ddaf651a2a013a12",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "6f8ccaed4883e10af3a3429b2ed5f9a689c8fc34ffcc2765b69fedc59bbc5dfd",
+          "contract": "8ca88ee2ec1bad9c7df3463cbd05d7e692bc6e7f47f58419ddaf651a2a013a12",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.doctor.check",
       "source": "3e29b7dc6bbc8c798dfcd5957041907a4f5abca030d9dbb3047d0a4da9fd5bee",
       "contract": "3d2093097454ab9fdc55adf41d776d54d5b57fa536a30ee97616aafce283faa7",
       "protected": "da52c279109d8c06fe16d379510dc3c5d1bc3ce5ab21efe6caa95c71e7f67583",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "3e29b7dc6bbc8c798dfcd5957041907a4f5abca030d9dbb3047d0a4da9fd5bee",
+          "contract": "3d2093097454ab9fdc55adf41d776d54d5b57fa536a30ee97616aafce283faa7",
+          "protected": "da52c279109d8c06fe16d379510dc3c5d1bc3ce5ab21efe6caa95c71e7f67583"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.doctor.started",
       "source": "437ff3cf88ef8267673c6fcaf1f7be17785bb66054cc7ce06ac98778cba22b73",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "437ff3cf88ef8267673c6fcaf1f7be17785bb66054cc7ce06ac98778cba22b73",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.doctor.status",
       "source": "87ee58dd36cb4ade76c557a9fce5233ffe8e425931d496a342edecd9d966cf83",
       "contract": "632d2ec147898b3d85161a426ae9dda5ecd965642bb199d0f8d9cdbbd0379482",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "87ee58dd36cb4ade76c557a9fce5233ffe8e425931d496a342edecd9d966cf83",
+          "contract": "632d2ec147898b3d85161a426ae9dda5ecd965642bb199d0f8d9cdbbd0379482",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.doctor.summary",
       "source": "1c6b63ed8bccd84dfb18f476c7bd050976e7159c9733aa64b2998deb773c0eb0",
       "contract": "818ceea62dd8db2936dcff78c5f98213b660838f03613135ce28b8741f5df9c6",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1c6b63ed8bccd84dfb18f476c7bd050976e7159c9733aa64b2998deb773c0eb0",
+          "contract": "818ceea62dd8db2936dcff78c5f98213b660838f03613135ce28b8741f5df9c6",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.done",
       "source": "cc5e51b45294ac52304f7c0002485cf0c07c9ff4b53071b7e4b768b309bf87ad",
       "contract": "6184fd8f9e29c96d57d59cfa1f088805334be91a9a360432683c11df504b0324",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cc5e51b45294ac52304f7c0002485cf0c07c9ff4b53071b7e4b768b309bf87ad",
+          "contract": "6184fd8f9e29c96d57d59cfa1f088805334be91a9a360432683c11df504b0324",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.done.duration",
       "source": "82e46c8a1d803f7f88827a4796591a91431e20763b7b5bc9f4b17c8f10c77521",
       "contract": "6bbc838d5095afd340a42f78ccfeea777c366367fcc8d98b64b1172f49cb6bb9",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "82e46c8a1d803f7f88827a4796591a91431e20763b7b5bc9f4b17c8f10c77521",
+          "contract": "6bbc838d5095afd340a42f78ccfeea777c366367fcc8d98b64b1172f49cb6bb9",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.fail",
       "source": "edacaad696804fc697b35a126abd162633a79ef36b0c8f93350d4c9809e75199",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "edacaad696804fc697b35a126abd162633a79ef36b0c8f93350d4c9809e75199",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.failed",
       "source": "835c94089fd90865b7c80181c9f4f0eb987199bda38923fe37872c09f6f40755",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "835c94089fd90865b7c80181c9f4f0eb987199bda38923fe37872c09f6f40755",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.failed.step",
       "source": "439f2dfe7380e8804853e05860c1c9fbf2e4fdabb53fb83d2058aa602f81bd27",
       "contract": "c3e54a4fbd3da5313ab6eca2370929d650f703189aca7abde34c6a6490a3b4e3",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "439f2dfe7380e8804853e05860c1c9fbf2e4fdabb53fb83d2058aa602f81bd27",
+          "contract": "c3e54a4fbd3da5313ab6eca2370929d650f703189aca7abde34c6a6490a3b4e3",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.malformed",
       "source": "759e20da909315a4674c2592787ba428d7bdabc83fa6cf4791c1df046a9d8623",
       "contract": "7ea2f0d329923b4741a6aeaac9e2a88354a30de1d71baa63ae75dea7c088be45",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "759e20da909315a4674c2592787ba428d7bdabc83fa6cf4791c1df046a9d8623",
+          "contract": "7ea2f0d329923b4741a6aeaac9e2a88354a30de1d71baa63ae75dea7c088be45",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.ok",
       "source": "7215fe69aa21a2b073c5e6c8c18daaa73b91c9d619b7e8fb38d01d84f8d53a3f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7215fe69aa21a2b073c5e6c8c18daaa73b91c9d619b7e8fb38d01d84f8d53a3f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.skip",
       "source": "cebe963301724cab4c21ff3099215e8a4b494081271f4d6c68ee7dbc6e4a86b9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cebe963301724cab4c21ff3099215e8a4b494081271f4d6c68ee7dbc6e4a86b9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.skipped",
       "source": "732d04e36e8aba2f4984022a5e262f1a6c10c883c54c58283257d8a727f61330",
       "contract": "756ea6d2069262105b35fc2ae72c5b566507884aad66f40af17e2814d2eb2e1d",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "732d04e36e8aba2f4984022a5e262f1a6c10c883c54c58283257d8a727f61330",
+          "contract": "756ea6d2069262105b35fc2ae72c5b566507884aad66f40af17e2814d2eb2e1d",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.skipped.reason",
       "source": "1fadf576aaa8122b047e9354be920b03b370718ec92e77dd7fa3a40103469de0",
       "contract": "6e2034f3839aae24c373a02022d6661a90db0c5424fa8fe57ad48f69fc609978",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1fadf576aaa8122b047e9354be920b03b370718ec92e77dd7fa3a40103469de0",
+          "contract": "6e2034f3839aae24c373a02022d6661a90db0c5424fa8fe57ad48f69fc609978",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.started",
       "source": "0dcb4f3933c2f49d67a0528f60f8ff2cac08f655f54dcae94f595d35b5d1b840",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "0dcb4f3933c2f49d67a0528f60f8ff2cac08f655f54dcae94f595d35b5d1b840",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.started.version",
       "source": "0631164917fb18dab06757021011200f3c62edbaee3c8fdf35ae0619db8576df",
       "contract": "8283b90b6253caef662f140cbe65397c7c5cbf4945352cb8cdd897d966604fef",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "0631164917fb18dab06757021011200f3c62edbaee3c8fdf35ae0619db8576df",
+          "contract": "8283b90b6253caef662f140cbe65397c7c5cbf4945352cb8cdd897d966604fef",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.step",
       "source": "7f53e36a8fdbf709895fadd0daa615507ed1c807cd5497e409e714747449c3f6",
       "contract": "756ea6d2069262105b35fc2ae72c5b566507884aad66f40af17e2814d2eb2e1d",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7f53e36a8fdbf709895fadd0daa615507ed1c807cd5497e409e714747449c3f6",
+          "contract": "756ea6d2069262105b35fc2ae72c5b566507884aad66f40af17e2814d2eb2e1d",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.step.failed",
       "source": "0ca4e71749a0871b842d4256a38d39845470daae6912fd35613abdbefe6e2a59",
       "contract": "0b161bfbb82f0dccf67c6a6c55bc4a26b453bbdd43675d607366bed781bd5c60",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "0ca4e71749a0871b842d4256a38d39845470daae6912fd35613abdbefe6e2a59",
+          "contract": "0b161bfbb82f0dccf67c6a6c55bc4a26b453bbdd43675d607366bed781bd5c60",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.step.indexed",
       "source": "9c343bac8bac039070b84b16dcb1c3e01559fd172c7688c90c548d1c90d84242",
       "contract": "f82ffceb1b9ca7cf51c334a7f99a8a3164ef4042a5863a44705315e39be49b56",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "9c343bac8bac039070b84b16dcb1c3e01559fd172c7688c90c548d1c90d84242",
+          "contract": "f82ffceb1b9ca7cf51c334a7f99a8a3164ef4042a5863a44705315e39be49b56",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.unknown",
       "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.unparseable",
       "source": "a34e2f9018ee7177aa7095cea288d169583ceff0b276372fcfb29dec6825b6e3",
       "contract": "7ea2f0d329923b4741a6aeaac9e2a88354a30de1d71baa63ae75dea7c088be45",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a34e2f9018ee7177aa7095cea288d169583ceff0b276372fcfb29dec6825b6e3",
+          "contract": "7ea2f0d329923b4741a6aeaac9e2a88354a30de1d71baa63ae75dea7c088be45",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.unrecognized",
       "source": "6b78515cc82fae8ba518de84cc819551c8c2bfd1ca355c06a5856b5192e0d92e",
       "contract": "7ea2f0d329923b4741a6aeaac9e2a88354a30de1d71baa63ae75dea7c088be45",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "6b78515cc82fae8ba518de84cc819551c8c2bfd1ca355c06a5856b5192e0d92e",
+          "contract": "7ea2f0d329923b4741a6aeaac9e2a88354a30de1d71baa63ae75dea7c088be45",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.warn",
       "source": "58cd59a8f22bedae0cd3f4b69cc215af766ad856aed3491f0450ab9a5baed769",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "58cd59a8f22bedae0cd3f4b69cc215af766ad856aed3491f0450ab9a5baed769",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.warning",
       "source": "a8977a127c65f54447033a1f27547b50156f4b7117bc5675ed7dcbd0c8091039",
       "contract": "4769f6b98a028e7b84f1ea6cd2af9937e8cb30d53141444fcb9e7131e5e43feb",
       "protected": "da52c279109d8c06fe16d379510dc3c5d1bc3ce5ab21efe6caa95c71e7f67583",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a8977a127c65f54447033a1f27547b50156f4b7117bc5675ed7dcbd0c8091039",
+          "contract": "4769f6b98a028e7b84f1ea6cd2af9937e8cb30d53141444fcb9e7131e5e43feb",
+          "protected": "da52c279109d8c06fe16d379510dc3c5d1bc3ce5ab21efe6caa95c71e7f67583"
+        }
+      ]
     },
     {
       "id": "journal.mac.events.warning.fix",
       "source": "5083e4a95c642991459a90d7cbccf6e78247952121141efa35f699a9146d836e",
       "contract": "e37b43ca0ef23de024628d165cfb4a78de5fa3db8c4db5ea4d17cac5b16893f2",
       "protected": "da52c279109d8c06fe16d379510dc3c5d1bc3ce5ab21efe6caa95c71e7f67583",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5083e4a95c642991459a90d7cbccf6e78247952121141efa35f699a9146d836e",
+          "contract": "e37b43ca0ef23de024628d165cfb4a78de5fa3db8c4db5ea4d17cac5b16893f2",
+          "protected": "da52c279109d8c06fe16d379510dc3c5d1bc3ce5ab21efe6caa95c71e7f67583"
+        }
+      ]
     },
     {
       "id": "journal.mac.first.run.model.setup.did.not.finish",
       "source": "21f3c9a798a56fc6b59b5413f99f83014d8965daefcc92b383e4d6cc9bf349ab",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "21f3c9a798a56fc6b59b5413f99f83014d8965daefcc92b383e4d6cc9bf349ab",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.first.run.model.setup.reported.completion.twice",
       "source": "c9c71729c47a077f7a6fbf7dad2cd16c9d4289d7385579cd24cf362afee43f0a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c9c71729c47a077f7a6fbf7dad2cd16c9d4289d7385579cd24cf362afee43f0a",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.first.run.model.setup.timed.out",
       "source": "73574733931a6836725c8971ff1c7a63b01a3d50e82be7b7f4771972848d210c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "73574733931a6836725c8971ff1c7a63b01a3d50e82be7b7f4771972848d210c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.check.denied",
       "source": "ad1ca6a817dda204ba2361be29081acbb993c1b9187e02b51a789dcb2be7303c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "ad1ca6a817dda204ba2361be29081acbb993c1b9187e02b51a789dcb2be7303c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.check.granted",
       "source": "1866fbd11403d3ae94a350d197cf9efb4a4bcb712819b43d7ead7bb1aeafc782",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1866fbd11403d3ae94a350d197cf9efb4a4bcb712819b43d7ead7bb1aeafc782",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.check.microphone",
       "source": "76b7cbfbff10c1c6babbf77e285d245d8ff706e905fefe3edf62039fc29b896b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "76b7cbfbff10c1c6babbf77e285d245d8ff706e905fefe3edf62039fc29b896b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.check.screen.recording",
       "source": "1150ef5b3df1867a1da0f5820b65d53d54371f08690a15e8469a19ac13fb10a7",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1150ef5b3df1867a1da0f5820b65d53d54371f08690a15e8469a19ac13fb10a7",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.check.unknown.checking.permissions",
       "source": "14593db3b7d1a571281c399c4f350d6eac7d4f2ff2d6bb7bcb6f81c35193616c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "14593db3b7d1a571281c399c4f350d6eac7d4f2ff2d6bb7bcb6f81c35193616c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.microphone.permission.help",
       "source": "6b808b9240ceac1c97c4b4e86b0734fcc4740bae5346dd5cf09936535f2fd247",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "6b808b9240ceac1c97c4b4e86b0734fcc4740bae5346dd5cf09936535f2fd247",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.health.screen.permission.help",
       "source": "5fcd9a441c5507c75f51491ca1461f76a994a795e2ef6835829f138c2cb61cc0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5fcd9a441c5507c75f51491ca1461f76a994a795e2ef6835829f138c2cb61cc0",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.home.browser.explanation",
       "source": "09876c8e13c1ea6d7f4355df7437e1eed8e6356b29336fb7e53d432b3aad2113",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "09876c8e13c1ea6d7f4355df7437e1eed8e6356b29336fb7e53d432b3aad2113",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.home.unconfigured",
       "source": "cfad66ba385d1a24b235665345aae17ff0fc228dc84b4312f805bdee8fc27c22",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cfad66ba385d1a24b235665345aae17ff0fc228dc84b4312f805bdee8fc27c22",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.info.cfbundle.display.name",
       "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.info.cfbundle.name",
       "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.info.nshuman.readable.copyright",
       "source": "e5daafc94878be78a128afd5209e73d172c410c761467715f7fac41d74befce7",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "0453586d933b38748ddeb8555c88cbbb70b935e88773b5288ceda908c02b9803",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "e5daafc94878be78a128afd5209e73d172c410c761467715f7fac41d74befce7",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "0453586d933b38748ddeb8555c88cbbb70b935e88773b5288ceda908c02b9803"
+        }
+      ]
     },
     {
       "id": "journal.mac.local.endpoint.unavailable",
       "source": "2bc80b2b757ed6adfb4a114bfaa32897b77ce993955660be7851782a79910445",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2bc80b2b757ed6adfb4a114bfaa32897b77ce993955660be7851782a79910445",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.cancel",
       "source": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.leave.setup.confirm",
       "source": "579f4be228a48c2d6a9de0b60715a3008126358ed79f35c717b16518b3b7b494",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "579f4be228a48c2d6a9de0b60715a3008126358ed79f35c717b16518b3b7b494",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.new.journal.hosted.share",
       "source": "ae210ab7ff9b22b86acf00d40f41ae884159011e55b5426674803e96fcb3cb38",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "ae210ab7ff9b22b86acf00d40f41ae884159011e55b5426674803e96fcb3cb38",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.other.journals",
       "source": "1d691ceaa564c0e32135e52b77228168f016128d83b1a3273d9816b8b1c6843c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1d691ceaa564c0e32135e52b77228168f016128d83b1a3273d9816b8b1c6843c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.same.mark.template",
       "source": "b0e54d3558057ce99b1804dcb408d6e9cd7720699dd04881059b3f4091d33965",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b0e54d3558057ce99b1804dcb408d6e9cd7720699dd04881059b3f4091d33965",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.shared.hosted.template",
       "source": "2c87bb46925d5dde2d3edf1eb5c25d04110e3c3337bc5e37c687b36736753396",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "0453586d933b38748ddeb8555c88cbbb70b935e88773b5288ceda908c02b9803",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2c87bb46925d5dde2d3edf1eb5c25d04110e3c3337bc5e37c687b36736753396",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "0453586d933b38748ddeb8555c88cbbb70b935e88773b5288ceda908c02b9803"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.start.new.journal",
       "source": "2dac9ecf844ff1a4cdba2d2b0a71d46800c7c234565bd3d32a7012bfa3160067",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2dac9ecf844ff1a4cdba2d2b0a71d46800c7c234565bd3d32a7012bfa3160067",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.start.new.journal.confirm.template",
       "source": "8d91017e5251c8f7d7bfb2a44e56be2ecd935d78106be72c360b0ab7d55aaef9",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8d91017e5251c8f7d7bfb2a44e56be2ecd935d78106be72c360b0ab7d55aaef9",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.start.new.journal.confirm.title",
       "source": "2edcb7878b08cc5f7321a889aa1c0eb0d000a89179ad7e7e6c6ec2209ed6b857",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2edcb7878b08cc5f7321a889aa1c0eb0d000a89179ad7e7e6c6ec2209ed6b857",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.start.new.journal.help",
       "source": "99279113fa82c301b90f335970640731e2ceb24d8002895eec5b5f60a4f9214a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "99279113fa82c301b90f335970640731e2ceb24d8002895eec5b5f60a4f9214a",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.switch.button",
       "source": "ad94a671c70e908fbca32ad0358d111a35a9ade9987a6669a5ad1304dd133df9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "ad94a671c70e908fbca32ad0358d111a35a9ade9987a6669a5ad1304dd133df9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.switch.confirm.template",
       "source": "188fad5d99b98a1d96fee9b4bec702c4df56405d037824c80b55e811cc3cb25e",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "188fad5d99b98a1d96fee9b4bec702c4df56405d037824c80b55e811cc3cb25e",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.switch.confirm.title.template",
       "source": "2fea8719e97099ce995519a4e7fdc7048d3ae6b95291ee81ae2430668b30d84e",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2fea8719e97099ce995519a4e7fdc7048d3ae6b95291ee81ae2430668b30d84e",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.location.switch.to.journal",
       "source": "eb1b316efe00223d7e0466256cd729e16b21a4a3f45a79e14681e68a186f5ccd",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "eb1b316efe00223d7e0466256cd729e16b21a4a3f45a79e14681e68a186f5ccd",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.restart.journal.path.unreadable",
       "source": "bbdd0a3c476cde3c92c00658d242abdaf0530adc333d6942ba03a4b6f4c8dab9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "bbdd0a3c476cde3c92c00658d242abdaf0530adc333d6942ba03a4b6f4c8dab9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.restart.restart.failed.journal.did.not.come.back",
       "source": "8229234fc955754d6731014a43d4db12454c0457c3decaf1039fc5ca6533ca73",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8229234fc955754d6731014a43d4db12454c0457c3decaf1039fc5ca6533ca73",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.restart.restart.failed.journal.did.not.restart",
       "source": "c6ea51716794b8fe7cd8f60a6fa358df8185d2d579f38285473c42e4db73fad9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c6ea51716794b8fe7cd8f60a6fa358df8185d2d579f38285473c42e4db73fad9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.bundle.missing",
       "source": "af50c42f9942b6f61de5a2dbe23fa13a401e44e33efba534ca4cf4869179ff99",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "af50c42f9942b6f61de5a2dbe23fa13a401e44e33efba534ca4cf4869179ff99",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.child.admission.failed",
       "source": "583277154d4a37e180d5c05aa01656278b7d440190373ce9b4d590320d8a86f9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "583277154d4a37e180d5c05aa01656278b7d440190373ce9b4d590320d8a86f9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.child.containment.pending",
       "source": "7e903f5b8fd8fcedb08a8ae9611712b45deb4118f5d437e1c21ec143e5f8947a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7e903f5b8fd8fcedb08a8ae9611712b45deb4118f5d437e1c21ec143e5f8947a",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.child.unconfigured",
       "source": "ba9114c64a2b9e6f7c95119b7bead81f46fbec0fe76a956a9183fbcb16d53fc0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "ba9114c64a2b9e6f7c95119b7bead81f46fbec0fe76a956a9183fbcb16d53fc0",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.couldn.t.get.ready.continuing",
       "source": "b4e2aa2b4ff29409474548c6042e317a20311dadea91f55bff994bf2b51a06c5",
       "contract": "10cd14ff78da8815139c99a4783250ea252123b4a96764047b422562c40fb09d",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b4e2aa2b4ff29409474548c6042e317a20311dadea91f55bff994bf2b51a06c5",
+          "contract": "10cd14ff78da8815139c99a4783250ea252123b4a96764047b422562c40fb09d",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.executable.missing",
       "source": "c778fd7f4e82f3f50b99d9860446790cea3f8a8b85c86cf2c29b5856cf93b55b",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c778fd7f4e82f3f50b99d9860446790cea3f8a8b85c86cf2c29b5856cf93b55b",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.installer.readiness.gate.failed",
       "source": "a967b6e9018f23c2367939ee2e9781db6b477951a7c59ff502d2d2cf838be85e",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a967b6e9018f23c2367939ee2e9781db6b477951a7c59ff502d2d2cf838be85e",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.child.breaker.tripped",
       "source": "4e6e7a6a422b7a94eead8825c7378c19198c26a18e0a7bf8a9d8d9a74bd84aa2",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "4e6e7a6a422b7a94eead8825c7378c19198c26a18e0a7bf8a9d8d9a74bd84aa2",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.child.containment.unresolved",
       "source": "f7f937641a4c97594ab6193d150049fe0ec291b00e4c32a88503abad8c8a1943",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "f7f937641a4c97594ab6193d150049fe0ec291b00e4c32a88503abad8c8a1943",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.drive.cannot.run",
       "source": "231d0343429b1b0809819612f4a42df73536288b6c7f4d2955885c703721c100",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "231d0343429b1b0809819612f4a42df73536288b6c7f4d2955885c703721c100",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.materialize.failed",
       "source": "258195c30bc281986efce3d133d99a1c627c25426caf967a22991353e1814fd2",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "258195c30bc281986efce3d133d99a1c627c25426caf967a22991353e1814fd2",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.readiness.timeout",
       "source": "131b90a5235e2a5719e1fb728ae73f5a9d3f86f8149db8bc5e85ac1dfa0fc67d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "131b90a5235e2a5719e1fb728ae73f5a9d3f86f8149db8bc5e85ac1dfa0fc67d",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.setup.needed.before.upgrade",
       "source": "055fa81d6418f42528b77912494c58008a4b0658b8aa18c7d40adb10cfbd2874",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "055fa81d6418f42528b77912494c58008a4b0658b8aa18c7d40adb10cfbd2874",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.spawn.blocked.legacy.service",
       "source": "441aa876d200234baca41f05e60d98f2f8f72bafb19873986788b43f70d8e57c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "441aa876d200234baca41f05e60d98f2f8f72bafb19873986788b43f70d8e57c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.spawn.blocked.ports",
       "source": "fd7dbf09a462fd9942e7f4fd0dc35f618b983737462aed54c06d5e1faa1f9a64",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "fd7dbf09a462fd9942e7f4fd0dc35f618b983737462aed54c06d5e1faa1f9a64",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.spawn.port.check.failed",
       "source": "a75257fbeb4928a09312e560dd6980c1a7fe93058f2c9911bd0d5a13304f23dd",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a75257fbeb4928a09312e560dd6980c1a7fe93058f2c9911bd0d5a13304f23dd",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.spawn.port.held.elsewhere",
       "source": "d676c7f898a0a66bbd85c821bc269737cfbb7182ca8e9803b7774a7fbc0a2628",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d676c7f898a0a66bbd85c821bc269737cfbb7182ca8e9803b7774a7fbc0a2628",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.journal.spawn.service.check.failed",
       "source": "301c79535a8f639f4ac896bfea993acc5a32a907b5fffec0b762c82fed041144",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "301c79535a8f639f4ac896bfea993acc5a32a907b5fffec0b762c82fed041144",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.release.identity.missing",
       "source": "8bc08b5cfbb1a84d2bc22aefeda26f1fc515b76cdf346c2919e509bd7d68052a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8bc08b5cfbb1a84d2bc22aefeda26f1fc515b76cdf346c2919e509bd7d68052a",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.runtime.required.models.failed",
       "source": "c2240baa6a853dafd78d5bda441a7b4a72ae5b9f161a484dc0cade8191b5d38d",
       "contract": "e7b0bdb290e9f17cdfb7523cfecb0afe0a800a3501887a4e3acbb3ed908084ba",
       "protected": "ce52d4fd6998d54b4cf3ef845f42151ec52071e03d0b8f99779415482d24be59",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c2240baa6a853dafd78d5bda441a7b4a72ae5b9f161a484dc0cade8191b5d38d",
+          "contract": "e7b0bdb290e9f17cdfb7523cfecb0afe0a800a3501887a4e3acbb3ed908084ba",
+          "protected": "ce52d4fd6998d54b4cf3ef845f42151ec52071e03d0b8f99779415482d24be59"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.backup",
       "source": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.copied",
       "source": "67f81d3c65b9266a733b33fe06fe735f692604bb5d79bc206e555902e6dd785e",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "67f81d3c65b9266a733b33fe06fe735f692604bb5d79bc206e555902e6dd785e",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.copy",
       "source": "7080b571d8e9a243e0f5ee2d250e53b9578ef07310d7a048d070b490cf45621c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7080b571d8e9a243e0f5ee2d250e53b9578ef07310d7a048d070b490cf45621c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.couldn.t.copy.select.the.text.and.copy.it",
       "source": "98e024791b2e15644f81ca3862fc412aafdaba561887b76289994d96c8781699",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "98e024791b2e15644f81ca3862fc412aafdaba561887b76289994d96c8781699",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.disk.used",
       "source": "b51761347cffbfdd9b16c1e0bc3574899ced833268e641748de91ff7100fc0b8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b51761347cffbfdd9b16c1e0bc3574899ced833268e641748de91ff7100fc0b8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.health",
       "source": "f6af85f654b5d71c2d7b51b2ff48cd56c6cbc0ef59e28e23f801172d2d4ce49d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "f6af85f654b5d71c2d7b51b2ff48cd56c6cbc0ef59e28e23f801172d2d4ce49d",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.launch.the.journal.when.you.log.in",
       "source": "fc25b695f046adcc2f86c819633d3d97eec7166f98ebc17db3336c1d1ae47479",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "fc25b695f046adcc2f86c819633d3d97eec7166f98ebc17db3336c1d1ae47479",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.location",
       "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.open.backup",
       "source": "c3fe7e54ea0e771cead764ef2443bac1da49944b9ee597766d57b072080bcf14",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c3fe7e54ea0e771cead764ef2443bac1da49944b9ee597766d57b072080bcf14",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.open.your.journal",
       "source": "53eb791a3a6e5cacfb9ca3525170989f5f15ad4d1fbbc7ce2128d3dd92a48dc8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "53eb791a3a6e5cacfb9ca3525170989f5f15ad4d1fbbc7ce2128d3dd92a48dc8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.restart",
       "source": "2a78c8984c102e6da80bc7aae1c495d66021664066a9dd115856ca86de729d18",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2a78c8984c102e6da80bc7aae1c495d66021664066a9dd115856ca86de729d18",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.run.state",
       "source": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.run.state.link",
       "source": "7706d24aeb94db078a290ab9d4be2f0b52d321d610f057148798ace670e7abe7",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7706d24aeb94db078a290ab9d4be2f0b52d321d610f057148798ace670e7abe7",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.start",
       "source": "47bdd3e1fd57d43740bb1cb835222ae44d90c2b3abea26c229541abf8ef224a9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "47bdd3e1fd57d43740bb1cb835222ae44d90c2b3abea26c229541abf8ef224a9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.startup",
       "source": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.stop",
       "source": "6c180d33471ea7c00596419062765675f3e825b724d46ca69a92b2b15734f08f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "6c180d33471ea7c00596419062765675f3e825b724d46ca69a92b2b15734f08f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.the.journal.app.is.available",
       "source": "da6ac6f97d3b6ba0ad6d799db39bc75cbc3ed13c2b40228995b7073909ccbe4d",
       "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "da6ac6f97d3b6ba0ad6d799db39bc75cbc3ed13c2b40228995b7073909ccbe4d",
+          "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.the.journal.update.check.failed",
       "source": "8823d5802b0de06c75dac8087c67c572843dbcd870f1a7f3ad0998cf038baa18",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8823d5802b0de06c75dac8087c67c572843dbcd870f1a7f3ad0998cf038baa18",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.update.failed.with.version",
       "source": "9239809db5a869c3f4087155d748337eb2e17b2b74a29922b3d0a7f7a04a6c0f",
       "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "9239809db5a869c3f4087155d748337eb2e17b2b74a29922b3d0a7f7a04a6c0f",
+          "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.update.needs.attention",
       "source": "a28e9bb015a4696ea182f7de541a6d5ecf69f7d15352c5b4c80b43272fbf1516",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a28e9bb015a4696ea182f7de541a6d5ecf69f7d15352c5b4c80b43272fbf1516",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.view.journal.updates",
       "source": "c674853cc94ebc3bf3a1a4e05450d003feb4579ab6bffd9a4bea3fae6f181970",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c674853cc94ebc3bf3a1a4e05450d003feb4579ab6bffd9a4bea3fae6f181970",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.your.journal.at.a.glance",
       "source": "f203c02c2f84b8c5c7c4f8b9560493108b6c4777b3ab3c5ce781dab9acbdf60b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "f203c02c2f84b8c5c7c4f8b9560493108b6c4777b3ab3c5ce781dab9acbdf60b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.settings.your.journal.mark.not.read.yet",
       "source": "b92956c7f1831676c51ad52ae3cef3641e43b468ab047a2bbd9372ad5cbce3c4",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b92956c7f1831676c51ad52ae3cef3641e43b468ab047a2bbd9372ad5cbce3c4",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.adopt.failed",
       "source": "71f9c666c06578594947b5cb6dac9941e257cfb241433f291143844a8b5651de",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "71f9c666c06578594947b5cb6dac9941e257cfb241433f291143844a8b5651de",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.adopt.landing.line",
       "source": "08bfba05f0e4b2b637343010cf251dad6d93e70123d8fc39c4ed23a7ee56e262",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "08bfba05f0e4b2b637343010cf251dad6d93e70123d8fc39c4ed23a7ee56e262",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.adopt.opening",
       "source": "e7bd4531661c1a8bb811d00a1ac27ba68eaca492a974b9e9e113de6c3e93e902",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "e7bd4531661c1a8bb811d00a1ac27ba68eaca492a974b9e9e113de6c3e93e902",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.adopt.title",
       "source": "2f7099f21f491e54f3c901cfb5e44011244a8dfc71f4b9f853a08dd4ef872dc0",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2f7099f21f491e54f3c901cfb5e44011244a8dfc71f4b9f853a08dd4ef872dc0",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.back",
       "source": "5d2259118c6fac7884fb6564d810192692bcfaaf767510446a9c4e8b4d9abbf7",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5d2259118c6fac7884fb6564d810192692bcfaaf767510446a9c4e8b4d9abbf7",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.choose.location",
       "source": "fff071df3a796b0e7d2582559d38c8725db2b96a4074e67230e548b38999edaf",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "fff071df3a796b0e7d2582559d38c8725db2b96a4074e67230e548b38999edaf",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.chrome.of",
       "source": "d67645f6768c373104f5126e88d71e20bae2126d34ff7d6c15d3c24dd45548d2",
       "contract": "ff2c5f39372e1da459f1490c2e7ea020c40e12a9bfafa4c5e8581d7427516539",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d67645f6768c373104f5126e88d71e20bae2126d34ff7d6c15d3c24dd45548d2",
+          "contract": "ff2c5f39372e1da459f1490c2e7ea020c40e12a9bfafa4c5e8581d7427516539",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.continue.button",
       "source": "cacd477d0f0714ce579bdb1040df9a4afc7d8a6776827adef662c920b61a4b6f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cacd477d0f0714ce579bdb1040df9a4afc7d8a6776827adef662c920b61a4b6f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.continue.in.the.solstone.app",
       "source": "1580cb9b2914cfc585613f35e29f8a4d8249cfeda55d897c755c27fdecdfc3a1",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1580cb9b2914cfc585613f35e29f8a4d8249cfeda55d897c755c27fdecdfc3a1",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.download.bytes",
       "source": "3e2f85fea3db111895c23c3c98a465bf344099d1d6c2ace53dea00afc8570c49",
       "contract": "ff2c5f39372e1da459f1490c2e7ea020c40e12a9bfafa4c5e8581d7427516539",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "3e2f85fea3db111895c23c3c98a465bf344099d1d6c2ace53dea00afc8570c49",
+          "contract": "ff2c5f39372e1da459f1490c2e7ea020c40e12a9bfafa4c5e8581d7427516539",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.finish.in.browser.line",
       "source": "c192907ae96dff4cdeb978fb5770b1230e4c0a0c4b340650cf58bb238e78cf72",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c192907ae96dff4cdeb978fb5770b1230e4c0a0c4b340650cf58bb238e78cf72",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.finish.in.browser.title",
       "source": "70299b747e69eeec290d37f8318a370fedcc55b90515eb22bfd748f005049b96",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "70299b747e69eeec290d37f8318a370fedcc55b90515eb22bfd748f005049b96",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.folder.holds.another.journal",
       "source": "4816b68a4f0dc34bdccb771ca058e6d7103a40f42cb062bc8f8c585667cde9f7",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "4816b68a4f0dc34bdccb771ca058e6d7103a40f42cb062bc8f8c585667cde9f7",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.go.back.to.the.journal.in",
       "source": "a8da2e92d9e0d69e7468054974c15ce7554350584d78652187cf49a9a00d3c7c",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a8da2e92d9e0d69e7468054974c15ce7554350584d78652187cf49a9a00d3c7c",
+          "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.handoff.competing.setup",
       "source": "b81a858a0fe25bef4019808ff092fc117e2583d212e64eee16a1044436f3c076",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b81a858a0fe25bef4019808ff092fc117e2583d212e64eee16a1044436f3c076",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.handoff.held.pairing",
       "source": "633ecd0eef69e6820cda8c5f4ef8a609ae831f1e7c6118b6360c31d93cbcfea3",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "633ecd0eef69e6820cda8c5f4ef8a609ae831f1e7c6118b6360c31d93cbcfea3",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.handoff.not.delivered",
       "source": "c493e7c7782519e33551979bbbb8d2260b0d859a43bce2b309500b37443fc049",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c493e7c7782519e33551979bbbb8d2260b0d859a43bce2b309500b37443fc049",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.handoff.pending",
       "source": "008572768d654b55c8472467dcc5cae57a6fe8a09f310584296fefdfefbf2d07",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "008572768d654b55c8472467dcc5cae57a6fe8a09f310584296fefdfefbf2d07",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.journal.folder",
       "source": "de31456826203cf41a742107cc40476723e237d515375540ee29c8fa3edaf56e",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "de31456826203cf41a742107cc40476723e237d515375540ee29c8fa3edaf56e",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.location.field",
       "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.login.item.change.failed",
       "source": "daa5b2ea0c56a172445953a95c22012688b2392783fd6b4596c790acd320c987",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "daa5b2ea0c56a172445953a95c22012688b2392783fd6b4596c790acd320c987",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.login.item.unavailable",
       "source": "18398ed2e1f8dd28da34a27fc6c78602e4383c0eb89a3b60458837ffe616331c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "18398ed2e1f8dd28da34a27fc6c78602e4383c0eb89a3b60458837ffe616331c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.name.location.title",
       "source": "99b13f15f6fb298b88287ec0f998c01266634d902e094066c33824610a9530df",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "99b13f15f6fb298b88287ec0f998c01266634d902e094066c33824610a9530df",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.on.this.mac",
       "source": "9209d235577d858de75a556547b314394aa663cbfab7614b19315f6c8c725e9f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "9209d235577d858de75a556547b314394aa663cbfab7614b19315f6c8c725e9f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.on.this.mac.description",
       "source": "44f216e127b6cfece5c31cca241f9802f789cfc6c4445d51c001d9f80e5af55d",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "44f216e127b6cfece5c31cca241f9802f789cfc6c4445d51c001d9f80e5af55d",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.open.your.journal",
       "source": "53eb791a3a6e5cacfb9ca3525170989f5f15ad4d1fbbc7ce2128d3dd92a48dc8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "53eb791a3a6e5cacfb9ca3525170989f5f15ad4d1fbbc7ce2128d3dd92a48dc8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.reopen.in.browser.button",
       "source": "b85e80a5177781eb75da7670d7138fba87cadf51dd2b4b74621bbb76219f5e81",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "b85e80a5177781eb75da7670d7138fba87cadf51dd2b4b74621bbb76219f5e81",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.restore.from.backup",
       "source": "cb3c3c32b56fc9ba3f7d17b8ec09c720f25a0b0fec61d692f9c28a80143d5d0f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cb3c3c32b56fc9ba3f7d17b8ec09c720f25a0b0fec61d692f9c28a80143d5d0f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.runner.solstone.journal.setup.failed",
       "source": "acb5c3efcc88ab846f166e499a27c411096aefd4493c0b8d551aeeb4b63cb04b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "e6e77a107c7ef5c477d849bfc25fcadd7359ec99c13f136fa05ae0566b7fee07",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "acb5c3efcc88ab846f166e499a27c411096aefd4493c0b8d551aeeb4b63cb04b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "e6e77a107c7ef5c477d849bfc25fcadd7359ec99c13f136fa05ae0566b7fee07"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.set.up.solstone",
       "source": "52091bf0c4931ae1acfe24599eab762f6a45b658eba36567217e087b0c4d379b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "52091bf0c4931ae1acfe24599eab762f6a45b658eba36567217e087b0c4d379b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.setup.progress.not.saved",
       "source": "4559cdc1e506bae049971978196490312d1b0121aa0a2041b6a8795d7254ccfd",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "4559cdc1e506bae049971978196490312d1b0121aa0a2041b6a8795d7254ccfd",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.setup.subtitle",
       "source": "6723ed0eb5e8f03fa5b2d7cc73494e0e9bc9aec2be97b19f07ba55bdce5407e1",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "6723ed0eb5e8f03fa5b2d7cc73494e0e9bc9aec2be97b19f07ba55bdce5407e1",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.setup.title",
       "source": "171e41b913654f876e968294cb5f264bf99c0a8bf080992049c1b6d3ee85756e",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "171e41b913654f876e968294cb5f264bf99c0a8bf080992049c1b6d3ee85756e",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.start.automatically.help",
       "source": "8b2b397f3fc5d5d9150029ced08b5f9eb96eca2ff7b2302aa623b67f7613e15b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8b2b397f3fc5d5d9150029ced08b5f9eb96eca2ff7b2302aa623b67f7613e15b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.start.setup",
       "source": "8cbf6a8ccfac5638cdb8e410a1eea78f5a91ed2deb2d21512b634ef5c18301e9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "8cbf6a8ccfac5638cdb8e410a1eea78f5a91ed2deb2d21512b634ef5c18301e9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.step.progress",
       "source": "52d5819409b17a47b8cda86b3d7fcbc7bc6b9dc5ad8a5d26ae3b7fa449c08908",
       "contract": "756ea6d2069262105b35fc2ae72c5b566507884aad66f40af17e2814d2eb2e1d",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "52d5819409b17a47b8cda86b3d7fcbc7bc6b9dc5ad8a5d26ae3b7fa449c08908",
+          "contract": "756ea6d2069262105b35fc2ae72c5b566507884aad66f40af17e2814d2eb2e1d",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.the.solstone.app",
       "source": "67d510be628227a2a7a8360dc555a6e8862f64c5577c49ecb5d553231f1a7874",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "67d510be628227a2a7a8360dc555a6e8862f64c5577c49ecb5d553231f1a7874",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "fe7947bfdf3a2519cae52f325aa99c5a07966ee5a0f3c2daa7a98c6a86405280"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.the.solstone.app.description",
       "source": "755d152824089a92ac94cc6a412ec3dbfcb81886b44e493f73d46ec71ba8f4cd",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "755d152824089a92ac94cc6a412ec3dbfcb81886b44e493f73d46ec71ba8f4cd",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.thinking",
       "source": "77bd5ed23464ba452f6aa283d6282f488aba9c73c469753fe111f4b7b38ec4d8",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "77bd5ed23464ba452f6aa283d6282f488aba9c73c469753fe111f4b7b38ec4d8",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.thinking.description",
       "source": "cf17e6a7a520de44fe32232576d6fb1c6bcac141d3b101c720199c39469ce854",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cf17e6a7a520de44fe32232576d6fb1c6bcac141d3b101c720199c39469ce854",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.thinking.failed",
       "source": "7557833de4f6abfe016985c8369a574e2824d07c16c42cb227e5762931c9cc28",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7557833de4f6abfe016985c8369a574e2824d07c16c42cb227e5762931c9cc28",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.try.again",
       "source": "792b970ee1cc04df695b3cc5b2f74194c23593ca0544074d1273612a9894e871",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "792b970ee1cc04df695b3cc5b2f74194c23593ca0544074d1273612a9894e871",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.what.this.sets.up",
       "source": "cf05434f51c14475f0bc253b63c539a1f50da79500dbbda252dd96ff682d1a68",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "cf05434f51c14475f0bc253b63c539a1f50da79500dbbda252dd96ff682d1a68",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.what.this.sets.up.journal",
       "source": "5eceebbb2551df480ac8f1ec78c13a4dff1564efdc4dc8d40077c2db7fd947cf",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5eceebbb2551df480ac8f1ec78c13a4dff1564efdc4dc8d40077c2db7fd947cf",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.where.does.thinking.happen",
       "source": "7efdd36ea377ebd33013a7273a3d210216f4fa78dedbc30f60711f25beaf8d5b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7efdd36ea377ebd33013a7273a3d210216f4fa78dedbc30f60711f25beaf8d5b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.where.does.thinking.happen.description",
       "source": "5e7e26368d6447070cd19c0795e51b6ff8b64ba6a03c929470700db2d1b75b28",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5e7e26368d6447070cd19c0795e51b6ff8b64ba6a03c929470700db2d1b75b28",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.where.your.journal.lives",
       "source": "37fd0a503e93f36f6e7d65c559d14e30fbbec0d8cac443209929733f8be7c3db",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "37fd0a503e93f36f6e7d65c559d14e30fbbec0d8cac443209929733f8be7c3db",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.where.your.journal.lives.description",
       "source": "31a9486ad5012946d5b2701ffa779f7600e8bcf70a52d6567393d2cbd75b58a5",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "31a9486ad5012946d5b2701ffa779f7600e8bcf70a52d6567393d2cbd75b58a5",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.setup.your.journal",
       "source": "f190cff975cfb762322a318d36eb1568178fe94bcd17fdfc8777816d4470dfbf",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "f190cff975cfb762322a318d36eb1568178fe94bcd17fdfc8777816d4470dfbf",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.updates.deferred",
       "source": "eb8169286f328593fc1674ebdcf6f401fb7778e15632e3dda8537ba0566bedd5",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "eb8169286f328593fc1674ebdcf6f401fb7778e15632e3dda8537ba0566bedd5",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.updates.ready.to.install",
       "source": "c6ad73bdc3439aae2de99bda9a53465c9a5d6a11687b0eb42339ac5b036f4eef",
       "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "c6ad73bdc3439aae2de99bda9a53465c9a5d6a11687b0eb42339ac5b036f4eef",
+          "contract": "3e6ad1b6b0d35e7958b398151606dc9bb9b008495ef88fc742773d6b277c5804",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.backup",
       "source": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a1b2d383f144e276e8cccc711d226fe1748e6cbd5512651095724cfe60ba6bc9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.blocked",
       "source": "d97c90d79aa7cd63af048f73b1d81634d842537aa5bb9758fffae310f1bcdc1b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d97c90d79aa7cd63af048f73b1d81634d842537aa5bb9758fffae310f1bcdc1b",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.devices",
       "source": "d48e648e6c0b144d6fde462418c0bf77f0b6a2b5e66a080b8b883d534291feff",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "d48e648e6c0b144d6fde462418c0bf77f0b6a2b5e66a080b8b883d534291feff",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.healthy",
       "source": "7aa2db79528c9fc7819ec38f3203d96e68bdaf4fd2ea3f54688c9c54d488a247",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "7aa2db79528c9fc7819ec38f3203d96e68bdaf4fd2ea3f54688c9c54d488a247",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.home",
       "source": "682640950b9214f1f3bffe5f94b9d89e3b5effafbf3e9c21647605df43b5e7d2",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "682640950b9214f1f3bffe5f94b9d89e3b5effafbf3e9c21647605df43b5e7d2",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.journal",
       "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a2066fbd38242d700ca044704ab3b2162561180f1e524d0b34c07041ce88978f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.location",
       "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.not.set",
       "source": "a9062c5ea22e2b44d8a1d053feaa7582a77247043eb087fea19095927d028fa2",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "a9062c5ea22e2b44d8a1d053feaa7582a77247043eb087fea19095927d028fa2",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.run.state",
       "source": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "290401bcdb2f6044a9924317896bdf924f524209d097967e915378dd24482b3f",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.running",
       "source": "51abeaec6e8e3212204617e760f35cbfecd424023d8adbdc61668b2e60aa24b9",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "51abeaec6e8e3212204617e760f35cbfecd424023d8adbdc61668b2e60aa24b9",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.starting",
       "source": "86c0e85e91f9bea3f24b68537ab8e16a899d2a345a59321e4be8261bad6145d1",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "86c0e85e91f9bea3f24b68537ab8e16a899d2a345a59321e4be8261bad6145d1",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.startup",
       "source": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "69a5637099ea588cb4d168d6f8f36a50899d1c23e6e3fc923ffa769943817e1c",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.stopped",
       "source": "1c1cc4feaf896a2ffc78fa3585c4b3ab59157702f265adf605758c776ba3b376",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "1c1cc4feaf896a2ffc78fa3585c4b3ab59157702f265adf605758c776ba3b376",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.unknown",
       "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "2642526c3fad2ee76ba9d4b61184c7918fd26f1c4e0c8484492f2e4b15ca7ce4",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     },
     {
       "id": "journal.mac.window.model.updates",
       "source": "5435eec9883140ac61ea0040049b5d111a9c753c721976d64955d2e833fb9145",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
-      "locales": []
+      "locales": [
+        {
+          "locale": "es-419",
+          "source": "5435eec9883140ac61ea0040049b5d111a9c753c721976d64955d2e833fb9145",
+          "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+          "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+        }
+      ]
     }
   ]
 }
