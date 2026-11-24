@@ -38,28 +38,45 @@ def snapshot():
     return hashes
 
 
-def compile_table(table, path, destination, previous_table=None):
+def compile_table(table, path, destination, lock_hashes=None):
     rendered = dump(table)
-    path.write_text(rendered)
     if shutil.which("xcrun"):
+        path.write_text(rendered)
         if destination.is_dir():
             shutil.rmtree(destination)
         destination.mkdir(parents=True, exist_ok=True)
         subprocess.run(["xcrun", "xcstringstool", "compile", path,
                         "--output-directory", destination], check=True)
-    elif previous_table is not None and previous_table == rendered and destination.is_dir() and any(destination.rglob("*")):
         return
-    else:
-        raise SystemExit(
-            f"xcrun is not available and {path.relative_to(ROOT)} changed; "
-            "run platforms/macos/scripts/catalog.py on macOS to recompile."
-        )
+    rel = str(path.relative_to(ROOT))
+    dest_prefix = str(destination.relative_to(ROOT)) + "/"
+    locked_dest = {k: v for k, v in (lock_hashes or {}).items() if k.startswith(dest_prefix)}
+    current_dest = (
+        {
+            str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(destination.rglob("*"))
+            if p.is_file()
+        }
+        if destination.is_dir()
+        else {}
+    )
+    if (
+        lock_hashes is not None
+        and hashlib.sha256(rendered.encode("utf-8")).hexdigest() == lock_hashes.get(rel)
+        and locked_dest
+        and current_dest == locked_dest
+    ):
+        path.write_text(rendered)
+        return
+    raise SystemExit(
+        f"xcrun is not available and {rel} or its compiled resources differ from i18n/generated-lock.json; "
+        "run platforms/macos/scripts/catalog.py on macOS to recompile."
+    )
 
 
 def generate(compiler, channel):
     has_xcrun = shutil.which("xcrun") is not None
-    prev_journal = (GENERATED / "Journal.xcstrings").read_text() if (GENERATED / "Journal.xcstrings").is_file() else None
-    prev_info = (GENERATED / "InfoPlist.xcstrings").read_text() if (GENERATED / "InfoPlist.xcstrings").is_file() else None
+    lock_hashes = json.loads(LOCK.read_text()) if LOCK.is_file() else None
     with tempfile.TemporaryDirectory() as temp:
         out = Path(temp) / "targets"
         ir_file = Path(temp) / "ir.json"
@@ -117,8 +134,8 @@ def generate(compiler, channel):
         functions += [f"    public static func {name}({parameters}) -> String {{",
                       f'        {renderer}("{key}", [{", ".join(values)}])', "    }", ""]
     ACCESSORS.write_text("\n".join(functions + ["}", ""]))
-    compile_table(table, GENERATED / "Journal.xcstrings", RUNTIME / "Localization", previous_table=prev_journal)
-    compile_table(info, GENERATED / "InfoPlist.xcstrings", GENERATED / "AppResources", previous_table=prev_info)
+    compile_table(table, GENERATED / "Journal.xcstrings", RUNTIME / "Localization", lock_hashes=lock_hashes)
+    compile_table(info, GENERATED / "InfoPlist.xcstrings", GENERATED / "AppResources", lock_hashes=lock_hashes)
     plist["CFBundleDevelopmentRegion"] = "en-US"
     plist["CFBundleLocalizations"] = ir["locales"]
     PLIST.write_bytes(plistlib.dumps(plist, sort_keys=False))
