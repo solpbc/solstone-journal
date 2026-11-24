@@ -1921,7 +1921,7 @@ journal.window.import.history.load.more.count = { $total_quantity ->
         }
     }
 
-journal.window.import.history.stalled.import = steckt fest: seit 10 Minuten keine Aktualisierungen. Import-ID: { $import_id }.
+journal.window.import.history.stalled.import = stockt: seit 10 Minuten keine Aktualisierungen. Import-ID: { $import_id }.
 
 journal.window.import.import.delete.copy.back.back = zurück
 
@@ -2532,7 +2532,7 @@ journal.window.import.removal.waiting.one.import = { $quantity ->
        *[other] die { $waiting_segments } Segmente von ihm, die für sich im Papierkorb warten, werden mit ihm endgültig gelöscht.
     }
 
-journal.window.import.response.apple.insufficient.space = dieser Import braucht etwa{ $slot1 }{ $need }{ $slot2 }frei, und dieser Datenträger hat{ $slot3 }{ $free }{ $slot4 }frei, wie das System es meldet. gib etwa{ $slot5 }{ $difference } frei, dann starte ihn.
+journal.window.import.response.apple.insufficient.space = dieser Import braucht etwa{ $slot1 }{ $need }{ $slot2 }frei, und diese Festplatte hat{ $slot3 }{ $free }{ $slot4 }frei, wie das System es meldet. gib etwa{ $slot5 }{ $difference } frei, dann starte ihn.
 
 journal.window.import.response.error.a.required.field.is.missing = ein Pflichtfeld fehlt.
 
@@ -2570,7 +2570,7 @@ journal.window.import.response.error.there.are.no.files.to.bring = es gibt keine
 
 journal.window.import.response.error.there.is.nothing.new.in.this = in dieser Quelle gibt es nichts Neues zu importieren.
 
-journal.window.import.response.error.there.s.nothing.to.browse.for = für diesen Import gibt es nichts zum Durchsuchen.
+journal.window.import.response.error.there.s.nothing.to.browse.for = für diesen Import gibt es nichts zum Durchsehen.
 
 journal.window.import.response.error.this.export.is.over.gb.in = dieser Export ist über 2 { $slot1 }. in { $slot2 } exportiere ihn erneut in kleineren Teilen.
 
@@ -3268,7 +3268,7 @@ journal.window.stored.body.summary.facets.many = deinen Facetten { $rest } und {
 
 journal.window.stored.body.summary.facets.one = deiner Facette { $facet }
 
-journal.window.stored.body.summary.facets.with.earlier = { $named } und einer früheren Ablage
+journal.window.stored.body.summary.facets.with.earlier = { $named } und einer früheren Einordnung
 
 journal.window.stored.body.summary.heading = # { $source }-Import
 
