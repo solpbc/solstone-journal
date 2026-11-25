@@ -1772,3 +1772,87 @@ fn a_terminal_segment_publishes_and_indexes_its_screen_text() {
     let spec = resolve_spec(rel).expect("screen text resolves to spec");
     assert_eq!(spec.family, Family::ScreenText);
 }
+
+#[test]
+fn write_sense_and_change_normalizes_subject_prefixes_across_all_outputs() {
+    let (_journal, context) = fixture_journal();
+    solstone_core_facets::create_facet(context.journal.as_path(), "work", "Work", "", "", "", None)
+        .unwrap();
+    solstone_core_facets::create_facet(
+        context.journal.as_path(),
+        "personal",
+        "Personal",
+        "",
+        "",
+        "",
+        None,
+    )
+    .unwrap();
+    let segment = context.day_dir.join("default/120000_60");
+    let talents = segment.join("talents");
+    let mut log = RunLogWriter::open(&context.journal, DAY, "segment");
+
+    let cases = [
+        (
+            "Reported that the owner updated the retry policy.",
+            "Updated the retry policy.",
+            "Reported that the user was reviewing PR comments.",
+            "Reviewing PR comments.",
+            "Your agent ran the test suite and fixed the warning.",
+            "Your agent ran the test suite and fixed the warning.",
+        ),
+        (
+            "The owner edited main.rs.",
+            "Edited main.rs.",
+            "The user asked an AI agent to inspect logs.",
+            "Asked an AI agent to inspect logs.",
+            "You and Maya planned the cut.",
+            "You and Maya planned the cut.",
+        ),
+        (
+            "Reported that the build passed in CI.",
+            "Reported that the build passed in CI.",
+            "Reported that the owner's patch landed.",
+            "Reported that the owner's patch landed.",
+            "Reported that your agent updated the schema.",
+            "Reported that your agent updated the schema.",
+        ),
+    ];
+
+    for (raw_summary, want_summary, raw_work, want_work, raw_personal, want_personal) in cases {
+        let sense = serde_json::json!({
+            "density": "active",
+            "content_type": "coding",
+            "activity_summary": raw_summary,
+            "facets": [
+                {"facet": "work", "level": "high", "activity": raw_work},
+                {"facet": "personal", "level": "low", "activity": raw_personal},
+            ],
+            "entities": [],
+        });
+        write_sense_and_change(
+            &context,
+            &mut log,
+            "120000_60",
+            Some("default"),
+            &segment,
+            sense.as_object().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(talents.join("activity.md")).unwrap(),
+            want_summary
+        );
+        let saved_sense: Value =
+            serde_json::from_slice(&fs::read(talents.join("sense.json")).unwrap()).unwrap();
+        assert_eq!(saved_sense["activity_summary"], want_summary);
+        assert_eq!(saved_sense["facets"][0]["activity"], want_work);
+        assert_eq!(saved_sense["facets"][1]["activity"], want_personal);
+
+        let saved_facets: Value =
+            serde_json::from_slice(&fs::read(talents.join("facets.json")).unwrap()).unwrap();
+        assert_eq!(saved_facets[0]["activity"], want_work);
+        assert_eq!(saved_facets[1]["activity"], want_personal);
+    }
+}
