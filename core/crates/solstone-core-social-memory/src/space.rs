@@ -381,7 +381,11 @@ pub(crate) mod tests {
             format!("at:space/{ALICE}/{SPACE_TYPE}/s1?x=1"),
             format!("at://{ALICE}/{ACTIVITY_COLLECTION}/r1"),
         ] {
-            assert_eq!(space_authority(&refused), Err(SpaceError::BadSpaceRef), "{refused}");
+            assert_eq!(
+                space_authority(&refused),
+                Err(SpaceError::BadSpaceRef),
+                "{refused}"
+            );
         }
     }
 
