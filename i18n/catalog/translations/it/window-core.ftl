@@ -46,7 +46,7 @@ journal.setup.downloads.speech = riconoscimento vocale
 
 journal.setup.downloads.thinking = ragionamento in locale
 
-journal.setup.drive.unsupported = il tuo diario non può funzionare su questo disco perché il disco non può salvare i file come il tuo diario richiede. usa un disco formattato per mac per il tuo diario.
+journal.setup.drive.unsupported = il tuo diario non può funzionare su questo disco perché il disco non può salvare i file come serve al tuo diario. usa un disco formattato per mac per il tuo diario.
 
 journal.setup.fits.app = funziona su ogni dispositivo che scegli e prende ciò che condividi con lei. tutto va nel tuo diario.
 
@@ -298,7 +298,7 @@ journal.setup.step.warning = avviso del passaggio
 
 journal.setup.thinking.change = cambia
 
-journal.setup.thinking.check.unknown = non è stato possibile controllare la configurazione in locale.
+journal.setup.thinking.check.unknown = non è stato possibile controllare la configurazione locale.
 
 journal.setup.thinking.choose.later = scegli il ragionamento quando vuoi. il tuo diario tiene tutto fino ad allora.
 
@@ -626,11 +626,11 @@ journal.window.body.error.hidden.unreadable = il tuo diario non può leggere qua
 
 journal.window.body.error.hidden.unreadable.detail = i giorni del corpo nascosti non si possono leggere
 
-journal.window.body.error.hidden.unsaved = non è stato possibile salvare quella modifica.
+journal.window.body.error.hidden.unsaved = non è stato possibile salvare la modifica.
 
 journal.window.body.error.invalid.request = non è stato possibile usare uno di quei valori.
 
-journal.window.body.error.limit.integer = il limite deve essere un numero intero
+journal.window.body.error.limit.integer = il limite deve essere un intero
 
 journal.window.body.error.limit.minimum = il limite deve essere almeno 1
 
@@ -804,13 +804,13 @@ journal.window.body.logged.who.by = tu, in{ $slot1 }{$source}
 
 journal.window.body.logged.who.you = tu
 
-journal.window.body.message.it.may.already.be.back.in = potrebbe essere già tornato nel tuo diario. ricarica per controllare.
+journal.window.body.message.it.may.already.be.back.in = potrebbe essere già di nuovo nel tuo diario. ricarica per controllare.
 
 journal.window.body.message.it.may.already.be.erased.reload = potrebbe essere già cancellato. ricarica per controllare.
 
 journal.window.body.message.it.may.already.be.in.the = potrebbe essere già nel cestino. ricarica per controllare.
 
-journal.window.body.message.it.s.back.in.your.journal = è tornato nel tuo diario.
+journal.window.body.message.it.s.back.in.your.journal = è di nuovo nel tuo diario.
 
 journal.window.body.message.it.s.in.the.trash.you = è nel cestino. puoi riprovare da lì.
 
@@ -922,15 +922,15 @@ journal.window.body.workout.copy.move.to.trash.move.to.trash = sposta nel cestin
 
 journal.window.body.workout.copy.open.trash.open.trash = apri il cestino
 
-journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può ripristinare.
+journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può recuperare.
 
 journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and.variant2 = esce ora dal tuo diario e attende nel cestino, poi viene cancellato. puoi ripristinarlo fino ad allora.
 
 journal.window.body.workout.copy.recover.recover = ripristina
 
-journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from = le attività, i riepiloghi e le entità ricavati da esso altrove nel tuo diario non vengono cancellati e possono ancora menzionarlo.
+journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from = attività, riepiloghi ed entità ricavati da essa altrove nel tuo diario non vengono cancellati e possono ancora menzionarla.
 
-journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2 = le attività, i riepiloghi e le entità ricavati da esso altrove nel tuo diario restano dove sono e possono ancora menzionarlo.
+journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2 = attività, riepiloghi ed entità ricavati da essa altrove nel tuo diario restano dove sono e possono ancora menzionarla.
 
 journal.window.body.workout.delete.name = elimina { $workout_name }
 
@@ -1032,7 +1032,7 @@ journal.window.chrome.console.reporting.off = l'invio delle segnalazioni è disa
 
 journal.window.chrome.console.summary.load.failed = non è stato possibile caricare una parte di questa pagina.
 
-journal.window.chrome.console.summary.request.failed = non è stato possibile completare quella richiesta.
+journal.window.chrome.console.summary.request.failed = non è stato possibile finire quella richiesta.
 
 journal.window.chrome.console.summary.unexpected = qualcosa in questa pagina non ha funzionato.
 
@@ -1062,7 +1062,7 @@ journal.window.chrome.report.button.label = segnala questo
 
 journal.window.chrome.report.default.subject = errore di convey
 
-journal.window.chrome.report.error.code.label = codice di errore
+journal.window.chrome.report.error.code.label = codice errore
 
 journal.window.chrome.report.privacy.note = non esce niente da questo diario finché non invii il modulo sul sito di supporto.
 
@@ -2636,7 +2636,7 @@ journal.window.home.welcome.first.week.framing = la maggior parte di ciò che il
 
 journal.window.home.window.explanation.analysis.will.be.available.after.the = l'analisi sarà disponibile dopo il prossimo ciclo di elaborazione.
 
-journal.window.home.window.explanation.backup.status.is.unavailable.right.now = lo stato del backup non è disponibile in questo momento.
+journal.window.home.window.explanation.backup.status.is.unavailable.right.now = lo stato del backup non è disponibile adesso.
 
 journal.window.home.window.explanation.choose.where.the.thinking.happens = scegli dove avviene il ragionamento
 
@@ -2714,7 +2714,7 @@ journal.window.loading.settings = caricamento delle impostazioni…
 
 journal.window.loading.sources = caricamento delle fonti…
 
-journal.window.loading.speakers = caricamento dei parlanti…
+journal.window.loading.speakers = caricamento dei parlanti in corso…
 
 journal.window.loading.stats = caricamento delle statistiche…
 
@@ -2826,7 +2826,7 @@ journal.window.more.text.nothing.yet = ancora niente
 
 journal.window.more.tooltip.always.in.the.side.rail = sempre nella barra laterale
 
-journal.window.more.visible.text.couldn.t.save.that.try.again = non è stato possibile salvarlo. riprova.
+journal.window.more.visible.text.couldn.t.save.that.try.again = non è stato possibile salvare. riprova.
 
 journal.window.more.visible.text.every.view.your.journal.has.what = ogni vista del tuo diario: cosa mostra ciascuna, e da dove arrivano i suoi contenuti.
 
@@ -3122,7 +3122,7 @@ journal.window.shared.api.request.failed = Richiesta non riuscita
 
 journal.window.shared.api.request.failed.http = Richiesta non riuscita (HTTP{ $slot1 }{ $http_status })
 
-journal.window.shared.api.window.explanation.couldn.t.finish.that.request = non è stato possibile completare quella richiesta.
+journal.window.shared.api.window.explanation.couldn.t.finish.that.request = non è stato possibile finire quella richiesta.
 
 journal.window.shared.app.disclosure.label.show.details = mostra i dettagli
 
@@ -3154,7 +3154,7 @@ journal.window.shared.app.window.explanation.also.remove.it.from.your.backups = 
 
 journal.window.shared.app.window.explanation.also.remove.them.from.your.backups = rimuovili anche dai tuoi backup
 
-journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens = il backup è in pausa, quindi questo avviene una volta che lo riprendi.
+journal.window.shared.app.window.explanation.backup.is.paused.so.this.happens = il backup è in pausa, quindi questo avviene quando lo riprendi.
 
 journal.window.shared.app.window.explanation.couldn.t.load.this.section = non è stato possibile caricare questa sezione
 
@@ -3856,7 +3856,7 @@ journal.window.shell.error.unknown.view = vista sconosciuta
 
 journal.window.shell.error.view.must.be.a.string = la vista deve essere una stringa
 
-journal.window.shell.error.your.settings.couldn.t.be.read = non è stato possibile leggere le tue impostazioni.
+journal.window.shell.error.your.settings.couldn.t.be.read = non è stato possibile leggere le impostazioni.
 
 journal.window.shell.guard.authorization.revoked = non è stato possibile usare quel dispositivo accoppiato perché è stato revocato.
 
@@ -3908,7 +3908,7 @@ journal.window.shell.redirect.instruction = Reindirizzamento automatico all'URL 
 
 journal.window.shell.redirect.title = Reindirizzamento...
 
-journal.window.shell.settings.read.failed = non è stato possibile leggere le tue impostazioni.
+journal.window.shell.settings.read.failed = non è stato possibile leggere le impostazioni.
 
 journal.window.shell.skip.to.workspace = salta all'area di lavoro
 
@@ -4044,7 +4044,7 @@ journal.window.view.search.label = ricerca
 
 journal.window.view.search.source = tutto ciò che il tuo diario tiene
 
-journal.window.view.settings.description = il tuo profilo, le chiavi, la trascrizione, lo spazio di archiviazione e le faccette
+journal.window.view.settings.description = il tuo profilo, le chiavi, la trascrizione, lo spazio di archiviazione e le facette
 
 journal.window.view.settings.label = impostazioni
 

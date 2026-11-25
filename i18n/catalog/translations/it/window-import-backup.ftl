@@ -178,7 +178,7 @@ journal.window.backup.copy.action.labels.cleanup.blocked = non è stato possibil
 
 journal.window.backup.copy.action.labels.cleanup.checking = controllo della disponibilità del backup
 
-journal.window.backup.copy.action.labels.cleanup.contended = riprova a controllare tra un momento.
+journal.window.backup.copy.action.labels.cleanup.contended = prova a controllare di nuovo tra un momento.
 
 journal.window.backup.copy.action.labels.cleanup.waiting = le azioni di backup sono in attesa
 
@@ -310,7 +310,7 @@ journal.window.backup.copy.error.intro = inizia dalla chiave di ripristino. se f
 
 journal.window.backup.copy.hosted.location.detail.summary = posizione esatta dello spazio di archiviazione
 
-journal.window.backup.copy.hosted.location.label = spazio di archiviazione che { $slot1 } gestisce
+journal.window.backup.copy.hosted.location.label = archiviazione che { $slot1 } gestisce
 
 journal.window.backup.copy.hosted.manage.label = gestisci il tuo backup nel portale dei servizi →
 
@@ -840,7 +840,7 @@ journal.window.backup.response.backup.refusal.that.day.couldn.t.be.used = non è
 
 journal.window.backup.response.backup.refusal.that.didn.t.match.your.recovery = non corrispondeva alla tua chiave di ripristino.
 
-journal.window.backup.response.backup.refusal.that.request.didn.t.finish = quella richiesta non è finita.
+journal.window.backup.response.backup.refusal.that.request.didn.t.finish = quella richiesta non è terminata.
 
 journal.window.backup.response.backup.refusal.that.s.a.different.repository.confirm = è un repository diverso. conferma la modifica per usarlo.
 
@@ -1189,7 +1189,7 @@ journal.window.backup.verification.parts.checked = { $parts_quantity ->
 
 journal.window.backup.verification.parts.checked.all = controllato tutto il tuo backup questa settimana.
 
-journal.window.backup.visible.text.checking.backup.status = controllo dello stato del backup…
+journal.window.backup.visible.text.checking.backup.status = controllo dello stato del backup in corso…
 
 journal.window.backup.visible.text.couldn.t.load.backup.settings.reload = non è stato possibile caricare le impostazioni del backup. ricarica la pagina e riprova.
 
@@ -1201,7 +1201,7 @@ journal.window.backup.window.explanation.a.backup.waits.until.this.finishes = un
 
 journal.window.handoff.sme.already.enabled.detail = solstone.me è già attivo
 
-journal.window.handoff.sme.consent.link.prepare.failed.detail = non è stato possibile avviare l'attivazione di solstone.me. riprova.
+journal.window.handoff.sme.consent.link.prepare.failed.detail = non è stato possibile iniziare ad attivare solstone.me. riprova.
 
 journal.window.handoff.sme.outcome.guidance.expired = la richiesta non è stata consentita entro circa quindici minuti. attiva di nuovo solstone.me quando vuoi.
 
@@ -1271,17 +1271,17 @@ journal.window.import.apple.words.keeps.running.this.keeps.running.if.you.close 
 
 journal.window.import.apple.words.reading.reading.your.export = lettura della tua esportazione…
 
-journal.window.import.body.facet.apple.ask.make.body = crea una facetta salute per i tuoi allenamenti, il sonno e gli altri dati sulla salute?
+journal.window.import.body.facet.apple.ask.make.body = crea una facetta corpo per i tuoi allenamenti, il sonno e gli altri dati del corpo?
 
 journal.window.import.body.facet.apple.ask.named = archivia i tuoi allenamenti, il sonno e gli altri dati sulla salute sotto la facetta a cui hai dato il nome { $facet_name }?
 
-journal.window.import.body.facet.apple.ask.unmute = la tua facetta salute è silenziata. riattivala per i tuoi allenamenti, il sonno e gli altri dati sulla salute?
+journal.window.import.body.facet.apple.ask.unmute = la tua facetta corpo è silenziata. riattivala per i tuoi allenamenti, il sonno e gli altri dati del corpo?
 
 journal.window.import.body.facet.apple.files.named = questo archivia tutto il contenuto di questa esportazione sotto { $facet_name }, compreso ciò che è già nella pagina delle attività. l'anteprima dice quanti, al massimo, potrebbero spostarsi.
 
-journal.window.import.body.facet.apple.no.means = se dici no, i nuovi allenamenti e il sonno non sono nella pagina delle attività, e gli agenti limitati ad alcune faccette non li vedranno. la ricerca e l'app salute li mostrano ancora.
+journal.window.import.body.facet.apple.no.means = se dici no, i nuovi allenamenti e il sonno non sono nella pagina delle attività, e gli agenti limitati ad alcune facette non li vedranno. la ricerca e l'app salute li mostrano ancora.
 
-journal.window.import.body.facet.apple.none.hint = i nuovi allenamenti e il sonno in questa importazione non sono nella pagina delle attività, e gli agenti limitati ad alcune faccette non li vedranno. la ricerca e l'app salute li mostrano ancora.
+journal.window.import.body.facet.apple.none.hint = i nuovi allenamenti e il sonno in questa importazione non sono nella pagina delle attività, e gli agenti limitati ad alcune facette non li vedranno. la ricerca e l'app salute li mostrano ancora.
 
 journal.window.import.body.facet.shared.answer.failed = non è stato possibile salvare la tua risposta. riprova.
 
@@ -1297,9 +1297,9 @@ journal.window.import.body.facet.shared.heading = facetta
 
 journal.window.import.body.facet.shared.no = no
 
-journal.window.import.body.facet.shared.no.means = se dici no, i nuovi allenamenti non sono nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune faccette non li vedranno. la ricerca e l'app salute li mostrano ancora.
+journal.window.import.body.facet.shared.no.means = se dici no, i nuovi allenamenti non sono nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune facette non li vedranno. la ricerca e l'app salute li mostrano ancora.
 
-journal.window.import.body.facet.shared.none.hint = i nuovi allenamenti in questa importazione non sono nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune faccette non li vedranno. la ricerca e l'app salute li mostrano ancora.
+journal.window.import.body.facet.shared.none.hint = i nuovi allenamenti in questa importazione non sono nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune facette non li vedranno. la ricerca e l'app salute li mostrano ancora.
 
 journal.window.import.body.facet.shared.none.option = nessuna facetta
 
@@ -1459,7 +1459,7 @@ journal.window.import.consent.import.removal.staysbodymany.activities.summaries.
 
 journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2 = attività, riepiloghi ed entità ricavati da esse altrove nel tuo diario restano dove sono e possono ancora menzionarle.
 
-journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = le attività ricavate da esse le tolgono ora, e i resoconti dei loro giorni e delle loro settimane escono dalla ricerca. il tuo diario poi li riscrive da ciò che resta, con il pensiero che hai scelto.
+journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = le attività ricavate da essi vengono scartate ora, e i resoconti dei loro giorni e delle loro settimane lasciano la ricerca. il tuo diario poi li riscrive da ciò che resta, con il ragionamento che hai scelto.
 
 journal.window.import.consent.import.removal.title.delete.this.import = elimina questa importazione?
 
@@ -2031,7 +2031,7 @@ journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it 
 
 journal.window.import.import.delete.copy.message.it.may.already.be.back.in = potrebbe essere già di nuovo nel tuo diario. ricarica per controllare.
 
-journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload = potrebbe essere già stato cancellato. ricarica per controllare.
+journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload = potrebbe essere già cancellato. ricarica per controllare.
 
 journal.window.import.import.delete.copy.message.it.may.already.be.in.the = potrebbe essere già nel cestino. ricarica per controllare.
 
@@ -2227,7 +2227,7 @@ journal.window.import.ox.discard.not.waiting = l'importazione non è più in att
 
 journal.window.import.ox.history.review.link = rivedi e conferma
 
-journal.window.import.ox.status.ready.to.review = pronto da rivedere
+journal.window.import.ox.status.ready.to.review = pronto per rivedere
 
 journal.window.import.ox.tray.attention.badge = richiede attenzione
 
@@ -2245,13 +2245,13 @@ journal.window.import.ox.tray.in.journal.stage = nel tuo diario · { $stage }
 
 journal.window.import.ox.tray.review.action = rivedi e conferma
 
-journal.window.import.ox.tray.review.detail = salvato nel tuo diario. mostra l'anteprima e conferma per avviare.
+journal.window.import.ox.tray.review.detail = salvato nel tuo diario. mostra l'anteprima e conferma per iniziare.
 
 journal.window.import.ox.tray.review.heading = in attesa della tua revisione
 
 journal.window.import.ox.tray.sending.device = invio dal tuo { $device }…
 
-journal.window.import.ox.tray.sending.generic = invio al tuo diario…
+journal.window.import.ox.tray.sending.generic = invio al tuo diario in corso…
 
 journal.window.import.ox.tray.view.import = vedi l'importazione
 
@@ -2489,11 +2489,11 @@ journal.window.import.progress.thinking.waiting = { $quantity ->
 
 journal.window.import.progress.time.elapsed = { $elapsed_time } trascorso
 
-journal.window.import.progress.time.hours.minutes = { $hours }h { $minutes }m
+journal.window.import.progress.time.hours.minutes = { $hours } h { $minutes } min
 
 journal.window.import.progress.time.minutes.seconds = { $minutes }m { $seconds }s
 
-journal.window.import.progress.time.seconds = { $seconds }s
+journal.window.import.progress.time.seconds = { $seconds } s
 
 journal.window.import.progress.time.stage.total = { $stage_time } ({ $total_time } in totale)
 
@@ -2967,7 +2967,7 @@ journal.window.import.stage.names.entities.merging.entities = unione delle entit
 
 journal.window.import.stage.names.execution.reading.the.import = lettura dell'importazione…
 
-journal.window.import.stage.names.facets.merging.facets = unione delle faccette…
+journal.window.import.stage.names.facets.merging.facets = unione delle facette…
 
 journal.window.import.stage.names.importing.reading.the.import = lettura dell'importazione…
 
@@ -2983,9 +2983,9 @@ journal.window.import.stage.names.segmenting.preparing.segments = preparazione d
 
 journal.window.import.stage.names.segments.merging.segments = unione dei segmenti…
 
-journal.window.import.stage.names.transcribing.transcribing.audio = trascrizione dell'audio…
+journal.window.import.stage.names.transcribing.transcribing.audio = trascrizione dell'audio in corso…
 
-journal.window.import.stage.names.transcription.transcribing.audio = trascrizione dell'audio…
+journal.window.import.stage.names.transcription.transcribing.audio = trascrizione dell'audio in corso…
 
 journal.window.import.stage.names.writing.writing.to.journal = scrittura nel diario…
 
@@ -3097,7 +3097,7 @@ journal.window.import.strings.entries.entries = elementi
 
 journal.window.import.strings.error.error = errore
 
-journal.window.import.strings.facets.facets = faccette
+journal.window.import.strings.facets.facets = facette
 
 journal.window.import.strings.failed.at.failed.at = non riuscito il
 
@@ -3153,7 +3153,7 @@ journal.window.import.strings.preview.import.preview.import = mostra l'anteprima
 
 journal.window.import.strings.processing.facts.processing.facts = fatti dell'elaborazione
 
-journal.window.import.strings.processing.processing = elaborazione…
+journal.window.import.strings.processing.processing = elaborazione in corso…
 
 journal.window.import.strings.profile.link.review.profile.settings = rivedi le impostazioni del profilo
 
@@ -3181,7 +3181,7 @@ journal.window.import.strings.start.unknown.detail.this.file.is.saved.but.its = 
 
 journal.window.import.strings.start.unknown.start.status.unknown = stato di avvio sconosciuto
 
-journal.window.import.strings.starting.starting = avvio…
+journal.window.import.strings.starting.starting = avvio in corso…
 
 journal.window.import.strings.status.failed.couldn.t.load.the.import.s = non è stato possibile caricare lo stato dell'importazione. controlla di nuovo.
 
@@ -3317,7 +3317,7 @@ journal.window.import.visible.text.stalled.no.updates.in.minutes = in stallo: ne
 
 journal.window.import.visible.text.start.import = avvia l'importazione
 
-journal.window.import.visible.text.starting = avvio
+journal.window.import.visible.text.starting = avvio in corso
 
 journal.window.import.visible.text.status.unavailable = stato non disponibile
 
@@ -3439,13 +3439,13 @@ journal.window.stored.body.summary.entries.stayed.deleted = { $quantity ->
 
 journal.window.stored.body.summary.facet.chosen = i nuovi elementi sono archiviati sotto la facetta { $facet }.
 
-journal.window.stored.body.summary.facet.none = nessuna facetta è stata scelta per questa importazione. gli elementi senza facetta sono leggibili da un agente che può leggere tutto il tuo diario, e non da uno limitato alle faccette scelte.
+journal.window.stored.body.summary.facet.none = nessuna facetta è stata scelta per questa importazione. gli elementi senza facetta sono leggibili da un agente che può leggere tutto il tuo diario, e non da uno limitato alle facette scelte.
 
 journal.window.stored.body.summary.facets.another = un'altra facetta
 
 journal.window.stored.body.summary.facets.earlier.only = un'archiviazione precedente
 
-journal.window.stored.body.summary.facets.many = le tue faccette { $rest } e { $last }
+journal.window.stored.body.summary.facets.many = le tue facette { $rest } e { $last }
 
 journal.window.stored.body.summary.facets.one = la tua facetta { $facet }
 
@@ -3681,11 +3681,11 @@ journal.window.stored.body.summary.strava.conversion.waiting = non è ancora sta
 
 journal.window.stored.body.summary.strava.facet.chosen = hai scelto la facetta { $facet } per questa importazione.
 
-journal.window.stored.body.summary.strava.facet.chosen.none = non hai scelto nessuna facetta per questa importazione: un allenamento senza facetta non è in elenco nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune faccette non lo vedono. la ricerca e l'app body lo mostrano ancora.
+journal.window.stored.body.summary.strava.facet.chosen.none = non hai scelto nessuna facetta per questa importazione: un allenamento senza facetta non è in elenco nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune facette non lo vedono. la ricerca e l'app body lo mostrano ancora.
 
 journal.window.stored.body.summary.strava.facet.default = i nuovi allenamenti sono archiviati sotto la facetta { $facet }, quella che hai scelto per le importazioni da Strava.
 
-journal.window.stored.body.summary.strava.facet.unset = i nuovi allenamenti non hanno una facetta, perché non ne è stata scelta una per questa importazione e non ne è impostata una per le importazioni da Strava, oppure quella impostata è disattivata o assente: un allenamento senza facetta non è in elenco nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune faccette non lo vedono. la ricerca e l'app body lo mostrano ancora.
+journal.window.stored.body.summary.strava.facet.unset = i nuovi allenamenti non hanno una facetta, perché non ne è stata scelta una per questa importazione e non ne è impostata una per le importazioni da Strava, oppure quella impostata è disattivata o assente: un allenamento senza facetta non è in elenco nella pagina delle attività, non ne derivano persone o cose, e gli agenti limitati ad alcune facette non lo vedono. la ricerca e l'app body lo mostrano ancora.
 
 journal.window.stored.body.summary.strava.filed = { $quantity ->
     [one] 1 allenamento è ora archiviato sotto { $facet }.
@@ -3763,7 +3763,7 @@ journal.window.stored.body.summary.strava.names.failed = { $quantity ->
 
 journal.window.stored.body.summary.strava.names.none.created = non sono state aggiunte persone o cose questa volta.
 
-journal.window.stored.body.summary.strava.names.promotion.unavailable = non è stato possibile aggiungere persone o cose questa volta, perché non è stato possibile leggere le tue faccette. importare di nuovo riprova un'altra volta.
+journal.window.stored.body.summary.strava.names.promotion.unavailable = non è stato possibile aggiungere persone o cose questa volta, perché non è stato possibile leggere le tue facette. importare di nuovo riprova un'altra volta.
 
 journal.window.stored.body.summary.strava.names.read = { $quantity ->
     [one] le parole proprie di 1 allenamento sono state lette per le persone e l'attrezzatura che nominano.

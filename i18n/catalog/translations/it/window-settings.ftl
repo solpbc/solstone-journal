@@ -20,7 +20,7 @@ journal.window.local.access.invalid.open = dì se l'accesso locale è aperto: { 
 
 journal.window.local.access.link.expired = questo link è già stato usato oppure è scaduto.
 
-journal.window.local.access.save.failed = non è stato possibile salvare la tua scelta. riprova, per favore.
+journal.window.local.access.save.failed = non è stato possibile salvare la tua scelta. per favore riprova.
 
 journal.window.local.access.unavailable = questa scelta richiede la connessione privata del tuo diario su questo computer, che ora non è in esecuzione. l'accesso locale resta aperto finché non lo è.
 
@@ -32,7 +32,7 @@ journal.window.mcp.owner.diagnostic.facet.read = non è stato possibile leggere 
 
 journal.window.mcp.owner.diagnostic.facet.unknown = facetta sconosciuta { $name }
 
-journal.window.mcp.owner.diagnostic.facets.list = non è stato possibile elencare le faccette dichiarate: { $error }
+journal.window.mcp.owner.diagnostic.facets.list = non è stato possibile elencare le facette dichiarate: { $error }
 
 journal.window.mcp.owner.diagnostic.label.ascii.control = i byte di controllo { $literal_ascii } non sono ammessi
 
@@ -178,7 +178,7 @@ journal.window.network.check.pairing.cta = controlla l'accoppiamento
 
 journal.window.network.client.last.added.at = ultimo aggiunto { $timestamp }
 
-journal.window.network.computer.linux.note = su linux, puoi anche salvare il link come { $filename } ed eseguire:
+journal.window.network.computer.linux.note = su linux puoi anche salvare il link come { $filename } ed eseguirlo:
 
 journal.window.network.computer.step.one = invia il link di accoppiamento qui sotto a quel computer e aprilo lì
 
@@ -362,7 +362,7 @@ journal.window.network.local.network.agents.on = il tuo diario resta aperto ai d
 
 journal.window.network.local.network.close.confirm = chiudere il tuo diario ai dispositivi sulla tua rete? qualsiasi dispositivo connesso ora sulla tua rete si disconnetterà.
 
-journal.window.network.local.network.close.cta = chiuso ai dispositivi sulla tua rete
+journal.window.network.local.network.close.cta = chiudi ai dispositivi sulla tua rete
 
 journal.window.network.local.network.failed = non è stato possibile cambiare se il tuo diario è aperto ai dispositivi sulla tua rete. riprova.
 
@@ -372,7 +372,7 @@ journal.window.network.local.network.firewall.blocked.note = windows ha una rego
 
 journal.window.network.local.network.firewall.note = se windows non ha chiesto e un dispositivo non riesce ancora a connettersi al tuo diario, una scelta precedente in windows potrebbe bloccare journal. un amministratore può consentirlo in { $windowsSecurity }, sotto { $windowsPath }.
 
-journal.window.network.local.network.not.reachable = i dispositivi non riescono a connettersi al tuo diario in questo momento.
+journal.window.network.local.network.not.reachable = i dispositivi non possono connettersi al tuo diario in questo momento.
 
 journal.window.network.local.network.open = aperto ai dispositivi sulla tua rete
 
@@ -582,7 +582,7 @@ journal.window.network.status.text.journal.id.copied = id del diario copiato
 
 journal.window.network.status.text.open.the.services.portal = apri il portale dei servizi
 
-journal.window.network.status.text.time.unavailable = orario non disponibile
+journal.window.network.status.text.time.unavailable = ora non disponibile
 
 journal.window.network.status.text.try.again = riprova
 
@@ -596,11 +596,11 @@ journal.window.network.success.remove.label = disaccoppia questo dispositivo
 
 journal.window.network.success.removed = disaccoppiato. il dispositivo non può connettersi al tuo diario finché non viene accoppiato di nuovo.
 
-journal.window.network.success.verify.note = su quel dispositivo, controlla che mostri questa stessa marca, poi rispondi lì. non l'hai accoppiato?
+journal.window.network.success.verify.note = su quel dispositivo, controlla che mostri la stessa marca, poi rispondi lì. non l'hai accoppiato?
 
-journal.window.network.success.verify.note.anywhere = su quel dispositivo, controlla che mostri questa stessa marca, poi rispondi lì. può connettersi al tuo diario da ovunque. non l'hai accoppiato?
+journal.window.network.success.verify.note.anywhere = su quel dispositivo, controlla che mostri la stessa marca, poi rispondi lì. può connettersi al tuo diario da qualsiasi luogo. non l'hai accoppiato?
 
-journal.window.network.success.verify.note.this.computer = se l'app di solstone chiede, controlla che mostri questa stessa marca, poi rispondi lì. non l'hai accoppiato?
+journal.window.network.success.verify.note.this.computer = se l'app di solstone chiede, controlla che mostri la stessa marca, poi rispondi lì. non l'hai accoppiato?
 
 journal.window.network.text.loading.network = caricamento della rete…
 
@@ -630,7 +630,7 @@ journal.window.network.visible.text.journal = diario
 
 journal.window.network.visible.text.last.added = ultimo aggiunto
 
-journal.window.network.visible.text.last.check.in = ultimo check-in
+journal.window.network.visible.text.last.check.in = ultimo controllo
 
 journal.window.network.visible.text.last.journal.segment = ultimo segmento del diario
 
@@ -640,7 +640,7 @@ journal.window.network.visible.text.loading.devices = caricamento dei dispositiv
 
 journal.window.network.visible.text.mark = marca
 
-journal.window.network.visible.text.still.working = sta ancora lavorando…
+journal.window.network.visible.text.still.working = ancora in corso…
 
 journal.window.network.visible.text.unavailable = non disponibile
 
@@ -884,7 +884,7 @@ journal.window.settings.button.label.erase.face.data = cancella i dati del volto
 
 journal.window.settings.button.label.erase.face.data.variant2 = cancella i dati del volto
 
-journal.window.settings.button.label.facets = faccette
+journal.window.settings.button.label.facets = facette
 
 journal.window.settings.button.label.guide = guida
 
@@ -904,7 +904,7 @@ journal.window.settings.button.label.preview = mostra l'anteprima
 
 journal.window.settings.button.label.profile = profilo
 
-journal.window.settings.button.label.show.older = mostra i più vecchi
+journal.window.settings.button.label.show.older = mostra i meno recenti
 
 journal.window.settings.button.label.storage = archiviazione
 
@@ -970,7 +970,7 @@ journal.window.settings.config.detail.unknown.section = Sezione sconosciuta:{ $s
 
 journal.window.settings.consent.facet.delete.copy.back.back = indietro
 
-journal.window.settings.consent.facet.delete.copy.busy.something.else.is.changing.it.right = qualcos'altro la sta cambiando in questo momento. riprova tra un minuto.
+journal.window.settings.consent.facet.delete.copy.busy.something.else.is.changing.it.right = qualcos'altro la sta cambiando proprio ora. riprova tra un minuto.
 
 journal.window.settings.consent.facet.delete.copy.button.delete.this.facet = elimina questa facetta
 
@@ -998,7 +998,7 @@ journal.window.settings.consent.facet.delete.copy.list.the.notes.it.keeps.about.
 
 journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.back.in = potrebbe essere già di nuovo nel tuo diario. ricarica per controllare.
 
-journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.erased.reload = potrebbe essere già cancellata. ricarica per controllare.
+journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.erased.reload = potrebbe essere già cancellato. ricarica per controllare.
 
 journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.in.the = potrebbe essere già nel cestino. ricarica per controllare.
 
@@ -1016,11 +1016,11 @@ journal.window.settings.consent.facet.delete.copy.newname.a.new.facet.you.give.t
 
 journal.window.settings.consent.facet.delete.copy.opentrash.open.trash = apri il cestino
 
-journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and = esce dal tuo diario ora e non può essere recuperata.
+journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può recuperare.
 
 journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = esce dal tuo diario ora e aspetta nel cestino, poi viene cancellata. puoi recuperarla fino ad allora.
 
-journal.window.settings.consent.facet.delete.copy.recover.recover = recupera
+journal.window.settings.consent.facet.delete.copy.recover.recover = ripristina
 
 journal.window.settings.consent.facet.delete.copy.recovering.if.you.recover.it.what.came = se la recuperi, ciò che è arrivato nel tuo diario mentre era nel cestino non viene smistato in essa, e un segmento condiviso con un'altra facetta potrebbe non tornare ad essa.
 
@@ -1154,7 +1154,7 @@ journal.window.settings.consent.trash.copy.range.choose.a.number.from.to = scegl
 
 journal.window.settings.consent.trash.copy.recordingintrash.recover.its.segment.from.the.trash = recupera prima il suo segmento dal cestino, poi questo.
 
-journal.window.settings.consent.trash.copy.recover.recover = recupera
+journal.window.settings.consent.trash.copy.recover.recover = ripristina
 
 journal.window.settings.consent.trash.copy.recoverfailedmany.couldn.t.recover.those.so.they = non è stato possibile recuperarli, quindi sono ancora nel cestino. riprova.
 
@@ -1212,7 +1212,7 @@ journal.window.settings.consent.trash.copy.speakersreplaces.recovering.puts.back
 
 journal.window.settings.consent.trash.copy.staysmany.summaries.made.from.them.elsewhere.in = i riepiloghi fatti a partire da loro altrove nel tuo diario non vengono cancellati e possono ancora menzionarli.
 
-journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = i riepiloghi fatti a partire da questo altrove nel tuo diario non vengono cancellati e possono ancora menzionarlo.
+journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = i riepiloghi ricavati da esso altrove nel tuo diario non vengono cancellati e possono ancora menzionarlo.
 
 journal.window.settings.consent.trash.copy.stopped.removing.erased.things.from.your.backups = la rimozione delle cose cancellate dai tuoi backup si è fermata a metà. il tuo diario la riprende da solo.
 
@@ -1510,7 +1510,7 @@ journal.window.settings.granola.guide.settings = clicca sul nome del tuo spazio 
 
 journal.window.settings.granola.last.added = ultimo aggiunto
 
-journal.window.settings.granola.last.checked = ultimo controllato
+journal.window.settings.granola.last.checked = ultimo controllo
 
 journal.window.settings.granola.meetings = riunioni
 
@@ -1616,7 +1616,7 @@ journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.othe
 
 journal.window.settings.http.retired.facet.names.unreadable.run.solstone.journal.facet.doctor.fix = esegui `{ $slot1 }` sul computer su cui si trova il tuo diario, poi riprova
 
-journal.window.settings.http.retired.facet.names.unreadable.your.journal.s.record.of.past = non è stato possibile leggere il registro dei nomi passati delle faccette del tuo diario, quindi non è stata aggiunta nessuna facetta.
+journal.window.settings.http.retired.facet.names.unreadable.your.journal.s.record.of.past = non è stato possibile leggere il registro dei nomi passati delle facette del tuo diario, quindi non è stata aggiunta nessuna facetta.
 
 journal.window.settings.http.settings.operation.failed.with.detail.those.settings.couldn.t.be.saved = non è stato possibile salvare quelle impostazioni.
 
@@ -1630,7 +1630,7 @@ journal.window.settings.importance.labels.normal.normal = normale
 
 journal.window.settings.link.label.confidential.setup = configurazione iniziale confidenziale
 
-journal.window.settings.link.label.facets = faccette
+journal.window.settings.link.label.facets = facette
 
 journal.window.settings.link.label.set.up.your.voice.first = configura prima la tua voce
 
@@ -1724,7 +1724,7 @@ journal.window.settings.option.label.cpu.force.processor.runtime = { $slot1 } - 
 
 journal.window.settings.option.label.cuda.force.nvidia.runtime = { $slot1 } - forza l'ambiente di esecuzione { $slot2 }
 
-journal.window.settings.option.label.facets = faccette
+journal.window.settings.option.label.facets = facette
 
 journal.window.settings.option.label.guide = guida
 
@@ -1869,817 +1869,817 @@ journal.window.settings.removal.detail.the.selection.couldn.t.be.read = non è s
 journal.window.settings.removal.history.action.backup.erase = { $presentation ->
     *[none-plain] rimosso dai tuoi backup
      [none-erasing] rimosso dai tuoi backup, cancellando ciò che era d'intralcio
-     [none-except] rimosso dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni dai tuoi backup
      [transcripts-erasing] rimosso nelle trascrizioni dai tuoi backup, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo dai tuoi backup
      [body-erasing] rimosso nel corpo dai tuoi backup, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione dai tuoi backup
      [import-erasing] rimosso nell'importazione dai tuoi backup, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità dai tuoi backup
      [entities-erasing] rimosso nelle entità dai tuoi backup, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni dai tuoi backup
      [settings-erasing] rimosso nelle impostazioni dai tuoi backup, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio dai tuoi backup
      [home-erasing] rimosso in inizio dai tuoi backup, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso dai tuoi backup
      [backup-erasing] rimosso dai tuoi backup, cancellando ciò che era d'intralcio
-     [backup-except] rimosso dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti dai tuoi backup
      [agents-erasing] rimosso negli agenti dai tuoi backup, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività dai tuoi backup
      [activities-erasing] rimosso nelle attività dai tuoi backup, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti dai tuoi backup
      [speakers-erasing] rimosso nei parlanti dai tuoi backup, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando dai tuoi backup
      [cli-erasing] rimosso dalla riga di comando dai tuoi backup, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando dai tuoi backup, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando dai tuoi backup, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando dai tuoi backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.backup.erase.partly = { $presentation ->
     *[none-plain] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [none-erasing] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [none-except] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [transcripts-erasing] rimosso nelle trascrizioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [body-erasing] rimosso nel corpo dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [import-erasing] rimosso nell'importazione dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [entities-erasing] rimosso nelle entità dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [settings-erasing] rimosso nelle impostazioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [home-erasing] rimosso in inizio dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [backup-erasing] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [backup-except] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [agents-erasing] rimosso negli agenti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [activities-erasing] rimosso nelle attività dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [speakers-erasing] rimosso nei parlanti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora
      [cli-erasing] rimosso dalla riga di comando dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando dai tuoi backup, tranne alcuni più vecchi che lo contengono ancora, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.backup.erase.shared = { $presentation ->
     *[none-plain] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [none-erasing] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [none-except] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [transcripts-erasing] rimosso nelle trascrizioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [body-erasing] rimosso nel corpo dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [import-erasing] rimosso nell'importazione dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [entities-erasing] rimosso nelle entità dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [settings-erasing] rimosso nelle impostazioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [home-erasing] rimosso in inizio dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [backup-erasing] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [backup-except] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [agents-erasing] rimosso negli agenti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [activities-erasing] rimosso nelle attività dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [speakers-erasing] rimosso nei parlanti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato
      [cli-erasing] rimosso dalla riga di comando dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando dai tuoi backup · una parte identica a qualcosa che hai conservato resta, come parte di ciò che hai conservato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.backup.erase.stays = { $presentation ->
     *[none-plain] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione
      [none-erasing] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [none-except] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni dai tuoi backup, ma delle copie possono restare in archiviazione
      [transcripts-erasing] rimosso nelle trascrizioni dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo dai tuoi backup, ma delle copie possono restare in archiviazione
      [body-erasing] rimosso nel corpo dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione dai tuoi backup, ma delle copie possono restare in archiviazione
      [import-erasing] rimosso nell'importazione dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità dai tuoi backup, ma delle copie possono restare in archiviazione
      [entities-erasing] rimosso nelle entità dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni dai tuoi backup, ma delle copie possono restare in archiviazione
      [settings-erasing] rimosso nelle impostazioni dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio dai tuoi backup, ma delle copie possono restare in archiviazione
      [home-erasing] rimosso in inizio dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione
      [backup-erasing] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [backup-except] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti dai tuoi backup, ma delle copie possono restare in archiviazione
      [agents-erasing] rimosso negli agenti dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività dai tuoi backup, ma delle copie possono restare in archiviazione
      [activities-erasing] rimosso nelle attività dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti dai tuoi backup, ma delle copie possono restare in archiviazione
      [speakers-erasing] rimosso nei parlanti dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando dai tuoi backup, ma delle copie possono restare in archiviazione
      [cli-erasing] rimosso dalla riga di comando dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando dai tuoi backup, ma delle copie possono restare in archiviazione, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando dai tuoi backup, ma delle copie possono restare in archiviazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.backup.off = { $presentation ->
     *[none-plain] eliminato quando hai disattivato il backup
      [none-erasing] eliminato quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [none-except] eliminato quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] eliminato quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] eliminato quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [none-both] eliminato quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] eliminato nelle trascrizioni quando hai disattivato il backup
      [transcripts-erasing] eliminato nelle trascrizioni quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [transcripts-except] eliminato nelle trascrizioni quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] eliminato nelle trascrizioni quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] eliminato nelle trascrizioni quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] eliminato nelle trascrizioni quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] eliminato nel corpo quando hai disattivato il backup
      [body-erasing] eliminato nel corpo quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [body-except] eliminato nel corpo quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] eliminato nel corpo quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] eliminato nel corpo quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [body-both] eliminato nel corpo quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] eliminato nell'importazione quando hai disattivato il backup
      [import-erasing] eliminato nell'importazione quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [import-except] eliminato nell'importazione quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] eliminato nell'importazione quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] eliminato nell'importazione quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [import-both] eliminato nell'importazione quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] eliminato nelle entità quando hai disattivato il backup
      [entities-erasing] eliminato nelle entità quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [entities-except] eliminato nelle entità quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] eliminato nelle entità quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] eliminato nelle entità quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] eliminato nelle entità quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] eliminato nelle impostazioni quando hai disattivato il backup
      [settings-erasing] eliminato nelle impostazioni quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [settings-except] eliminato nelle impostazioni quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] eliminato nelle impostazioni quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] eliminato nelle impostazioni quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] eliminato nelle impostazioni quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] eliminato in inizio quando hai disattivato il backup
      [home-erasing] eliminato in inizio quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [home-except] eliminato in inizio quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] eliminato in inizio quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] eliminato in inizio quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [home-both] eliminato in inizio quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] eliminato quando hai disattivato il backup
      [backup-erasing] eliminato quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [backup-except] eliminato quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] eliminato quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] eliminato quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] eliminato quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] eliminato negli agenti quando hai disattivato il backup
      [agents-erasing] eliminato negli agenti quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [agents-except] eliminato negli agenti quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] eliminato negli agenti quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] eliminato negli agenti quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] eliminato negli agenti quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] eliminato nelle attività quando hai disattivato il backup
      [activities-erasing] eliminato nelle attività quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [activities-except] eliminato nelle attività quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] eliminato nelle attività quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] eliminato nelle attività quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] eliminato nelle attività quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] eliminato nei parlanti quando hai disattivato il backup
      [speakers-erasing] eliminato nei parlanti quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [speakers-except] eliminato nei parlanti quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] eliminato nei parlanti quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] eliminato nei parlanti quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] eliminato nei parlanti quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] eliminato dalla riga di comando quando hai disattivato il backup
      [cli-erasing] eliminato dalla riga di comando quando hai disattivato il backup, cancellando ciò che era d'intralcio
-     [cli-except] eliminato dalla riga di comando quando hai disattivato il backup, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] eliminato dalla riga di comando quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] eliminato dalla riga di comando quando hai disattivato il backup, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] eliminato dalla riga di comando quando hai disattivato il backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.facet.merge = { $presentation ->
     *[none-plain] unita a un'altra facetta
      [none-erasing] unita a un'altra facetta, cancellando ciò che era d'intralcio
-     [none-except] unita a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] unita a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] unita a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [none-both] unita a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] unita nelle trascrizioni a un'altra facetta
      [transcripts-erasing] unita nelle trascrizioni a un'altra facetta, cancellando ciò che era d'intralcio
-     [transcripts-except] unita nelle trascrizioni a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] unita nelle trascrizioni a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] unita nelle trascrizioni a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] unita nelle trascrizioni a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] unita nel corpo a un'altra facetta
      [body-erasing] unita nel corpo a un'altra facetta, cancellando ciò che era d'intralcio
-     [body-except] unita nel corpo a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] unita nel corpo a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] unita nel corpo a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [body-both] unita nel corpo a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] unita nell'importazione a un'altra facetta
      [import-erasing] unita nell'importazione a un'altra facetta, cancellando ciò che era d'intralcio
-     [import-except] unita nell'importazione a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] unita nell'importazione a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] unita nell'importazione a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [import-both] unita nell'importazione a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] unita nelle entità a un'altra facetta
      [entities-erasing] unita nelle entità a un'altra facetta, cancellando ciò che era d'intralcio
-     [entities-except] unita nelle entità a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] unita nelle entità a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] unita nelle entità a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] unita nelle entità a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] unita nelle impostazioni a un'altra facetta
      [settings-erasing] unita nelle impostazioni a un'altra facetta, cancellando ciò che era d'intralcio
-     [settings-except] unita nelle impostazioni a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] unita nelle impostazioni a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] unita nelle impostazioni a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] unita nelle impostazioni a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] unita in inizio a un'altra facetta
      [home-erasing] unita in inizio a un'altra facetta, cancellando ciò che era d'intralcio
-     [home-except] unita in inizio a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] unita in inizio a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] unita in inizio a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [home-both] unita in inizio a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] unita nel backup a un'altra facetta
      [backup-erasing] unita nel backup a un'altra facetta, cancellando ciò che era d'intralcio
-     [backup-except] unita nel backup a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] unita nel backup a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] unita nel backup a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] unita nel backup a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] unita negli agenti a un'altra facetta
      [agents-erasing] unita negli agenti a un'altra facetta, cancellando ciò che era d'intralcio
-     [agents-except] unita negli agenti a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] unita negli agenti a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] unita negli agenti a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] unita negli agenti a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] unita nelle attività a un'altra facetta
      [activities-erasing] unita nelle attività a un'altra facetta, cancellando ciò che era d'intralcio
-     [activities-except] unita nelle attività a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] unita nelle attività a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] unita nelle attività a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] unita nelle attività a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] unita nei parlanti a un'altra facetta
      [speakers-erasing] unita nei parlanti a un'altra facetta, cancellando ciò che era d'intralcio
-     [speakers-except] unita nei parlanti a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] unita nei parlanti a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] unita nei parlanti a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] unita nei parlanti a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] unita dalla riga di comando a un'altra facetta
      [cli-erasing] unita dalla riga di comando a un'altra facetta, cancellando ciò che era d'intralcio
-     [cli-except] unita dalla riga di comando a un'altra facetta, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] unita dalla riga di comando a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] unita dalla riga di comando a un'altra facetta, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] unita dalla riga di comando a un'altra facetta, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.finish.stopped = { $presentation ->
     *[none-plain] eliminazione terminata
      [none-erasing] eliminazione terminata, cancellando ciò che era d'intralcio
-     [none-except] eliminazione terminata, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] eliminazione terminata, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] eliminazione terminata, tranne le note in facette che non sono più nel tuo diario
+     [none-both] eliminazione terminata, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] eliminazione terminata nelle trascrizioni
      [transcripts-erasing] eliminazione terminata nelle trascrizioni, cancellando ciò che era d'intralcio
-     [transcripts-except] eliminazione terminata nelle trascrizioni, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] eliminazione terminata nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] eliminazione terminata nelle trascrizioni, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] eliminazione terminata nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] eliminazione terminata nel corpo
      [body-erasing] eliminazione terminata nel corpo, cancellando ciò che era d'intralcio
-     [body-except] eliminazione terminata nel corpo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] eliminazione terminata nel corpo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] eliminazione terminata nel corpo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] eliminazione terminata nel corpo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] eliminazione terminata nell'importazione
      [import-erasing] eliminazione terminata nell'importazione, cancellando ciò che era d'intralcio
-     [import-except] eliminazione terminata nell'importazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] eliminazione terminata nell'importazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] eliminazione terminata nell'importazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] eliminazione terminata nell'importazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] eliminazione terminata nelle entità
      [entities-erasing] eliminazione terminata nelle entità, cancellando ciò che era d'intralcio
-     [entities-except] eliminazione terminata nelle entità, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] eliminazione terminata nelle entità, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] eliminazione terminata nelle entità, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] eliminazione terminata nelle entità, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] eliminazione terminata nelle impostazioni
      [settings-erasing] eliminazione terminata nelle impostazioni, cancellando ciò che era d'intralcio
-     [settings-except] eliminazione terminata nelle impostazioni, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] eliminazione terminata nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] eliminazione terminata nelle impostazioni, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] eliminazione terminata nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] eliminazione terminata in inizio
      [home-erasing] eliminazione terminata in inizio, cancellando ciò che era d'intralcio
-     [home-except] eliminazione terminata in inizio, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] eliminazione terminata in inizio, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] eliminazione terminata in inizio, tranne le note in facette che non sono più nel tuo diario
+     [home-both] eliminazione terminata in inizio, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] eliminazione terminata nel backup
      [backup-erasing] eliminazione terminata nel backup, cancellando ciò che era d'intralcio
-     [backup-except] eliminazione terminata nel backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] eliminazione terminata nel backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] eliminazione terminata nel backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] eliminazione terminata nel backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] eliminazione terminata negli agenti
      [agents-erasing] eliminazione terminata negli agenti, cancellando ciò che era d'intralcio
-     [agents-except] eliminazione terminata negli agenti, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] eliminazione terminata negli agenti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] eliminazione terminata negli agenti, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] eliminazione terminata negli agenti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] eliminazione terminata nelle attività
      [activities-erasing] eliminazione terminata nelle attività, cancellando ciò che era d'intralcio
-     [activities-except] eliminazione terminata nelle attività, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] eliminazione terminata nelle attività, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] eliminazione terminata nelle attività, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] eliminazione terminata nelle attività, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] eliminazione terminata nei parlanti
      [speakers-erasing] eliminazione terminata nei parlanti, cancellando ciò che era d'intralcio
-     [speakers-except] eliminazione terminata nei parlanti, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] eliminazione terminata nei parlanti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] eliminazione terminata nei parlanti, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] eliminazione terminata nei parlanti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] eliminazione terminata dalla riga di comando
      [cli-erasing] eliminazione terminata dalla riga di comando, cancellando ciò che era d'intralcio
-     [cli-except] eliminazione terminata dalla riga di comando, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] eliminazione terminata dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] eliminazione terminata dalla riga di comando, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] eliminazione terminata dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.originals.release = { $presentation ->
     *[none-plain] rimosso dopo la tua approvazione
      [none-erasing] rimosso dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [none-except] rimosso dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni dopo la tua approvazione
      [transcripts-erasing] rimosso nelle trascrizioni dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo dopo la tua approvazione
      [body-erasing] rimosso nel corpo dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione dopo la tua approvazione
      [import-erasing] rimosso nell'importazione dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità dopo la tua approvazione
      [entities-erasing] rimosso nelle entità dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni dopo la tua approvazione
      [settings-erasing] rimosso nelle impostazioni dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio dopo la tua approvazione
      [home-erasing] rimosso in inizio dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso nel backup dopo la tua approvazione
      [backup-erasing] rimosso nel backup dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [backup-except] rimosso nel backup dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso nel backup dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso nel backup dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso nel backup dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti dopo la tua approvazione
      [agents-erasing] rimosso negli agenti dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività dopo la tua approvazione
      [activities-erasing] rimosso nelle attività dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti dopo la tua approvazione
      [speakers-erasing] rimosso nei parlanti dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando dopo la tua approvazione
      [cli-erasing] rimosso dalla riga di comando dopo la tua approvazione, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando dopo la tua approvazione, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando dopo la tua approvazione, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando dopo la tua approvazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.other = { $presentation ->
     *[none-plain] rimosso
      [none-erasing] rimosso, cancellando ciò che era d'intralcio
-     [none-except] rimosso, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni
      [transcripts-erasing] rimosso nelle trascrizioni, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo
      [body-erasing] rimosso nel corpo, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione
      [import-erasing] rimosso nell'importazione, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità
      [entities-erasing] rimosso nelle entità, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni
      [settings-erasing] rimosso nelle impostazioni, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio
      [home-erasing] rimosso in inizio, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso nel backup
      [backup-erasing] rimosso nel backup, cancellando ciò che era d'intralcio
-     [backup-except] rimosso nel backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso nel backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso nel backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso nel backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti
      [agents-erasing] rimosso negli agenti, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività
      [activities-erasing] rimosso nelle attività, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti
      [speakers-erasing] rimosso nei parlanti, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando
      [cli-erasing] rimosso dalla riga di comando, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.segment.delete = { $presentation ->
     *[none-plain] eliminato
      [none-erasing] eliminato, cancellando ciò che era d'intralcio
-     [none-except] eliminato, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] eliminato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] eliminato, tranne le note in facette che non sono più nel tuo diario
+     [none-both] eliminato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] eliminato nelle trascrizioni
      [transcripts-erasing] eliminato nelle trascrizioni, cancellando ciò che era d'intralcio
-     [transcripts-except] eliminato nelle trascrizioni, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] eliminato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] eliminato nelle trascrizioni, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] eliminato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] eliminato nel corpo
      [body-erasing] eliminato nel corpo, cancellando ciò che era d'intralcio
-     [body-except] eliminato nel corpo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] eliminato nel corpo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] eliminato nel corpo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] eliminato nel corpo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] eliminato nell'importazione
      [import-erasing] eliminato nell'importazione, cancellando ciò che era d'intralcio
-     [import-except] eliminato nell'importazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] eliminato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] eliminato nell'importazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] eliminato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] eliminato nelle entità
      [entities-erasing] eliminato nelle entità, cancellando ciò che era d'intralcio
-     [entities-except] eliminato nelle entità, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] eliminato nelle entità, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] eliminato nelle entità, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] eliminato nelle entità, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] eliminato nelle impostazioni
      [settings-erasing] eliminato nelle impostazioni, cancellando ciò che era d'intralcio
-     [settings-except] eliminato nelle impostazioni, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] eliminato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] eliminato nelle impostazioni, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] eliminato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] eliminato in inizio
      [home-erasing] eliminato in inizio, cancellando ciò che era d'intralcio
-     [home-except] eliminato in inizio, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] eliminato in inizio, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] eliminato in inizio, tranne le note in facette che non sono più nel tuo diario
+     [home-both] eliminato in inizio, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] eliminato nel backup
      [backup-erasing] eliminato nel backup, cancellando ciò che era d'intralcio
-     [backup-except] eliminato nel backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] eliminato nel backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] eliminato nel backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] eliminato nel backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] eliminato negli agenti
      [agents-erasing] eliminato negli agenti, cancellando ciò che era d'intralcio
-     [agents-except] eliminato negli agenti, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] eliminato negli agenti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] eliminato negli agenti, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] eliminato negli agenti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] eliminato nelle attività
      [activities-erasing] eliminato nelle attività, cancellando ciò che era d'intralcio
-     [activities-except] eliminato nelle attività, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] eliminato nelle attività, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] eliminato nelle attività, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] eliminato nelle attività, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] eliminato nei parlanti
      [speakers-erasing] eliminato nei parlanti, cancellando ciò che era d'intralcio
-     [speakers-except] eliminato nei parlanti, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] eliminato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] eliminato nei parlanti, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] eliminato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] eliminato dalla riga di comando
      [cli-erasing] eliminato dalla riga di comando, cancellando ciò che era d'intralcio
-     [cli-except] eliminato dalla riga di comando, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] eliminato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] eliminato dalla riga di comando, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] eliminato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.speakers.wipe = { $presentation ->
     *[none-plain] svuotato
      [none-erasing] svuotato, cancellando ciò che era d'intralcio
-     [none-except] svuotato, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] svuotato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] svuotato, tranne le note in facette che non sono più nel tuo diario
+     [none-both] svuotato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] svuotato nelle trascrizioni
      [transcripts-erasing] svuotato nelle trascrizioni, cancellando ciò che era d'intralcio
-     [transcripts-except] svuotato nelle trascrizioni, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] svuotato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] svuotato nelle trascrizioni, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] svuotato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] svuotato nel corpo
      [body-erasing] svuotato nel corpo, cancellando ciò che era d'intralcio
-     [body-except] svuotato nel corpo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] svuotato nel corpo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] svuotato nel corpo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] svuotato nel corpo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] svuotato nell'importazione
      [import-erasing] svuotato nell'importazione, cancellando ciò che era d'intralcio
-     [import-except] svuotato nell'importazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] svuotato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] svuotato nell'importazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] svuotato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] svuotato nelle entità
      [entities-erasing] svuotato nelle entità, cancellando ciò che era d'intralcio
-     [entities-except] svuotato nelle entità, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] svuotato nelle entità, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] svuotato nelle entità, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] svuotato nelle entità, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] svuotato nelle impostazioni
      [settings-erasing] svuotato nelle impostazioni, cancellando ciò che era d'intralcio
-     [settings-except] svuotato nelle impostazioni, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] svuotato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] svuotato nelle impostazioni, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] svuotato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] svuotato in inizio
      [home-erasing] svuotato in inizio, cancellando ciò che era d'intralcio
-     [home-except] svuotato in inizio, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] svuotato in inizio, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] svuotato in inizio, tranne le note in facette che non sono più nel tuo diario
+     [home-both] svuotato in inizio, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] svuotato nel backup
      [backup-erasing] svuotato nel backup, cancellando ciò che era d'intralcio
-     [backup-except] svuotato nel backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] svuotato nel backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] svuotato nel backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] svuotato nel backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] svuotato negli agenti
      [agents-erasing] svuotato negli agenti, cancellando ciò che era d'intralcio
-     [agents-except] svuotato negli agenti, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] svuotato negli agenti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] svuotato negli agenti, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] svuotato negli agenti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] svuotato nelle attività
      [activities-erasing] svuotato nelle attività, cancellando ciò che era d'intralcio
-     [activities-except] svuotato nelle attività, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] svuotato nelle attività, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] svuotato nelle attività, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] svuotato nelle attività, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] svuotato nei parlanti
      [speakers-erasing] svuotato nei parlanti, cancellando ciò che era d'intralcio
-     [speakers-except] svuotato nei parlanti, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] svuotato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] svuotato nei parlanti, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] svuotato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] svuotato dalla riga di comando
      [cli-erasing] svuotato dalla riga di comando, cancellando ciò che era d'intralcio
-     [cli-except] svuotato dalla riga di comando, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] svuotato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] svuotato dalla riga di comando, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] svuotato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.action.voice.only.release = { $presentation ->
     *[none-plain] rimosso perché "lascia fuori le altre voci" era attivo
      [none-erasing] rimosso perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [none-except] rimosso perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] rimosso perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] rimosso perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [none-both] rimosso perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] rimosso nelle trascrizioni perché "lascia fuori le altre voci" era attivo
      [transcripts-erasing] rimosso nelle trascrizioni perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [transcripts-except] rimosso nelle trascrizioni perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] rimosso nelle trascrizioni perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] rimosso nelle trascrizioni perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] rimosso nelle trascrizioni perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] rimosso nel corpo perché "lascia fuori le altre voci" era attivo
      [body-erasing] rimosso nel corpo perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [body-except] rimosso nel corpo perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] rimosso nel corpo perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] rimosso nel corpo perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] rimosso nel corpo perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] rimosso nell'importazione perché "lascia fuori le altre voci" era attivo
      [import-erasing] rimosso nell'importazione perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [import-except] rimosso nell'importazione perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] rimosso nell'importazione perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] rimosso nell'importazione perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [import-both] rimosso nell'importazione perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] rimosso nelle entità perché "lascia fuori le altre voci" era attivo
      [entities-erasing] rimosso nelle entità perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [entities-except] rimosso nelle entità perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] rimosso nelle entità perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] rimosso nelle entità perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] rimosso nelle entità perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] rimosso nelle impostazioni perché "lascia fuori le altre voci" era attivo
      [settings-erasing] rimosso nelle impostazioni perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [settings-except] rimosso nelle impostazioni perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] rimosso nelle impostazioni perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] rimosso nelle impostazioni perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] rimosso nelle impostazioni perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] rimosso in inizio perché "lascia fuori le altre voci" era attivo
      [home-erasing] rimosso in inizio perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [home-except] rimosso in inizio perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] rimosso in inizio perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] rimosso in inizio perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [home-both] rimosso in inizio perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] rimosso nel backup perché "lascia fuori le altre voci" era attivo
      [backup-erasing] rimosso nel backup perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [backup-except] rimosso nel backup perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] rimosso nel backup perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] rimosso nel backup perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] rimosso nel backup perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] rimosso negli agenti perché "lascia fuori le altre voci" era attivo
      [agents-erasing] rimosso negli agenti perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [agents-except] rimosso negli agenti perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] rimosso negli agenti perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] rimosso negli agenti perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] rimosso negli agenti perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] rimosso nelle attività perché "lascia fuori le altre voci" era attivo
      [activities-erasing] rimosso nelle attività perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [activities-except] rimosso nelle attività perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] rimosso nelle attività perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] rimosso nelle attività perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] rimosso nelle attività perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] rimosso nei parlanti perché "lascia fuori le altre voci" era attivo
      [speakers-erasing] rimosso nei parlanti perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [speakers-except] rimosso nei parlanti perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] rimosso nei parlanti perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] rimosso nei parlanti perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] rimosso nei parlanti perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] rimosso dalla riga di comando perché "lascia fuori le altre voci" era attivo
      [cli-erasing] rimosso dalla riga di comando perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio
-     [cli-except] rimosso dalla riga di comando perché "lascia fuori le altre voci" era attivo, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] rimosso dalla riga di comando perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] rimosso dalla riga di comando perché "lascia fuori le altre voci" era attivo, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] rimosso dalla riga di comando perché "lascia fuori le altre voci" era attivo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.event.erased = { $presentation ->
     *[none-plain] cancellato
      [none-erasing] cancellato, cancellando ciò che era d'intralcio
-     [none-except] cancellato, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] cancellato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] cancellato, tranne le note in facette che non sono più nel tuo diario
+     [none-both] cancellato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] cancellato nelle trascrizioni
      [transcripts-erasing] cancellato nelle trascrizioni, cancellando ciò che era d'intralcio
-     [transcripts-except] cancellato nelle trascrizioni, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] cancellato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] cancellato nelle trascrizioni, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] cancellato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] cancellato nel corpo
      [body-erasing] cancellato nel corpo, cancellando ciò che era d'intralcio
-     [body-except] cancellato nel corpo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] cancellato nel corpo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] cancellato nel corpo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] cancellato nel corpo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] cancellato nell'importazione
      [import-erasing] cancellato nell'importazione, cancellando ciò che era d'intralcio
-     [import-except] cancellato nell'importazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] cancellato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] cancellato nell'importazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] cancellato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] cancellato nelle entità
      [entities-erasing] cancellato nelle entità, cancellando ciò che era d'intralcio
-     [entities-except] cancellato nelle entità, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] cancellato nelle entità, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] cancellato nelle entità, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] cancellato nelle entità, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] cancellato nelle impostazioni
      [settings-erasing] cancellato nelle impostazioni, cancellando ciò che era d'intralcio
-     [settings-except] cancellato nelle impostazioni, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] cancellato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] cancellato nelle impostazioni, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] cancellato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] cancellato in inizio
      [home-erasing] cancellato in inizio, cancellando ciò che era d'intralcio
-     [home-except] cancellato in inizio, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] cancellato in inizio, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] cancellato in inizio, tranne le note in facette che non sono più nel tuo diario
+     [home-both] cancellato in inizio, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] cancellato nel backup
      [backup-erasing] cancellato nel backup, cancellando ciò che era d'intralcio
-     [backup-except] cancellato nel backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] cancellato nel backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] cancellato nel backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] cancellato nel backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] cancellato negli agenti
      [agents-erasing] cancellato negli agenti, cancellando ciò che era d'intralcio
-     [agents-except] cancellato negli agenti, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] cancellato negli agenti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] cancellato negli agenti, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] cancellato negli agenti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] cancellato nelle attività
      [activities-erasing] cancellato nelle attività, cancellando ciò che era d'intralcio
-     [activities-except] cancellato nelle attività, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] cancellato nelle attività, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] cancellato nelle attività, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] cancellato nelle attività, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] cancellato nei parlanti
      [speakers-erasing] cancellato nei parlanti, cancellando ciò che era d'intralcio
-     [speakers-except] cancellato nei parlanti, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] cancellato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] cancellato nei parlanti, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] cancellato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] cancellato dalla riga di comando
      [cli-erasing] cancellato dalla riga di comando, cancellando ciò che era d'intralcio
-     [cli-except] cancellato dalla riga di comando, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] cancellato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] cancellato dalla riga di comando, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] cancellato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.event.erased.on.date = { $presentation ->
     *[none-plain] cancellato nella sua data
      [none-erasing] cancellato nella sua data, cancellando ciò che era d'intralcio
-     [none-except] cancellato nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] cancellato nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] cancellato nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [none-both] cancellato nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] cancellato nelle trascrizioni nella sua data
      [transcripts-erasing] cancellato nelle trascrizioni nella sua data, cancellando ciò che era d'intralcio
-     [transcripts-except] cancellato nelle trascrizioni nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] cancellato nelle trascrizioni nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] cancellato nelle trascrizioni nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] cancellato nelle trascrizioni nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] cancellato nel corpo nella sua data
      [body-erasing] cancellato nel corpo nella sua data, cancellando ciò che era d'intralcio
-     [body-except] cancellato nel corpo nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] cancellato nel corpo nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] cancellato nel corpo nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [body-both] cancellato nel corpo nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] cancellato nell'importazione nella sua data
      [import-erasing] cancellato nell'importazione nella sua data, cancellando ciò che era d'intralcio
-     [import-except] cancellato nell'importazione nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] cancellato nell'importazione nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] cancellato nell'importazione nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [import-both] cancellato nell'importazione nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] cancellato nelle entità nella sua data
      [entities-erasing] cancellato nelle entità nella sua data, cancellando ciò che era d'intralcio
-     [entities-except] cancellato nelle entità nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] cancellato nelle entità nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] cancellato nelle entità nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] cancellato nelle entità nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] cancellato nelle impostazioni nella sua data
      [settings-erasing] cancellato nelle impostazioni nella sua data, cancellando ciò che era d'intralcio
-     [settings-except] cancellato nelle impostazioni nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] cancellato nelle impostazioni nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] cancellato nelle impostazioni nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] cancellato nelle impostazioni nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] cancellato in inizio nella sua data
      [home-erasing] cancellato in inizio nella sua data, cancellando ciò che era d'intralcio
-     [home-except] cancellato in inizio nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] cancellato in inizio nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] cancellato in inizio nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [home-both] cancellato in inizio nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] cancellato nel backup nella sua data
      [backup-erasing] cancellato nel backup nella sua data, cancellando ciò che era d'intralcio
-     [backup-except] cancellato nel backup nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] cancellato nel backup nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] cancellato nel backup nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] cancellato nel backup nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] cancellato negli agenti nella sua data
      [agents-erasing] cancellato negli agenti nella sua data, cancellando ciò che era d'intralcio
-     [agents-except] cancellato negli agenti nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] cancellato negli agenti nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] cancellato negli agenti nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] cancellato negli agenti nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] cancellato nelle attività nella sua data
      [activities-erasing] cancellato nelle attività nella sua data, cancellando ciò che era d'intralcio
-     [activities-except] cancellato nelle attività nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] cancellato nelle attività nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] cancellato nelle attività nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] cancellato nelle attività nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] cancellato nei parlanti nella sua data
      [speakers-erasing] cancellato nei parlanti nella sua data, cancellando ciò che era d'intralcio
-     [speakers-except] cancellato nei parlanti nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] cancellato nei parlanti nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] cancellato nei parlanti nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] cancellato nei parlanti nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] cancellato dalla riga di comando nella sua data
      [cli-erasing] cancellato dalla riga di comando nella sua data, cancellando ciò che era d'intralcio
-     [cli-except] cancellato dalla riga di comando nella sua data, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] cancellato dalla riga di comando nella sua data, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] cancellato dalla riga di comando nella sua data, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] cancellato dalla riga di comando nella sua data, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.event.recovered = { $presentation ->
     *[none-plain] recuperato
      [none-erasing] recuperato, cancellando ciò che era d'intralcio
-     [none-except] recuperato, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] recuperato, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] recuperato, tranne le note in facette che non sono più nel tuo diario
+     [none-both] recuperato, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] recuperato nelle trascrizioni
      [transcripts-erasing] recuperato nelle trascrizioni, cancellando ciò che era d'intralcio
-     [transcripts-except] recuperato nelle trascrizioni, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] recuperato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] recuperato nelle trascrizioni, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] recuperato nelle trascrizioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] recuperato nel corpo
      [body-erasing] recuperato nel corpo, cancellando ciò che era d'intralcio
-     [body-except] recuperato nel corpo, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] recuperato nel corpo, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] recuperato nel corpo, tranne le note in facette che non sono più nel tuo diario
+     [body-both] recuperato nel corpo, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] recuperato nell'importazione
      [import-erasing] recuperato nell'importazione, cancellando ciò che era d'intralcio
-     [import-except] recuperato nell'importazione, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] recuperato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] recuperato nell'importazione, tranne le note in facette che non sono più nel tuo diario
+     [import-both] recuperato nell'importazione, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] recuperato nelle entità
      [entities-erasing] recuperato nelle entità, cancellando ciò che era d'intralcio
-     [entities-except] recuperato nelle entità, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] recuperato nelle entità, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] recuperato nelle entità, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] recuperato nelle entità, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] recuperato nelle impostazioni
      [settings-erasing] recuperato nelle impostazioni, cancellando ciò che era d'intralcio
-     [settings-except] recuperato nelle impostazioni, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] recuperato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] recuperato nelle impostazioni, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] recuperato nelle impostazioni, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] recuperato in inizio
      [home-erasing] recuperato in inizio, cancellando ciò che era d'intralcio
-     [home-except] recuperato in inizio, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] recuperato in inizio, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] recuperato in inizio, tranne le note in facette che non sono più nel tuo diario
+     [home-both] recuperato in inizio, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] recuperato nel backup
      [backup-erasing] recuperato nel backup, cancellando ciò che era d'intralcio
-     [backup-except] recuperato nel backup, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] recuperato nel backup, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] recuperato nel backup, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] recuperato nel backup, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] recuperato negli agenti
      [agents-erasing] recuperato negli agenti, cancellando ciò che era d'intralcio
-     [agents-except] recuperato negli agenti, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] recuperato negli agenti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] recuperato negli agenti, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] recuperato negli agenti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] recuperato nelle attività
      [activities-erasing] recuperato nelle attività, cancellando ciò che era d'intralcio
-     [activities-except] recuperato nelle attività, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] recuperato nelle attività, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] recuperato nelle attività, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] recuperato nelle attività, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] recuperato nei parlanti
      [speakers-erasing] recuperato nei parlanti, cancellando ciò che era d'intralcio
-     [speakers-except] recuperato nei parlanti, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] recuperato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] recuperato nei parlanti, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] recuperato nei parlanti, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] recuperato dalla riga di comando
      [cli-erasing] recuperato dalla riga di comando, cancellando ciò che era d'intralcio
-     [cli-except] recuperato dalla riga di comando, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] recuperato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] recuperato dalla riga di comando, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] recuperato dalla riga di comando, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.event.trashed = { $presentation ->
     *[none-plain] spostato nel cestino
      [none-erasing] spostato nel cestino, cancellando ciò che era d'intralcio
-     [none-except] spostato nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [none-both] spostato nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [none-except] spostato nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [none-both] spostato nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [transcripts-plain] spostato nelle trascrizioni nel cestino
      [transcripts-erasing] spostato nelle trascrizioni nel cestino, cancellando ciò che era d'intralcio
-     [transcripts-except] spostato nelle trascrizioni nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [transcripts-both] spostato nelle trascrizioni nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [transcripts-except] spostato nelle trascrizioni nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [transcripts-both] spostato nelle trascrizioni nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [body-plain] spostato nel corpo nel cestino
      [body-erasing] spostato nel corpo nel cestino, cancellando ciò che era d'intralcio
-     [body-except] spostato nel corpo nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [body-both] spostato nel corpo nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [body-except] spostato nel corpo nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [body-both] spostato nel corpo nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [import-plain] spostato nell'importazione nel cestino
      [import-erasing] spostato nell'importazione nel cestino, cancellando ciò che era d'intralcio
-     [import-except] spostato nell'importazione nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [import-both] spostato nell'importazione nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [import-except] spostato nell'importazione nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [import-both] spostato nell'importazione nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [entities-plain] spostato nelle entità nel cestino
      [entities-erasing] spostato nelle entità nel cestino, cancellando ciò che era d'intralcio
-     [entities-except] spostato nelle entità nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [entities-both] spostato nelle entità nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [entities-except] spostato nelle entità nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [entities-both] spostato nelle entità nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [settings-plain] spostato nelle impostazioni nel cestino
      [settings-erasing] spostato nelle impostazioni nel cestino, cancellando ciò che era d'intralcio
-     [settings-except] spostato nelle impostazioni nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [settings-both] spostato nelle impostazioni nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [settings-except] spostato nelle impostazioni nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [settings-both] spostato nelle impostazioni nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [home-plain] spostato in inizio nel cestino
      [home-erasing] spostato in inizio nel cestino, cancellando ciò che era d'intralcio
-     [home-except] spostato in inizio nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [home-both] spostato in inizio nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [home-except] spostato in inizio nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [home-both] spostato in inizio nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [backup-plain] spostato nel backup nel cestino
      [backup-erasing] spostato nel backup nel cestino, cancellando ciò che era d'intralcio
-     [backup-except] spostato nel backup nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [backup-both] spostato nel backup nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [backup-except] spostato nel backup nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [backup-both] spostato nel backup nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [agents-plain] spostato negli agenti nel cestino
      [agents-erasing] spostato negli agenti nel cestino, cancellando ciò che era d'intralcio
-     [agents-except] spostato negli agenti nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [agents-both] spostato negli agenti nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [agents-except] spostato negli agenti nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [agents-both] spostato negli agenti nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [activities-plain] spostato nelle attività nel cestino
      [activities-erasing] spostato nelle attività nel cestino, cancellando ciò che era d'intralcio
-     [activities-except] spostato nelle attività nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [activities-both] spostato nelle attività nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [activities-except] spostato nelle attività nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [activities-both] spostato nelle attività nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [speakers-plain] spostato nei parlanti nel cestino
      [speakers-erasing] spostato nei parlanti nel cestino, cancellando ciò che era d'intralcio
-     [speakers-except] spostato nei parlanti nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [speakers-both] spostato nei parlanti nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [speakers-except] spostato nei parlanti nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [speakers-both] spostato nei parlanti nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
      [cli-plain] spostato dalla riga di comando nel cestino
      [cli-erasing] spostato dalla riga di comando nel cestino, cancellando ciò che era d'intralcio
-     [cli-except] spostato dalla riga di comando nel cestino, tranne le note in faccette che non sono più nel tuo diario
-     [cli-both] spostato dalla riga di comando nel cestino, cancellando ciò che era d'intralcio, tranne le note in faccette che non sono più nel tuo diario
+     [cli-except] spostato dalla riga di comando nel cestino, tranne le note in facette che non sono più nel tuo diario
+     [cli-both] spostato dalla riga di comando nel cestino, cancellando ciò che era d'intralcio, tranne le note in facette che non sono più nel tuo diario
     }
 
 journal.window.settings.removal.history.group.backup.count = { $quantity ->
@@ -2702,14 +2702,14 @@ journal.window.settings.removal.history.group.entity.count = { $quantity ->
 
 journal.window.settings.removal.history.group.facet.count = { $quantity ->
     [one] { $count } facetta
-    [many] { $count } di faccette
-   *[other] { $count } faccette
+    [many] { $count } di facette
+   *[other] { $count } facette
     }
 
 journal.window.settings.removal.history.group.facet.file.count = { $quantity ->
-    [one] { $count } file da un'unione di faccette
-    [many] { $count } di file da un'unione di faccette
-   *[other] { $count } file da un'unione di faccette
+    [one] { $count } file da un'unione di facette
+    [many] { $count } di file da un'unione di facette
+   *[other] { $count } file da un'unione di facette
     }
 
 journal.window.settings.removal.history.group.import.count = { $quantity ->
@@ -2778,7 +2778,7 @@ journal.window.settings.removal.kind.entity.entity = entità
 
 journal.window.settings.removal.kind.facet.facet = facetta
 
-journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge = file da un'unione di faccette
+journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge = file da un'unione di facette
 
 journal.window.settings.removal.kind.fallback.label.something.else = qualcos'altro
 
@@ -2926,7 +2926,7 @@ journal.window.settings.section.heading.devices = dispositivi
 
 journal.window.settings.section.heading.erase.all.face.data = cancella tutti i dati del volto?
 
-journal.window.settings.section.heading.facets = faccette
+journal.window.settings.section.heading.facets = facette
 
 journal.window.settings.section.heading.guide = guida
 
@@ -2950,7 +2950,7 @@ journal.window.settings.section.heading.your.original.media.audio.video.screen =
 
 journal.window.settings.settings.action.failure.failed.to.add.facet = non è stato possibile aggiungere una facetta
 
-journal.window.settings.settings.action.failure.failed.to.load.facets = non è stato possibile caricare le faccette
+journal.window.settings.settings.action.failure.failed.to.load.facets = non è stato possibile caricare le facette
 
 journal.window.settings.settings.action.failure.speech.processing.was.not.confirmed = l'elaborazione del parlato non è stata confermata
 
@@ -2976,7 +2976,7 @@ journal.window.settings.settings.copy.heading.couldn.t.load.transcription.settin
 
 journal.window.settings.settings.copy.heading.couldn.t.load.vision.settings = non è stato possibile caricare le impostazioni di visione
 
-journal.window.settings.settings.copy.message.click.to.update.facet.bar = clicca per aggiornare la barra delle faccette
+journal.window.settings.settings.copy.message.click.to.update.facet.bar = clicca per aggiornare la barra delle facette
 
 journal.window.settings.settings.copy.statustext.currently.keep.everything = attualmente: conserva tutto.
 
@@ -3270,8 +3270,8 @@ journal.window.settings.trash.confirm.empty.entity.count = { $quantity ->
 
 journal.window.settings.trash.confirm.empty.facet.count = { $quantity ->
     [one] { $count } facetta non può essere recuperata dopo questo.
-    [many] { $count } di faccette non possono essere recuperate dopo questo.
-   *[other] { $count } faccette non possono essere recuperate dopo questo.
+    [many] { $count } di facette non possono essere recuperate dopo questo.
+   *[other] { $count } facette non possono essere recuperate dopo questo.
     }
 
 journal.window.settings.trash.confirm.empty.generic.count = { $quantity ->
@@ -3318,8 +3318,8 @@ journal.window.settings.trash.confirm.erase.entity.count = { $quantity ->
 
 journal.window.settings.trash.confirm.erase.facet.count = { $quantity ->
     [one] cancella questa facetta ora?
-    [many] cancella { $count } di faccette ora?
-   *[other] cancella { $count } faccette ora?
+    [many] cancella { $count } di facette ora?
+   *[other] cancella { $count } facette ora?
     }
 
 journal.window.settings.trash.confirm.erase.generic.count = { $quantity ->
@@ -3360,8 +3360,8 @@ journal.window.settings.trash.confirm.erase.workout.count = { $quantity ->
 
 journal.window.settings.trash.confirm.recover.over.existing.facets = { $quantity ->
     [one] { $facets } facetta che hai scelto ne ha un'altra con lo stesso nome nel tuo diario ora. il recupero cancella quella, con tutto ciò che contiene, e rimette questa.
-    [many] { $facets } di faccette che hai scelto hanno ciascuna un'altra con lo stesso nome nel tuo diario ora. il recupero cancella quelle, con tutto ciò che contengono, e rimette queste.
-   *[other] { $facets } faccette che hai scelto hanno ciascuna un'altra con lo stesso nome nel tuo diario ora. il recupero cancella quelle, con tutto ciò che contengono, e rimette queste.
+    [many] { $facets } di facette che hai scelto hanno ciascuna un'altra con lo stesso nome nel tuo diario ora. il recupero cancella quelle, con tutto ciò che contengono, e rimette queste.
+   *[other] { $facets } facette che hai scelto hanno ciascuna un'altra con lo stesso nome nel tuo diario ora. il recupero cancella quelle, con tutto ciò che contengono, e rimette queste.
     }
 
 journal.window.settings.trash.confirm.stretch.held.imports = { $quantity ->
@@ -3404,8 +3404,8 @@ journal.window.settings.trash.erase.entity.count = { $quantity ->
 
 journal.window.settings.trash.erase.facet.count = { $quantity ->
     [one] { $count } facetta cancellata dal tuo diario.
-    [many] { $count } di faccette cancellate dal tuo diario.
-   *[other] { $count } faccette cancellate dal tuo diario.
+    [many] { $count } di facette cancellate dal tuo diario.
+   *[other] { $count } facette cancellate dal tuo diario.
     }
 
 journal.window.settings.trash.erase.generic.count = { $quantity ->
@@ -3448,9 +3448,9 @@ journal.window.settings.trash.kind.label.entity.entity = entità
 
 journal.window.settings.trash.kind.label.facet.facet = facetta
 
-journal.window.settings.trash.kind.label.facet.file.files.a.facet.merge.left.out = file che un'unione di faccette ha lasciato fuori
+journal.window.settings.trash.kind.label.facet.file.files.a.facet.merge.left.out = file che un'unione di facette ha lasciato fuori
 
-journal.window.settings.trash.kind.label.facet.file.unfinished.files.from.a.facet.merge.that = file di un'unione di faccette che non è terminata
+journal.window.settings.trash.kind.label.facet.file.unfinished.files.from.a.facet.merge.that = file di un'unione di facette che non è terminata
 
 journal.window.settings.trash.kind.label.import.import = importazione
 
@@ -3556,8 +3556,8 @@ journal.window.settings.trash.recover.entity.count = { $quantity ->
 
 journal.window.settings.trash.recover.facet.count = { $quantity ->
     [one] { $count } facetta recuperata.
-    [many] { $count } di faccette recuperate.
-   *[other] { $count } faccette recuperate.
+    [many] { $count } di facette recuperate.
+   *[other] { $count } facette recuperate.
     }
 
 journal.window.settings.trash.recover.generic.count = { $quantity ->
@@ -3632,15 +3632,15 @@ journal.window.settings.trash.row.cleared.day = svuotato { $cleared_day }
 
 journal.window.settings.trash.row.facets.count = { $quantity ->
     [one] in 1 facetta
-    [many] in { $facets } di faccette
-   *[other] in { $facets } faccette
+    [many] in { $facets } di facette
+   *[other] in { $facets } facette
     }
 
 journal.window.settings.trash.row.import.source.trashed = la sua importazione, { $import_label }, è nel cestino. recupera prima quella, poi questo.
 
 journal.window.settings.trash.row.merge.destination = uniti a { $destination }
 
-journal.window.settings.trash.row.merge.destination.live = dove entrambe le faccette avevano un file con lo stesso nome, l'unione ha conservato quello di { $destination }. il recupero cancella quello di { $destination } e mette al suo posto quello dell'altra facetta.
+journal.window.settings.trash.row.merge.destination.live = dove entrambe le facette avevano un file con lo stesso nome, l'unione ha conservato quello di { $destination }. il recupero cancella quello di { $destination } e mette al suo posto quello dell'altra facetta.
 
 journal.window.settings.trash.row.merge.destination.trashed = la facetta in cui questi sono stati uniti, { $destination }, è nel cestino. recupera prima quella, poi questo.
 
@@ -3684,7 +3684,7 @@ journal.window.settings.visible.text.action.log = registro delle azioni
 
 journal.window.settings.visible.text.add.activity = aggiungi un'attività
 
-journal.window.settings.visible.text.agents.you.connect.to.your.journal = gli agenti che connetti al tuo diario possono ricevere la foto del profilo di una persona, e una suggerita arriva segnata come suggerita. puoi disattivare le foto del profilo per ogni agente. un agente connesso che può vedere solo alcune faccette ne riceve una solo quando è arrivata da una riunione in una di esse.
+journal.window.settings.visible.text.agents.you.connect.to.your.journal = gli agenti che connetti al tuo diario possono ricevere la foto del profilo di una persona, e una suggerita arriva segnata come suggerita. puoi disattivare le foto del profilo per ogni agente. un agente connesso che può vedere solo alcune facette ne riceve una solo quando è arrivata da una riunione in una di esse.
 
 journal.window.settings.visible.text.ai = IA
 
@@ -3814,21 +3814,21 @@ journal.window.settings.visible.text.errors = errori
 
 journal.window.settings.visible.text.facet = facetta
 
-journal.window.settings.visible.text.facet.description.appearance.hint = dice al tuo diario che cosa appartiene qui e che cosa no, così può suddividere la tua giornata tra le faccette. fai doppio clic o premi invio per modificare.
+journal.window.settings.visible.text.facet.description.appearance.hint = dice al tuo diario che cosa appartiene qui e che cosa no, così può suddividere la tua giornata tra le facette. fai doppio clic o premi invio per modificare.
 
-journal.window.settings.visible.text.facet.description.hint = dice al tuo diario che cosa appartiene qui e che cosa no, così può suddividere la tua giornata tra le faccette.
+journal.window.settings.visible.text.facet.description.hint = dice al tuo diario che cosa appartiene qui e che cosa no, così può suddividere la tua giornata tra le facette.
 
 journal.window.settings.visible.text.facet.icon.hint = visibile in impostazioni, attività, inizio, entità e agenti.
 
-journal.window.settings.visible.text.facet.no.description.detail.note = aggiungi una descrizione per aiutare il tuo diario a distinguere "{ $facet_name }" dalle altre faccette.
+journal.window.settings.visible.text.facet.no.description.detail.note = aggiungi una descrizione per aiutare il tuo diario a distinguere "{ $facet_name }" dalle altre facette.
 
 journal.window.settings.visible.text.facet.no.description.list.hint = ancora nessuna descrizione. aggiungine una per aiutare il tuo diario a distinguere questa facetta.
 
-journal.window.settings.visible.text.facets.keep.parts.of.your.life = le faccette tengono separate parti della tua vita dentro un solo diario.
+journal.window.settings.visible.text.facets.keep.parts.of.your.life = le facette tengono separate parti della tua vita dentro un solo diario.
 
-journal.window.settings.visible.text.facets.keep.parts.of.your.life.variant2 = le faccette tengono separate parti della tua vita dentro un solo diario, lavoro e casa, per esempio, senza bisogno di due diari.
+journal.window.settings.visible.text.facets.keep.parts.of.your.life.variant2 = le facette tengono separate parti della tua vita dentro un solo diario, lavoro e casa, per esempio, senza bisogno di due diari.
 
-journal.window.settings.visible.text.failed.to.load.facets = non è stato possibile caricare le faccette.
+journal.window.settings.visible.text.failed.to.load.facets = non è stato possibile caricare le facette.
 
 journal.window.settings.visible.text.from.now.on.after.each.recording = d'ora in poi, dopo che ogni registrazione è stata elaborata, il tuo diario elimina per sempre il suo audio originale. le tue parole, quando le hai dette e chi stava parlando vengono conservati. alcune delle tue parole possono sfuggire, e quelle non si possono recuperare.
 
@@ -3862,7 +3862,7 @@ journal.window.settings.visible.text.loading.settings = caricamento delle impost
 
 journal.window.settings.visible.text.loading.storage.settings = caricamento delle impostazioni di archiviazione…
 
-journal.window.settings.visible.text.loading.your.facets = caricamento delle tue faccette…
+journal.window.settings.visible.text.loading.your.facets = caricamento delle tue facette…
 
 journal.window.settings.visible.text.loading.your.versions = caricamento delle tue versioni...
 
@@ -4036,7 +4036,7 @@ journal.window.settings.visible.text.you.can.change.both.later = puoi cambiare e
 
 journal.window.settings.visible.text.your.browser.your.programs.and.the = il tuo browser, i tuoi programmi e gli agenti che hai connesso continuano a funzionare. i programmi in esecuzione come servizio, come un altro account o dentro WSL non potranno connettersi al tuo diario.
 
-journal.window.settings.visible.text.your.choice.could.not.be.saved = non è stato possibile salvare la tua scelta. riprova, per favore.
+journal.window.settings.visible.text.your.choice.could.not.be.saved = non è stato possibile salvare la tua scelta. per favore riprova.
 
 journal.window.settings.visible.text.your.full.legal.or.formal.name = il tuo nome legale o formale completo
 
@@ -4120,7 +4120,7 @@ journal.window.sources.copy.retry.try.again = riprova
 
 journal.window.sources.copy.title.sources = fonti
 
-journal.window.sources.lede.when.your.devices.last.added.something = quando i tuoi dispositivi hanno aggiunto qualcosa al tuo diario per l'ultima volta.
+journal.window.sources.lede.when.your.devices.last.added.something = quando i tuoi dispositivi hanno aggiunto qualcosa al tuo diario l'ultima volta.
 
 journal.window.sources.months.label.april = aprile
 
@@ -4194,7 +4194,7 @@ journal.window.system.health.backlog.age.minute = { $quantity ->
 
 journal.window.system.health.backlog.day.a.chatgpt.usage.limit.was.reached.check.usage.and.app.limits.in.chatgpt = è stato raggiunto un limite di utilizzo di ChatGPT. controlla l'utilizzo e i limiti dell'app nelle impostazioni di ChatGPT
 
-journal.window.system.health.backlog.day.a.processing.step.keeps.failing.try.again = un passaggio di elaborazione continua a non riuscire. riprova
+journal.window.system.health.backlog.day.a.processing.step.keeps.failing.try.again = un passo di elaborazione continua a fallire. riprova
 
 journal.window.system.health.backlog.day.a.setting.s.missing.check.your.journal.s.setup = manca un'impostazione. controlla la configurazione iniziale del tuo diario
 
@@ -4218,17 +4218,17 @@ journal.window.system.health.backlog.day.the.ai.provider.refused.a.request.retry
 
 journal.window.system.health.backlog.day.the.ai.provider.was.unreachable.try.again = il fornitore di IA non era raggiungibile. riprova
 
-journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o = questo account ChatGPT non si può usare per il ragionamento. scegli un altro fornitore nella pagina di ragionamento
+journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o = questo account ChatGPT non si può usare per il ragionamento. scegli un altro fornitore sulla pagina di ragionamento
 
 journal.window.system.health.backlog.day.this.day.s.remaining.content.still.will.not.fit.the.on.device.model.aft = il contenuto rimanente di questo giorno non ci sta ancora nel modello sul dispositivo dopo il taglio. continuerà a riprovare
 
 journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.action.needed.yet = in attesa di riprovare in automatico. ancora nessuna azione necessaria
 
-journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = il tuo fornitore di IA ha rifiutato la tua chiave. controllala nella pagina di ragionamento
+journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = il tuo fornitore di IA ha rifiutato la tua chiave. controllala sulla pagina di ragionamento
 
 journal.window.system.health.backlog.verdict.age.unknown = senza un orario affidabile per il suo ultimo aggiornamento di stato, il tuo diario non può sapere se è in pari.
 
-journal.window.system.health.backlog.verdict.all.caught.up = il tuo diario è del tutto in pari.
+journal.window.system.health.backlog.verdict.all.caught.up = il tuo diario è tutto in pari.
 
 journal.window.system.health.backlog.verdict.caught.up = il tuo diario è in pari.
 
@@ -4276,7 +4276,7 @@ journal.window.system.health.backlog.verdict.stuck = { $quantity ->
    *[other] in pari tranne { $count } giorni che hanno bisogno di una mano.
     }
 
-journal.window.system.health.backlog.verdict.unclear.now = non è chiaro se il tuo diario sia in pari in questo momento.
+journal.window.system.health.backlog.verdict.unclear.now = non è chiaro se il tuo diario sia in pari ora.
 
 journal.window.system.health.index.behind.count = { $quantity ->
     [one] la ricerca si sta aggiornando con 1 modifica nel tuo diario.
@@ -4290,7 +4290,7 @@ journal.window.system.health.index.catching.up = la ricerca si sta aggiornando r
 
 journal.window.system.health.index.check.overdue = il controllo giornaliero della ricerca non finisce da oltre due giorni, quindi alcune modifiche possono mancare dalla ricerca.
 
-journal.window.system.health.index.classification.stalled = la ricerca ha smesso di classificare alcuni elementi più vecchi nelle tue faccette e ha bisogno di una riparazione.
+journal.window.system.health.index.classification.stalled = la ricerca ha smesso di classificare alcuni elementi più vecchi nelle tue facette e ha bisogno di una riparazione.
 
 journal.window.system.health.index.damage.check = la ricerca ha trovato un problema nel suo indice e lo sta controllando.
 

@@ -810,7 +810,7 @@ journal.window.entities.entity.delete.copy.facet.unknown.its.place.and.notes.in.
 
 journal.window.entities.entity.delete.copy.gone.it.s.no.longer.in.your = non è più nel tuo diario.
 
-journal.window.entities.entity.delete.copy.last.facet.your.journal.needs.at.least.one = il tuo diario ha bisogno di almeno una facetta non silenziata.
+journal.window.entities.entity.delete.copy.last.facet.your.journal.needs.at.least.one = al tuo diario serve almeno una facetta non silenziata.
 
 journal.window.entities.entity.delete.copy.lead.this.erases.the.entity.s.own = questo cancella ciò che è proprio dell'entità:
 
@@ -830,11 +830,11 @@ journal.window.entities.entity.delete.copy.own.many.this.moves.each.one.s.own = 
 
 journal.window.entities.entity.delete.copy.principal.this.is.you.so.it.can = sei tu, quindi non si può eliminare.
 
-journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and = esce dal tuo diario ora e non si può recuperare.
+journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può recuperare.
 
 journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = esce dal tuo diario ora e aspetta nel cestino, poi viene cancellata. puoi recuperarla fino ad allora.
 
-journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and = escono dal tuo diario ora e non si possono recuperare.
+journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and = escono ora dal tuo diario e non si possono recuperare.
 
 journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and.variant2 = escono dal tuo diario ora e aspettano nel cestino, poi vengono cancellate. puoi recuperare ognuna fino ad allora.
 
@@ -846,7 +846,7 @@ journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.
 
 journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.update.its.variant4 = non è stato possibile aggiornare il registro delle entità del tuo diario, quindi questa non è stata cancellata.
 
-journal.window.entities.entity.delete.copy.recover.recover = recupera
+journal.window.entities.entity.delete.copy.recover.recover = ripristina
 
 journal.window.entities.entity.delete.copy.select.all.page.select.all.on.this.page = seleziona tutto in questa pagina
 
@@ -1322,9 +1322,9 @@ journal.window.entities.merge.unmerged.pair.count = { $pairs_quantity ->
        *[other] { $pairs } coppie in più escono dall'elenco senza unirsi: ognuna include un'entità già unita più sopra.
     }
 
-journal.window.entities.message.it.may.already.be.back.in = potrebbe già essere di nuovo nel tuo diario. ricarica per controllare.
+journal.window.entities.message.it.may.already.be.back.in = potrebbe essere già di nuovo nel tuo diario. ricarica per controllare.
 
-journal.window.entities.message.it.may.already.be.erased.reload = potrebbe essere già stata cancellata. ricarica per controllare.
+journal.window.entities.message.it.may.already.be.erased.reload = potrebbe essere già cancellato. ricarica per controllare.
 
 journal.window.entities.message.it.may.already.be.in.the = potrebbe essere già nel cestino. ricarica per controllare.
 
@@ -1336,7 +1336,7 @@ journal.window.entities.message.it.s.still.in.the.trash = è ancora nel cestino.
 
 journal.window.entities.message.it.s.still.in.your.journal = è ancora nel tuo diario.
 
-journal.window.entities.message.they.may.already.be.back.in = potrebbero già essere di nuovo nel tuo diario. ricarica per controllare.
+journal.window.entities.message.they.may.already.be.back.in = potrebbero essere già di nuovo nel tuo diario. ricarica per controllare.
 
 journal.window.entities.message.they.may.already.be.erased.reload = potrebbero essere già state cancellate. ricarica per controllare.
 
@@ -2028,7 +2028,7 @@ journal.window.entities.visible.text.saving = salvataggio in corso…
 
 journal.window.entities.visible.text.select.a.facet.to.add.entities = Seleziona una facetta per aggiungere entità al tuo diario.
 
-journal.window.entities.visible.text.still.working = sta ancora lavorando…
+journal.window.entities.visible.text.still.working = ancora in corso…
 
 journal.window.entities.visible.text.they.move.to.hidden.where.you = vanno in nascosto, dove puoi mostrarle di nuovo. gli agenti connessi non possono raggiungerle. la tua stessa entità non è mai in questo gruppo.
 
@@ -2398,7 +2398,7 @@ journal.window.facets.activities.response.error.message.that.edit.couldn.t.be.re
 
 journal.window.facets.activities.response.error.message.that.month.couldn.t.be.used = non è stato possibile usare quel mese.
 
-journal.window.facets.activities.response.error.message.that.request.didn.t.finish = la richiesta non è terminata.
+journal.window.facets.activities.response.error.message.that.request.didn.t.finish = quella richiesta non è terminata.
 
 journal.window.facets.activities.response.error.message.this.isn.t.grouped.with.anything = questo non è in un gruppo con niente.
 
@@ -2472,13 +2472,13 @@ journal.window.facets.activities.window.explanation.seen.as.cancelled.or.decline
 
 journal.window.facets.activities.window.explanation.some.of.those.lines.aren.t = alcune di quelle righe non fanno parte di questa attività.
 
-journal.window.facets.activities.window.explanation.someone.i.don.t.know = una persona che non conosco
+journal.window.facets.activities.window.explanation.someone.i.don.t.know = qualcuno che non conosco
 
 journal.window.facets.activities.window.explanation.tell.your.journal.in.your.own = di' al tuo diario con le tue parole
 
 journal.window.facets.activities.window.explanation.that.changed.since.it.was.shown = è cambiata da quando è stata mostrata. ecco come sta ora.
 
-journal.window.facets.activities.window.explanation.that.person.can.t.be.chosen = quella persona non si può scegliere. scegli un'altra persona, o una persona che non conosci.
+journal.window.facets.activities.window.explanation.that.person.can.t.be.chosen = quella persona non può essere scelta. scegli qualcun altro, o qualcuno che non conosci.
 
 journal.window.facets.activities.window.explanation.the.journal.adds.activities.as.it = il diario aggiunge attività mentre elabora ciò che hai condiviso.
 
@@ -2534,9 +2534,9 @@ journal.window.facets.awareness.response.error.message.that.json.request.couldn.
 
 journal.window.facets.awareness.response.error.message.that.part.of.your.journal.couldn = non è stato possibile trovare quella parte del tuo diario.
 
-journal.window.facets.awareness.response.error.message.that.request.didn.t.finish = la richiesta non è terminata.
+journal.window.facets.awareness.response.error.message.that.request.didn.t.finish = quella richiesta non è terminata.
 
-journal.window.facets.awareness.response.error.message.that.request.had.no.data.in = quella richiesta non aveva dati.
+journal.window.facets.awareness.response.error.message.that.request.had.no.data.in = quella richiesta non conteneva dati.
 
 journal.window.facets.awareness.response.error.message.the.awareness.operation.is.busy = L'operazione awareness è occupata.
 
@@ -4099,7 +4099,7 @@ journal.window.map.visible.text.to.remove.a.visit.or.stay = per rimuovere una vi
 
 journal.window.map.visible.text.what.you.call.a.place.a = come chiami un luogo, un nome oppure casa o lavoro, si usa nella ricerca e nel ragionamento stesso del tuo diario, e un agente che può vedere le trascrizioni in tutto il tuo diario può leggerlo.
 
-journal.window.map.visible.text.where = where
+journal.window.map.visible.text.where = dove
 
 journal.window.map.visible.text.where.starts.around.the.area.with = "where" inizia intorno all'area con più giorni: ogni fermata entro 50 km da essa. ogni serie di giorni con una fermata più lontana è un viaggio, chiamato in base alle sue date.
 

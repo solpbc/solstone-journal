@@ -548,7 +548,7 @@ journal.window.agents.memory.see.all.count = { $quantity ->
 
 journal.window.agents.message.changing.your.journal.s.address.disconnects = cambiare l'indirizzo del tuo diario disconnette gli agenti accoppiati al vecchio indirizzo. continua?
 
-journal.window.agents.message.it.may.already.be.back.in = potrebbe essere già tornato nel tuo diario. ricarica per controllare.
+journal.window.agents.message.it.may.already.be.back.in = potrebbe essere già di nuovo nel tuo diario. ricarica per controllare.
 
 journal.window.agents.message.it.may.already.be.erased.reload = potrebbe essere già cancellato. ricarica per controllare.
 
@@ -926,7 +926,7 @@ journal.window.agents.title.moved.to.the.trash = spostato nel cestino
 
 journal.window.agents.title.your.journal.didn.t.answer = il tuo diario non ha risposto
 
-journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays = tutto ciò che un agente ha già letto resta con l'agente.
+journal.window.agents.trash.copy.agent.read.anything.an.agent.already.read.stays = tutto ciò che un agente ha già letto resta con lui.
 
 journal.window.agents.trash.copy.back.back = indietro
 
@@ -938,7 +938,7 @@ journal.window.agents.trash.copy.move.to.trash.move.to.trash = sposta nel cestin
 
 journal.window.agents.trash.copy.open.trash.open.trash = apri il cestino
 
-journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può ripristinare.
+journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può recuperare.
 
 journal.window.agents.trash.copy.reach.it.leaves.your.journal.now.and.variant2 = esce ora dal tuo diario e attende nel cestino, poi viene cancellato. puoi ripristinarlo fino ad allora.
 
@@ -1402,7 +1402,7 @@ journal.window.briefing.section.empty = Niente da riportare.
 
 journal.window.describe.notification.blocked.chatgpt.not.eligible = questo account ChatGPT non si può usare per il ragionamento. scegli un altro fornitore sulla pagina di ragionamento
 
-journal.window.describe.notification.blocked.chatgpt.sign.in.required = sei fuori da ChatGPT. accedi di nuovo sulla pagina di ragionamento
+journal.window.describe.notification.blocked.chatgpt.sign.in.required = sessione ChatGPT chiusa. accedi di nuovo nella pagina di ragionamento
 
 journal.window.describe.notification.blocked.confidential.access.ended = l'elaborazione confidenziale non è attiva per questo diario. apri la pagina di ragionamento per vedere perché
 
@@ -1412,7 +1412,7 @@ journal.window.describe.notification.blocked.provider.key.missing = al tuo forni
 
 journal.window.describe.notification.blocked.title = le descrizioni dello schermo sono in attesa
 
-journal.window.oauth.callback.failure = l'accesso non è terminato. torna al tuo diario e riprova
+journal.window.oauth.callback.failure = l'accesso non è finito. torna al tuo diario e riprova
 
 journal.window.oauth.callback.success = accesso eseguito. puoi chiudere questa scheda e tornare al tuo diario
 
@@ -1624,7 +1624,7 @@ journal.window.stats.chart.hours.tip = { $day } - Audio: { $audio }h, Schermo: {
 
 journal.window.stats.chart.hours.tip.disk = { $day } - Audio: { $audio }h, Schermo: { $screen }h, Disco: { $storage }
 
-journal.window.stats.chart.hours.value = { $hours }h
+journal.window.stats.chart.hours.value = { $hours } h
 
 journal.window.stats.chart.inspection.caption = giorno{ $slot1 }
 
@@ -2396,7 +2396,7 @@ journal.window.thinking.copy.your.journal.can.t.read.its = il tuo diario non rie
 
 journal.window.thinking.copy.your.journal.is.here.choose.how = il tuo diario è qui. scegli sotto come gira l'elaborazione.
 
-journal.window.thinking.copy.your.journal.must.verify.the.service = il tuo diario deve verificare il servizio prima che venga inviato qualcosa. se non riesce a verificare, non invia.
+journal.window.thinking.copy.your.journal.must.verify.the.service = il tuo diario deve verificare il servizio prima che venga inviato qualcosa. se non può verificare, non invia.
 
 journal.window.thinking.copy.your.journal.needs.to.re.check = il tuo diario deve controllare di nuovo il servizio prima di inviare.
 
@@ -2544,7 +2544,7 @@ journal.window.thinking.label.thinking.events = eventi di ragionamento
 
 journal.window.thinking.label.tool.calls = chiamate di strumento
 
-journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = il tuo diario deve verificare il servizio prima che venga inviato qualcosa. se non riesce a verificare, non invia.
+journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = il tuo diario deve verificare il servizio prima che venga inviato qualcosa. se non può verificare, non invia.
 
 journal.window.thinking.lane.check.failed.keep.active = non è stato possibile controllare la configurazione locale. puoi ancora usare { $active_lane }.
 

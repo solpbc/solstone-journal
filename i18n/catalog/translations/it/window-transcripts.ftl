@@ -144,7 +144,7 @@ journal.window.health.backlog.action.process.now = dai priorità al giorno
 
 journal.window.health.backlog.action.redo.scratch = rifai da zero
 
-journal.window.health.backlog.bucket.description = alcuni giorni si riprovano automaticamente; altri hanno bisogno del tuo aiuto. ogni giorno mostra lo stato attuale.
+journal.window.health.backlog.bucket.description = alcuni giorni riprovano in automatico; altri hanno bisogno del tuo aiuto. ogni giorno mostra il suo stato attuale.
 
 journal.window.health.backlog.bucket.heading = giorni che hanno bisogno di una mano
 
@@ -730,7 +730,7 @@ journal.window.health.section.heading.processing = elaborazione
 
 journal.window.health.section.heading.programs.using.the.older.local.connection = programmi che usano la connessione locale più vecchia
 
-journal.window.health.section.heading.right.now = in questo momento
+journal.window.health.section.heading.right.now = adesso
 
 journal.window.health.section.heading.set.aside.work = lavoro messo da parte
 
@@ -768,9 +768,9 @@ journal.window.health.speech.setup.copy.explanation.speech.recognition.setup.cou
 
 journal.window.health.speech.setup.copy.state.checking.the.download = controllo dello scaricamento
 
-journal.window.health.speech.setup.copy.state.downloading = scaricamento
+journal.window.health.speech.setup.copy.state.downloading = scaricamento in corso
 
-journal.window.health.speech.setup.copy.state.installing = installazione
+journal.window.health.speech.setup.copy.state.installing = installazione in corso
 
 journal.window.health.speech.setup.copy.state.setup.couldn.t.finish = non è stato possibile terminare la configurazione iniziale
 
@@ -858,7 +858,7 @@ journal.window.health.status.quiet = silenzioso
 
 journal.window.health.status.recent.days = giorni recenti
 
-journal.window.health.status.retrying = in nuovo tentativo
+journal.window.health.status.retrying = nuovo tentativo in corso
 
 journal.window.health.status.running.variant2 = esecuzione in corso…
 
@@ -2188,7 +2188,7 @@ journal.window.speakers.owner.write.owner.voice.error.detail.audio.sha256.must.b
 
 journal.window.speakers.owner.write.owner.voice.error.detail.awareness.state.is.not.candidate = Lo stato di consapevolezza non è candidato
 
-journal.window.speakers.owner.write.owner.voice.error.detail.candidate.version.mismatch.or.stale.generation = Versione del candidato non corrispondente o generazione non aggiornata
+journal.window.speakers.owner.write.owner.voice.error.detail.candidate.version.mismatch.or.stale.generation = Versione del candidato non corrispondente o generazione obsoleta
 
 journal.window.speakers.owner.write.owner.voice.error.detail.configured.owner.identity.is.not.admitted = l'identità configurata del titolare non è ammessa
 
@@ -2828,7 +2828,7 @@ journal.window.transcripts.consent.trash.copy.eraselead.this.erases.each.segment
 
 journal.window.transcripts.consent.trash.copy.erasenow.erase.now = cancella ora
 
-journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and = lasciano il tuo diario ora e non possono essere ripristinati.
+journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and = escono ora dal tuo diario e non si possono recuperare.
 
 journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them = le attività ricavate da essi vengono scartate ora, e i resoconti dei loro giorni e delle loro settimane lasciano la ricerca. il tuo diario poi li riscrive da ciò che resta, con il ragionamento che hai scelto.
 
@@ -2844,7 +2844,7 @@ journal.window.transcripts.consent.trash.copy.location.location = posizione
 
 journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay = i file che la sua importazione ha conservato restano nel tuo diario, perché altri segmenti provengono ancora da essi. per rimuoverli, elimina l'importazione.
 
-journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash = i loro contenuti multimediali originali nel cestino vengono cancellati con essi.
+journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash = i loro contenuti originali nel cestino vengono cancellati con loro.
 
 journal.window.transcripts.consent.trash.copy.manyone.other.segment.from.those.imports.in = 1 altro segmento di quelle importazioni nel cestino viene cancellato anch'esso.
 
@@ -2872,7 +2872,7 @@ journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from = �
 
 journal.window.transcripts.consent.trash.copy.one.it.s.the.last.segment.from.variant2 = è l'ultimo segmento della sua importazione, quindi il file che ha conservato e la sua riga nella tua cronologia delle importazioni vanno nel cestino con esso.
 
-journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash = i suoi contenuti multimediali originali nel cestino vengono cancellati con esso.
+journal.window.transcripts.consent.trash.copy.one.its.original.media.in.the.trash = i suoi contenuti originali nel cestino vengono cancellati con questo.
 
 journal.window.transcripts.consent.trash.copy.one.the.file.import.kept.stays.in = il file che 1 importazione ha conservato resta nel tuo diario, perché altri segmenti provengono ancora da esso. per rimuoverlo, elimina l'importazione nella pagina di importazione.
 
@@ -2894,7 +2894,7 @@ journal.window.transcripts.consent.trash.copy.openimport.open.the.import = apri 
 
 journal.window.transcripts.consent.trash.copy.photo.photo = foto
 
-journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and = lascia il tuo diario ora e non può essere ripristinato.
+journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and = esce ora dal tuo diario e non si può recuperare.
 
 journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and.variant2 = lascia il tuo diario ora e aspetta nel cestino, poi viene cancellato. puoi ripristinarlo fino ad allora.
 
@@ -3234,7 +3234,7 @@ journal.window.transcripts.notice.age.days = { $count }g
 
 journal.window.transcripts.notice.age.hours = { $count }h
 
-journal.window.transcripts.notice.age.minutes = { $count }min
+journal.window.transcripts.notice.age.minutes = { $count } min
 
 journal.window.transcripts.option.label.choose.a.segment = scegli un segmento
 
@@ -3304,7 +3304,7 @@ journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking = confi
 
 journal.window.transcripts.photo.copy.unavailable.this.photo.couldn.t.be.described = non è stato possibile descrivere questa foto. la foto resta nel tuo diario.
 
-journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = nessuna data nella foto · collocata al momento dell'importazione
+journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at = nessuna data nella foto · collocata all'ora di importazione
 
 journal.window.transcripts.photo.copy.viewerlabel.photo.viewer = visualizzatore di foto
 
@@ -3550,7 +3550,7 @@ journal.window.transcripts.speaker.copy.line.only.body = la tua risposta riguard
 
 journal.window.transcripts.speaker.copy.line.only.link = parlanti
 
-journal.window.transcripts.speaker.copy.line.owner = il tuo diario non sa ancora quale persona sei tu, quindi non può segnare le righe come tue.
+journal.window.transcripts.speaker.copy.line.owner = il tuo diario non sa ancora quale persona sei, quindi non può segnare le righe come tue.
 
 journal.window.transcripts.speaker.copy.line.person = quella persona non può essere scelta. scegli qualcun altro, o qualcuno che non conosci.
 
@@ -3730,7 +3730,7 @@ journal.window.transcripts.tooltip.previous.frame.left.arrow = fotogramma preced
 
 journal.window.transcripts.trash.copy.back.back = indietro
 
-journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = questo si sta già spostando o cancellando. ricarica tra un minuto per controllare.
+journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = è già in spostamento o in cancellazione. ricarica tra un minuto per controllare.
 
 journal.window.transcripts.trash.copy.cancel.cancel = annulla
 
@@ -3746,7 +3746,7 @@ journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it = q
 
 journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = potrebbe essere già di nuovo nel tuo diario. ricarica per controllare.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = potrebbe essere già stato cancellato. ricarica per controllare.
+journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = potrebbe essere già cancellato. ricarica per controllare.
 
 journal.window.transcripts.trash.copy.message.it.may.already.be.in.the = potrebbe essere già nel cestino. ricarica per controllare.
 
