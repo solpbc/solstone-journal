@@ -8,30 +8,17 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- connected agents with body permission now have a separate cycle and pregnancy option, off for every agent, including ones you've already connected, for menstrual cycle, fertility, pregnancy and related logs across your body sources. Garmin workout location coordinates follow your places permission and location detail (exact locations, ~1 km areas, or none on names only or when places is off).
-- when your journal runs on a computer, you can now sync Garmin Connect with your own Personal API key under settings → sync. your journal brings in workouts, sleep, HRV, heart rate, Body Battery, stress, SpO2, weight, steps, hydration, cycle and nutrition logs directly from Garmin Connect, lists Garmin under sources, and lets you move individual sync runs to trash from the Garmin card.
-- your journal now suggests possible duplicates among the people, companies and other entities in your journal when two share an email address or another name, or have similar names in different facets. they wait in entities under possible duplicates, and nothing is merged unless you choose it.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
-- in a facet's list of entities, you can now select several and detach them from that facet in one go. they stay in your journal, your journal won't add them back to that facet on its own, and you can re-attach any of them anytime. thanks @dvanduzer for the suggestion (#429).
 
 ### Changed
 
-- your agents can now read daily active calories from Oura and time in each sleep stage from Apple Health and Oura (keeping awake time separate from time asleep) when they ask for a body summary over a week or date range, along with daily resting heart rate and heart rate variability ranges from Apple Health and daily heart rate ranges with peak and low times from both, each with its reading count. this applies when you've given them access to transcripts, summaries and body across your whole journal.
-- each day's searchable body summary now includes reading values and ranges, daily totals for steps, distance and flights climbed (separately for each source and named app or device, where entries of the same kind don't overlap), and Apple Health sleep-stage durations. for Oura's daily readiness, sleep, activity and other daily entries, the searchable summary lists them by name only, without their scores or values.
-- connected agents also receive updated instructions for reading daily body summaries across a week or date range, including that each night is filed on the morning it ended and that a split night can have more than one entry.
 - the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
 
-- accepting a suggested merge now keeps the merged name as another name, the way a merge you start yourself already did.
-- an entity you move to the trash no longer appears in possible duplicates.
-- if your journal's search index is missing, search now rebuilds it right away instead of waiting for the next daily check, and drops results from days that are no longer in your journal's folder. if many days disappear at once, for example when a drive isn't connected, search keeps their results instead of dropping them.
-- calendar events now show on the right day after you change your home timezone in settings.
-- this is a security fix. when your journal's web app read or saved settings, its reply also included credentials saved in your journal: your backup keys and any credentials for your own backup storage, your Oura connection credentials and tokens, any saved key for your own endpoint kept when you turned on confidential processing, and an older voice API key if an upgraded journal still carried one. anything that could reach your journal's web app (a paired device, a browser with access to your journal, another program running as you on the same computer, or any program on it when local access is open) could have read those credentials. settings replies no longer include them, and your saved connections and backups keep working as before. your journal keeps no log of requests, so it can't tell whether any of those credentials were ever read this way. please install this update. if any paired device, browser, browser extension, program or other account on that computer you don't trust could have reached your journal's web app, replace any backup storage credentials, that saved own-endpoint key and any older voice API key, and revoke or replace your Oura app credentials and authorization at Oura. for encrypted backups, regenerating your recovery key replaces only that key and leaves the daily backup key active; to replace both keys, restore any days kept only in backup first, turn off and delete the backup (clearing the old location or choosing a new one if you use your own backup storage), and set up a new backup.
-- when you type a request to an agent in a tmux session you've listed in `output_sessions`, your journal now keeps the request as yours and usually describes the work that follows as the agent's, so it is less likely to credit that work to you. thanks @dvanduzer for the retest (#424).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
@@ -64,14 +51,43 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
-- on windows, a single slow status check during setup no longer leaves the journal window saying "the journal isn't answering". the window checks once more first.
-- importing an audio file the journal can't read with `solstone journal importer` now prints one plain line, without the media library's extra log lines or an internal error dump.
-- `solstone call` before first-run setup is finished now says your journal isn't set up yet, instead of saying the journal returned an unreadable error.
-- a transcript with one damaged line now shows the rest of its lines instead of nothing, and the journal no longer drops an entry it was adding to a day when two of its parts write at once.
 
 ### Removed
 
 - the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
+
+## [2.0.91] - 2026-11-25
+
+### Added
+
+- when your journal runs on a computer, you can now sync Garmin Connect with your own Personal API key under settings → sync. your journal brings in workouts, sleep, HRV, heart rate, Body Battery, stress, SpO2, weight, steps, hydration, cycle and nutrition logs directly from Garmin Connect, lists Garmin under sources, and lets you move individual sync runs to trash from the Garmin card.
+- connected agents with body permission now have a separate cycle and pregnancy option, off for every agent, including ones you've already connected, for menstrual cycle, fertility, pregnancy and related logs across your body sources. Garmin workout location coordinates follow your places permission and location detail (exact locations, ~1 km areas, or none when location detail is names only or places is off).
+- in a facet's list of entities, you can now select several and detach them from that facet in one go. they stay in your journal, your journal won't add them back to that facet on its own, and you can re-attach any of them anytime. thanks @dvanduzer for the suggestion (#429).
+- in agents, the page for an agent you've connected that hasn't asked your journal anything this week now offers up to three ideas to ask it, based on what your journal holds and what that agent may see, each with a copy button. you also see them right after you connect one.
+
+### Changed
+
+- your journal now also suggests possible duplicates among the people, companies and other entities in your journal when two share an email address or another name, or have similar names in different facets. nothing is merged unless you choose it.
+- the side rail now sorts your pages into three groups: your journal, shaping and running. home shows a count when something needs your attention, and suggestions and import show how many things wait for your review. the counts update as things change and take the place of the status mark that used to sit in the side rail.
+- the health page is now called status.
+- if you haven't chosen your own pins, the side rail now pins transcripts, entities, activities and suggestions instead of search, entities and thinking. every page is still in more. when body, map or speakers first has something in it, your journal offers to pin that page; choose not now and it won't ask again.
+- sources and import now share a switcher at the top of each page. sources also has a syncs section that shows Plaud, Granola and Garmin once connected, with when each last added something or was last checked and whether its hourly sync is off.
+- your agents can now read daily active calories and time in each sleep stage (keeping awake time separate from time asleep) from Apple Health, Oura and Garmin when they ask for a body summary over a week or date range, along with daily resting heart rate and heart rate variability ranges from Apple Health and daily heart rate ranges with peak and low times from all three, each with its reading count. this applies when you've given them access to transcripts, summaries and body across your whole journal.
+- each day's searchable body summary now includes reading values and ranges, daily totals for steps, distance and flights climbed (separately for each source and named app or device, where entries of the same kind don't overlap), and sleep-stage durations from Apple Health and Garmin. for Oura's daily readiness, sleep, activity and other daily entries, the searchable summary lists them by name only, without their scores or values.
+- connected agents also receive updated instructions for reading daily body summaries across a week or date range, including that each night is filed on the morning it ended and that a split night can have more than one entry.
+
+### Fixed
+
+- this is a security fix. when your journal's web app read or saved settings, its reply also included credentials saved in your journal: your backup keys and any credentials for your own backup storage, your Oura connection credentials and tokens, any saved key for your own endpoint kept when you turned on confidential processing, and an older voice API key if an upgraded journal still carried one. anything that could reach your journal's web app (a paired device, a browser with access to your journal, another program running as you on the same computer, or any program on it when local access is open) could have read those credentials. settings replies no longer include them, and your saved connections and backups keep working as before. your journal keeps no log of requests to its web app, so it can't tell whether any of those credentials were ever read this way. please install this update. if any paired device, browser, browser extension, program or other account on that computer you don't trust could have reached your journal's web app, replace any backup storage credentials, that saved own-endpoint key and any older voice API key, and revoke or replace your Oura app credentials and authorization at Oura. for encrypted backups, regenerating your recovery key replaces only that key and leaves active the separate key your journal uses for its daily backups; to replace both keys, restore any days kept only in backup first, turn off and delete the backup (clearing the old location or choosing a new one if you use your own backup storage), and set up a new backup.
+- accepting a suggested merge now keeps the merged name as another name, the way a merge you start yourself already did.
+- an entity you move to the trash no longer appears in possible duplicates.
+- if your journal's search index is missing, search now rebuilds it right away instead of waiting for the next daily check, and drops results from days that are no longer in your journal's folder. if many days disappear at once, for example when a drive isn't connected, search keeps their results instead of dropping them.
+- calendar events now show on the right day after you change your home timezone in settings.
+- a transcript with one damaged line now shows the rest of its lines instead of nothing, and the journal no longer drops an entry it was adding to a day when two of its parts write at once.
+- when you type a request to an agent in a tmux session you've listed in `output_sessions`, your journal now keeps the request as yours and usually describes the work that follows as the agent's, so it is less likely to credit that work to you. thanks @dvanduzer for the retest (#424).
+- on windows, a single slow status check during setup no longer leaves the journal window saying "the journal isn't answering". the window checks once more first.
+- when `solstone journal importer` gets an audio file it can't read, it now prints one plain line, without the media library's extra log lines or an internal error dump.
+- `solstone call` before first-run setup is finished now says your journal isn't set up yet, instead of saying the journal returned an unreadable error.
 
 ## [2.0.90] - 2026-11-24
 
