@@ -466,11 +466,7 @@ fn project_sunday(
     let mut photo_cache = BTreeMap::new();
     let collect_entities = include.contains(&AdmittedCategory::Entities)
         && snapshot.categories.contains(&AdmittedCategory::Entities);
-    let owner = if collect_entities {
-        Some(crate::people_view::OwnerIdentity::load(journal))
-    } else {
-        None
-    };
+    let owner = Some(crate::people_view::OwnerIdentity::load(journal));
     let mut people_by_day = BTreeMap::<String, BTreeSet<String>>::new();
     if collect_entities {
         for row in &collected {
@@ -596,7 +592,7 @@ fn project_sunday(
             Some(journal),
             Some(&rep.day),
             Some(&mut photo_cache),
-            None,
+            owner.as_ref(),
         );
         let entities = crate::tools::activities::activity_entities(&rep.record);
         let title = crate::tools::activities::activity_title(&rep.record);
@@ -1271,8 +1267,12 @@ fn summarize_day_activities(
         let people_count = items
             .iter()
             .map(|it| {
-                let found = crate::tools::activities::activity_people_across(
+                let found = crate::tools::activities::activity_people_in_context(
                     std::iter::once(&it.record).chain(it.copies.iter()),
+                    None,
+                    None,
+                    None,
+                    owner,
                 );
                 crate::tools::activities::activity_entities(&it.record)
                     .len()
@@ -1456,11 +1456,7 @@ pub(crate) fn project_range_with_limits(
         .collect();
     let collect_entities = include.contains(&AdmittedCategory::Entities)
         && snapshot.categories.contains(&AdmittedCategory::Entities);
-    let owner = if collect_entities {
-        Some(crate::people_view::OwnerIdentity::load(journal))
-    } else {
-        None
-    };
+    let owner = Some(crate::people_view::OwnerIdentity::load(journal));
 
     let mut body_days = BTreeMap::new();
     let mut body_targets = Vec::new();
@@ -4355,11 +4351,14 @@ mod tests {
             .iter()
             .find(|a| a["title"] == "Portrait")
             .expect("portrait activity in week");
-        assert_eq!(
-            portrait_act["in_photo"],
-            json!(["Alice", "Photo Only", "Gib"])
-        );
+        assert_eq!(portrait_act["in_photo"], json!(["Alice", "Photo Only"]));
         assert_eq!(portrait_act["on_screen"], json!([]));
+        let planning_act = acts
+            .iter()
+            .find(|a| a["title"] == "Planning")
+            .expect("planning activity in week");
+        assert_eq!(planning_act["participants"], json!(["Alice"]));
+        assert_eq!(planning_act["heard"], json!(["Bob"]));
         let screenshot_act = acts
             .iter()
             .find(|a| a["title"] == "Screenshot")
@@ -4411,5 +4410,130 @@ mod tests {
         assert!(no_ent.get("people").is_none());
         assert!(no_ent.get("co_occurrence").is_none());
         assert!(no_ent["days"][0]["summary"]["entities"]["note"].is_string());
+    }
+
+    #[test]
+    fn get_week_and_wire_cleanup_hide_trashed_person_and_restore_on_untrash() {
+        let root = journal("solstone-week-trashed-");
+        grant(
+            root.path(),
+            &["transcripts", "facets", "entities"],
+            ReadScope::WholeJournal,
+        );
+        let facet_id = "123e4567-e89b-42d3-a456-426614174000";
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": facet_id, "title": "Work", "description": "Work"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "entities/alice/entity.json",
+            &json!({"id": "alice", "name": "Alice", "type": "Person"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/entities/alice/entity.json",
+            &json!({"entity_id": "alice"}).to_string(),
+        );
+        // Trashed person is recorded in entities/retired.json without a live folder.
+        write_raw(
+            root.path(),
+            "entities/retired.json",
+            &json!({
+                "ids": {
+                    "trashed_bob": {"state": "deleted", "dir": "trashed_bob", "name": "Trashed Bob"}
+                }
+            })
+            .to_string(),
+        );
+        let act = json!({
+            "id": "sync_1",
+            "title": "Team Sync",
+            "stream": "talk",
+            "segments": ["090000_600"],
+            "created_at": 100,
+            "participation": [
+                {"name": "Alice", "entity_id": "alice", "role": "attendee"},
+                {"name": "Trashed Bob", "entity_id": "trashed_bob", "role": "attendee"},
+                {"name": "Anne", "entity_id": "anne", "role": "attendee"}
+            ]
+        });
+        write_raw(
+            root.path(),
+            "facets/work/activities/20250309.jsonl",
+            &format!("{act}\n"),
+        );
+
+        let week = probe(
+            root.path(),
+            json!({"week": "20250309", "include": ["entities"]}),
+        )
+        .unwrap();
+        let sync = week["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["title"] == "Team Sync")
+            .unwrap();
+        // Trashed Bob is hidden in both activities[].participants and people roster;
+        // unretired historical slug "anne" stays visible.
+        assert_eq!(sync["participants"], json!(["Alice", "Anne"]));
+        let roster_ids: Vec<&str> = week["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p["id"].as_str())
+            .collect();
+        assert!(roster_ids.contains(&"alice"));
+        assert!(!roster_ids.contains(&"trashed_bob"));
+
+        // Wire cleanup also removes Trashed Bob while preserving Alice and Anne.
+        let owner = crate::people_view::OwnerIdentity::load(root.path());
+        let cleaned = crate::tools::activities::clean_activity_record_for_wire_with_owner(
+            act.as_object().unwrap().clone(),
+            Some(&owner),
+        );
+        let wire_names: Vec<&str> = cleaned["participation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["name"].as_str())
+            .collect();
+        assert_eq!(wire_names, vec!["Alice", "Anne"]);
+
+        // Restoring Trashed Bob into live entities/ immediately makes them reappear.
+        write_raw(
+            root.path(),
+            "entities/trashed_bob/entity.json",
+            &json!({"id": "trashed_bob", "name": "Trashed Bob", "type": "Person"}).to_string(),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/entities/trashed_bob/entity.json",
+            &json!({"entity_id": "trashed_bob"}).to_string(),
+        );
+        let restored = probe(
+            root.path(),
+            json!({"week": "20250309", "include": ["entities"]}),
+        )
+        .unwrap();
+        let sync2 = restored["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["title"] == "Team Sync")
+            .unwrap();
+        assert_eq!(
+            sync2["participants"],
+            json!(["Alice", "Trashed Bob", "Anne"])
+        );
+        let restored_ids: Vec<&str> = restored["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p["id"].as_str())
+            .collect();
+        assert!(restored_ids.contains(&"trashed_bob"));
     }
 }

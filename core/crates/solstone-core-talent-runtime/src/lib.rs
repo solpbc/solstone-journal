@@ -3,7 +3,7 @@
 
 //! Native, closed-set talent execution worker.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -229,15 +229,28 @@ pub(crate) struct JournalOwner {
     /// The principal entity's display name.
     pub(crate) name: Option<String>,
     names: Vec<String>,
-    /// The owner's own names as written, for [`Self::sounds_like`].
+    /// The owner's own names as written, for multi-word and surname [`Self::sounds_like`].
     forms: Vec<String>,
+    /// Single-word owner tokens (>= 4 chars) admitted for guarded phonetic
+    /// [`Self::sounds_like`] only when no admitted non-principal `Person`
+    /// shares or phonetically collides with them.
+    single_word_targets: Vec<String>,
+    /// Exact folded names and aliases of admitted non-principal `Person`
+    /// entities, which [`Self::sounds_like`] never claims for the owner.
+    other_person_exact_names: BTreeSet<String>,
 }
 
-/// The fewest letters a name needs before it can be heard as the owner's.
+/// The fewest letters a multi-word or surname variant needs before it can be
+/// heard as the owner's.
 const OWNER_VARIANT_MIN_CHARS: usize = 6;
-/// The fewest sounds a key needs to count: a short key ("Miller" is `MLR`)
-/// is shared by too many other names.
+/// The fewest letters a guarded single-word owner token needs before a
+/// phonetic mishearing can be taken for the owner.
+const OWNER_SINGLE_WORD_MIN_CHARS: usize = 4;
+/// The fewest sounds a key needs to count for surnames and multi-word matches:
+/// a short key ("Miller" is `MLR`) is shared by too many other names.
 const OWNER_VARIANT_MIN_KEY: usize = 4;
+/// The fewest sounds a guarded single-word token needs for phonetic matching.
+const OWNER_SINGLE_WORD_MIN_KEY: usize = 2;
 /// A sound-alike: the same key, a spelling at least this similar, and lengths
 /// within the possible-names sound-match ratios.
 const OWNER_SOUND_MIN_RATIO: f64 = 70.0;
@@ -262,6 +275,65 @@ impl JournalOwner {
             .collect::<Vec<_>>();
         // Two principals is a damaged identity: name no one rather than guess.
         let principal = (principals.len() == 1).then(|| &principals[0]);
+
+        let mut other_person_exact_names = BTreeSet::new();
+        let mut other_person_tokens = Vec::new();
+        let mut other_person_given_initials = BTreeSet::new();
+        for entity in entities.iter().filter(|entity| {
+            solstone_core_entity::is_admissible_person(entity)
+                && !entity.is_principal()
+                && principal.is_none_or(|p| p.id != entity.id)
+        }) {
+            let value = entity.value.as_object().cloned().unwrap_or_default();
+            for raw in value
+                .get("name")
+                .and_then(Value::as_str)
+                .into_iter()
+                .map(str::to_owned)
+                .chain(string_values(&value, "aka"))
+            {
+                let folded = fold_name(&raw);
+                if !folded.is_empty() {
+                    other_person_exact_names.insert(folded);
+                }
+                let raw_words = raw
+                    .split_whitespace()
+                    .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
+                    .filter(|t| !t.is_empty())
+                    .collect::<Vec<_>>();
+                if raw_words.len() >= 2
+                    && let Some(last_initial) = raw_words[raw_words.len() - 1]
+                        .chars()
+                        .next()
+                        .map(|c| c.to_lowercase().to_string())
+                {
+                    other_person_given_initials.insert((raw_words[0].to_lowercase(), last_initial));
+                }
+                for clean in raw_words {
+                    if possible_names::retrieval::compact(clean).chars().count() >= 2 {
+                        other_person_tokens.push(clean.to_owned());
+                    }
+                }
+            }
+        }
+        let collides_with_other_person = |token: &str| -> bool {
+            let tok_compact = possible_names::retrieval::compact(token);
+            if tok_compact.is_empty() {
+                return false;
+            }
+            let tok_key = possible_names::phon::key(token);
+            other_person_tokens.iter().any(|other| {
+                let other_compact = possible_names::retrieval::compact(other);
+                if other_compact == tok_compact {
+                    return true;
+                }
+                if !tok_key.is_empty() && possible_names::phon::key(other) == tok_key {
+                    return true;
+                }
+                possible_names::retrieval::near_spelling(other, token)
+            })
+        };
+
         let mut names = vec!["you".to_owned(), "yourself".to_owned()];
         names.extend(solstone_core_entity::journal_identity_names(journal));
         if let Some(entity) = principal {
@@ -269,12 +341,64 @@ impl JournalOwner {
             names.extend(value.get("name").and_then(Value::as_str).map(str::to_owned));
             names.extend(string_values(&value, "aka"));
         }
-        let forms = names
+        let forms: Vec<String> = names
             .iter()
             .skip(2)
             .map(|name| name.trim().to_owned())
             .filter(|name| !name.is_empty())
             .collect();
+
+        // Extract given-name tokens and "First L" / "First L." forms from
+        // multi-word owner names (e.g. "Will", "Will S" from "Will Sterling")
+        // when no admitted non-principal Person collides.
+        let mut derived_given_names = Vec::new();
+        let mut derived_initial_forms = Vec::new();
+        for form in &forms {
+            let words = form.split_whitespace().collect::<Vec<_>>();
+            if words.len() >= 2 {
+                let given = words[0].trim_matches(|c: char| !c.is_alphanumeric());
+                if possible_names::retrieval::compact(given).chars().count() >= 2 {
+                    if !collides_with_other_person(given)
+                        && !derived_given_names
+                            .iter()
+                            .any(|seen: &String| seen.eq_ignore_ascii_case(given))
+                    {
+                        derived_given_names.push(given.to_owned());
+                    }
+                    let last = words[words.len() - 1].trim_matches(|c: char| !c.is_alphanumeric());
+                    if let Some(initial) = last.chars().next() {
+                        let initial_lower = initial.to_lowercase().to_string();
+                        let pair = (given.to_lowercase(), initial_lower);
+                        if !other_person_given_initials.contains(&pair) {
+                            derived_initial_forms.push(format!("{given} {initial}"));
+                            derived_initial_forms.push(format!("{given} {initial}."));
+                        }
+                    }
+                }
+            }
+        }
+        names.extend(derived_given_names.iter().cloned());
+        names.extend(derived_initial_forms);
+
+        let mut single_word_targets = Vec::new();
+        for candidate in forms.iter().chain(&derived_given_names) {
+            if candidate.split_whitespace().count() != 1 {
+                continue;
+            }
+            let clean = candidate.trim_matches(|c: char| !c.is_alphanumeric());
+            let compact = possible_names::retrieval::compact(clean);
+            let key = possible_names::phon::key(clean);
+            if compact.chars().count() >= OWNER_SINGLE_WORD_MIN_CHARS
+                && key.chars().count() >= OWNER_SINGLE_WORD_MIN_KEY
+                && !collides_with_other_person(clean)
+                && !single_word_targets
+                    .iter()
+                    .any(|seen: &String| possible_names::retrieval::compact(seen) == compact)
+            {
+                single_word_targets.push(clean.to_owned());
+            }
+        }
+
         let mut folded = Vec::new();
         for name in names.iter().map(|name| fold_name(name)) {
             if !name.is_empty() && !folded.contains(&name) {
@@ -291,6 +415,8 @@ impl JournalOwner {
                 .map(str::to_owned),
             names: folded,
             forms,
+            single_word_targets,
+            other_person_exact_names,
         }
     }
 
@@ -310,17 +436,44 @@ impl JournalOwner {
     /// Whether `name`, which [`Self::actor`] does not take as the owner, is
     /// how speech recognition or a talent wrote one of the owner's own names:
     /// a near spelling (the possible-names spelling route), or the same sound
-    /// with a spelling not far off. Each
-    /// whole name counts, and so does its surname alone (the words after the
-    /// first, or the last word) when its sound is distinctive enough that a
-    /// common short surname is never taken for the owner.
+    /// with a spelling not far off. Each whole multi-word name counts, its
+    /// distinctive surname alone counts, and guarded >= 4-char single-word
+    /// owner tokens count phonetically when no admitted non-principal Person
+    /// collides with them.
     pub(crate) fn sounds_like(&self, name: &str) -> bool {
+        if self.other_person_exact_names.contains(&fold_name(name)) {
+            return false;
+        }
         let heard = possible_names::retrieval::compact(name);
         let heard_length = heard.chars().count();
-        if heard_length < OWNER_VARIANT_MIN_CHARS {
+        if heard_length < OWNER_SINGLE_WORD_MIN_CHARS {
             return false;
         }
         let heard_key = possible_names::phon::key(name);
+        if name.split_whitespace().count() == 1
+            && self.single_word_targets.iter().any(|form| {
+                let target = possible_names::retrieval::compact(form);
+                let length = target.chars().count();
+                let key = possible_names::phon::key(form);
+                if length < OWNER_SINGLE_WORD_MIN_CHARS
+                    || key.chars().count() < OWNER_SINGLE_WORD_MIN_KEY
+                {
+                    return false;
+                }
+                if heard == target {
+                    return true;
+                }
+                heard_key == key
+                    && OWNER_SOUND_LENGTH_RATIO.contains(&(heard_length as f64 / length as f64))
+                    && rapidfuzz::fuzz::ratio(heard.chars(), target.chars()) * 100.0
+                        >= OWNER_SOUND_MIN_RATIO
+            })
+        {
+            return true;
+        }
+        if heard_length < OWNER_VARIANT_MIN_CHARS {
+            return false;
+        }
         self.forms
             .iter()
             .flat_map(|form| owner_targets(form))
@@ -349,9 +502,7 @@ impl JournalOwner {
 }
 
 /// A full owner name `form` as a whole, then its surname alone: the words
-/// after the first ("Van Dusen"), and the last word when that differs. A
-/// one-word name (a first name, a nickname, a handle) is matched exactly or not
-/// at all: "Matthias" is someone else as often as it is a misheard "Mattias".
+/// after the first ("Van Dusen"), and the last word when that differs.
 fn owner_targets(form: &str) -> Vec<(String, bool)> {
     let words = form.split_whitespace().collect::<Vec<_>>();
     if words.len() < 2 {

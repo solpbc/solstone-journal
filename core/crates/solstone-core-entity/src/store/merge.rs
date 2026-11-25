@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
@@ -21,6 +21,7 @@ use solstone_core_journal_io::atomic_replace;
 use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::day_dirs;
 use solstone_core_journal_io::hold_lock;
+use solstone_core_journal_io::hold_or_reuse_lock;
 use solstone_core_journal_io::iter_segments;
 use solstone_core_journal_io::list_dir_entries;
 use solstone_core_journal_io::path_lexists;
@@ -127,6 +128,7 @@ struct MergeStats {
     activities_fields_rewritten: usize,
     activities_files_scanned: usize,
     activities_files_rewritten: usize,
+    activities_rewritten_paths: Vec<PathBuf>,
     observation_relations_rewritten: usize,
 }
 fn audit_counts(
@@ -633,6 +635,7 @@ fn commit_entity_merge_inner(
                 stats.activities_fields_rewritten = result.fields_rewritten;
                 stats.activities_files_scanned = result.files_scanned;
                 stats.activities_files_rewritten = result.files_rewritten;
+                stats.activities_rewritten_paths = result.rewritten_paths;
             }),
             "observation relation remap" => merge_observation_relations(
                 journal,
@@ -690,6 +693,14 @@ fn commit_entity_merge_inner(
     // an index lock refusal nor a restart may roll source state back.
     let committed = json!({"operation":"merge", "report":report});
     rollback.commit_source(journal, "merge", &committed["report"])?;
+    for path in &stats.activities_rewritten_paths {
+        if let Err(error) = solstone_core_indexer_todo::enqueue_path(journal, path) {
+            log::warn!(
+                "entity merge: failed to enqueue rewritten activity file {} for reindex: {error}",
+                path.display()
+            );
+        }
+    }
     // Connections read merged ids through `entities/retired.json` and the
     // merge log, so nothing in the edge index is rewritten here. Discovery
     // clusters were built from the old ids; the cache is removed before the
@@ -798,6 +809,7 @@ pub(crate) struct ActivityMergeStats {
     pub files_rewritten: usize,
     pub records_rewritten: usize,
     pub fields_rewritten: usize,
+    pub rewritten_paths: Vec<PathBuf>,
 }
 /// How an activity record names the entity merged away. `active_entities`
 /// holds the names the talents wrote, not ids, so a record names the source
@@ -862,6 +874,67 @@ fn rename_active_entities(active: &mut Vec<Value>, names: &ActivityNames) -> usi
     renamed
 }
 
+fn participation_role_rank(role: Option<&str>) -> u8 {
+    match role {
+        Some("organizer" | "attendee") => 5,
+        Some("heard") => 4,
+        Some("corresponded") => 3,
+        Some("visible") => 2,
+        Some("mentioned") => 1,
+        _ => 0,
+    }
+}
+
+fn merge_participation_objects(
+    surviving: &mut serde_json::Map<String, Value>,
+    incoming: &serde_json::Map<String, Value>,
+    target_name: &str,
+) {
+    let surviving_rank = participation_role_rank(surviving.get("role").and_then(Value::as_str));
+    let incoming_rank = participation_role_rank(incoming.get("role").and_then(Value::as_str));
+    if incoming_rank > surviving_rank {
+        if let Some(role) = incoming.get("role").cloned() {
+            surviving.insert("role".to_owned(), role);
+        }
+        if let Some(source) = incoming
+            .get("source")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+        {
+            surviving.insert("source".to_owned(), Value::String(source.to_owned()));
+        }
+    }
+    if !target_name.is_empty() && surviving.get("name").is_some_and(Value::is_string) {
+        surviving.insert("name".to_owned(), Value::String(target_name.to_owned()));
+    }
+    let surviving_context_empty = surviving
+        .get("context")
+        .and_then(Value::as_str)
+        .is_none_or(|s| s.trim().is_empty());
+    if surviving_context_empty
+        && let Some(context) = incoming
+            .get("context")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+    {
+        surviving.insert("context".to_owned(), Value::String(context.to_owned()));
+    }
+    if let Some(in_conf) = incoming
+        .get("confidence")
+        .and_then(Value::as_f64)
+        .filter(|c| c.is_finite())
+    {
+        let keep_in = surviving
+            .get("confidence")
+            .and_then(Value::as_f64)
+            .filter(|c| c.is_finite())
+            .is_none_or(|cur| in_conf > cur);
+        if keep_in && let Some(num) = incoming.get("confidence").cloned() {
+            surviving.insert("confidence".to_owned(), num);
+        }
+    }
+}
+
 fn rewrite_activity(row: &mut Value, names: &ActivityNames, target_id: &str) -> (bool, usize) {
     let source_id = names.source_id;
     let mut fields = 0;
@@ -875,22 +948,93 @@ fn rewrite_activity(row: &mut Value, names: &ActivityNames, target_id: &str) -> 
             fields += renamed;
             changed |= renamed > 0;
         }
-        for (container, keys) in [
-            ("participation", &["entity_id"][..]),
-            ("relations", &["from_entity_id", "to_entity_id"][..]),
-        ] {
-            if let Some(items) = object.get_mut(container).and_then(Value::as_array_mut) {
-                for item in items.iter_mut() {
-                    if let Some(item) = item.as_object_mut() {
-                        for key in keys {
-                            if item.get(*key).and_then(Value::as_str) == Some(source_id) {
-                                item.insert((*key).to_owned(), Value::String(target_id.to_owned()));
+        if let Some(items) = object
+            .get_mut("participation")
+            .and_then(Value::as_array_mut)
+        {
+            let mut part_changed = false;
+            for item in items.iter_mut() {
+                if let Some(item) = item.as_object_mut()
+                    && item.get("entity_id").and_then(Value::as_str) == Some(source_id)
+                {
+                    item.insert("entity_id".to_owned(), Value::String(target_id.to_owned()));
+                    fields += 1;
+                    part_changed = true;
+                    if !names.target_name.is_empty()
+                        && item
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|current| current != names.target_name)
+                    {
+                        item.insert(
+                            "name".to_owned(),
+                            Value::String(names.target_name.to_owned()),
+                        );
+                        fields += 1;
+                    }
+                }
+            }
+            if part_changed {
+                changed = true;
+                let mut deduped: Vec<Value> = Vec::with_capacity(items.len());
+                let mut target_slot: Option<usize> = None;
+                for item in std::mem::take(items) {
+                    let is_target = item
+                        .as_object()
+                        .and_then(|obj| obj.get("entity_id"))
+                        .and_then(Value::as_str)
+                        == Some(target_id);
+                    if is_target {
+                        if let Some(slot) = target_slot {
+                            if let (Some(surviving), Some(incoming)) =
+                                (deduped[slot].as_object_mut(), item.as_object())
+                            {
+                                merge_participation_objects(surviving, incoming, names.target_name);
+                            }
+                            continue;
+                        }
+                        target_slot = Some(deduped.len());
+                    }
+                    deduped.push(item);
+                }
+                *items = deduped;
+            }
+        }
+        if let Some(items) = object.get_mut("relations").and_then(Value::as_array_mut) {
+            let mut rel_changed = false;
+            for item in items.iter_mut() {
+                if let Some(item) = item.as_object_mut() {
+                    for (id_key, name_key) in [("from_entity_id", "from"), ("to_entity_id", "to")] {
+                        if item.get(id_key).and_then(Value::as_str) == Some(source_id) {
+                            item.insert(id_key.to_owned(), Value::String(target_id.to_owned()));
+                            fields += 1;
+                            rel_changed = true;
+                            if !names.target_name.is_empty()
+                                && item
+                                    .get(name_key)
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|current| current != names.target_name)
+                            {
+                                item.insert(
+                                    name_key.to_owned(),
+                                    Value::String(names.target_name.to_owned()),
+                                );
                                 fields += 1;
-                                changed = true;
                             }
                         }
                     }
                 }
+            }
+            if rel_changed {
+                changed = true;
+                items.retain(|item| {
+                    let Some(obj) = item.as_object() else {
+                        return true;
+                    };
+                    let from_id = obj.get("from_entity_id").and_then(Value::as_str);
+                    let to_id = obj.get("to_entity_id").and_then(Value::as_str);
+                    !(from_id == Some(target_id) && to_id == Some(target_id))
+                });
             }
         }
     }
@@ -924,26 +1068,52 @@ pub(crate) fn merge_activities(
                 continue;
             }
             stats.files_scanned += 1;
+            let mut preview_rows: Vec<Value> =
+                read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let would_change = preview_rows
+                .iter_mut()
+                .any(|row| rewrite_activity(row, names, target_id).0);
+            if !would_change {
+                continue;
+            }
+            let (newly_locked, _direct_lock) = match rollback.as_deref_mut() {
+                Some(rollback) => (rollback.lock_file(&file.path)?, None),
+                None => (
+                    false,
+                    hold_or_reuse_lock(&file.path, LockOptions::default())
+                        .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+                ),
+            };
             let mut rows: Vec<Value> =
                 read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             let mut file_changed = false;
+            let mut file_records = 0;
+            let mut file_fields = 0;
             for row in rows.iter_mut() {
                 let (changed, fields) = rewrite_activity(row, names, target_id);
-                stats.fields_rewritten += fields;
+                file_fields += fields;
                 if changed {
-                    stats.records_rewritten += 1;
+                    file_records += 1;
                     file_changed = true;
                 }
             }
-            if file_changed {
-                capture_rollback_file(&mut rollback, journal, &file.path)?;
-                write_jsonl(&file.path, rows, AtomicWriteOptions::default())
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                inject_failure(injector, "activities", artifact_index)?;
-                artifact_index += 1;
-                stats.files_rewritten += 1;
+            if !file_changed {
+                if newly_locked && let Some(rollback) = rollback.as_deref_mut() {
+                    rollback.unlock_file(&file.path);
+                }
+                continue;
             }
+            capture_rollback_file(&mut rollback, journal, &file.path)?;
+            write_jsonl(&file.path, rows, AtomicWriteOptions::default())
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            stats.records_rewritten += file_records;
+            stats.fields_rewritten += file_fields;
+            stats.rewritten_paths.push(file.path.clone());
+            inject_failure(injector, "activities", artifact_index)?;
+            artifact_index += 1;
+            stats.files_rewritten += 1;
         }
     }
     Ok(stats)

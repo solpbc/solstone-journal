@@ -428,6 +428,7 @@ pub(crate) fn activity_people(record: &Map<String, Value>) -> ActivityPeople {
 /// The people of one moment, read from every facet's copy of it. Each name is
 /// listed once, under the strongest role any copy gives it, in the order the
 /// copies first name it. A voice with no name is counted, never listed.
+#[cfg(test)]
 pub(crate) fn activity_people_across<'a>(
     records: impl Iterator<Item = &'a Map<String, Value>>,
 ) -> ActivityPeople {
@@ -724,11 +725,35 @@ pub(crate) fn is_path_or_segment_pointer(val: &Value) -> bool {
     }
 }
 
-pub(crate) fn clean_activity_record_for_wire(mut record: Map<String, Value>) -> Map<String, Value> {
+#[cfg(test)]
+pub(crate) fn clean_activity_record_for_wire(record: Map<String, Value>) -> Map<String, Value> {
+    clean_activity_record_for_wire_with_owner(record, None)
+}
+
+pub(crate) fn clean_activity_record_for_wire_with_owner(
+    mut record: Map<String, Value>,
+    owner: Option<&crate::people_view::OwnerIdentity>,
+) -> Map<String, Value> {
     record.remove("stream");
     // The talent's list before the journal judged it: it can name the owner
     // and call someone an attendee the journal found no proof of.
     record.remove("participation_said");
+    if let Some(owner) = owner
+        && let Some(Value::Array(participation)) = record.get_mut("participation")
+    {
+        participation.retain(|entry| {
+            let Some(obj) = entry.as_object() else {
+                return true;
+            };
+            let entity_id = obj
+                .get("entity_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let name = obj.get("name").and_then(Value::as_str).unwrap_or_default();
+            !owner.excludes(entity_id, name)
+        });
+    }
     if let Some(src) = record.get("source")
         && is_path_or_segment_pointer(src)
     {
@@ -1210,6 +1235,7 @@ pub(crate) fn execute_list(
     let mut locations = BTreeMap::new();
 
     let sources = crate::dispatch::source_labels(journal_root);
+    let owner = crate::people_view::OwnerIdentity::load(journal_root);
     let mut activities = Vec::new();
     let mut photo_cache: BTreeMap<(String, String), ImageSegmentKind> = BTreeMap::new();
     // Beside lines between body faces and capture activities, both ways, only
@@ -1285,7 +1311,7 @@ pub(crate) fn execute_list(
             Some(journal_root),
             Some(&item.day),
             Some(&mut photo_cache),
-            None,
+            Some(&owner),
         );
         let entities = activity_entities(&item.record);
         let title = activity_title(&item.record);

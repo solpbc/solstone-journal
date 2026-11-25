@@ -2021,6 +2021,10 @@ fn search(
                 .map(|cursor| cursor.path.clone())
         })
         .flatten();
+    let person_filter_owner = request
+        .person
+        .as_ref()
+        .map(|_| crate::people_view::OwnerIdentity::load(journal_root));
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         // One query reads each activity day file once.
         let day_files = crate::body_source::ActivityDayFiles::default();
@@ -2265,7 +2269,12 @@ fn search(
             if is_document && seen_document_path.as_deref() == Some(hit.metadata.path.as_str()) {
                 continue;
             }
-            if !matches_find_filters(&request, record.as_ref(), category) {
+            if !matches_find_filters(
+                &request,
+                record.as_ref(),
+                category,
+                person_filter_owner.as_ref(),
+            ) {
                 continue;
             }
             let mut activity_source = None;
@@ -2934,8 +2943,9 @@ fn matches_find_filters(
     request: &ValidatedSearch,
     record: Option<&Map<String, Value>>,
     category: AdmittedCategory,
+    owner: Option<&crate::people_view::OwnerIdentity>,
 ) -> bool {
-    use crate::tools::activities::{activity_kind, activity_people_across};
+    use crate::tools::activities::{activity_kind, activity_people_in_context};
     if request.activity.as_deref().is_some_and(|wanted| {
         // A mixed-kind find leaves selected original material in the answer.
         // With no other kind selected the activity predicate is exclusive.
@@ -2954,7 +2964,9 @@ fn matches_find_filters(
     if request.person.as_deref().is_some_and(|name| {
         let name = fold_literal(name);
         !record
-            .map(|record| activity_people_across(std::iter::once(record)))
+            .map(|record| {
+                activity_people_in_context(std::iter::once(record), None, None, None, owner)
+            })
             .is_some_and(|people| {
                 people
                     .participants
@@ -3454,8 +3466,12 @@ fn fetch(
                     );
                 }
                 ActivityAdmit::Admitted(a) => {
+                    let owner = crate::people_view::OwnerIdentity::load(journal_root);
                     let cleaned =
-                        crate::tools::activities::clean_activity_record_for_wire(a.record.clone());
+                        crate::tools::activities::clean_activity_record_for_wire_with_owner(
+                            a.record.clone(),
+                            Some(&owner),
+                        );
                     let cleaned_text = literal_record_text(cleaned)?;
                     // Links resolve from the admitted record. Cleaning drops
                     // `stream`, and the resolver would then cross streams.
@@ -3786,7 +3802,11 @@ pub(crate) fn fetch_activity(
         }
         crate::may_see::SeenRecord::Activity(record) => record,
     };
-    let cleaned = crate::tools::activities::clean_activity_record_for_wire(record.clone());
+    let owner = crate::people_view::OwnerIdentity::load(journal_root);
+    let cleaned = crate::tools::activities::clean_activity_record_for_wire_with_owner(
+        record.clone(),
+        Some(&owner),
+    );
     let text = literal_record_text(cleaned)?;
 
     #[cfg(feature = "test-hooks")]

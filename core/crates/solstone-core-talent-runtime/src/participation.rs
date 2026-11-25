@@ -129,18 +129,18 @@ pub(crate) fn apply_result_cancellable(
     // this activity's time leaves the people of the rest as they were.
     let playback = stored.get("playback") == Some(&Value::Bool(true))
         && solstone_core_facets::stretch::correction_segments(&stored, "playback").is_none();
+    let passive_playback = playback || is_passive_media_activity(&stored);
     let entities = detected_resolution_entities(journal, facet, day)?;
     let journal_entities = solstone_core_entity::load_all_journal_entities(journal)
         .map_err(|error| error.to_string())?;
     let owner = crate::JournalOwner::from_entities(journal, &journal_entities);
-    let admitted = journal_entities
-        .into_iter()
-        .filter(solstone_core_entity::is_admissible_person)
-        .collect::<Vec<_>>();
-    let people = admitted
+    let people = journal_entities
         .iter()
+        .filter(|entity| solstone_core_entity::is_admissible_person(entity))
         .map(solstone_core_entity::JournalEntity::resolution_entity)
         .collect::<Vec<_>>();
+    let admitted_people_by_id = admitted_non_owner_people_map(&people, owner.id.as_deref());
+    let detected_people = detected_admitted_people(&entities, &people, &admitted_people_by_id);
     let origin = |field: &str| json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":field});
     let mut resolved = Vec::new();
     for entry in entries.iter().filter_map(Value::as_object) {
@@ -149,8 +149,9 @@ pub(crate) fn apply_result_cancellable(
             .get("name")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        // Participation lists the people around the owner, never the owner.
-        if owner.actor(name) == crate::NamedActor::Owner {
+        // Participation lists the people around the owner, never the owner or
+        // a misheard form of the owner's own name.
+        if owner.actor(name) == crate::NamedActor::Owner || owner.sounds_like(name) {
             continue;
         }
         if solstone_core_speaker_resolve::activity_reresolution::speaker_number(name).is_some() {
@@ -158,25 +159,16 @@ pub(crate) fn apply_result_cancellable(
             resolved.push(entry);
             continue;
         }
-        let mut entity_id = solstone_core_entity::resolve_activity_name(
+        let entity_id = resolve_participation_person(
             journal,
             name,
-            &entities,
+            &detected_people,
+            &people,
+            &admitted_people_by_id,
             facet,
             origin("participation.name"),
-            90.0,
-        )
-        .map_err(|error| error.to_string())?
+        )?
         .map_or(Value::Null, Value::String);
-        if entity_id.is_null()
-            && let Some(id) = known_person(&people, name)
-        {
-            entity_id = Value::String(id);
-        }
-        // A misheard form of the owner's own name is still the owner.
-        if entity_id.is_null() && owner.sounds_like(name) {
-            continue;
-        }
         if owner.id.is_some() && entity_id.as_str() == owner.id.as_deref() {
             continue;
         }
@@ -209,7 +201,7 @@ pub(crate) fn apply_result_cancellable(
             day,
             &segments,
             stream,
-            crate::transcript::voice_names_from_entities(journal, &owner, &admitted),
+            crate::transcript::voice_names_from_entities(journal, &owner, &journal_entities),
         )?
     } else {
         NumberedVoices::default()
@@ -264,6 +256,7 @@ pub(crate) fn apply_result_cancellable(
         owner_name: None,
     };
     let spoken = spoken_in(journal, day, &segments, stream, &voices, &people);
+    let roster = meeting_roster(journal, day, &segments, stream, &stored);
     let Spoken {
         attributed,
         heard,
@@ -274,9 +267,10 @@ pub(crate) fn apply_result_cancellable(
         let name = entry
             .get("name")
             .and_then(Value::as_str)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .to_owned();
         if let Some(number) =
-            solstone_core_speaker_resolve::activity_reresolution::speaker_number(name)
+            solstone_core_speaker_resolve::activity_reresolution::speaker_number(&name)
         {
             // The count is across the whole activity anyway. One activity that
             // spans two recordings can put two different voices under one number,
@@ -297,39 +291,58 @@ pub(crate) fn apply_result_cancellable(
             continue;
         }
 
-        if entry.get("role").and_then(Value::as_str) != Some("attendee")
-            || !matches!(
-                entry.get("source").and_then(Value::as_str),
-                Some("voice" | "speaker_label")
-            )
-        {
+        if entry.get("role").and_then(Value::as_str) != Some("attendee") {
             continue;
         }
-        // A name the day's text never named resolves to the one heard voice
-        // that answers to it: someone only heard is never detected.
-        if entry.get("entity_id").is_none_or(Value::is_null)
-            && let Some(id) = entry
-                .get("name")
-                .and_then(Value::as_str)
-                .and_then(|name| only_person_answering(heard, name))
-        {
-            entry.insert("entity_id".to_owned(), Value::String(id.to_owned()));
-        }
-        let entity_id = entry.get("entity_id").and_then(Value::as_str);
-        let corroborated = spoken.corroborates(
-            journal,
-            &people,
-            facet,
-            day,
-            record_id,
-            entry
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-            entity_id,
-        )?;
-        if !corroborated {
-            entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+        let source = entry
+            .get("source")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        match source.as_str() {
+            "voice" | "speaker_label" => {
+                // A name the day's text never named resolves to the one heard voice
+                // that answers to it: someone only heard is never detected.
+                if entry.get("entity_id").is_none_or(Value::is_null)
+                    && let Some(id) = only_person_answering(heard, &name)
+                {
+                    entry.insert("entity_id".to_owned(), Value::String(id.to_owned()));
+                }
+                let entity_id = entry.get("entity_id").and_then(Value::as_str);
+                let corroborated = !(entity_id.is_none()
+                    && is_known_non_person_name(&journal_entities, &people, &name))
+                    && spoken
+                        .corroborates(journal, &people, facet, day, record_id, &name, entity_id)?;
+                if !corroborated {
+                    entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+                }
+            }
+            "transcript" => {
+                let entity_id = entry.get("entity_id").and_then(Value::as_str);
+                let corroborated = !(entity_id.is_none()
+                    && is_known_non_person_name(&journal_entities, &people, &name))
+                    && (spoken
+                        .corroborates(journal, &people, facet, day, record_id, &name, entity_id)?
+                        || roster.corroborates(&name, entity_id, &people));
+                if !corroborated {
+                    entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+                }
+            }
+            "screen" => {
+                // Screen attendees on video calls come from participant tiles
+                // (`content.meeting.participants`), not voice. When meeting
+                // frames exist, corroborate against call tiles or calendar
+                // invitees and demote off-roster screen names to `visible`.
+                let entity_id = entry.get("entity_id").and_then(Value::as_str);
+                let demote = (entity_id.is_none()
+                    && is_known_non_person_name(&journal_entities, &people, &name))
+                    || (roster.has_meeting_frames
+                        && !roster.corroborates(&name, entity_id, &people));
+                if demote {
+                    entry.insert("role".to_owned(), Value::String("visible".to_owned()));
+                }
+            }
+            _ => {}
         }
     }
     let shown = segments
@@ -458,11 +471,11 @@ pub(crate) fn apply_result_cancellable(
             entry.insert("source".to_owned(), Value::String("screen".to_owned()));
         }
     }
-    // A recording or video the owner says was playing had no one present with
-    // the owner, whatever its voices and screens showed. This is the last word
-    // on roles: no one attended or was heard, and a numbered voice names no
-    // one at all.
-    if playback {
+    // A recording, video, or music activity (whether marked playback by the
+    // owner or classified as passive media) had no one present with the owner,
+    // whatever its voices and screens showed. This is the last word on roles:
+    // no one attended or was heard, and a numbered voice names no one at all.
+    if passive_playback {
         resolved.retain(|entry| {
             entry
                 .get("name")
@@ -473,7 +486,7 @@ pub(crate) fn apply_result_cancellable(
         for entry in &mut resolved {
             if matches!(
                 entry.get("role").and_then(Value::as_str),
-                Some("attendee" | "heard")
+                Some("organizer" | "attendee" | "heard")
             ) {
                 entry.insert("role".to_owned(), Value::String("mentioned".to_owned()));
             }
@@ -508,6 +521,7 @@ pub(crate) fn apply_result_cancellable(
             }
         }
     }
+    let resolved = dedupe_participation(resolved);
     let mut patch = Map::from_iter([(
         "participation".to_owned(),
         Value::Array(resolved.into_iter().map(Value::Object).collect()),
@@ -852,6 +866,8 @@ pub fn judge_again(
         .filter(|entity| solstone_core_entity::is_admissible_person(entity))
         .map(solstone_core_entity::JournalEntity::resolution_entity)
         .collect::<Vec<_>>();
+    let admitted_people_by_id = admitted_non_owner_people_map(&people, owner.id.as_deref());
+    let detected_people = detected_admitted_people(&detected, &people, &admitted_people_by_id);
     let voices = solstone_core_transcripts::VoiceNames {
         principal: owner.id.clone().unwrap_or_default(),
         owner_voice_confirmed: false,
@@ -864,10 +880,11 @@ pub fn judge_again(
     };
     let spoken = spoken_in(journal, day, &segments, stream, &voices, &people);
     // A meeting someone could attend: one was detected, and it was not a
-    // recording the owner says was playing.
+    // recording the owner says was playing or passive media.
     let attendable = segments
         .iter()
         .any(|segment| meeting_detected(journal, day, segment, stream))
+        && !is_passive_media_activity(&stored)
         && !(stored.get("playback") == Some(&Value::Bool(true))
             && solstone_core_facets::stretch::correction_segments(&stored, "playback").is_none());
     let said = stored
@@ -907,16 +924,15 @@ pub fn judge_again(
                     || !people.iter().any(|person| person.id.as_deref() == Some(id))
             });
         let mut entity_id = if from_the_name {
-            solstone_core_entity::resolve_activity_name(
+            resolve_participation_person(
                 journal,
                 &listed_name,
-                &detected,
+                &detected_people,
+                &people,
+                &admitted_people_by_id,
                 facet,
                 json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}),
-                90.0,
-            )
-            .map_err(|error| error.to_string())?
-            .or_else(|| known_person(&people, &listed_name))
+            )?
         } else {
             linked.clone()
         };
@@ -1483,6 +1499,503 @@ fn segment_talent_json(
     serde_json::from_str(&fs::read_to_string(directory.join("talents").join(name)).ok()?).ok()
 }
 
+fn is_passive_media_activity(stored: &Map<String, Value>) -> bool {
+    matches!(
+        stored.get("activity").and_then(Value::as_str),
+        Some("media" | "video" | "music")
+    )
+}
+
+fn admitted_non_owner_people_map(
+    people: &[solstone_core_entity::EntityResolutionEntity],
+    owner_id: Option<&str>,
+) -> BTreeMap<String, solstone_core_entity::EntityResolutionEntity> {
+    let mut map = BTreeMap::new();
+    for person in people {
+        let Some(id) = person.id.as_deref().filter(|id| !id.is_empty()) else {
+            continue;
+        };
+        if owner_id == Some(id) {
+            continue;
+        }
+        map.entry(id.to_owned()).or_insert_with(|| person.clone());
+    }
+    map
+}
+
+/// Filter day-detected entities to live, unblocked `Person` entities in
+/// `entities/`, preserving day-level disambiguation context without allowing
+/// unpromoted `<day>.jsonl` slugs or non-`Person` entities to be assigned as
+/// `participation[].entity_id`.
+fn detected_admitted_people(
+    detected: &[solstone_core_entity::EntityResolutionEntity],
+    people: &[solstone_core_entity::EntityResolutionEntity],
+    admitted_by_id: &BTreeMap<String, solstone_core_entity::EntityResolutionEntity>,
+) -> Vec<solstone_core_entity::EntityResolutionEntity> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for row in detected {
+        let live_id = row
+            .id
+            .as_deref()
+            .filter(|id| admitted_by_id.contains_key(*id))
+            .map(str::to_owned)
+            .or_else(|| {
+                known_person(people, &row.name).filter(|id| admitted_by_id.contains_key(id))
+            });
+        if let Some(id) = live_id
+            && seen.insert(id.clone())
+            && let Some(entity) = admitted_by_id.get(&id)
+        {
+            out.push(entity.clone());
+        }
+    }
+    out
+}
+
+/// Resolve a participation entry's name strictly to a live, unblocked
+/// non-owner `Person` entity in `entities/`. Rejects `<= 2`-char bare tokens
+/// and never mints dangling `<day>.jsonl` ids or non-`Person` ids.
+fn resolve_participation_person(
+    journal: &std::path::Path,
+    name: &str,
+    detected_people: &[solstone_core_entity::EntityResolutionEntity],
+    people: &[solstone_core_entity::EntityResolutionEntity],
+    admitted_by_id: &BTreeMap<String, solstone_core_entity::EntityResolutionEntity>,
+    facet: &str,
+    origin: Value,
+) -> Result<Option<String>, String> {
+    if crate::possible_names::retrieval::compact(name)
+        .chars()
+        .count()
+        <= 2
+    {
+        return Ok(None);
+    }
+    let resolved = solstone_core_entity::resolve_activity_name(
+        journal,
+        name,
+        detected_people,
+        facet,
+        origin,
+        90.0,
+    )
+    .map_err(|error| error.to_string())?
+    .filter(|id| admitted_by_id.contains_key(id));
+    if resolved.is_some() {
+        return Ok(resolved);
+    }
+    Ok(known_person(people, name).filter(|id| admitted_by_id.contains_key(id)))
+}
+
+#[derive(Default)]
+struct MeetingRoster {
+    has_meeting_frames: bool,
+    participants: Vec<String>,
+    calendar: Vec<solstone_core_facets::InvitedPerson>,
+}
+
+fn meeting_roster(
+    journal: &std::path::Path,
+    day: &str,
+    segments: &[&str],
+    stream: Option<&str>,
+    stored: &Map<String, Value>,
+) -> MeetingRoster {
+    use solstone_core_format::content::{
+        FileFormat, RawPerceptFamily, SegmentReader, segment_file_offers,
+    };
+
+    let mut roster = MeetingRoster::default();
+    for segment in segments {
+        let Some(directory) = find_segment_dir(journal, day, segment, stream) else {
+            continue;
+        };
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut screen_files = entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| {
+                segment_file_offers(name, SegmentReader::Talents, Default::default())
+                    .iter()
+                    .any(|offer| offer.format == FileFormat::Raw(RawPerceptFamily::RawScreen))
+            })
+            .collect::<Vec<_>>();
+        screen_files.sort();
+        for file_name in screen_files {
+            let Ok(text) = fs::read_to_string(directory.join(file_name)) else {
+                continue;
+            };
+            for line in text.lines() {
+                let Ok(row) = serde_json::from_str::<Value>(line.trim()) else {
+                    continue;
+                };
+                let Some(meeting) = row.pointer("/content/meeting").and_then(Value::as_object)
+                else {
+                    continue;
+                };
+                roster.has_meeting_frames = true;
+                if let Some(participants) = meeting.get("participants").and_then(Value::as_array) {
+                    for participant in participants {
+                        let maybe_name = participant.as_str().or_else(|| {
+                            participant
+                                .as_object()
+                                .and_then(|obj| obj.get("name"))
+                                .and_then(Value::as_str)
+                        });
+                        if let Some(name) = maybe_name.map(str::trim).filter(|s| !s.is_empty()) {
+                            roster.participants.push(name.to_owned());
+                        }
+                    }
+                }
+                if let Some(presenter) = meeting
+                    .get("screen_share")
+                    .and_then(Value::as_object)
+                    .and_then(|share| share.get("presenter"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    roster.participants.push(presenter.to_owned());
+                }
+            }
+        }
+    }
+    if let Some(span) = solstone_core_facets::activity_span(stored) {
+        let calendar = solstone_core_facets::calendar_on_day(journal, day);
+        for event in calendar
+            .into_iter()
+            .filter(|event| event.scheduled_during(day, span))
+        {
+            roster.calendar.extend(event.people);
+        }
+    }
+    roster
+}
+
+impl MeetingRoster {
+    fn corroborates(
+        &self,
+        name: &str,
+        entity_id: Option<&str>,
+        people: &[solstone_core_entity::EntityResolutionEntity],
+    ) -> bool {
+        if self.calendar.iter().any(|invited| {
+            entity_id == Some(invited.entity_id.as_str())
+                || roster_name_matches(&invited.name, name)
+        }) {
+            return true;
+        }
+        let mut candidates = vec![name];
+        if let Some(id) = entity_id
+            && let Some(person) = people.iter().find(|p| p.id.as_deref() == Some(id))
+        {
+            if !person.name.is_empty() {
+                candidates.push(&person.name);
+            }
+            for aka in &person.aka {
+                if !aka.is_empty() {
+                    candidates.push(aka);
+                }
+            }
+            for email in &person.emails {
+                if !email.is_empty() {
+                    candidates.push(email);
+                }
+            }
+        }
+        self.participants.iter().any(|tile| {
+            let base = strip_tile_qualifier(tile);
+            candidates.iter().any(|candidate| {
+                roster_name_matches(tile, candidate)
+                    || (!base.is_empty() && roster_name_matches(base, candidate))
+            })
+        })
+    }
+}
+
+fn is_known_non_person_name(
+    journal_entities: &[solstone_core_entity::JournalEntity],
+    people: &[solstone_core_entity::EntityResolutionEntity],
+    name: &str,
+) -> bool {
+    let folded = crate::fold_name(name);
+    if folded.is_empty() {
+        return false;
+    }
+    let matches_person = people.iter().any(|person| {
+        crate::fold_name(&person.name) == folded
+            || person.aka.iter().any(|aka| crate::fold_name(aka) == folded)
+    });
+    if matches_person {
+        return false;
+    }
+    journal_entities.iter().any(|entity| {
+        if solstone_core_entity::is_admissible_person(entity) {
+            return false;
+        }
+        let Some(obj) = entity.value.as_object() else {
+            return false;
+        };
+        obj.get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|n| crate::fold_name(n) == folded)
+            || obj
+                .get("aka")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .any(|aka| crate::fold_name(aka) == folded)
+    })
+}
+
+fn strip_tile_qualifier(tile: &str) -> &str {
+    let tile = tile.trim();
+    let end = tile
+        .find(['(', '['])
+        .into_iter()
+        .chain(tile.find(" - "))
+        .chain(tile.find(" | "))
+        .chain(tile.find(" · "))
+        .min()
+        .unwrap_or(tile.len());
+    tile[..end].trim()
+}
+
+fn cleaned_words(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+fn roster_name_matches(roster_name: &str, candidate: &str) -> bool {
+    if same_name(roster_name, candidate) {
+        return true;
+    }
+    let left = cleaned_words(roster_name);
+    let right = cleaned_words(candidate);
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    if left == right {
+        return true;
+    }
+    if left.len() == 1 && right.len() >= 2 {
+        return left[0].chars().count() >= 3 && left[0] == right[0];
+    }
+    if right.len() == 1 && left.len() >= 2 {
+        return right[0].chars().count() >= 3 && right[0] == left[0];
+    }
+    if left.len() >= 2 && right.len() >= 2 && left[0] == right[0] {
+        let left_tail = left.last().expect("len >= 2");
+        let right_tail = right.last().expect("len >= 2");
+        if left_tail == right_tail
+            || (left_tail.chars().count() == 1 && right_tail.starts_with(left_tail.as_str()))
+            || (right_tail.chars().count() == 1 && left_tail.starts_with(right_tail.as_str()))
+        {
+            return true;
+        }
+    }
+    crate::possible_names::retrieval::near_spelling(roster_name, candidate)
+}
+
+fn participation_role_rank(role: Option<&str>) -> u8 {
+    match role {
+        Some("organizer" | "attendee") => 5,
+        Some("heard") => 4,
+        Some("corresponded") => 3,
+        Some("visible") => 2,
+        Some("mentioned") => 1,
+        _ => 0,
+    }
+}
+
+fn entry_entity_id(entry: &Map<String, Value>) -> Option<&str> {
+    entry
+        .get("entity_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+}
+
+fn merge_participation_entry(surviving: &mut Map<String, Value>, incoming: &Map<String, Value>) {
+    let surviving_name = surviving
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let incoming_name = incoming
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let surviving_words = surviving_name.split_whitespace().count();
+    let incoming_words = incoming_name.split_whitespace().count();
+    if incoming_words > surviving_words
+        || (incoming_words == surviving_words && incoming_name.len() > surviving_name.len())
+    {
+        surviving.insert("name".to_owned(), Value::String(incoming_name.to_owned()));
+    }
+    if entry_entity_id(surviving).is_none()
+        && let Some(id) = entry_entity_id(incoming)
+    {
+        surviving.insert("entity_id".to_owned(), Value::String(id.to_owned()));
+    }
+    let surviving_rank = participation_role_rank(surviving.get("role").and_then(Value::as_str));
+    let incoming_rank = participation_role_rank(incoming.get("role").and_then(Value::as_str));
+    if incoming_rank > surviving_rank {
+        if let Some(role) = incoming.get("role").cloned() {
+            surviving.insert("role".to_owned(), role);
+        }
+        if let Some(source) = incoming
+            .get("source")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+        {
+            surviving.insert("source".to_owned(), Value::String(source.to_owned()));
+        }
+    }
+    let surviving_context_empty = surviving
+        .get("context")
+        .and_then(Value::as_str)
+        .is_none_or(|s| s.trim().is_empty());
+    if surviving_context_empty
+        && let Some(context) = incoming
+            .get("context")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+    {
+        surviving.insert("context".to_owned(), Value::String(context.to_owned()));
+    }
+    if let Some(in_conf) = incoming
+        .get("confidence")
+        .and_then(Value::as_f64)
+        .filter(|c| c.is_finite())
+    {
+        let keep_in = surviving
+            .get("confidence")
+            .and_then(Value::as_f64)
+            .filter(|c| c.is_finite())
+            .is_none_or(|cur| in_conf > cur);
+        if keep_in && let Some(num) = incoming.get("confidence").cloned() {
+            surviving.insert("confidence".to_owned(), num);
+        }
+    }
+}
+
+/// Deduplicate an activity's participation list by `entity_id`, exact folded
+/// name (without conflicting ids), and unambiguous `first_name -> full_name`
+/// prefix, keeping the highest role rank and non-empty `context`.
+fn dedupe_participation(entries: Vec<Map<String, Value>>) -> Vec<Map<String, Value>> {
+    let mut pass1: Vec<Map<String, Value>> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let incoming_id = entry_entity_id(&entry).map(str::to_owned);
+        let incoming_name = crate::fold_name(
+            entry
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+        );
+        let existing_idx = if let Some(ref id) = incoming_id {
+            pass1
+                .iter()
+                .position(|cur| entry_entity_id(cur) == Some(id.as_str()))
+        } else {
+            None
+        }
+        .or_else(|| {
+            if incoming_name.is_empty() {
+                return None;
+            }
+            pass1.iter().position(|cur| {
+                let cur_name =
+                    crate::fold_name(cur.get("name").and_then(Value::as_str).unwrap_or_default());
+                if cur_name != incoming_name {
+                    return false;
+                }
+                match (entry_entity_id(cur), incoming_id.as_deref()) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => true,
+                }
+            })
+        });
+        if let Some(idx) = existing_idx {
+            merge_participation_entry(&mut pass1[idx], &entry);
+        } else {
+            pass1.push(entry);
+        }
+    }
+
+    // Pass 2: collapse unambiguous single-word first-name rows into the sole
+    // matching multi-word entry when neither side is ambiguous and their
+    // entity_ids do not conflict.
+    let mut multi_by_first: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut single_by_first: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (idx, entry) in pass1.iter().enumerate() {
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if solstone_core_speaker_resolve::activity_reresolution::speaker_number(name).is_some() {
+            continue;
+        }
+        let words = cleaned_words(name);
+        if words.len() >= 2 && words[0].chars().count() >= 2 {
+            multi_by_first
+                .entry(words[0].clone())
+                .or_default()
+                .push(idx);
+        } else if words.len() == 1 && words[0].chars().count() >= 2 {
+            single_by_first
+                .entry(words[0].clone())
+                .or_default()
+                .push(idx);
+        }
+    }
+    let mut dropped = vec![false; pass1.len()];
+    let mut merges: Vec<(usize, usize)> = Vec::new();
+    for (first, sources) in single_by_first {
+        if sources.len() != 1 {
+            continue;
+        }
+        let Some(targets) = multi_by_first.get(&first) else {
+            continue;
+        };
+        if targets.len() != 1 {
+            continue;
+        }
+        let idx = sources[0];
+        let target_idx = targets[0];
+        let compatible_ids = match (
+            entry_entity_id(&pass1[target_idx]),
+            entry_entity_id(&pass1[idx]),
+        ) {
+            (Some(a), Some(b)) => a == b,
+            _ => true,
+        };
+        if compatible_ids {
+            merges.push((target_idx, idx));
+            dropped[idx] = true;
+        }
+    }
+    for (target_idx, src_idx) in merges {
+        let incoming = pass1[src_idx].clone();
+        merge_participation_entry(&mut pass1[target_idx], &incoming);
+    }
+    pass1
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, entry)| (!dropped[idx]).then_some(entry))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1938,7 +2451,7 @@ mod tests {
         let heard = json!({"name":"Ada","role":"attendee","source":"voice"});
 
         let before = apply(root.path(), heard.clone());
-        assert_eq!(before["entity_id"], "ada");
+        assert_eq!(before["entity_id"], Value::Null);
         assert_eq!(before["role"], "mentioned");
 
         solstone_core_entity::record_ambiguity_choice(
@@ -1974,7 +2487,7 @@ mod tests {
             root,
             json!({"name":"Ada","role":"attendee","source":"voice"}),
         );
-        assert_eq!(entry["entity_id"], "ada");
+        assert_eq!(entry["entity_id"], Value::Null);
         assert_eq!(entry["role"], "mentioned");
     }
 
@@ -2409,7 +2922,7 @@ mod tests {
             json!({"name":"Deploy Bot","role":"attendee","source":"speaker_label"}),
         );
 
-        assert_eq!(entry["entity_id"], "tool");
+        assert_eq!(entry["entity_id"], Value::Null);
         assert_eq!(entry["role"], "mentioned");
     }
 
@@ -2423,7 +2936,7 @@ mod tests {
             json!({"name":"Atlas","role":"attendee","source":"voice"}),
         );
 
-        assert_eq!(entry["entity_id"], "project");
+        assert_eq!(entry["entity_id"], Value::Null);
         assert_eq!(entry["role"], "mentioned");
     }
 
@@ -3362,7 +3875,7 @@ mod tests {
     }
 
     #[test]
-    fn non_speaker_tool_reference_keeps_generic_resolution() {
+    fn non_speaker_tool_reference_is_not_linked_as_person_while_generic_resolution_stays_intact() {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
 
@@ -3371,8 +3884,20 @@ mod tests {
             json!({"name":"Deploy Bot","role":"attendee","source":"manual"}),
         );
 
-        assert_eq!(entry["entity_id"], "tool");
+        assert_eq!(entry["entity_id"], Value::Null);
         assert_eq!(entry["role"], "attendee");
+        // Generic resolution used by story relations still resolves Tool entities.
+        let detected = crate::detected_resolution_entities(root.path(), FACET, DAY).unwrap();
+        let resolved = solstone_core_entity::resolve_activity_name(
+            root.path(),
+            "Deploy Bot",
+            &detected,
+            FACET,
+            json!({"lane":"talent.story","facet":FACET,"day":DAY,"record_id":"activity","field":"relations"}),
+            90.0,
+        )
+        .unwrap();
+        assert_eq!(resolved.as_deref(), Some("tool"));
     }
     fn apply_all(root: &Path, entries: Value) -> Vec<(String, String, String)> {
         apply_result(
@@ -4345,6 +4870,317 @@ mod tests {
                     vec![line(2, true)],
                     vec![("quinn".to_owned(), false), ("quinn".to_owned(), false)]
                 )
+            );
+        }
+    }
+
+    #[test]
+    fn multi_word_owner_given_name_and_short_sounds_like_dropped_unless_contact_collides() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_json(
+            &root.path().join("config/journal.json"),
+            json!({"identity":{"name":"Will Sterling"}}),
+        );
+        // Dangling detected slug for the owner's given name must not intercept the pre-resolution filter.
+        fs::write(
+            root.path()
+                .join(format!("facets/{FACET}/entities/{DAY}.jsonl")),
+            format!("{}\n", json!({"id":"will","name":"Will","type":"Person"})),
+        )
+        .unwrap();
+
+        let _ = apply_all(
+            root.path(),
+            json!([
+                {"name":"Will","role":"mentioned","source":"transcript"},
+                {"name":"Willy","role":"mentioned","source":"transcript"},
+                {"name":"Will S","role":"mentioned","source":"screen"},
+                {"name":"Will Sterling","role":"mentioned","source":"transcript"},
+                {"name":"Ada Lovelace","role":"mentioned","source":"transcript"},
+            ]),
+        );
+        let stored_rows: Vec<(String, String, String)> =
+            stored_record(root.path())["participation"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| {
+                    (
+                        e["name"].as_str().unwrap().to_owned(),
+                        e["role"].as_str().unwrap().to_owned(),
+                        e["entity_id"].as_str().unwrap_or_default().to_owned(),
+                    )
+                })
+                .collect();
+        assert_eq!(
+            stored_rows,
+            vec![("Ada Lovelace".into(), "mentioned".into(), "person".into())]
+        );
+
+        // Adding an admitted non-principal Person named "Will Adams" protects
+        // "Will" and "Willy" from being swallowed as the owner, while "Will Sterling" stays excluded.
+        write_entity(root.path(), "will_adams", "Will Adams", "Person");
+        let _ = apply_all(
+            root.path(),
+            json!([
+                {"name":"Will","role":"mentioned","source":"transcript"},
+                {"name":"Willy","role":"mentioned","source":"transcript"},
+                {"name":"Will Sterling","role":"mentioned","source":"transcript"},
+                {"name":"Ada Lovelace","role":"mentioned","source":"transcript"},
+            ]),
+        );
+        let rows_with_contact: Vec<(String, String, String)> =
+            stored_record(root.path())["participation"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| {
+                    (
+                        e["name"].as_str().unwrap().to_owned(),
+                        e["role"].as_str().unwrap().to_owned(),
+                        e["entity_id"].as_str().unwrap_or_default().to_owned(),
+                    )
+                })
+                .collect();
+        assert!(rows_with_contact.iter().any(|(n, _, _)| n == "Will"));
+        assert!(rows_with_contact.iter().any(|(n, _, _)| n == "Willy"));
+        assert!(
+            !rows_with_contact
+                .iter()
+                .any(|(n, _, _)| n == "Will Sterling")
+        );
+        assert!(
+            rows_with_contact
+                .iter()
+                .any(|(n, _, id)| n == "Ada Lovelace" && id == "person")
+        );
+    }
+
+    #[test]
+    fn participation_only_links_live_unblocked_person_and_rejects_short_tokens_and_dangling_slugs()
+    {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_json(
+            &root.path().join("entities/blocked_p/entity.json"),
+            json!({"id":"blocked_p","name":"Blocked Sam","type":"Person","blocked":true}),
+        );
+        write_json(
+            &root.path().join("entities/al/entity.json"),
+            json!({"id":"al","name":"Al","type":"Person"}),
+        );
+        // Unreviewed detected-only human slug without entities/dangling_pat/entity.json.
+        let det_path = root
+            .path()
+            .join(format!("facets/{FACET}/entities/{DAY}.jsonl"));
+        let mut det = fs::read_to_string(&det_path).unwrap();
+        det.push_str(&format!(
+            "{}\n",
+            json!({"id":"dangling_pat","name":"Pat Rivera","type":"Person"})
+        ));
+        fs::write(&det_path, det).unwrap();
+
+        let _ = apply_all(
+            root.path(),
+            json!([
+                {"name":"Ada Lovelace","role":"mentioned","source":"transcript"},
+                {"name":"Pat Rivera","role":"mentioned","source":"transcript"},
+                {"name":"Blocked Sam","role":"mentioned","source":"transcript"},
+                {"name":"Deploy Bot","role":"mentioned","source":"transcript"},
+                {"name":"Atlas","role":"mentioned","source":"transcript"},
+                {"name":"Al","role":"mentioned","source":"transcript"},
+            ]),
+        );
+        let rows: Vec<(String, String, String)> = stored_record(root.path())["participation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["name"].as_str().unwrap().to_owned(),
+                    e["role"].as_str().unwrap().to_owned(),
+                    e["entity_id"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("Ada Lovelace".into(), "mentioned".into(), "person".into()),
+                ("Pat Rivera".into(), "mentioned".into(), String::new()),
+                ("Blocked Sam".into(), "mentioned".into(), String::new()),
+                ("Deploy Bot".into(), "mentioned".into(), String::new()),
+                ("Atlas".into(), "mentioned".into(), String::new()),
+                ("Al".into(), "mentioned".into(), String::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn intra_activity_dedup_merges_by_entity_id_and_unambiguous_prefix_keeping_highest_role() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(
+            root.path(),
+            json!({"labels":[{"speaker":"person","method":"acoustic"},{"speaker":"person","method":"acoustic"}]}),
+            json!([]),
+        );
+        write_entity(root.path(), "alex_stone", "Alex Stone", "Person");
+        write_entity(root.path(), "alex_reed", "Alex Reed", "Person");
+
+        apply_result(
+            root.path(),
+            &json!({
+                "participation": [
+                    {"name":"Ada Lovelace","role":"mentioned","source":"transcript","context":"shared draft"},
+                    {"name":"Ada Lovelace","role":"attendee","source":"voice","context":""},
+                    {"name":"Priya","role":"mentioned","source":"transcript","context":"asked a question"},
+                    {"name":"Priya Patel","role":"visible","source":"screen","context":""},
+                    {"name":"Alex","role":"mentioned","source":"transcript"},
+                    {"name":"Alex Stone","role":"mentioned","source":"transcript"},
+                    {"name":"Alex Reed","role":"mentioned","source":"transcript"}
+                ]
+            })
+            .to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+
+        let record = stored_record(root.path());
+        let list = record["participation"].as_array().unwrap();
+        // Ada Lovelace collapsed by entity_id to highest role ("attendee") with preserved context.
+        let ada_rows: Vec<&Value> = list.iter().filter(|e| e["entity_id"] == "person").collect();
+        assert_eq!(ada_rows.len(), 1);
+        assert_eq!(ada_rows[0]["role"], "attendee");
+        assert_eq!(ada_rows[0]["context"], "shared draft");
+
+        // Unambiguous "Priya" -> "Priya Patel" collapsed keeping fuller name, higher role ("visible"), and context.
+        let priya_rows: Vec<&Value> = list
+            .iter()
+            .filter(|e| e["name"].as_str().is_some_and(|n| n.starts_with("Priya")))
+            .collect();
+        assert_eq!(priya_rows.len(), 1);
+        assert_eq!(priya_rows[0]["name"], "Priya Patel");
+        assert_eq!(priya_rows[0]["role"], "visible");
+        assert_eq!(priya_rows[0]["context"], "asked a question");
+
+        // Ambiguous "Alex" with both "Alex Stone" and "Alex Reed" is NOT collapsed.
+        let alex_names: Vec<&str> = list
+            .iter()
+            .filter_map(|e| e["name"].as_str())
+            .filter(|n| n.starts_with("Alex"))
+            .collect();
+        assert_eq!(alex_names, vec!["Alex", "Alex Stone", "Alex Reed"]);
+    }
+
+    #[test]
+    fn screen_and_transcript_attendees_corroborate_against_meeting_roster_and_calendar() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+        write_entity(root.path(), "grace", "Grace Hopper", "Person");
+        write_entity(root.path(), "maya", "Maya Lin", "Person");
+        write_entity(root.path(), "sam", "Sam Park", "Person");
+        write_transcript(root.path(), &["Let's review the release checklist."]);
+        // Video call screen frames list Ada Lovelace (tile) and Grace Hopper (presenter),
+        // while Maya Lin and Sam Park are off-roster.
+        fs::write(
+            root.path()
+                .join(format!("chronicle/{DAY}/{SEGMENT}/screen.jsonl")),
+            format!(
+                "{}\n",
+                json!({
+                    "timestamp": 1,
+                    "content": {
+                        "meeting": {
+                            "participants": [{"name": "Ada Lovelace (You're presenting)"}],
+                            "screen_share": {"presenter": "Grace Hopper"}
+                        }
+                    }
+                })
+            ),
+        )
+        .unwrap();
+
+        let _ = apply_all(
+            root.path(),
+            json!([
+                {"name":"Ada Lovelace","role":"attendee","source":"screen"},
+                {"name":"Maya Lin","role":"attendee","source":"screen"},
+                {"name":"Grace Hopper","role":"attendee","source":"transcript"},
+                {"name":"Sam Park","role":"attendee","source":"transcript"},
+            ]),
+        );
+        let rows: Vec<(String, String, String)> = stored_record(root.path())["participation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["name"].as_str().unwrap().to_owned(),
+                    e["role"].as_str().unwrap().to_owned(),
+                    e["entity_id"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                // On-tile screen attendee stays attendee even with 0 local voice turns.
+                ("Ada Lovelace".into(), "attendee".into(), "person".into()),
+                // Off-roster screen name demotes to visible.
+                ("Maya Lin".into(), "visible".into(), "maya".into()),
+                // Transcript attendee corroborated by meeting screen_share presenter stays attendee.
+                ("Grace Hopper".into(), "attendee".into(), "grace".into()),
+                // Uncorroborated transcript attendee demotes to mentioned.
+                ("Sam Park".into(), "mentioned".into(), "sam".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn passive_media_video_and_music_activities_demote_attendees_and_drop_numbered_speakers() {
+        for kind in ["media", "video", "music"] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            write_participation_fixture(
+                root.path(),
+                json!({"labels":[{"speaker":"person","method":"acoustic"},{"speaker":"person","method":"acoustic"}]}),
+                json!([]),
+            );
+            rewrite_record(root.path(), |record| {
+                record.insert("activity".to_owned(), json!(kind));
+            });
+            let mut act = activity();
+            act.insert("activity".to_owned(), json!(kind));
+            apply_result(
+                root.path(),
+                &json!({
+                    "participation": [
+                        {"name":"Ada Lovelace","role":"attendee","source":"voice"},
+                        {"name":"Grace Hopper","role":"heard","source":"voice"},
+                        {"name":"Speaker 1","role":"attendee","source":"speaker_label"}
+                    ]
+                })
+                .to_string(),
+                FACET,
+                &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+                DAY,
+                &act,
+            )
+            .expect("participation applies");
+
+            let record = stored_record(root.path());
+            let list = record["participation"].as_array().unwrap();
+            let summary: Vec<(&str, &str)> = list
+                .iter()
+                .map(|e| (e["name"].as_str().unwrap(), e["role"].as_str().unwrap()))
+                .collect();
+            assert_eq!(
+                summary,
+                vec![("Ada Lovelace", "mentioned"), ("Grace Hopper", "mentioned")],
+                "activity={kind}"
             );
         }
     }

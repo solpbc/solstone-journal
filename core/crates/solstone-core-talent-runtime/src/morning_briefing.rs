@@ -396,6 +396,7 @@ fn load_digest_activities(
 ) -> Vec<DigestActivity> {
     let mut activities = Vec::new();
     let calendar = solstone_core_facets::calendar_on_day(&context.journal, day);
+    let hidden_entities = solstone_core_entity::hidden_participation_entity_ids(&context.journal);
     for (facet_idx, (facet, title)) in facets.iter().enumerate() {
         match load_activity_records(&context.journal, facet, day, false) {
             Ok(records) => {
@@ -492,7 +493,7 @@ fn load_digest_activities(
                         .filter(|s| !s.is_empty())
                         .map(str::to_owned);
                     let duration = record.get("duration").cloned().filter(|v| !v.is_null());
-                    let participants = attendee_names(&record);
+                    let participants = attendee_names(&record, &hidden_entities);
                     let entities = record
                         .get("active_entities")
                         .and_then(Value::as_array)
@@ -582,8 +583,11 @@ fn load_digest_activities(
     activities.into_iter().map(|(_, act)| act).collect()
 }
 
-/// The names of an activity's attendees.
-fn attendee_names(record: &Map<String, Value>) -> Vec<String> {
+/// The names of an activity's attendees, excluding hidden/deleted/non-person entities.
+fn attendee_names(
+    record: &Map<String, Value>,
+    hidden_entities: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
     record
         .get("participation")
         .and_then(Value::as_array)
@@ -595,6 +599,14 @@ fn attendee_names(record: &Map<String, Value>) -> Vec<String> {
                 entry.get("role").and_then(Value::as_str),
                 Some("attendee" | "heard")
             )
+        })
+        .filter(|entry| {
+            !entry
+                .get("entity_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .is_some_and(|id| hidden_entities.contains(id))
         })
         .map(|entry| string_or(entry.get("name").or_else(|| entry.get("entity_id")), ""))
         .filter(|v| !v.is_empty())
@@ -1511,8 +1523,53 @@ mod tests {
             ],
         });
         assert_eq!(
-            attendee_names(record.as_object().unwrap()),
+            attendee_names(
+                record.as_object().unwrap(),
+                &std::collections::BTreeSet::new()
+            ),
             vec!["Ada Lovelace", "Alan Turing", "atlas"]
+        );
+    }
+
+    #[test]
+    fn trashed_entity_is_hidden_in_morning_briefing_and_restored_on_untrash() {
+        let root = tempfile::tempdir().unwrap();
+        let entities = root.path().join("entities");
+        std::fs::create_dir_all(entities.join("ada")).unwrap();
+        std::fs::write(
+            entities.join("ada/entity.json"),
+            r#"{"id":"ada","name":"Ada Lovelace","type":"Person"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            entities.join("retired.json"),
+            r#"{"ids":{"trashed_p":{"state":"deleted","dir":"trashed_p","name":"Trashed Person"}}}"#,
+        )
+        .unwrap();
+        let record = json!({
+            "participation": [
+                {"name": "Ada Lovelace", "entity_id": "ada", "role": "attendee"},
+                {"name": "Trashed Person", "entity_id": "trashed_p", "role": "attendee"},
+                {"name": "Anne", "entity_id": "anne", "role": "heard"},
+            ],
+        });
+        let hidden = solstone_core_entity::hidden_participation_entity_ids(root.path());
+        assert_eq!(
+            attendee_names(record.as_object().unwrap(), &hidden),
+            vec!["Ada Lovelace", "Anne"]
+        );
+
+        // Restoring the entity immediately restores it in briefing participants.
+        std::fs::create_dir_all(entities.join("trashed_p")).unwrap();
+        std::fs::write(
+            entities.join("trashed_p/entity.json"),
+            r#"{"id":"trashed_p","name":"Trashed Person","type":"Person"}"#,
+        )
+        .unwrap();
+        let restored = solstone_core_entity::hidden_participation_entity_ids(root.path());
+        assert_eq!(
+            attendee_names(record.as_object().unwrap(), &restored),
+            vec!["Ada Lovelace", "Trashed Person", "Anne"]
         );
     }
 

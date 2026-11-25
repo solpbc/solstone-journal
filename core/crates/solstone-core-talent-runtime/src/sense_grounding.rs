@@ -79,6 +79,10 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
             }
         }
     }
+    let meeting_detected = output
+        .get("meeting_detected")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let Some(entities) = output.get_mut("entities").and_then(Value::as_array_mut) else {
         return changed.then(|| output.to_string());
     };
@@ -107,8 +111,8 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
     let transcripts = counts
         .and_then(|counts| counts.get("transcripts"))
         .and_then(Value::as_u64);
-    // Evidence and the owner are read only when rules 0, 2 and 4 need them: the
-    // owner means reading every entity. Either one missing changes nothing.
+    // Evidence and the owner are read only when needed: the owner means
+    // reading every entity. Either one missing changes nothing.
     let mut evidence = None;
     if let Some(input) = prepared
         .config
@@ -138,8 +142,47 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
                 .unwrap_or_default();
             written.names(name) || heard.is_some_and(|heard| heard.misheard(name))
         });
-        changed = entities.len() != before;
+        changed |= entities.len() != before;
     }
+    // The journal owner is in every segment and is never listed as an entity.
+    let mut owner: Option<Option<JournalOwner>> = None;
+    let before_owner = entities.len();
+    entities.retain(|entity| {
+        let Some(row) = entity.as_object() else {
+            return true;
+        };
+        if !row
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("person"))
+        {
+            return true;
+        }
+        let name = row.get("name").and_then(Value::as_str).unwrap_or_default();
+        let loaded = owner.get_or_insert_with(|| JournalOwner::load(journal).ok());
+        !loaded
+            .as_ref()
+            .is_some_and(|owner| owner.actor(name) == NamedActor::Owner || owner.sounds_like(name))
+    });
+    changed |= entities.len() != before_owner;
+
+    // `role: attendee` is valid only for Person entities in a detected meeting.
+    for entity in entities.iter_mut() {
+        let Some(row) = entity.as_object_mut() else {
+            continue;
+        };
+        if row.get("role").and_then(Value::as_str) == Some("attendee") {
+            let is_person = row
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("person"));
+            if !meeting_detected || !is_person {
+                row.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+                changed = true;
+            }
+        }
+    }
+
     let Some(transcripts) = transcripts else {
         return changed.then(|| output.to_string());
     };
@@ -147,7 +190,6 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
         .and_then(|counts| counts.get("percepts"))
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let mut owner = None;
     for entity in entities.iter_mut() {
         let Some(row) = entity.as_object_mut() else {
             continue;
@@ -193,12 +235,6 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
                 .get_or_insert_with(|| Evidence::read(prepared))
                 .as_ref()
                 .filter(|evidence| !evidence.was_heard(&name) && evidence.was_shown(&name))
-                .filter(|_| {
-                    owner
-                        .get_or_insert_with(|| JournalOwner::load(journal).ok())
-                        .as_ref()
-                        .is_some_and(|owner| !names_owner(owner, &name))
-                })
                 .map(|_| "screen")
         };
         if let Some(source) = grounded {
@@ -227,21 +263,6 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
 fn seen_only(row: &serde_json::Map<String, Value>) -> bool {
     let field = |key| row.get(key).and_then(Value::as_str).unwrap_or_default();
     field("role") == "mentioned" && field("source") == "screen"
-}
-
-/// The owner, or a shortening of one of the owner's names ("Kat", "Kathryn M").
-fn names_owner(owner: &JournalOwner, name: &str) -> bool {
-    if owner.actor(name) == NamedActor::Owner {
-        return true;
-    }
-    let parts = words(name);
-    !parts.is_empty()
-        && owner.names.iter().any(|known| {
-            let known = words(known);
-            parts
-                .iter()
-                .all(|part| known.iter().any(|word| word.starts_with(part.as_str())))
-        })
 }
 
 /// What the model read, split into what the owner saw and everything else.
@@ -707,7 +728,7 @@ mod tests {
         // on the call's tiles are attendees, read from the screen.
         let call = sense(0, 1, vec![source("screen.jsonl", &["Aaron Daniel jc"])]);
         let journal = journal();
-        let response = json!({"entities":[
+        let response = json!({"meeting_detected":true,"entities":[
             {"type":"Person","name":"Aaron","role":"attendee","source":"speaker_label","level":"high","context":"on a tile"}
         ]})
         .to_string();
@@ -945,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn the_owners_name_keeps_its_voice() {
+    fn the_owners_self_entries_are_dropped_while_others_ground() {
         let journal = journal();
         let owner = journal.path().join("config");
         std::fs::create_dir_all(&owner).unwrap();
@@ -973,13 +994,30 @@ mod tests {
         .to_string();
         let output: Value =
             serde_json::from_str(&ground(&prepared, journal.path(), &response).unwrap()).unwrap();
-        assert_eq!(output["entities"][0]["source"], "voice");
-        assert_eq!(output["entities"][1]["source"], "screen");
-        assert_eq!(output["entities"][2]["source"], "voice");
+        let names = output["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["name"].as_str().unwrap(), e["source"].as_str().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec![("Priya Patel", "screen")]);
     }
     fn roles(prepared: &PreparedTalent, entities: Vec<Value>) -> Vec<(String, String, String)> {
+        roles_with_meeting(prepared, true, entities)
+    }
+
+    fn roles_with_meeting(
+        prepared: &PreparedTalent,
+        meeting_detected: bool,
+        entities: Vec<Value>,
+    ) -> Vec<(String, String, String)> {
         let journal = journal();
-        let response = json!({"density":"active","entities":entities}).to_string();
+        let response = json!({
+            "density":"active",
+            "meeting_detected":meeting_detected,
+            "entities":entities
+        })
+        .to_string();
         let output = ground(prepared, journal.path(), &response).unwrap_or(response);
         serde_json::from_str::<Value>(&output).unwrap()["entities"]
             .as_array()
@@ -1138,5 +1176,116 @@ mod tests {
             ),
             triples(&[("Mara Quinn", "visible", "screen")])
         );
+    }
+
+    #[test]
+    fn attendee_role_demotes_when_not_meeting_or_non_person() {
+        let terminal = sense(
+            0,
+            1,
+            vec![source(
+                "tmux_1_screen.jsonl",
+                &["Grace Hopper", "Zoom", "Acme Corp"],
+            )],
+        );
+        // When meeting_detected is false, Person attendee demotes (then becomes visible if screen-only).
+        assert_eq!(
+            roles_with_meeting(
+                &terminal,
+                false,
+                vec![with_role("Grace Hopper", "attendee", "screen")]
+            ),
+            triples(&[("Grace Hopper", "visible", "screen")])
+        );
+        // Audio-only non-meeting demotes attendee -> mentioned.
+        let audio = sense(
+            1,
+            0,
+            vec![source(
+                "audio.jsonl",
+                &["[10:00:01] Speaker 1: Zoom and Acme Corp with Grace Hopper"],
+            )],
+        );
+        assert_eq!(
+            roles_with_meeting(
+                &audio,
+                false,
+                vec![with_role("Grace Hopper", "attendee", "voice")]
+            ),
+            triples(&[("Grace Hopper", "mentioned", "voice")])
+        );
+        // Non-Person entities with role=attendee demote even when meeting_detected is true.
+        assert_eq!(
+            roles_with_meeting(
+                &audio,
+                true,
+                vec![
+                    json!({"type":"Tool","name":"Zoom","role":"attendee","source":"screen","level":"low","context":"call app"}),
+                    json!({"type":"Company","name":"Acme Corp","role":"attendee","source":"transcript","level":"low","context":"mentioned"}),
+                    with_role("Grace Hopper", "attendee", "voice"),
+                ]
+            ),
+            triples(&[
+                ("Zoom", "mentioned", "screen"),
+                ("Acme Corp", "mentioned", "transcript"),
+                ("Grace Hopper", "attendee", "voice"),
+            ])
+        );
+    }
+
+    #[test]
+    fn multi_word_owner_given_name_and_short_sounds_like_drop_unless_contact_collides() {
+        let j = journal();
+        std::fs::create_dir_all(j.path().join("config")).unwrap();
+        std::fs::write(
+            j.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Will Sterling"}}"#,
+        )
+        .unwrap();
+        let prepared = sense(
+            1,
+            0,
+            vec![source(
+                "audio.jsonl",
+                &["[10:00:01] Speaker 1: Will Willy Priya"],
+            )],
+        );
+        let response = json!({
+            "meeting_detected": false,
+            "entities": [
+                entity("Will", "Person", "voice"),
+                entity("Willy", "Person", "voice"),
+                entity("Will Sterling", "Person", "voice"),
+                entity("Priya Patel", "Person", "voice"),
+            ]
+        })
+        .to_string();
+        let out: Value =
+            serde_json::from_str(&ground(&prepared, j.path(), &response).unwrap()).unwrap();
+        let names = out["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["Priya Patel"]);
+
+        // Adding an admitted non-principal Person named "Will Adams" protects
+        // "Will" and "Willy" from being dropped as the owner while still dropping "Will Sterling".
+        std::fs::create_dir_all(j.path().join("entities/will_adams")).unwrap();
+        std::fs::write(
+            j.path().join("entities/will_adams/entity.json"),
+            r#"{"id":"will_adams","name":"Will Adams","type":"Person"}"#,
+        )
+        .unwrap();
+        let out2: Value =
+            serde_json::from_str(&ground(&prepared, j.path(), &response).unwrap()).unwrap();
+        let names2 = out2["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names2, vec!["Will", "Willy", "Priya Patel"]);
     }
 }

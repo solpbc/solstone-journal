@@ -443,6 +443,56 @@ fn deleted_entities(journal_root: &Path) -> Result<BTreeMap<String, String>, Str
         .collect())
 }
 
+/// Entity ids that must not appear in activity participant projections:
+/// - ids marked `deleted` in `entities/retired.json` that are not currently live
+///   in `read_identity_map` (so recovering a trashed entity restores it immediately);
+/// - live `blocked`, principal (owner), and non-`Person` entities in `entities/`.
+///
+/// Unretired ids absent from `entities/` (for example historical day-detected
+/// slugs) are intentionally NOT included.
+pub fn hidden_participation_entity_ids(journal_root: &Path) -> BTreeSet<String> {
+    let mut hidden = BTreeSet::new();
+    let live = super::map::read_identity_map(journal_root)
+        .map(|map| map.resolved)
+        .unwrap_or_default();
+    match deleted_entities(journal_root) {
+        Ok(deleted) => {
+            for (id, dir) in deleted {
+                if !live.contains_key(&id) {
+                    hidden.insert(id.clone());
+                    if dir != id && !live.contains_key(&dir) {
+                        hidden.insert(dir);
+                    }
+                }
+            }
+        }
+        Err(detail) => {
+            warn_once(&DAMAGED_RECORD_WARNED, &detail);
+        }
+    }
+    for (eid, dir) in &live {
+        let Ok(Some(snap)) = super::identity::read_entity_identity(journal_root, dir) else {
+            continue;
+        };
+        let val = snap.value();
+        let blocked = val.get("blocked").and_then(Value::as_bool).unwrap_or(false);
+        let is_principal = crate::identity_is_principal(val);
+        let kind = val
+            .get("type")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let is_person = kind.is_none_or(|k| k.eq_ignore_ascii_case("person"));
+        if blocked || is_principal || !is_person {
+            hidden.insert(eid.clone());
+            if dir != eid && !live.contains_key(dir) {
+                hidden.insert(dir.clone());
+            }
+        }
+    }
+    hidden
+}
+
 /// Why an id that is not a live entity can't be created again.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RetiredState {
@@ -1204,5 +1254,51 @@ mod tests {
             parse_retired_entities(r#"{"x":1}"#),
             RetiredEntities::Malformed(_)
         ));
+    }
+
+    #[test]
+    fn hidden_participation_entity_ids_hides_deleted_and_non_admissible_and_restores_on_untrash() {
+        let root = journal();
+        live(
+            &root,
+            "owner",
+            r#"{"id":"owner","name":"Will Sterling","type":"Person","is_principal":true}"#,
+        );
+        person(&root, "alice", "Alice");
+        live(
+            &root,
+            "blocked_p",
+            r#"{"id":"blocked_p","name":"Blocked","type":"Person","blocked":true}"#,
+        );
+        live(
+            &root,
+            "acme",
+            r#"{"id":"acme","name":"Acme","type":"Company"}"#,
+        );
+        // Mark `trashed_p` as deleted in retired.json with no live directory.
+        record(
+            &root,
+            r#"{"ids":{"trashed_p":{"state":"deleted","dir":"trashed_p_dir","name":"Trashed"}}}"#,
+        );
+
+        let hidden = super::hidden_participation_entity_ids(&root);
+        assert!(hidden.contains("trashed_p"));
+        assert!(hidden.contains("trashed_p_dir"));
+        assert!(hidden.contains("owner"));
+        assert!(hidden.contains("blocked_p"));
+        assert!(hidden.contains("acme"));
+        // Live unblocked Person stays visible.
+        assert!(!hidden.contains("alice"));
+        // Unretired absent historical IDs stay visible.
+        assert!(!hidden.contains("anne"));
+        assert!(!hidden.contains("other_will"));
+
+        // Restoring `trashed_p` into live entities/ makes it visible immediately
+        // even while retired.json still retains its historical entry.
+        person(&root, "trashed_p", "Trashed");
+        let restored = super::hidden_participation_entity_ids(&root);
+        assert!(!restored.contains("trashed_p"));
+        assert!(!restored.contains("trashed_p_dir"));
+        fs::remove_dir_all(root).unwrap();
     }
 }
