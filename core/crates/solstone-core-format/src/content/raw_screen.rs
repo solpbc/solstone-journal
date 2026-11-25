@@ -461,7 +461,7 @@ fn sanitize_tmux_value(tmux: &mut Value) {
     if let Some(panes) = tmux.get_mut("panes").and_then(Value::as_array_mut) {
         for pane in panes.iter_mut().filter_map(Value::as_object_mut) {
             if let Some(Value::String(content)) = pane.get_mut("content") {
-                *content = sanitize_terminal(content).text;
+                *content = redact_terminal_preserving_escapes(content);
             }
             if let Some(Value::Array(links)) = pane.get_mut("links") {
                 for link in links.iter_mut().filter_map(Value::as_object_mut) {
@@ -488,6 +488,242 @@ fn sanitize_tmux_value(tmux: &mut Value) {
             }
         }
     }
+}
+
+fn redact_terminal_preserving_escapes(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let mut raw_line = String::new();
+    let mut plain_line = String::new();
+    let mut conceal = false;
+    let mut characters = content.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\n' => {
+                flush_redacted_line(&mut result, &mut raw_line, &mut plain_line);
+                result.push('\n');
+            }
+            '\u{1b}' => match characters.peek().copied() {
+                Some('[') => {
+                    characters.next();
+                    consume_csi_preserving(&mut characters, &mut conceal, "\u{1b}[", &mut raw_line);
+                }
+                Some(']') => {
+                    characters.next();
+                    let (command, terminator) =
+                        consume_control_string_with_terminator(&mut characters, true);
+                    raw_line.push_str("\u{1b}]");
+                    raw_line.push_str(&redact_osc_command(&command));
+                    raw_line.push_str(terminator);
+                }
+                Some(intro @ ('P' | 'X' | '^' | '_')) => {
+                    characters.next();
+                    let (command, terminator) =
+                        consume_control_string_with_terminator(&mut characters, false);
+                    if !conceal {
+                        raw_line.push('\u{1b}');
+                        raw_line.push(intro);
+                        raw_line.push_str(&super::screen_text::redact_inline(&command));
+                        raw_line.push_str(terminator);
+                    }
+                }
+                Some(intermediate @ '\u{20}'..='\u{2f}') => {
+                    characters.next();
+                    let tail = collect_escape_sequence(&mut characters);
+                    if !conceal {
+                        raw_line.push('\u{1b}');
+                        raw_line.push(intermediate);
+                        raw_line.push_str(&tail);
+                    }
+                }
+                Some(other) => {
+                    characters.next();
+                    if !conceal {
+                        raw_line.push('\u{1b}');
+                        raw_line.push(other);
+                    }
+                }
+                None => {
+                    if !conceal {
+                        raw_line.push('\u{1b}');
+                    }
+                }
+            },
+            '\u{9b}' => {
+                consume_csi_preserving(&mut characters, &mut conceal, "\u{9b}", &mut raw_line);
+            }
+            '\u{9d}' => {
+                let (command, terminator) =
+                    consume_control_string_with_terminator(&mut characters, true);
+                raw_line.push('\u{9d}');
+                raw_line.push_str(&redact_osc_command(&command));
+                raw_line.push_str(terminator);
+            }
+            c1 @ ('\u{90}' | '\u{98}' | '\u{9e}' | '\u{9f}') => {
+                let (command, terminator) =
+                    consume_control_string_with_terminator(&mut characters, false);
+                if !conceal {
+                    raw_line.push(c1);
+                    raw_line.push_str(&super::screen_text::redact_inline(&command));
+                    raw_line.push_str(terminator);
+                }
+            }
+            other => {
+                if !conceal {
+                    raw_line.push(other);
+                    plain_line.push(other);
+                }
+            }
+        }
+    }
+    flush_redacted_line(&mut result, &mut raw_line, &mut plain_line);
+    result
+}
+
+fn flush_redacted_line(result: &mut String, raw_line: &mut String, plain_line: &mut String) {
+    let redacted = super::screen_text::redact_inline(plain_line);
+    if redacted == *plain_line {
+        result.push_str(raw_line);
+    } else {
+        result.push_str(&redacted);
+    }
+    raw_line.clear();
+    plain_line.clear();
+}
+
+fn consume_csi_preserving(
+    characters: &mut Peekable<Chars<'_>>,
+    conceal: &mut bool,
+    prefix: &str,
+    raw_line: &mut String,
+) {
+    let mut params = String::new();
+    let mut final_byte = None;
+    for parameter in characters.by_ref() {
+        if ('\u{40}'..='\u{7e}').contains(&parameter) {
+            final_byte = Some(parameter);
+            break;
+        }
+        params.push(parameter);
+    }
+    let is_sgr = final_byte == Some('m')
+        && params
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b';' | b':'));
+    if !is_sgr {
+        if !*conceal {
+            raw_line.push_str(prefix);
+            raw_line.push_str(&params);
+            if let Some(end) = final_byte {
+                raw_line.push(end);
+            }
+        }
+        return;
+    }
+    if params.is_empty() {
+        *conceal = false;
+        raw_line.push_str(prefix);
+        raw_line.push('m');
+        return;
+    }
+    let raw_parts: Vec<&str> = params.split(';').collect();
+    let mut kept_parts: Vec<&str> = Vec::new();
+    let mut touched_conceal = false;
+    let mut idx = 0usize;
+    while idx < raw_parts.len() {
+        let part = raw_parts[idx];
+        let (head, has_subparams) = match part.split_once(':') {
+            Some((head, _)) => (head, true),
+            None => (part, false),
+        };
+        let code = head.parse::<u32>().unwrap_or(0);
+        match code {
+            0 => {
+                *conceal = false;
+                kept_parts.push(part);
+                idx += 1;
+            }
+            8 => {
+                *conceal = true;
+                touched_conceal = true;
+                idx += 1;
+            }
+            28 => {
+                *conceal = false;
+                touched_conceal = true;
+                idx += 1;
+            }
+            38 | 48 | 58 if !has_subparams => {
+                let count = match raw_parts
+                    .get(idx + 1)
+                    .and_then(|next| next.parse::<u32>().ok())
+                {
+                    Some(5) => 3,
+                    Some(2) => 5,
+                    _ => 1,
+                };
+                let end = (idx + count).min(raw_parts.len());
+                kept_parts.extend_from_slice(&raw_parts[idx..end]);
+                idx = end;
+            }
+            _ => {
+                kept_parts.push(part);
+                idx += 1;
+            }
+        }
+    }
+    if !touched_conceal {
+        raw_line.push_str(prefix);
+        raw_line.push_str(&params);
+        raw_line.push('m');
+    } else if !kept_parts.is_empty() {
+        raw_line.push_str(prefix);
+        raw_line.push_str(&kept_parts.join(";"));
+        raw_line.push('m');
+    }
+}
+
+fn collect_escape_sequence(characters: &mut Peekable<Chars<'_>>) -> String {
+    let mut out = String::new();
+    for value in characters.by_ref() {
+        out.push(value);
+        if ('\u{30}'..='\u{7e}').contains(&value) {
+            break;
+        }
+    }
+    out
+}
+
+fn consume_control_string_with_terminator(
+    characters: &mut Peekable<Chars<'_>>,
+    bell_terminates: bool,
+) -> (String, &'static str) {
+    let mut command = String::new();
+    while let Some(value) = characters.next() {
+        if value == '\u{9c}' {
+            return (command, "\u{9c}");
+        }
+        if bell_terminates && value == '\u{7}' {
+            return (command, "\u{7}");
+        }
+        if value == '\u{1b}' && characters.peek() == Some(&'\\') {
+            characters.next();
+            return (command, "\u{1b}\\");
+        }
+        command.push(value);
+    }
+    (command, "")
+}
+
+fn redact_osc_command(command: &str) -> String {
+    if let Some(rest) = command.strip_prefix("8;")
+        && let Some((params, uri)) = rest.split_once(';')
+    {
+        return format!("8;{params};{}", super::screen_text::redact_inline(uri));
+    }
+    if let Some((code, payload)) = command.split_once(';') {
+        return format!("{code};{}", super::screen_text::redact_inline(payload));
+    }
+    super::screen_text::redact_inline(command)
 }
 
 fn sanitize_terminal(content: &str) -> SanitizedTerminal {
@@ -1372,7 +1608,7 @@ mod tests {
                 "keep \x1b[8mhidden_empty\x1b[m after_empty\n",
                 "keep \x1b[1;8mhidden_28\x1b[28m after28\n",
                 "\x1b[38;5;8mgrey_visible\x1b[0m \x1b[38:2::10:20:8mtruecolor_visible\x1b[0m\n",
-                "$ vault unlock --password hunter2 --token mytok123 --api-key sk-proj-abc123DEF456ghi789\n",
+                "$ vault unlock --password \x1b[32mhunter2\x1b[0m --token mytok123 --api-key sk-proj-abc123DEF456ghi789\n",
                 "$ curl -H 'Authorization: Bearer {jwt}' https://api.example.test\n",
                 "keys ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5 AKIAIOSFODNN7EXAMPLE\n",
                 "\x1b]8;;https://example.test/auth?access_token=linksecret&view=1\x1b\\open --token labelsecret\x1b]8;;\x1b\\\n",
@@ -1450,7 +1686,7 @@ mod tests {
                     "fallback path leaked {leaked}: {rendered}"
                 );
             }
-            assert!(rendered.contains("grey_visible"));
+            assert!(rendered.contains("\\u001b[38;5;8mgrey_visible"));
             assert!(rendered.contains("dbc2c5b8cf11395ac2842f300ea6f52f05c8216d"));
         }
     }
