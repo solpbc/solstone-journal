@@ -57,18 +57,22 @@ impl fmt::Display for AssetError {
 
 impl std::error::Error for AssetError {}
 
-fn candidates(manifest_directory: &Path, executable: Option<&Path>) -> Vec<PathBuf> {
-    let mut directories: Vec<PathBuf> = manifest_directory
-        .ancestors()
-        .map(|ancestor| ancestor.join(SOURCE_ASSETS_RELATIVE))
-        .collect();
+fn candidates(manifest_directory: Option<&Path>, executable: Option<&Path>) -> Vec<PathBuf> {
+    let mut directories = Vec::new();
     if let Some(executable) = executable {
         directories.extend(
             executable
                 .parent()
                 .into_iter()
-                .flat_map(Path::ancestors)
+                .flat_map(|parent| parent.ancestors().take(2))
                 .map(|root| root.join(INSTALLED_ASSETS_RELATIVE)),
+        );
+    }
+    if let Some(manifest_directory) = manifest_directory {
+        directories.extend(
+            manifest_directory
+                .ancestors()
+                .map(|ancestor| ancestor.join(SOURCE_ASSETS_RELATIVE)),
         );
     }
     directories
@@ -77,15 +81,19 @@ fn candidates(manifest_directory: &Path, executable: Option<&Path>) -> Vec<PathB
         .collect()
 }
 
-/// Locate the area tier file: the checkout's copy when running from source,
-/// otherwise the copy installed beside this executable.
+/// Locate the area tier file: the copy installed beside this executable first,
+/// falling back to the checkout copy only in debug/test builds.
 pub fn resolve_area_tier_path() -> Result<PathBuf, AssetError> {
     let executable = std::env::current_exe().ok();
-    resolve_from(Path::new(env!("CARGO_MANIFEST_DIR")), executable.as_deref())
+    #[cfg(any(debug_assertions, test))]
+    let manifest_directory = Some(Path::new(env!("CARGO_MANIFEST_DIR")));
+    #[cfg(not(any(debug_assertions, test)))]
+    let manifest_directory: Option<&Path> = None;
+    resolve_from(manifest_directory, executable.as_deref())
 }
 
 fn resolve_from(
-    manifest_directory: &Path,
+    manifest_directory: Option<&Path>,
     executable: Option<&Path>,
 ) -> Result<PathBuf, AssetError> {
     let searched = candidates(manifest_directory, executable);
@@ -167,14 +175,71 @@ mod tests {
         fs::create_dir_all(asset.parent().unwrap()).unwrap();
         fs::write(&asset, b"x").unwrap();
         let executable = root.path().join("bin/solstone-core");
-        let resolved = resolve_from(Path::new("/nonexistent/manifest"), Some(&executable)).unwrap();
+        let resolved = resolve_from(None, Some(&executable)).unwrap();
         assert_eq!(resolved, asset);
+    }
+
+    #[test]
+    fn installed_copy_takes_precedence_over_checkout_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let installed = root
+            .path()
+            .join("pkg")
+            .join(INSTALLED_ASSETS_RELATIVE)
+            .join(AREA_TIER_ASSET);
+        fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        fs::write(&installed, b"installed").unwrap();
+
+        let checkout = root
+            .path()
+            .join("checkout")
+            .join(SOURCE_ASSETS_RELATIVE)
+            .join(AREA_TIER_ASSET);
+        fs::create_dir_all(checkout.parent().unwrap()).unwrap();
+        fs::write(&checkout, b"stale-checkout").unwrap();
+
+        let manifest = root
+            .path()
+            .join("checkout/core/crates/solstone-core-location");
+        let executable = root.path().join("pkg/bin/solstone-core");
+        let resolved = resolve_from(Some(&manifest), Some(&executable)).unwrap();
+        assert_eq!(resolved, installed);
+    }
+
+    #[test]
+    fn release_resolution_ignores_checkout_copy_when_installed_is_missing() {
+        let root = tempfile::tempdir().unwrap();
+        let checkout = root
+            .path()
+            .join(SOURCE_ASSETS_RELATIVE)
+            .join(AREA_TIER_ASSET);
+        fs::create_dir_all(checkout.parent().unwrap()).unwrap();
+        fs::write(&checkout, b"checkout").unwrap();
+
+        let executable = root.path().join("pkg/bin/solstone-core");
+        let error = resolve_from(None, Some(&executable)).unwrap_err();
+        assert!(matches!(error, AssetError::NotFound { .. }));
+    }
+
+    #[test]
+    fn installed_lookup_does_not_climb_above_package_root() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root
+            .path()
+            .join(INSTALLED_ASSETS_RELATIVE)
+            .join(AREA_TIER_ASSET);
+        fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        fs::write(&outside, b"planted").unwrap();
+
+        let executable = root.path().join("pkg/bin/solstone-core");
+        let error = resolve_from(None, Some(&executable)).unwrap_err();
+        assert!(matches!(error, AssetError::NotFound { .. }));
     }
 
     #[test]
     fn a_missing_asset_names_where_it_looked() {
         let root = tempfile::tempdir().unwrap();
-        let error = resolve_from(root.path(), Some(&root.path().join("bin/x"))).unwrap_err();
+        let error = resolve_from(Some(root.path()), Some(&root.path().join("bin/x"))).unwrap_err();
         assert!(matches!(error, AssetError::NotFound { searched } if !searched.is_empty()));
     }
 

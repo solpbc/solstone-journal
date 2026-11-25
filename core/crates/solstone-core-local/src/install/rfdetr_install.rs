@@ -238,26 +238,28 @@ pub fn resolve_rfdetr_asset_for_locale(
     locale: &str,
     filename: &str,
 ) -> Result<PathBuf, RfdetrInstallError> {
+    #[cfg(any(debug_assertions, test))]
+    let manifest_dir = Some(Path::new(env!("CARGO_MANIFEST_DIR")));
+    #[cfg(not(any(debug_assertions, test)))]
+    let manifest_dir: Option<&Path> = None;
     resolve_rfdetr_asset_from(
         locale,
         filename,
-        Path::new(env!("CARGO_MANIFEST_DIR")),
+        manifest_dir,
         std::env::current_exe()
             .ok()
             .and_then(|path| path.parent().map(Path::to_path_buf)),
-        cfg!(debug_assertions),
     )
 }
 
 fn resolve_rfdetr_asset_from(
     locale: &str,
     filename: &str,
-    manifest_dir: &Path,
+    manifest_dir: Option<&Path>,
     executable_parent: Option<PathBuf>,
-    allow_development_fallback: bool,
 ) -> Result<PathBuf, RfdetrInstallError> {
     if let Some(parent) = executable_parent {
-        for ancestor in parent.ancestors() {
+        for ancestor in parent.ancestors().take(2) {
             let candidate = ancestor
                 .join("lib/solstone_journal_models/assets/rfdetr")
                 .join(filename);
@@ -268,7 +270,7 @@ fn resolve_rfdetr_asset_from(
     }
     // Development binaries retain an absolute manifest directory. Release
     // packages must never let a build-host checkout mask a missing payload.
-    if allow_development_fallback {
+    if let Some(manifest_dir) = manifest_dir {
         for ancestor in manifest_dir.ancestors() {
             let candidate = ancestor.join("core/models/assets/rfdetr").join(filename);
             if candidate.is_file() {
@@ -1033,9 +1035,8 @@ mod tests {
             resolve_rfdetr_asset_from(
                 ENGLISH,
                 "fixture",
-                &root.path().join("core/crates/solstone-core-local"),
+                Some(&root.path().join("core/crates/solstone-core-local")),
                 None,
-                true,
             )
             .unwrap(),
             development
@@ -1044,46 +1045,34 @@ mod tests {
         fs::remove_file(&development).unwrap();
         let installed = root
             .path()
-            .join("lib/solstone_journal_models/assets/rfdetr/fixture");
+            .join("pkg/lib/solstone_journal_models/assets/rfdetr/fixture");
         fs::create_dir_all(installed.parent().unwrap()).unwrap();
         fs::write(&installed, b"fixture").unwrap();
         assert_eq!(
-            resolve_rfdetr_asset_from(
-                ENGLISH,
-                "fixture",
-                &root.path().join("unrelated"),
-                Some(root.path().join("bin")),
-                false,
-            )
-            .unwrap(),
+            resolve_rfdetr_asset_from(ENGLISH, "fixture", None, Some(root.path().join("pkg/bin")))
+                .unwrap(),
             installed
         );
 
         // A build-host checkout must not mask a missing or wrong release payload.
         fs::write(&development, b"development").unwrap();
         assert_eq!(
-            resolve_rfdetr_asset_from(
-                ENGLISH,
-                "fixture",
-                &root.path().join("core/crates/solstone-core-local"),
-                Some(root.path().join("bin")),
-                false,
-            )
-            .unwrap(),
+            resolve_rfdetr_asset_from(ENGLISH, "fixture", None, Some(root.path().join("pkg/bin")))
+                .unwrap(),
             installed
         );
 
+        // Neither checkout nor an ancestor outside the package root resolves in release.
         fs::remove_file(&installed).unwrap();
+        let ancestor = root
+            .path()
+            .join("lib/solstone_journal_models/assets/rfdetr/fixture");
+        fs::create_dir_all(ancestor.parent().unwrap()).unwrap();
+        fs::write(&ancestor, b"planted").unwrap();
         assert_eq!(
-            resolve_rfdetr_asset_from(
-                ENGLISH,
-                "fixture",
-                &root.path().join("core/crates/solstone-core-local"),
-                Some(root.path().join("bin")),
-                false,
-            )
-            .unwrap_err()
-            .reason_code,
+            resolve_rfdetr_asset_from(ENGLISH, "fixture", None, Some(root.path().join("pkg/bin")))
+                .unwrap_err()
+                .reason_code,
             "bundled_payload_missing"
         );
     }

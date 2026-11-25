@@ -152,9 +152,22 @@ pub(super) fn resolve_mlx_helper_detail(
             [("path", &path.display())],
         ));
     }
-    if let Ok(current_exe) = std::env::current_exe()
-        && let Some(parent) = current_exe.parent()
-    {
+    let executable = std::env::current_exe().ok();
+    #[cfg(any(debug_assertions, test))]
+    let dev_path = Some(Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/mlx-helper/DerivedData/Build/Products/Release/mlx-helper"
+    )));
+    #[cfg(not(any(debug_assertions, test)))]
+    let dev_path: Option<&Path> = None;
+    resolve_mlx_helper_from(executable.as_deref(), dev_path)
+}
+
+fn resolve_mlx_helper_from(
+    executable: Option<&Path>,
+    dev_path: Option<&Path>,
+) -> Result<PathBuf, MessageDetail> {
+    if let Some(parent) = executable.and_then(Path::parent) {
         let sibling_path = parent.join("mlx-helper");
         if is_valid_helper_executable(&sibling_path) {
             return sibling_path
@@ -162,11 +175,9 @@ pub(super) fn resolve_mlx_helper_detail(
                 .map_err(|error| error.to_string().into());
         }
     }
-    let dev_path = PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/mlx-helper/DerivedData/Build/Products/Release/mlx-helper"
-    ));
-    if is_valid_helper_executable(&dev_path) {
+    if let Some(dev_path) = dev_path
+        && is_valid_helper_executable(dev_path)
+    {
         return dev_path
             .canonicalize()
             .map_err(|error| error.to_string().into());
@@ -750,5 +761,42 @@ mod tests {
         .unwrap_or_else(|(code, error)| failure_readiness(code, &error.to_string()));
         assert_eq!(bad_helper["ready"], false);
         assert_eq!(bad_helper["reason_code"], "package_unavailable");
+    }
+
+    #[test]
+    fn mlx_helper_prefers_installed_sibling_and_release_omits_dev_fallback() {
+        let make_helper = |dir: &Path| {
+            fs::create_dir_all(dir).unwrap();
+            let helper = dir.join("mlx-helper");
+            fs::write(&helper, b"helper").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            let resources = dir.join("mlx-swift_Cmlx.bundle/Contents/Resources");
+            fs::create_dir_all(&resources).unwrap();
+            fs::write(resources.join("default.metallib"), b"metallib").unwrap();
+            helper
+        };
+
+        let root = tempfile::tempdir().unwrap();
+        let pkg_bin = root.path().join("pkg/bin");
+        let installed = make_helper(&pkg_bin);
+        let dev = make_helper(&root.path().join("dev"));
+        let executable = pkg_bin.join("solstone-core");
+
+        assert_eq!(
+            resolve_mlx_helper_from(Some(&executable), Some(&dev)).unwrap(),
+            installed.canonicalize().unwrap()
+        );
+
+        fs::remove_file(&installed).unwrap();
+
+        assert_eq!(
+            resolve_mlx_helper_from(Some(&executable), Some(&dev)).unwrap(),
+            dev.canonicalize().unwrap()
+        );
+        assert!(resolve_mlx_helper_from(Some(&executable), None).is_err());
     }
 }

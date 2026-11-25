@@ -131,10 +131,14 @@ pub fn resolve_model_asset(name: &str) -> Result<PathBuf, ModelAssetError> {
 /// generation proof before deciding whether an inherited proof can be borrowed.
 pub(crate) fn resolve_model_asset_path(name: &str) -> Result<PathBuf, ModelAssetError> {
     let override_directory = env::var_os(MODEL_ASSETS_ENV).map(PathBuf::from);
+    #[cfg(any(debug_assertions, test))]
+    let manifest_directory = Some(Path::new(env!("CARGO_MANIFEST_DIR")));
+    #[cfg(not(any(debug_assertions, test)))]
+    let manifest_directory: Option<&Path> = None;
     resolve_model_asset_path_from(
         name,
         override_directory.as_deref(),
-        Path::new(env!("CARGO_MANIFEST_DIR")),
+        manifest_directory,
         env::current_exe(),
     )
 }
@@ -142,7 +146,7 @@ pub(crate) fn resolve_model_asset_path(name: &str) -> Result<PathBuf, ModelAsset
 fn resolve_model_asset_path_from(
     name: &str,
     override_directory: Option<&Path>,
-    manifest_directory: &Path,
+    manifest_directory: Option<&Path>,
     current_executable: Result<PathBuf, io::Error>,
 ) -> Result<PathBuf, ModelAssetError> {
     if let Some(directory) = override_directory {
@@ -151,11 +155,6 @@ fn resolve_model_asset_path_from(
                 asset: name.to_owned(),
                 directory: directory.to_path_buf(),
             })?;
-        return Ok(asset);
-    }
-
-    let source_directories = source_asset_directories(manifest_directory);
-    if let Some(asset) = resolve_from_directories(name, &source_directories) {
         return Ok(asset);
     }
 
@@ -171,10 +170,17 @@ fn resolve_model_asset_path_from(
         return Ok(asset);
     }
 
-    let searched = source_directories
+    let source_directories = manifest_directory
+        .map(source_asset_directories)
+        .unwrap_or_default();
+    if let Some(asset) = resolve_from_directories(name, &source_directories) {
+        return Ok(asset);
+    }
+
+    let searched = executable_relative_directories
         .into_iter()
-        .chain(executable_relative_directories)
         .chain(installed_directories)
+        .chain(source_directories)
         .collect();
     Err(ModelAssetError::AssetNotFound {
         asset: name.to_owned(),
@@ -186,7 +192,7 @@ fn resolve_model_asset_path_from(
 fn resolve_model_asset_from(
     name: &str,
     override_directory: Option<&Path>,
-    manifest_directory: &Path,
+    manifest_directory: Option<&Path>,
     current_executable: Result<PathBuf, io::Error>,
 ) -> Result<PathBuf, ModelAssetError> {
     resolve_model_asset_path_from(
@@ -202,7 +208,7 @@ fn executable_relative_asset_directories(executable: &Path) -> Vec<PathBuf> {
     executable
         .parent()
         .into_iter()
-        .flat_map(Path::ancestors)
+        .flat_map(|parent| parent.ancestors().take(2))
         .map(|root| root.join(DATA_LIB_ASSETS_RELATIVE))
         .collect()
 }
@@ -218,7 +224,7 @@ fn installed_asset_directories(executable: &Path) -> Vec<PathBuf> {
     executable
         .parent()
         .into_iter()
-        .flat_map(Path::ancestors)
+        .flat_map(|parent| parent.ancestors().take(2))
         .flat_map(|root| python_asset_directories(&root.join("lib")))
         .collect()
 }
@@ -319,7 +325,7 @@ mod tests {
         let resolved = resolve_model_asset_from(
             ASSET,
             None,
-            &manifest_directory,
+            Some(&manifest_directory),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap();
@@ -339,7 +345,7 @@ mod tests {
         let resolved = resolve_model_asset_from(
             ASSET,
             None,
-            &root.join("source/core/crates/solstone-core-transcribe"),
+            Some(&root.join("source/core/crates/solstone-core-transcribe")),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap();
@@ -347,10 +353,6 @@ mod tests {
         assert_eq!(resolved, asset_directory.join(ASSET));
     }
 
-    /// AC1/AC2 use injected paths because this checkout's compile-time
-    /// `CARGO_MANIFEST_DIR` always reaches the real committed model assets.
-    /// Copying a compiled binary cannot isolate this branch without deleting
-    /// repository content or recompiling from a relocated source tree.
     #[test]
     fn resolves_executable_relative_layout_without_python_package_layout() {
         let temporary = tempfile::tempdir().unwrap();
@@ -358,16 +360,50 @@ mod tests {
         let asset_directory = root.join(DATA_LIB_ASSETS_RELATIVE);
         write_real_asset(&asset_directory, ASSET);
 
-        let resolved = resolve_model_asset_from(
-            ASSET,
-            None,
-            &root.join("source/core/crates/solstone-core-transcribe"),
-            Ok(root.join("bin/solstone-transcribe")),
-        )
-        .unwrap();
+        let resolved =
+            resolve_model_asset_from(ASSET, None, None, Ok(root.join("bin/solstone-transcribe")))
+                .unwrap();
 
         assert_eq!(resolved, asset_directory.join(ASSET));
         assert!(!has_python_package_layout(root));
+    }
+
+    #[test]
+    fn installed_layout_takes_precedence_over_checkout_layout() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path();
+        let installed_directory = root.join("pkg").join(DATA_LIB_ASSETS_RELATIVE);
+        let installed_path = write_real_asset(&installed_directory, ASSET);
+        let corrupt_checkout = root.join("checkout/core/models/assets");
+        write_corrupted_real_asset(&corrupt_checkout, ASSET);
+
+        let resolved = resolve_model_asset_from(
+            ASSET,
+            None,
+            Some(&root.join("checkout/core/crates/solstone-core-transcribe")),
+            Ok(root.join("pkg/bin/solstone-transcribe")),
+        )
+        .unwrap();
+
+        assert_eq!(resolved, installed_path);
+    }
+
+    #[test]
+    fn release_resolution_ignores_checkout_and_ancestor_layouts() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path();
+        write_real_asset(&root.join("core/models/assets"), ASSET);
+        write_real_asset(&root.join(DATA_LIB_ASSETS_RELATIVE), ASSET);
+
+        let error = resolve_model_asset_from(
+            ASSET,
+            None,
+            None,
+            Ok(root.join("pkg/bin/solstone-transcribe")),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ModelAssetError::AssetNotFound { .. }));
     }
 
     #[test]
@@ -381,7 +417,7 @@ mod tests {
         let error = resolve_model_asset_from(
             ASSET,
             None,
-            &root.join("source/core/crates/solstone-core-transcribe"),
+            Some(&root.join("source/core/crates/solstone-core-transcribe")),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap_err();
@@ -423,7 +459,7 @@ mod tests {
         let error = resolve_model_asset_from(
             ASSET,
             None,
-            &root.join("core/crates/solstone-core-transcribe"),
+            Some(&root.join("core/crates/solstone-core-transcribe")),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap_err();
@@ -448,7 +484,7 @@ mod tests {
         let error = resolve_model_asset_from(
             ASSET,
             Some(&override_directory),
-            &root.join("core/crates/solstone-core-transcribe"),
+            Some(&root.join("core/crates/solstone-core-transcribe")),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap_err();
@@ -462,9 +498,11 @@ mod tests {
         let error = resolve_model_asset_from(
             ASSET,
             None,
-            &temporary
-                .path()
-                .join("core/crates/solstone-core-transcribe"),
+            Some(
+                &temporary
+                    .path()
+                    .join("core/crates/solstone-core-transcribe"),
+            ),
             Err(io::Error::other("unavailable")),
         )
         .unwrap_err();
@@ -478,9 +516,11 @@ mod tests {
         let missing_error = resolve_model_asset_from(
             ASSET,
             None,
-            &missing
-                .path()
-                .join("source/core/crates/solstone-core-transcribe"),
+            Some(
+                &missing
+                    .path()
+                    .join("source/core/crates/solstone-core-transcribe"),
+            ),
             Ok(missing.path().join("bin/solstone-transcribe")),
         )
         .unwrap_err();
@@ -491,15 +531,15 @@ mod tests {
 
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path();
-        let corrupt_directory = root.join("core/models/assets");
+        let corrupt_directory = root.join(DATA_LIB_ASSETS_RELATIVE);
         let corrupt_path = write_corrupted_real_asset(&corrupt_directory, ASSET);
-        let later_directory = root.join(DATA_LIB_ASSETS_RELATIVE);
+        let later_directory = root.join("core/models/assets");
         write_real_asset(&later_directory, ASSET);
 
         let error = resolve_model_asset_from(
             ASSET,
             None,
-            &root.join("core/crates/solstone-core-transcribe"),
+            Some(&root.join("core/crates/solstone-core-transcribe")),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap_err();
@@ -531,7 +571,7 @@ mod tests {
         let error = resolve_model_asset_from(
             ASSET,
             Some(&override_directory),
-            &root.join("core/crates/solstone-core-transcribe"),
+            Some(&root.join("core/crates/solstone-core-transcribe")),
             Ok(root.join("bin/solstone-transcribe")),
         )
         .unwrap_err();

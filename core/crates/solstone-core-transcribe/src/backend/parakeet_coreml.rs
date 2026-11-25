@@ -33,7 +33,7 @@ pub(crate) fn transcribe(
     audio: &[f32],
     config: &JournalConfigRead,
 ) -> Result<TranscriptionResponse, TranscribeError> {
-    let helper = resolve_helper_path();
+    let helper = resolve_helper_path()?;
     let home = std::env::home_dir().unwrap_or_default();
     transcribe_with_installed_helper(
         audio,
@@ -47,7 +47,7 @@ pub(crate) fn transcribe(
 
 /// Probe metadata only after the caller has completed a successful transcription.
 pub(crate) fn get_model_info(config: &JournalConfigRead) -> Result<ModelInfo, TranscribeError> {
-    let helper = resolve_helper_path();
+    let helper = resolve_helper_path()?;
     get_model_info_with_helper(
         &helper,
         &parakeet_coreml_model_version(config),
@@ -170,33 +170,61 @@ fn require_ready_helper(helper: &Path) -> Result<(), TranscribeError> {
     Ok(())
 }
 
-fn resolve_helper_path() -> PathBuf {
-    if let Some(value) = std::env::var_os(HELPER_ENV_KEY) {
-        return resolve_override_path(PathBuf::from(value));
+fn resolve_helper_path() -> Result<PathBuf, TranscribeError> {
+    let executable = std::env::current_exe().ok();
+    #[cfg(any(debug_assertions, test))]
+    let manifest_directory = Some(Path::new(env!("CARGO_MANIFEST_DIR")));
+    #[cfg(not(any(debug_assertions, test)))]
+    let manifest_directory: Option<&Path> = None;
+    resolve_helper_path_from(
+        std::env::var_os(HELPER_ENV_KEY),
+        executable.as_deref(),
+        manifest_directory,
+    )
+}
+
+fn resolve_helper_path_from(
+    override_value: Option<std::ffi::OsString>,
+    executable: Option<&Path>,
+    manifest_directory: Option<&Path>,
+) -> Result<PathBuf, TranscribeError> {
+    if let Some(value) = override_value {
+        return Ok(resolve_override_path(PathBuf::from(value)));
     }
 
-    let source_directories = source_helper_directories(Path::new(env!("CARGO_MANIFEST_DIR")));
-    if let Some(path) = source_directories
-        .iter()
-        .map(|directory| directory.join("_bin").join(HELPER_NAME))
-        .find(|path| path.exists())
-    {
-        return path;
-    }
-    if let Some(path) = installed_helper_binaries()
-        .into_iter()
-        .find(|path| path.exists())
-    {
-        return path;
+    let installed = executable
+        .map(installed_helper_binaries_for)
+        .unwrap_or_default();
+    if let Some(path) = installed.iter().find(|path| path.is_file()) {
+        return Ok(path.clone());
     }
 
-    source_directories
-        .into_iter()
-        .find(|directory| directory.is_dir())
-        .unwrap_or_else(|| PathBuf::from(HELPER_RELATIVE))
-        .join(".build")
-        .join("release")
-        .join(HELPER_NAME)
+    if let Some(manifest_directory) = manifest_directory {
+        let source_directories = source_helper_directories(manifest_directory);
+        if let Some(path) = source_directories
+            .iter()
+            .map(|directory| directory.join("_bin").join(HELPER_NAME))
+            .find(|path| path.is_file())
+        {
+            return Ok(path);
+        }
+        if let Some(directory) = source_directories
+            .into_iter()
+            .find(|directory| directory.is_dir())
+        {
+            return Ok(directory.join(".build").join("release").join(HELPER_NAME));
+        }
+    }
+
+    installed.into_iter().next().ok_or_else(|| {
+        deferred(
+            "coreml_helper_missing",
+            crate::TranscribeDetail::message(
+                "journal.cli.transcribe.error.coreml.parakeet.helper.is.missing.path",
+                [("path", &HELPER_NAME)],
+            ),
+        )
+    })
 }
 
 fn resolve_override_path(path: PathBuf) -> PathBuf {
@@ -222,17 +250,20 @@ fn source_helper_directories(manifest_directory: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn installed_helper_binaries() -> Vec<PathBuf> {
-    let Ok(executable) = std::env::current_exe() else {
-        return Vec::new();
-    };
+fn installed_helper_binaries_for(executable: &Path) -> Vec<PathBuf> {
     let Some(parent) = executable.parent() else {
         return Vec::new();
     };
     let mut paths = vec![parent.join(HELPER_NAME)];
-    for ancestor in parent.ancestors() {
-        paths.push(ancestor.join("bin").join(HELPER_NAME));
-        paths.push(ancestor.join("lib").join(HELPER_RELATIVE).join(HELPER_NAME));
+    for root in parent.ancestors().take(2) {
+        let bin_path = root.join("bin").join(HELPER_NAME);
+        if !paths.contains(&bin_path) {
+            paths.push(bin_path);
+        }
+        let lib_path = root.join("lib").join(HELPER_RELATIVE).join(HELPER_NAME);
+        if !paths.contains(&lib_path) {
+            paths.push(lib_path);
+        }
     }
     paths
 }
@@ -817,8 +848,8 @@ mod tests {
         CoremlResponseError, HELPER_RELATIVE, HELPER_SPAWN_RETRY_DELAY, HelperOutput,
         HelperRunError, HelperSupervisor, conclude_helper, exit_status_from_code,
         kill_helper_group, map_helper_exit, map_helper_run_error, parse_coreml_response,
-        parse_version_response, read_child_stream, retry_busy_spawn, transcribe_helper_arguments,
-        transcribe_with_helper,
+        parse_version_response, read_child_stream, resolve_helper_path_from, retry_busy_spawn,
+        transcribe_helper_arguments, transcribe_with_helper,
     };
     use crate::TranscribeError;
 
@@ -1316,5 +1347,53 @@ printf '%s\n' '{}'
         assert_eq!(done_rx.recv().unwrap().unwrap().text, "hello world!");
         assert_eq!(fs::read(root.join("model.bin")).unwrap(), b"incumbent\n");
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn installed_helper_precedes_checkout_and_release_ignores_checkout_and_ancestors() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path();
+        let installed = root.join("pkg/bin/parakeet-helper");
+        fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        fs::write(&installed, b"installed").unwrap();
+
+        let checkout_bin = root.join("checkout/parakeet-helper/_bin/parakeet-helper");
+        fs::create_dir_all(checkout_bin.parent().unwrap()).unwrap();
+        fs::write(&checkout_bin, b"checkout").unwrap();
+
+        let ancestor_bin = root.join("bin/parakeet-helper");
+        fs::create_dir_all(ancestor_bin.parent().unwrap()).unwrap();
+        fs::write(&ancestor_bin, b"planted-ancestor").unwrap();
+
+        let manifest = root.join("checkout/core/crates/solstone-core-transcribe");
+        let executable = root.join("pkg/bin/solstone-core");
+
+        assert_eq!(
+            resolve_helper_path_from(None, Some(&executable), Some(&manifest)).unwrap(),
+            installed
+        );
+
+        fs::remove_file(&installed).unwrap();
+
+        // Debug/test fallback still reaches the checkout when installed is absent.
+        assert_eq!(
+            resolve_helper_path_from(None, Some(&executable), Some(&manifest)).unwrap(),
+            checkout_bin
+        );
+
+        // Release resolution (manifest_directory = None) ignores both checkout
+        // paths and ancestor directories above the package root.
+        assert_eq!(
+            resolve_helper_path_from(None, Some(&executable), None).unwrap(),
+            installed
+        );
+
+        // Without an executable path or dev fallback, resolution fails closed
+        // rather than returning a relative name.
+        assert!(matches!(
+            resolve_helper_path_from(None, None, None),
+            Err(TranscribeError::ParakeetCoremlDeferred { reason, .. })
+                if reason == "coreml_helper_missing"
+        ));
     }
 }
