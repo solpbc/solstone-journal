@@ -34,13 +34,9 @@ pub(crate) fn enqueue(
     else {
         return Ok(None);
     };
-    let Some((configs, input_hash)) = selected_work_with_refresh(
-        context,
-        facet,
-        activity_id,
-        &record,
-        refresh,
-    )? else {
+    let Some((configs, input_hash)) =
+        selected_work_with_refresh(context, facet, activity_id, &record, refresh)?
+    else {
         return Ok(None);
     };
     if configs.is_empty() {
@@ -140,7 +136,10 @@ fn selected_configs(
     context: &ThinkContext,
     record: &solstone_core_facets::ActivityRecord,
 ) -> Result<Option<Vec<TalentConfig>>, String> {
-    let facet = record.get("facet").and_then(Value::as_str).unwrap_or_default();
+    let facet = record
+        .get("facet")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
     selected_configs_with_refresh(context, facet, id, record, false)
 }
@@ -182,7 +181,8 @@ fn historical_backfill_merits_synthesis(
         {
             total_duration_secs = total_duration_secs.saturating_add(secs);
         }
-        let Some(seg_dir) = solstone_core_system_health::find_segment_dir(journal, day, seg, stream)
+        let Some(seg_dir) =
+            solstone_core_system_health::find_segment_dir(journal, day, seg, stream)
         else {
             continue;
         };
@@ -220,23 +220,23 @@ fn historical_backfill_merits_synthesis(
                         }
                     }
                 }
-            } else if fname.ends_with("_transcript.md") || fname == "transcript.md" {
-                if let Ok(text) = std::fs::read_to_string(entry.path()) {
-                    char_count += text.chars().count();
-                    let msg_turns = text
-                        .lines()
-                        .filter(|line| {
-                            let trimmed = line.trim_start();
-                            trimmed.starts_with("From:")
-                                || trimmed.starts_with("### Message ")
-                                || trimmed.starts_with("### Turn ")
-                                || (trimmed.starts_with('[') && trimmed.contains("] "))
-                        })
-                        .count();
-                    if msg_turns > 0 {
-                        exchange_like = true;
-                        turn_count += msg_turns;
-                    }
+            } else if (fname.ends_with("_transcript.md") || fname == "transcript.md")
+                && let Ok(text) = std::fs::read_to_string(entry.path())
+            {
+                char_count += text.chars().count();
+                let msg_turns = text
+                    .lines()
+                    .filter(|line| {
+                        let trimmed = line.trim_start();
+                        trimmed.starts_with("From:")
+                            || trimmed.starts_with("### Message ")
+                            || trimmed.starts_with("### Turn ")
+                            || (trimmed.starts_with('[') && trimmed.contains("] "))
+                    })
+                    .count();
+                if msg_turns > 0 {
+                    exchange_like = true;
+                    turn_count += msg_turns;
                 }
             }
         }
@@ -468,13 +468,9 @@ pub(crate) fn run_held(
     if crate::activity_work::is_body_data_activity(&record) {
         return settle_body_data(context, log, activity_id, facet, held);
     }
-    let Some((configs, input_hash)) = selected_work_with_refresh(
-        context,
-        facet,
-        activity_id,
-        &record,
-        refresh,
-    )? else {
+    let Some((configs, input_hash)) =
+        selected_work_with_refresh(context, facet, activity_id, &record, refresh)?
+    else {
         return Ok(ModeResult::default());
     };
     run_selected(

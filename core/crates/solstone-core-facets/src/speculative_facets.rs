@@ -173,9 +173,9 @@ pub fn aggregate_speculative_facets_with_backfill(
     if let Ok(declared) = crate::list_declared_facet_names(journal_root) {
         for slug in declared {
             excluded_keys.insert(caseless::default_case_fold_str(&slug));
-            excluded_keys.insert(caseless::default_case_fold_str(&crate::humanize_facet_title(
-                &slug,
-            )));
+            excluded_keys.insert(caseless::default_case_fold_str(
+                &crate::humanize_facet_title(&slug),
+            ));
             if let Ok(Some(decl)) = crate::observe_facet_declaration(journal_root, &slug) {
                 excluded_keys.insert(caseless::default_case_fold_str(&decl.title));
             }
@@ -286,13 +286,13 @@ pub fn aggregate_speculative_facets_with_backfill(
                 return None;
             }
             if let (Some(first), Some(last)) = (
-                g.days.first().and_then(|s| solstone_core_time::parse_day(s)),
+                g.days
+                    .first()
+                    .and_then(|s| solstone_core_time::parse_day(s)),
                 g.days.last().and_then(|s| solstone_core_time::parse_day(s)),
             ) {
-                g.candidate.window_days =
-                    (today.duration_since(first).as_hours() / 24).max(
-                        last.duration_since(first).as_hours() / 24 + 1,
-                    );
+                g.candidate.window_days = (today.duration_since(first).as_hours() / 24)
+                    .max(last.duration_since(first).as_hours() / 24 + 1);
             }
             Some((g.iso_weeks.len(), g.candidate))
         })

@@ -416,13 +416,16 @@ impl ActivityStateMachine {
         scope: &CoalesceScope,
     ) -> Vec<Value> {
         let mut changes = Vec::new();
-        let scope_boundary = self.last_scope.as_ref().is_some_and(|prev| match (prev, scope) {
-            (CoalesceScope::DiscreteItem, _) | (_, CoalesceScope::DiscreteItem) => true,
-            (CoalesceScope::GroupedItem(a), CoalesceScope::GroupedItem(b)) => a != b,
-            (CoalesceScope::GroupedItem(_), CoalesceScope::ContinuousStream)
-            | (CoalesceScope::ContinuousStream, CoalesceScope::GroupedItem(_)) => true,
-            (CoalesceScope::ContinuousStream, CoalesceScope::ContinuousStream) => false,
-        });
+        let scope_boundary = self
+            .last_scope
+            .as_ref()
+            .is_some_and(|prev| match (prev, scope) {
+                (CoalesceScope::DiscreteItem, _) | (_, CoalesceScope::DiscreteItem) => true,
+                (CoalesceScope::GroupedItem(a), CoalesceScope::GroupedItem(b)) => a != b,
+                (CoalesceScope::GroupedItem(_), CoalesceScope::ContinuousStream)
+                | (CoalesceScope::ContinuousStream, CoalesceScope::GroupedItem(_)) => true,
+                (CoalesceScope::ContinuousStream, CoalesceScope::ContinuousStream) => false,
+            });
         let same_group_same_day = matches!(
             (&self.last_scope, scope),
             (Some(CoalesceScope::GroupedItem(a)), CoalesceScope::GroupedItem(b))

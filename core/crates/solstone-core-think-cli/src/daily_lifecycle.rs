@@ -269,13 +269,12 @@ fn run_with_phase_process(
                             );
                             let mut outcome = ModeResult::default();
                             if context.day < today
-                                && let Err(error) =
-                                    crate::segment::ensure_historical_day_activities(
-                                        context,
-                                        phase_log,
-                                        args.jobs,
-                                        args.no_activity_prompts,
-                                    )
+                                && let Err(error) = crate::segment::ensure_historical_day_activities(
+                                    context,
+                                    phase_log,
+                                    args.jobs,
+                                    args.no_activity_prompts,
+                                )
                             {
                                 crate::dispatch::record_followup_failure(
                                     &mut outcome,

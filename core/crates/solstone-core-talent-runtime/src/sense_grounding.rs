@@ -66,9 +66,7 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
         kinds.contains(&solstone_core_format::content::AdmittedCategory::Photos)
             || kinds.contains(&solstone_core_format::content::AdmittedCategory::Screenshots)
     });
-    if is_static_sense
-        && let Some(root_obj) = output.as_object_mut()
-    {
+    if is_static_sense && let Some(root_obj) = output.as_object_mut() {
         for (key, default_val) in [
             ("meeting_detected", Value::Bool(false)),
             ("speakers", Value::Array(Vec::new())),
@@ -89,7 +87,11 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
             if let Some(row) = entity.as_object_mut()
                 && !row.contains_key("source")
             {
-                let default_source = if visual_static { "screen" } else { "transcript" };
+                let default_source = if visual_static {
+                    "screen"
+                } else {
+                    "transcript"
+                };
                 row.insert(
                     "source".to_owned(),
                     Value::String(default_source.to_owned()),

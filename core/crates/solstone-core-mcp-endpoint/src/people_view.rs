@@ -475,8 +475,12 @@ pub(crate) fn build_people_range_summary(
         Reverse(a.present_days.len())
             .cmp(&Reverse(b.present_days.len()))
             .then_with(|| Reverse(a.activities).cmp(&Reverse(b.activities)))
-            .then_with(|| Reverse(a.corresponded_days.len()).cmp(&Reverse(b.corresponded_days.len())))
-            .then_with(|| Reverse(a.corresponded_activities).cmp(&Reverse(b.corresponded_activities)))
+            .then_with(|| {
+                Reverse(a.corresponded_days.len()).cmp(&Reverse(b.corresponded_days.len()))
+            })
+            .then_with(|| {
+                Reverse(a.corresponded_activities).cmp(&Reverse(b.corresponded_activities))
+            })
             .then_with(|| Reverse(a.in_photo_days.len()).cmp(&Reverse(b.in_photo_days.len())))
             .then_with(|| Reverse(a.in_photo_activities).cmp(&Reverse(b.in_photo_activities)))
             .then_with(|| {

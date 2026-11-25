@@ -159,12 +159,12 @@ fn capture_location_from_exif(data: &exif::Exif) -> Option<CaptureLocation> {
     let accuracy_m = data
         .get_field(Tag(Context::Gps, 31), In::PRIMARY)
         .and_then(|field| match &field.value {
-            Value::Rational(rats) => rats.first().and_then(|r| {
-                (r.denom != 0).then(|| f64::from(r.num) / f64::from(r.denom))
-            }),
-            Value::SRational(rats) => rats.first().and_then(|r| {
-                (r.denom != 0).then(|| f64::from(r.num) / f64::from(r.denom))
-            }),
+            Value::Rational(rats) => rats
+                .first()
+                .and_then(|r| (r.denom != 0).then(|| f64::from(r.num) / f64::from(r.denom))),
+            Value::SRational(rats) => rats
+                .first()
+                .and_then(|r| (r.denom != 0).then(|| f64::from(r.num) / f64::from(r.denom))),
             _ => field.value.get_uint(0).map(f64::from),
         })
         .filter(|v| v.is_finite() && *v >= 0.0);
@@ -1989,9 +1989,15 @@ mod tests {
                     tag: Tag::GPSLatitude,
                     ifd_num: In::PRIMARY,
                     value: Value::Rational(vec![
-                        Rational { num: lat_deg, denom: 1 },
+                        Rational {
+                            num: lat_deg,
+                            denom: 1,
+                        },
                         Rational { num: 39, denom: 1 },
-                        Rational { num: 3089, denom: 100 },
+                        Rational {
+                            num: 3089,
+                            denom: 100,
+                        },
                     ]),
                 },
                 Field {
@@ -2003,7 +2009,10 @@ mod tests {
                     tag: Tag::GPSLongitude,
                     ifd_num: In::PRIMARY,
                     value: Value::Rational(vec![
-                        Rational { num: lon_deg, denom: 1 },
+                        Rational {
+                            num: lon_deg,
+                            denom: 1,
+                        },
                         Rational { num: 0, denom: 1 },
                         Rational { num: 0, denom: 1 },
                     ]),

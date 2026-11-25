@@ -324,7 +324,8 @@ pub(crate) fn prepare_in(
                 == Some(0)
             && topic_input_kinds.as_ref().is_some_and(|kinds| {
                 !kinds.is_empty()
-                    && !kinds.contains(&solstone_core_format::content::AdmittedCategory::Transcripts)
+                    && !kinds
+                        .contains(&solstone_core_format::content::AdmittedCategory::Transcripts)
                     && !kinds.contains(&solstone_core_format::content::AdmittedCategory::ScreenText)
             })
             && paths.templates_dir.join("sense_static.md").is_file()

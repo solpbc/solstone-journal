@@ -51,17 +51,18 @@ pub(crate) fn substitute_runtime_facets(
 pub(crate) fn substitute_runtime_facets_with(schema: &mut Value, names: &[String]) {
     match schema {
         Value::Object(object) => {
-            let (placeholder, has_null) = object
-                .get("enum")
-                .and_then(Value::as_array)
-                .map_or((false, false), |values| {
-                    (
-                        values
-                            .iter()
-                            .any(|value| value.as_str() == Some(RUNTIME_FACETS_PLACEHOLDER)),
-                        values.iter().any(Value::is_null),
-                    )
-                });
+            let (placeholder, has_null) =
+                object
+                    .get("enum")
+                    .and_then(Value::as_array)
+                    .map_or((false, false), |values| {
+                        (
+                            values
+                                .iter()
+                                .any(|value| value.as_str() == Some(RUNTIME_FACETS_PLACEHOLDER)),
+                            values.iter().any(Value::is_null),
+                        )
+                    });
             if placeholder {
                 if names.is_empty() {
                     if has_null {

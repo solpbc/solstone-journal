@@ -132,11 +132,7 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
         .route(
             "/app/health/api/work/pause-backfill",
             post(move |locale, body| {
-                actions::pause_backfill(
-                    pause_backfill_root.clone(),
-                    body,
-                    response_locale(locale),
-                )
+                actions::pause_backfill(pause_backfill_root.clone(), body, response_locale(locale))
             }),
         )
         .merge(integrity::routes(journal_root.clone()))

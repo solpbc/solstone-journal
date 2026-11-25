@@ -1112,11 +1112,8 @@ pub fn install_image_at(
         && prepared.time_source == PhotoTimeSource::Capture
         && let Some(loc) = &prepared.capture_location
     {
-        let location_path = write_photo_sighting_location(
-            &claimed.directory,
-            prepared.timestamp.timestamp(),
-            loc,
-        )?;
+        let location_path =
+            write_photo_sighting_location(&claimed.directory, prepared.timestamp.timestamp(), loc)?;
         extra_created.push(location_path);
     }
     let _ = solstone_core_format::stored_markdown::remove_display_receipt(&transcript_path);
@@ -1250,11 +1247,7 @@ fn write_photo_sighting_location(
     if let Some(cam) = camera {
         sighting.insert("camera".to_owned(), serde_json::json!(cam));
     }
-    let content = format!(
-        "{}\n{}\n",
-        header,
-        serde_json::Value::Object(sighting)
-    );
+    let content = format!("{}\n{}\n", header, serde_json::Value::Object(sighting));
     atomic_replace(
         &path,
         content.as_bytes(),

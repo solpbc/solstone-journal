@@ -16,7 +16,11 @@ use solstone_core_indexer_store::calendar_schedule::{
 pub use solstone_core_indexer_store::calendar_schedule::{InvitedPerson, ScheduledEvent};
 
 /// Non-declined scheduled calendar event counts per day across `[from, to]`.
-pub fn calendar_day_counts_between(journal: &Path, from: &str, to: &str) -> BTreeMap<String, usize> {
+pub fn calendar_day_counts_between(
+    journal: &Path,
+    from: &str,
+    to: &str,
+) -> BTreeMap<String, usize> {
     scheduled_day_counts_between(journal, from, to).unwrap_or_default()
 }
 

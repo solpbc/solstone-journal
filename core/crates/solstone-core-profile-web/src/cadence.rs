@@ -119,9 +119,7 @@ pub(crate) fn compute_cadence(
             &right.activity_id,
         ))
     });
-    sources.dedup_by(|a, b| {
-        a.day == b.day && a.facet == b.facet && a.activity_id == b.activity_id
-    });
+    sources.dedup_by(|a, b| a.day == b.day && a.facet == b.facet && a.activity_id == b.activity_id);
     Ok((
         Cadence {
             recent_interactions_count_30d,
@@ -557,7 +555,7 @@ mod tests {
 
     #[test]
     fn cadence_tracks_corresponded_separately_across_multi_year_history_without_inflating_last_seen()
-    {
+     {
         let temporary = journal();
         facet(temporary.path(), "work", false);
         records(

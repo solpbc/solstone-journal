@@ -36,7 +36,10 @@ pub(crate) fn backfill_summary(
     paused: bool,
     index_pending: u64,
 ) -> Value {
-    let band = inventory.map(|inv| &inv.bands[3]).cloned().unwrap_or_default();
+    let band = inventory
+        .map(|inv| &inv.bands[3])
+        .cloned()
+        .unwrap_or_default();
     let landed_segments = band.segments_complete + band.segments_owed;
     let indexed_segments = landed_segments.saturating_sub(index_pending);
     let mut backfill_days = BTreeMap::<&str, ()>::new();

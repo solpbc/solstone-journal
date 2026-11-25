@@ -1399,13 +1399,12 @@ pub fn has_factual_week_data(journal: &Path, sunday: &str) -> bool {
         for facet in &enabled_facets {
             if let Ok(rows) =
                 solstone_core_facets::load_activity_records_readable(journal, facet, &d, false)
-            {
-                if rows.iter().any(|row| {
+                && rows.iter().any(|row| {
                     !(body_hidden && solstone_core_format::content::is_strava_reading(row))
                         && factual_activity_has_live_source(journal, &d, row)
-                }) {
-                    return true;
-                }
+                })
+            {
+                return true;
             }
         }
         if journal.join("chronicle").join(&d).is_dir()
@@ -1452,6 +1451,7 @@ fn factual_activity_has_live_source(
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn factual_page_model_in(
     journal: &Path,
     day: &str,
@@ -1530,11 +1530,7 @@ fn factual_page_model_in(
         let summary_text = {
             let desc = record_string(chosen, "description");
             let ttl = record_string(chosen, "title");
-            if !desc.trim().is_empty() {
-                desc
-            } else {
-                ttl
-            }
+            if !desc.trim().is_empty() { desc } else { ttl }
         };
         if summary_text.trim().is_empty() {
             continue;

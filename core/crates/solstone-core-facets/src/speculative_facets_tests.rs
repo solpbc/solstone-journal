@@ -351,7 +351,7 @@ fn aggregation_skips_unreadable_and_invalid_segment_outputs_without_aborting() {
 
 #[test]
 fn backfill_aggregation_surfaces_multi_week_former_areas_outside_fourteen_day_window() {
-    let temporary = TempDir::new().unwrap();
+    let temporary = TempDir::new();
     let root = temporary.path();
     crate::create_facet(root, "work", "Work", "", "", "", None).unwrap();
 

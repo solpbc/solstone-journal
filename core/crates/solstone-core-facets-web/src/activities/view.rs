@@ -497,7 +497,11 @@ pub fn build_view_in(
     let mut standalone_calendar = Vec::new();
     if unfiltered_facet {
         let mut attached_spans = Vec::new();
-        for ((_, row), course) in scoped_rows.iter().zip(place_activity_records(root, day, &placed_records)) {
+        for ((_, row), course) in
+            scoped_rows
+                .iter()
+                .zip(place_activity_records(root, day, &placed_records))
+        {
             let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
             if is_hidden && !include_hidden {
                 continue;

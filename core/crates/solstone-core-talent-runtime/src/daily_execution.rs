@@ -350,9 +350,10 @@ pub(crate) fn execute_with_paths(
         .get("skip_reason")
         .and_then(Value::as_str)
         .is_some();
-    let pre_unavailable = stage
-        .as_ref()
-        .and_then(|(spec, state)| spec.unavailable_before_generate.and_then(|u| (u.select)(state)));
+    let pre_unavailable = stage.as_ref().and_then(|(spec, state)| {
+        spec.unavailable_before_generate
+            .and_then(|u| (u.select)(state))
+    });
     let generated = if let Some(value) = record.generated_result.as_ref() {
         match retained_response(value) {
             Ok(value) => value,

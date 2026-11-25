@@ -956,10 +956,10 @@ pub fn read_live_observations(
 
     match query.order {
         ObservationReadOrder::Newest => {
-            live.sort_by(|a, b| temporal_sort_key(b, &zone).cmp(&temporal_sort_key(a, &zone)));
+            live.sort_by_key(|b| std::cmp::Reverse(temporal_sort_key(b, &zone)));
         }
         ObservationReadOrder::Oldest => {
-            live.sort_by(|a, b| temporal_sort_key(a, &zone).cmp(&temporal_sort_key(b, &zone)));
+            live.sort_by_key(|a| temporal_sort_key(a, &zone));
         }
     }
 
@@ -1258,7 +1258,7 @@ pub fn load_observations_for_query(
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let mut live: Vec<&ObservationRow> = parsed.live_rows().collect();
-    live.sort_by(|a, b| temporal_sort_key(b, &zone).cmp(&temporal_sort_key(a, &zone)));
+    live.sort_by_key(|b| std::cmp::Reverse(temporal_sort_key(b, &zone)));
 
     let observations = live
         .into_iter()
@@ -1923,6 +1923,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)]
     fn observations_order_by_source_day_and_refuse_anachronistic_clobber() {
         let root = tempfile::tempdir().unwrap();
         let path = root
