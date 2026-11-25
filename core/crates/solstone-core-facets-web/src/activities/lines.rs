@@ -77,14 +77,13 @@ impl LineKey {
     }
 }
 
-/// A segment's directory: `_default` stream segments sit directly under the day.
+/// A segment's directory: `_default` stream segments sit directly under the day,
+/// resolving live suffixed `<key>_*` directories when the exact folder is absent.
 pub(super) fn segment_dir(root: &Path, day: &str, stream: &str, segment: &str) -> PathBuf {
-    let day_dir = root.join("chronicle").join(day);
-    if stream == solstone_core_journal_io::DEFAULT_STREAM {
-        day_dir.join(segment)
-    } else {
-        day_dir.join(stream).join(segment)
-    }
+    solstone_core_system::activity_state::live_segment_dir(root, day, stream, segment)
+        .unwrap_or_else(|| {
+            solstone_core_system::activity_state::segment_dir(root, day, stream, segment)
+        })
 }
 
 fn valid_stream(stream: &str) -> bool {
@@ -142,9 +141,15 @@ fn owner_only() -> Response {
     )
 }
 
-/// The activity's stream and segment keys.
-fn activity_segments(record: &ActivityRecord) -> Option<(String, BTreeSet<String>)> {
-    let stream = record.get("stream").and_then(Value::as_str)?.to_owned();
+/// The activity's effective stream and segment keys.
+fn activity_segments(
+    root: &Path,
+    day: &str,
+    record: &ActivityRecord,
+) -> Option<(String, BTreeSet<String>)> {
+    let stream =
+        solstone_core_system::activity_state::effective_activity_stream(root, day, record)?
+            .to_owned();
     let segments = record
         .get("segments")
         .and_then(Value::as_array)
@@ -248,7 +253,7 @@ pub(super) fn set_lines_checked(
         }
         Err(error) => return store_error(error),
     };
-    let held = activity_segments(&record);
+    let held = activity_segments(root, day, &record);
     if let Some(line) = lines.iter().find(|line| {
         !held.as_ref().is_some_and(|(stream, segments)| {
             *stream == line.stream && segments.contains(&line.segment)

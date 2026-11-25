@@ -998,26 +998,29 @@ fn append_segment(entry: &mut Map<String, Value>, segment: &str) {
     }
 }
 
-pub use solstone_core_segment::{segment_live, stream_segment_dir as segment_dir};
+pub use solstone_core_segment::{
+    effective_activity_stream, live_segment_dir, segment_live, stream_segment_dir as segment_dir,
+};
 
 /// Fields a talent writes onto an activity record from every segment it read.
 /// When a segment leaves, they no longer hold for what remains, so they are
 /// dropped until the record's talents run again.
-pub const TALENT_WRITTEN_FIELDS: [&str; 6] = [
+pub const TALENT_WRITTEN_FIELDS: [&str; 7] = [
     "title",
     "story",
     "relations",
     "participation",
     "participation_confidence",
     "participation_partial_input",
+    "participation_said",
 ];
 
 /// What [`rederive`] made of a record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Rederived {
     /// Every segment it names is in the journal, or it isn't the journal's to
-    /// re-make (body data, a record naming no stream, the owner's own record
-    /// with nothing left): leave it as it is.
+    /// re-make (body data, a streamless record outside the default stream):
+    /// leave it as it is.
     Unchanged,
     /// Re-made from the segments still in the journal.
     Changed(Map<String, Value>),
@@ -1052,7 +1055,7 @@ pub fn rederive_with(
     if is_body_record(record) || is_strava_reading(record) {
         return Rederived::Unchanged;
     }
-    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+    let Some(stream) = effective_activity_stream(journal, day, record) else {
         return Rederived::Unchanged;
     };
     let segments = record
@@ -1077,7 +1080,7 @@ pub fn rederive_with(
     let mut next = record.clone();
     next.insert("segments".to_owned(), json!(live));
     if record.get("source").and_then(Value::as_str) == Some("user") {
-        return if live.is_empty() || live.len() == segments.len() {
+        return if live.len() == segments.len() {
             Rederived::Unchanged
         } else {
             Rederived::Changed(next)
@@ -1110,7 +1113,8 @@ pub fn rederive_with(
     let mut names = Vec::<String>::new();
     let mut seen = BTreeSet::<String>::new();
     for key in &live {
-        let dir = segment_dir(journal, day, stream, key);
+        let dir = live_segment_dir(journal, day, stream, key)
+            .unwrap_or_else(|| segment_dir(journal, day, stream, key));
         let sense = match solstone_core_journal_io::durability::read_json_durable::<Value>(
             solstone_core_journal_io::durability::ArtifactId::SegmentSense,
             &dir.join("talents").join("sense.json"),
@@ -2404,6 +2408,71 @@ mod tests {
             };
             assert_eq!(next["description"], json!("the secret plan"));
             assert_eq!(next["active_entities"], json!(["Ann", "Bob"]));
+        }
+
+        #[test]
+        fn default_stream_suffixed_segments_participation_said_and_user_rows_rederive_cleanly() {
+            let root = tempfile::tempdir().unwrap();
+            let day_dir = root.path().join("chronicle").join(DAY);
+            let write_default_seg = |dir_name: &str, s: Value| {
+                let dir = day_dir.join(dir_name);
+                fs::create_dir_all(dir.join("talents")).unwrap();
+                fs::write(dir.join("audio.flac"), b"x").unwrap();
+                fs::write(
+                    dir.join("talents/sense.json"),
+                    serde_json::to_vec(&s).unwrap(),
+                )
+                .unwrap();
+            };
+            write_default_seg("090000_300", sense("planning the launch", "Ann"));
+            write_default_seg("090500_300", sense("the secret plan", "Bob"));
+            write_default_seg("091000_300_summary", sense("reviewing the launch", "Cat"));
+
+            // Trash middle segment under _default.
+            let mid = day_dir.join("090500_300");
+            fs::remove_dir_all(&mid).unwrap();
+            fs::create_dir_all(&mid).unwrap();
+            fs::write(mid.join("tombstone.json"), b"{}").unwrap();
+
+            // Streamless _default record carrying participation_said quote from trashed segment.
+            let mut rec = record(&ALL);
+            rec.remove("stream");
+            rec.insert(
+                "participation_said".into(),
+                json!([{"name": "Bob", "quote": "the secret plan"}]),
+            );
+            let Rederived::Changed(next) = rederive(root.path(), DAY, &rec) else {
+                panic!("_default record should narrow");
+            };
+            assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
+            // Sense was actually read from suffixed 091000_300_summary.
+            assert_eq!(next["description"], json!("reviewing the launch"));
+            assert_eq!(next["active_entities"], json!(["Ann", "Cat"]));
+            assert!(!next.contains_key("participation_said"));
+            assert!(!serde_json::to_string(&next).unwrap().contains("secret"));
+
+            // Single-segment _default record whose only segment was trashed is removed.
+            let mut single = record(&["090500_300"]);
+            single.remove("stream");
+            assert_eq!(rederive(root.path(), DAY, &single), Rederived::Removed);
+
+            // Anchored source: "user" _default record whose only linked segment is trashed
+            // narrows segments to [] while keeping owner words intact.
+            let mut user_rec = record(&["090500_300"]);
+            user_rec.remove("stream");
+            user_rec.insert("source".into(), json!("user"));
+            user_rec.insert("title".into(), json!("My manual meeting note"));
+            let Rederived::Changed(narrowed_user) = rederive(root.path(), DAY, &user_rec) else {
+                panic!("user record with all segments trashed should narrow to []");
+            };
+            assert_eq!(narrowed_user["segments"], json!([]));
+            assert_eq!(narrowed_user["title"], json!("My manual meeting note"));
+            assert_eq!(narrowed_user["source"], json!("user"));
+
+            // Legacy streamless record whose keys do not exist under chronicle/<day>/ stays untouched.
+            let mut legacy = record(&["140000_300"]);
+            legacy.remove("stream");
+            assert_eq!(rederive(root.path(), DAY, &legacy), Rederived::Unchanged);
         }
     }
 }

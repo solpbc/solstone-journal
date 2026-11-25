@@ -561,3 +561,112 @@ async fn the_day_view_shows_an_answer_correcting_its_activity_while_it_stands() 
     assert_eq!(item["edits"][0]["removed"], true);
     assert_eq!(item["corrected"], false);
 }
+
+#[tokio::test]
+async fn default_stream_and_suffixed_segments_accept_and_revert_owner_line_edits() {
+    let root = phase_root("established_empty");
+    for facet in ["work", "home"] {
+        solstone_core_facets::create_facet(root.path(), facet, facet, "", "", "", None).unwrap();
+    }
+    person(root.path(), "owner", true);
+    person(root.path(), "ada", false);
+    drop(solstone_core_entity::hold_entity_trust_lock(root.path()).unwrap());
+
+    // _default stream segments directly under chronicle/<day>/, one unsuffixed and one suffixed.
+    let write_seg = |dir: PathBuf| {
+        let mut rows = vec![json!({"raw":"audio.flac"}).to_string()];
+        rows.extend((1..=2).map(|id| {
+            json!({"start":format!("00:00:0{id}"),"text":format!("line {id}"),"sentence_id":id})
+                .to_string()
+        }));
+        write(&dir.join("audio.jsonl"), &(rows.join("\n") + "\n"));
+    };
+    let dir_a = root.path().join(format!("chronicle/{DAY}/{A}"));
+    let dir_b_suffixed = root.path().join(format!("chronicle/{DAY}/{B}_summary"));
+    write_seg(dir_a.clone());
+    write_seg(dir_b_suffixed.clone());
+
+    // Streamless _default activities in both facets (as settle::publish writes them).
+    for (facet, id) in [("work", "rec"), ("home", "home_rec")] {
+        let row =
+            json!({"id": id, "activity": "meeting", "title": id, "segments": [A, B], "edits": []});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            facet,
+            DAY,
+            row.as_object().unwrap().clone(),
+        )
+        .unwrap();
+    }
+
+    let payload = json!({
+        "lines": [
+            {"stream": solstone_core_journal_io::DEFAULT_STREAM, "segment": A, "source": "audio", "sentence_id": 1},
+            {"stream": solstone_core_journal_io::DEFAULT_STREAM, "segment": B, "source": "audio", "sentence_id": 2}
+        ],
+        "speaker": ada()
+    });
+    let (status, body) = post(root.path(), "lines", Some(ACTOR_OWNER), payload).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["asked"], true);
+
+    assert_eq!(
+        current_owner_line_entries(&dir_a).unwrap()[0].speaker,
+        Some("ada".into())
+    );
+    assert_eq!(
+        current_owner_line_entries(&dir_b_suffixed).unwrap()[0].speaker,
+        Some("ada".into())
+    );
+
+    let asks = asks(root.path());
+    assert_eq!(asks.len(), 1);
+    let named = asks[0]
+        .to_seed
+        .iter()
+        .map(|asked| (asked.facet.as_str(), asked.activity.as_str()))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        named,
+        BTreeSet::from([("home", "home_rec"), ("work", "rec")])
+    );
+
+    let day_item = |root: PathBuf| async move {
+        let router: Router = solstone_core_convey_shell::session_gate::apply_layer(
+            routes(root.clone(), fixed_clock()),
+            root,
+        );
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/app/activities/api/day/{DAY}/view"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "rec")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(day_item(root.path().to_path_buf()).await["corrected"], true);
+
+    let (status, removed) = remove(root.path(), 0).await;
+    assert_eq!(status, StatusCode::OK, "{removed}");
+    assert!(current_owner_line_entries(&dir_a).unwrap().is_empty());
+    assert!(
+        current_owner_line_entries(&dir_b_suffixed)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        day_item(root.path().to_path_buf()).await["corrected"],
+        false
+    );
+}

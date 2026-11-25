@@ -193,8 +193,14 @@ fn voice_recordings(
 }
 
 /// Whether a record was made over one of `segments`.
-fn over(record: &Map<String, Value>, segments: &BTreeSet<(String, String)>) -> bool {
-    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+fn over(
+    journal: &Path,
+    day: &str,
+    record: &Map<String, Value>,
+    segments: &BTreeSet<(String, String)>,
+) -> bool {
+    let Some(stream) = solstone_core_segment::effective_activity_stream(journal, day, record)
+    else {
         return false;
     };
     record
@@ -256,7 +262,10 @@ impl MadeFromIt {
                             continue;
                         }
                     };
-                for record in rows.into_iter().filter(|record| over(record, segments)) {
+                for record in rows
+                    .into_iter()
+                    .filter(|record| over(journal, day, record, segments))
+                {
                     kept.push(KeptRecord {
                         day: day.clone(),
                         facet: facet.clone(),
@@ -297,15 +306,24 @@ impl MadeFromIt {
                 // kept copy had.
                 let mut merged = row.clone();
                 if let Some(back) = returned.iter().find(|back| record_id(back) == id) {
-                    let mut all = segments_of(row);
+                    let existing = segments_of(row);
+                    let mut all = existing.clone();
                     all.extend(segments_of(back));
                     all.sort();
                     all.dedup();
-                    merged.insert("segments".into(), Value::from(all));
+                    if all.len() != existing.len() || all.iter().any(|key| !existing.contains(key))
+                    {
+                        merged.insert("segments".into(), Value::from(all));
+                    }
                 }
                 match rederive_with(journal, day, &merged, force) {
                     Rederived::Unchanged => {
-                        next.push(row.clone());
+                        if merged != *row {
+                            changed = true;
+                            next.push(merged);
+                        } else {
+                            next.push(row.clone());
+                        }
                         kept.push(id);
                     }
                     Rederived::Changed(record) => {
