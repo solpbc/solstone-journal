@@ -8,7 +8,8 @@
 //! records with that credential.
 //!
 //! Space references and record URIs are kept as the host returns them; the
-//! only part read out of one is the authority's DID.
+//! only part read out of one is the authority's DID, and only from the
+//! `at:space/<did>/<type>/<key>` form hosts emit.
 
 use std::fmt;
 use std::time::Duration;
@@ -64,17 +65,28 @@ impl From<AtprotoClientError> for SpaceError {
 }
 
 /// The DID of the account that is a space's authority, read out of its
-/// reference. Accepts the `at://<did>/…` form and the `at:space/<did>/…`
-/// form alike.
+/// reference, `at:space/<did>/<space type>/<space key>`. Anything else is
+/// refused: a record URI, a handle as the authority, and the older
+/// `at://<did>/space/…` form, which hosts no longer accept.
 pub fn space_authority(space: &str) -> Result<&str, SpaceError> {
-    let start = space.find("did:").ok_or(SpaceError::BadSpaceRef)?;
-    let rest = &space[start..];
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let did = &rest[..end];
-    if solstone_core_oauth::atproto_client::is_atproto_did(did) {
-        Ok(did)
-    } else {
-        Err(SpaceError::BadSpaceRef)
+    let rest = space
+        .strip_prefix("at:space/")
+        .ok_or(SpaceError::BadSpaceRef)?;
+    let mut parts = rest.split('/');
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(did), Some(space_type), Some(key), None)
+            if solstone_core_oauth::atproto_client::is_atproto_did(did)
+                && space_type.contains('.')
+                && [space_type, key].iter().all(|part| {
+                    !part.is_empty()
+                        && part.bytes().all(|b| {
+                            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b':' | b'~')
+                        })
+                }) =>
+        {
+            Ok(did)
+        }
+        _ => Err(SpaceError::BadSpaceRef),
     }
 }
 
@@ -147,7 +159,9 @@ pub fn create_space(session: &Session<'_>) -> Result<String, SpaceError> {
         "policy": {"$type": "com.atproto.memberspace.policy"},
     });
     let output = session.call("com.atproto.space.createSpace", XrpcBody::Procedure(&input))?;
-    string_field(&output, "space")
+    let space = string_field(&output, "space")?;
+    space_authority(&space).map_err(|_| SpaceError::Malformed("space"))?;
+    Ok(space)
 }
 
 /// Give accounts read access to a space (and no write access).
@@ -353,15 +367,22 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_authority_is_read_from_either_reference_form() {
-        let old = format!("at://{ALICE}/space/{SPACE_TYPE}/3lbxyz");
-        let new = format!("at:space/{ALICE}/{SPACE_TYPE}/3lbxyz");
-        assert_eq!(space_authority(&old).unwrap(), ALICE);
-        assert_eq!(space_authority(&new).unwrap(), ALICE);
-        assert_eq!(
-            space_authority("at://example.com/x"),
-            Err(SpaceError::BadSpaceRef)
-        );
+    fn the_authority_is_read_only_from_a_space_reference() {
+        let space = format!("at:space/{ALICE}/{SPACE_TYPE}/3lbxyz");
+        assert_eq!(space_authority(&space).unwrap(), ALICE);
+        let web = format!("at:space/did:web:example.com/{SPACE_TYPE}/self");
+        assert_eq!(space_authority(&web).unwrap(), "did:web:example.com");
+        for refused in [
+            format!("at://{ALICE}/space/{SPACE_TYPE}/3lbxyz"),
+            format!("at:space/{ALICE}/{SPACE_TYPE}/3lbxyz/{BOB}/{ACTIVITY_COLLECTION}/r1"),
+            format!("at:space/alice.test/{SPACE_TYPE}/3lbxyz"),
+            format!("at:space/{ALICE}/{SPACE_TYPE}"),
+            format!("at:space/{ALICE}/{SPACE_TYPE}/"),
+            format!("at:space/{ALICE}/{SPACE_TYPE}/s1?x=1"),
+            format!("at://{ALICE}/{ACTIVITY_COLLECTION}/r1"),
+        ] {
+            assert_eq!(space_authority(&refused), Err(SpaceError::BadSpaceRef), "{refused}");
+        }
     }
 
     #[test]
@@ -370,7 +391,7 @@ pub(crate) mod tests {
             (
                 "https://pds.alice.test/xrpc/com.atproto.space.createSpace",
                 200,
-                json!({"space": "at://S"}),
+                json!({"space": format!("at:space/{ALICE}/{SPACE_TYPE}/3lbxyz")}),
             ),
             (
                 "https://pds.alice.test/xrpc/com.atproto.memberspace.putMembers",
@@ -380,7 +401,7 @@ pub(crate) mod tests {
             (
                 "https://pds.alice.test/xrpc/com.atproto.space.putRecord",
                 200,
-                json!({"uri": "at://S/a/r1", "cid": "bafy1"}),
+                json!({"uri": format!("at:space/{ALICE}/{SPACE_TYPE}/3lbxyz/{ALICE}/{ACTIVITY_COLLECTION}/r1"), "cid": "bafy1"}),
             ),
             (
                 "https://pds.alice.test/xrpc/com.atproto.space.deleteRecord",
@@ -427,7 +448,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_member_reads_the_sharers_records_with_a_signed_credential() {
-        let space = format!("at://{ALICE}/space/{SPACE_TYPE}/s1");
+        let space = format!("at:space/{ALICE}/{SPACE_TYPE}/s1");
         let http = Routes::new(vec![
             (
                 "https://pds.bob.test/xrpc/com.atproto.space.getDelegationToken",

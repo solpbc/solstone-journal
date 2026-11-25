@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn received_memories_arrive_marked_shared_follow_edits_and_leave_on_unshare() {
         let dir = tempfile::tempdir().unwrap();
-        let space = format!("at://{ALICE}/space/app.solstone.memory.space/s1");
+        let space = format!("at:space/{ALICE}/app.solstone.memory.space/s1");
         let by = SharedBy {
             did: ALICE.to_owned(),
             handle: Some("alice.test".to_owned()),
@@ -547,10 +547,10 @@ mod tests {
     fn a_shared_activity_follows_edits_and_new_data_and_leaves_on_unshare() {
         let (dir, activity) = activity_journal();
         let journal = dir.path();
-        let space = format!("at://{ALICE}/space/app.solstone.memory.space/s1");
+        let space = format!("at:space/{ALICE}/app.solstone.memory.space/s1");
         let put = "https://pds.alice.test/xrpc/com.atproto.space.putRecord";
         let delete = "https://pds.alice.test/xrpc/com.atproto.space.deleteRecord";
-        let written = |cid: &str| json!({"uri": format!("at://{ALICE}/r/{cid}"), "cid": cid});
+        let written = |cid: &str| json!({"uri": format!("at:space/{ALICE}/app.solstone.memory.space/s1/{ALICE}/app.solstone.memory.activity/{cid}"), "cid": cid});
         let http = Routes::new(vec![
             (put, 200, written("c1")),
             (put, 200, written("c2")),
