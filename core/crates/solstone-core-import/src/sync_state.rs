@@ -284,8 +284,18 @@ impl SyncMadeImports {
         }
         if import_record(root, id, "import.json")
             .as_ref()
-            .and_then(|record| record.get("plaud_file_id"))
-            .is_some_and(Value::is_string)
+            .is_some_and(|record| {
+                record.get("plaud_file_id").is_some_and(Value::is_string)
+                    || record.get("source_hint").and_then(Value::as_str) == Some("garmin")
+            })
+        {
+            return true;
+        }
+        if import_record(root, id, "manifest.json")
+            .as_ref()
+            .and_then(|record| record.get("source_type"))
+            .and_then(Value::as_str)
+            == Some("garmin")
         {
             return true;
         }

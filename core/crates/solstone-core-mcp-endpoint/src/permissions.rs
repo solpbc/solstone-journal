@@ -337,6 +337,9 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
     if !categories.contains(&AdmittedCategory::ScreenText) {
         categories.remove(&AdmittedCategory::Screenshots);
     }
+    if !categories.contains(&AdmittedCategory::Body) {
+        categories.remove(&AdmittedCategory::WomensHealth);
+    }
     // Profile pics are read with entities, and a grant from before the choice keeps them.
     categories.remove(&AdmittedCategory::ProfilePics);
     if categories.contains(&AdmittedCategory::Entities)
@@ -1075,5 +1078,52 @@ mod tests {
             assert_eq!(snap.places_precision, expected, "words={words:?}");
             assert_eq!(snap.places_precision(), expected, "words={words:?}");
         }
+    }
+
+    #[test]
+    fn womens_health_is_opt_in_and_requires_body() {
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
+        let store = PermissionStore::open(temp.path());
+
+        // Default whole-journal grant includes body but never womens_health.
+        let defaults = ReadPermission::default_whole_journal();
+        assert!(defaults.categories.iter().any(|c| c == "body"));
+        assert!(!defaults.categories.iter().any(|c| c == "womens_health"));
+
+        // Granting womens_health without body strips it on evaluation.
+        store
+            .set_permission(
+                "bearer:wh-only",
+                ReadPermission {
+                    categories: vec!["transcripts".to_owned(), "womens_health".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let PermissionDecision::Snapshot(snap) =
+            evaluate_connection_read(temp.path(), "bearer:wh-only")
+        else {
+            panic!("enforceable snapshot");
+        };
+        assert!(!snap.categories.contains(&AdmittedCategory::Body));
+        assert!(!snap.categories.contains(&AdmittedCategory::WomensHealth));
+
+        // Granting both body and womens_health admits WomensHealth.
+        store
+            .set_permission(
+                "bearer:wh-with-body",
+                ReadPermission {
+                    categories: vec!["body".to_owned(), "womens_health".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        let PermissionDecision::Snapshot(snap) =
+            evaluate_connection_read(temp.path(), "bearer:wh-with-body")
+        else {
+            panic!("enforceable snapshot");
+        };
+        assert!(snap.categories.contains(&AdmittedCategory::Body));
+        assert!(snap.categories.contains(&AdmittedCategory::WomensHealth));
     }
 }

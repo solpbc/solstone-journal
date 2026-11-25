@@ -23,6 +23,7 @@ pub mod detect;
 pub mod events;
 pub mod folder_admit;
 pub mod force_notice;
+pub mod garmin;
 pub mod granola;
 pub mod heartbeat;
 pub mod import_trash;

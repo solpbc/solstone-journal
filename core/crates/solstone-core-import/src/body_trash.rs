@@ -40,6 +40,7 @@ use solstone_core_retention::layout::segment_rel;
 pub const STRAVA: &str = "strava";
 pub const APPLE_HEALTH: &str = "apple_health";
 pub const OURA: &str = "oura";
+pub const GARMIN: &str = "garmin";
 
 const STRAVA_STREAM: &str = "import.strava";
 const STRAVA_TILE: &str = "workout.json";
@@ -55,6 +56,7 @@ const BODY_STREAMS: &[(&str, &str)] = &[
     (STRAVA_STREAM, STRAVA),
     ("import.apple_health", APPLE_HEALTH),
     ("import.oura", OURA),
+    ("import.garmin", GARMIN),
 ];
 
 /// Whether `stream` is a body source's.
@@ -76,7 +78,7 @@ pub fn stream_importing(journal: &Path, stream: &str) -> bool {
 
 /// Whether `source` is a body source, whose imports hold what they first wrote.
 pub fn is_body_source(source: &str) -> bool {
-    matches!(source, STRAVA | APPLE_HEALTH | OURA)
+    matches!(source, STRAVA | APPLE_HEALTH | OURA | GARMIN)
 }
 
 /// The lock a source's import holds while it writes: a delete holds it too, so
@@ -86,6 +88,7 @@ fn lock_rel(source: &str) -> Option<&'static str> {
         STRAVA => Some(crate::strava_names::STRAVA_LOCK),
         APPLE_HEALTH => Some("imports/.apple_health"),
         OURA => Some("imports/.oura"),
+        GARMIN => Some("imports/.garmin"),
         _ => None,
     }
 }
@@ -95,6 +98,7 @@ fn run_dir_rel(source: &str) -> Option<&'static str> {
     match source {
         APPLE_HEALTH => Some("imports/.apple_health-run"),
         OURA => Some("imports/.oura-run"),
+        GARMIN => Some("imports/.garmin-run"),
         _ => None,
     }
 }

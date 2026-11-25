@@ -242,6 +242,9 @@ pub enum AdmittedCategory {
     /// decides it from the path (`body_material`), so a row stored as
     /// transcripts before it existed is gated as body too.
     Body,
+    /// Women's Health body records (cycle, reproductive and pregnancy rows).
+    /// An opt-in sub-option of `body`, never standalone content.
+    WomensHealth,
     Notes,
     Documents,
     Calendar,
@@ -763,6 +766,21 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
     },
     FilePattern {
         pattern: "*/import.oura/*/body.jsonl",
+        format: FileFormat::Content(Family::BodyRecords),
+        classification: ContentResolution::Indexed(Family::BodyRecords),
+        kind: KindAssignment::Settled(Kind::Body),
+        unit: ContentUnit::Window,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/import.garmin/*/body.jsonl",
         format: FileFormat::Content(Family::BodyRecords),
         classification: ContentResolution::Indexed(Family::BodyRecords),
         kind: KindAssignment::Settled(Kind::Body),

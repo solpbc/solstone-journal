@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response notconnected in the journal's settings view.",
+  "context": "Journal window, settings view. Action requested while Garmin Connect has no saved key.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c4eef673da15361282ad97ab77335bd4bef03d8c3efebc2bb82354c3570658b",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin Connect"
+    }
+  ]
+}

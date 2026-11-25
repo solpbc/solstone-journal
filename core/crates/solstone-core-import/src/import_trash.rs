@@ -339,7 +339,7 @@ pub fn source_of(journal: &Path, id: &str) -> String {
     // card's own kind: its upload was saved as a generic one.
     if let Some(hint) = read_json(&dir.join("import.json"))
         .and_then(|record| str_of(&record, "source_hint").map(str::to_owned))
-        .filter(|hint| matches!(hint.as_str(), "strava" | "apple_health" | "oura"))
+        .filter(|hint| matches!(hint.as_str(), "strava" | "apple_health" | "oura" | "garmin"))
     {
         return hint;
     }
@@ -806,12 +806,13 @@ impl Kind for Imports<'_> {
     }
 
     fn companions(&self, journal: &Path, item: &Item) -> Result<Vec<String>, String> {
-        // An Oura import's rows join the sync's record of what it fetched as they
-        // leave, so an ordinary sync leaves them out. The hold has Oura's lock.
+        // An Oura or Garmin sync run's rows join the sync's record of what it
+        // fetched as they leave, so an ordinary sync leaves them out. The hold
+        // already has the source's lock.
         if let Unit::Import { source, id } = &item.unit
-            && source == crate::body_trash::OURA
+            && (source == crate::body_trash::OURA || source == crate::body_trash::GARMIN)
         {
-            let mut fetched = crate::oura_fetched::Fetched::load(journal)?;
+            let mut fetched = crate::oura_fetched::Fetched::load_for(journal, source)?;
             for (day, ids) in crate::body_trash::rows_taken(journal, &item.paths, id) {
                 fetched.record(journal, &day, ids.iter().map(String::as_str))?;
             }

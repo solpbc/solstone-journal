@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response unavailable in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin Connect could not be reached during sync.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1c1a41862dcdaa73879035aa816af253bf0fafd63971a4fb9efbbe571e759834",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    }
+  ]
+}

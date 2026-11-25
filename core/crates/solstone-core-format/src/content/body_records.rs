@@ -22,7 +22,7 @@ use super::{JsonObject, ProducedChunks, recorded_chunk_for_locale};
 /// The one file a body window holds.
 pub const BODY_RECORDS_FILE: &str = "body.jsonl";
 /// The streams body records are written to. Strava keeps its own tiles.
-pub const BODY_RECORD_STREAMS: [&str; 2] = ["import.apple_health", "import.oura"];
+pub const BODY_RECORD_STREAMS: [&str; 3] = ["import.apple_health", "import.oura", "import.garmin"];
 /// A dated assertion's window: a whole day, so it reads as covering the date
 /// and never as something that happened at midnight.
 pub const DATED_WINDOW: &str = "000000_86400";
@@ -208,6 +208,7 @@ pub fn source_words(source: &str) -> &str {
     match source {
         "apple_health" => "Apple Health",
         "oura" => "Oura",
+        "garmin" => "Garmin",
         "strava" => "Strava",
         other => other,
     }
@@ -284,7 +285,9 @@ fn german_generated_name(words: &str) -> bool {
 /// Whether the owner entered a row themselves, by the source's own mark. Apple
 /// marks one with `HKWasUserEntered`. Oura marks a workout added by hand with
 /// `source: manual`, and every tag is one: tags are what Oura's owners enter.
-/// Nothing else counts as the owner's.
+/// Garmin marks a manual workout with `manualActivity: true` and logged entries
+/// (such as nutrition or cycle logs) as owner-entered. Nothing else counts as
+/// the owner's.
 #[must_use]
 pub fn user_entered(row: &BodyRow) -> bool {
     match row.source.as_str() {
@@ -293,6 +296,14 @@ pub fn user_entered(row: &BodyRow) -> bool {
             RowKind::Experience => {
                 row.experience.as_deref() == Some("workout")
                     && row.fields.get("source").and_then(Value::as_str) == Some("manual")
+            }
+            _ => false,
+        },
+        "garmin" => match row.kind {
+            RowKind::Logged => true,
+            RowKind::Experience => {
+                row.experience.as_deref() == Some("workout")
+                    && row.fields.get("manualActivity").and_then(Value::as_bool) == Some(true)
             }
             _ => false,
         },
@@ -359,12 +370,15 @@ pub fn mapped_workout_type(source: &str, record_type: &str) -> Option<&'static s
         .map(|character| character.to_ascii_lowercase())
         .collect();
     Some(match lower.as_str() {
-        "running" | "run" | "trailrun" | "virtualrun" => "running",
-        "cycling" | "ride" | "virtualride" | "ebikeride" => "cycling",
-        "walking" | "walk" => "walking",
-        "hiking" | "hike" => "hiking",
-        "swimming" | "swim" => "swimming",
-        "rowing" | "rowingmachine" => "rowing",
+        "running" | "run" | "trailrun" | "trailrunning" | "virtualrun" | "treadmillrunning"
+        | "trackrunning" | "streetrunning" | "indoorrunning" | "ultrarun" => "running",
+        "cycling" | "ride" | "virtualride" | "ebikeride" | "roadbiking" | "mountainbiking"
+        | "gravelcycling" | "indoorcycling" | "cyclocross" | "ebiking" | "bmx"
+        | "recumbentcycling" | "handcycling" => "cycling",
+        "walking" | "walk" | "indoorwalking" | "casualwalking" | "speedwalking" => "walking",
+        "hiking" | "hike" | "trailhiking" => "hiking",
+        "swimming" | "swim" | "lapswimming" | "openwaterswimming" => "swimming",
+        "rowing" | "rowingmachine" | "indoorrowing" => "rowing",
         "yoga" => "yoga",
         "elliptical" => "elliptical",
         "highintensityintervaltraining" | "hiit" => "hiit",
@@ -638,6 +652,126 @@ pub fn render_row(row: &BodyRow) -> String {
             .map(|(name, value)| format!("{name}: {}", field_text(value))),
     );
     parts.join(" · ")
+}
+
+/// Normalized Women's Health type tokens across body sources (Apple Health
+/// reproductive / menstrual / pregnancy identifiers and Garmin menstrual cycle
+/// endpoints). Matched against stripped `record_type` and plain-word `label`.
+const WOMENS_HEALTH_IDENTIFIERS: &[&str] = &[
+    "menstrualcycle",
+    "menstrualcyclesummary",
+    "menstrualcycledayview",
+    "menstrualflow",
+    "ovulationtestresult",
+    "cervicalmucusquality",
+    "intermenstrualbleeding",
+    "sexualactivity",
+    "contraceptive",
+    "lactation",
+    "pregnancy",
+    "pregnancytestresult",
+    "progesteronetestresult",
+    "infrequentmenstrualcycles",
+    "irregularmenstrualcycles",
+    "persistentintermenstrualbleeding",
+    "prolongedmenstrualperiods",
+    "bleedingduringpregnancy",
+    "bleedingafterpregnancy",
+    "basalbodytemperature",
+    "womenshealth",
+];
+
+fn normalize_type_token(raw: &str) -> String {
+    let mut text = raw.trim();
+    for prefix in [
+        "HKQuantityTypeIdentifier",
+        "HKCategoryTypeIdentifier",
+        "HKWorkoutActivityType",
+        "HKCategoryValue",
+    ] {
+        if let Some(rest) = text.strip_prefix(prefix) {
+            text = rest;
+            break;
+        }
+    }
+    text.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_lowercase())
+        .collect()
+}
+
+/// Whether a body row belongs to the Women's Health subset gated behind the
+/// agent `womens_health` sub-option under `body`. Covers both Garmin cycle
+/// records and Apple Health menstrual, reproductive and pregnancy categories.
+#[must_use]
+pub fn is_womens_health_row(row: &BodyRow) -> bool {
+    let record_token = normalize_type_token(&row.record_type);
+    if matches_womens_health_token(&record_token) {
+        return true;
+    }
+    let label_token = normalize_type_token(&row.label);
+    matches_womens_health_token(&label_token)
+}
+
+fn matches_womens_health_token(token: &str) -> bool {
+    !token.is_empty()
+        && (WOMENS_HEALTH_IDENTIFIERS.contains(&token)
+            || token.starts_with("menstrualcycle")
+            || token.starts_with("menstrualflow")
+            || token.starts_with("ovulationtest")
+            || token.starts_with("cervicalmucus")
+            || token.starts_with("intermenstrualbleeding")
+            || token.starts_with("pregnancy"))
+}
+
+/// Plain-word phrases used when withholding Women's Health lines from body
+/// import summaries for agent connections without the `womens_health` option.
+const WOMENS_HEALTH_SUMMARY_PHRASES: &[&str] = &[
+    "menstrual cycle",
+    "menstrual flow",
+    "menstrual periods",
+    "menstrual cycles",
+    "ovulation test",
+    "cervical mucus",
+    "intermenstrual bleeding",
+    "sexual activity",
+    "contraceptive",
+    "lactation",
+    "pregnancy",
+    "progesterone test",
+    "basal body temperature",
+    "menstrualcycle",
+];
+
+/// Whether one line of a body import summary names a Women's Health category.
+#[must_use]
+pub fn is_womens_health_summary_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    WOMENS_HEALTH_SUMMARY_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+}
+
+/// Remove Women's Health lines from a body import summary for connections that
+/// hold `body` without `womens_health`.
+#[must_use]
+pub fn filter_womens_health_summary(text: &str) -> String {
+    let mut kept: Vec<&str> = text
+        .lines()
+        .filter(|line| !is_womens_health_summary_line(line))
+        .collect();
+    while kept.last().is_some_and(|line| line.trim().is_empty()) {
+        kept.pop();
+    }
+    if kept.is_empty() {
+        String::new()
+    } else {
+        let mut out = kept.join("\n");
+        if text.ends_with('\n') {
+            out.push('\n');
+        }
+        out
+    }
 }
 
 /// One stored line as an agent reads it. A line that isn't a row reads as itself,

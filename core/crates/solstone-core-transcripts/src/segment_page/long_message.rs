@@ -233,6 +233,7 @@ fn first(
         false,
         untimed,
         &serde_json::Value::Object(row).to_string(),
+        None,
     );
     if let Some((prefix, suffix)) = projected.rsplit_once(MARKER) {
         passage.text.insert_str(0, prefix);

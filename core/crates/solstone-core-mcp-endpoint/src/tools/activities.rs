@@ -1613,13 +1613,14 @@ pub(crate) fn sources_of(
         let mut segment_version = None;
 
         loop {
-            match solstone_core_transcripts::read_segment_transcript_page_with_permissions(
+            match crate::body_source::read_body_aware_page(
                 &segment,
                 page_cursor.as_ref(),
                 speakers.as_ref(),
                 None,
                 &left_out,
-                Some(&snapshot.categories),
+                &snapshot.categories,
+                snapshot.places_precision(),
             ) {
                 Ok(page) => {
                     segment_untimed = page.untimed;

@@ -90,6 +90,23 @@ fn grid_cell(
     }
     let count = sources.map_or(0, BTreeSet::len);
     let title = match sources {
+        Some(sources) if sources.contains("garmin") => {
+            let names: Vec<&str> = body_streams()
+                .iter()
+                .filter(|(_, key)| sources.contains(key))
+                .map(|(_, key)| source_words(key))
+                .collect();
+            let joined = match names.as_slice() {
+                [] => String::new(),
+                [only] => (*only).to_owned(),
+                [leading @ .., last] => format!("{} and {last}", leading.join(", ")),
+            };
+            strings(
+                locale,
+                "journal.window.body.grid.source.list",
+                [("date", &date), ("sources", joined.as_str())],
+            )
+        }
         Some(sources) => {
             let id = match (
                 sources.contains("apple_health"),
@@ -120,7 +137,7 @@ fn grid_cell(
     json!({
         "day": day,
         "count": count,
-        "intensity": count as f64 / 3.0,
+        "intensity": (count as f64 / body_streams().len() as f64).min(1.0),
         "title": title,
         "earlier": earlier.is_some() && sources.is_none(),
         "hidden": false,

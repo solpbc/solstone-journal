@@ -536,6 +536,7 @@ const REDACTED_CONFIG_SECTIONS: &[&str] = &[
     "service_key_validation",
     "support",
     "granola",
+    "garmin",
     "providers",
     "oura",
     "backup",
@@ -1663,6 +1664,7 @@ mod tests {
             "services-attempt-detail-SECRET",
             "voice-openai-key-SECRET",
             "granola-api-key-SECRET",
+            "garmin-api-key-SECRET",
             "providers-local-cred-SECRET",
             "env-plaud-token-SECRET",
             "env-openai-key-SECRET",
@@ -1729,6 +1731,10 @@ mod tests {
             "granola": {
                 "api_key": "granola-api-key-SECRET"
             },
+            "garmin": {
+                "api_key": "garmin-api-key-SECRET",
+                "key_expires_on": "2027-02-22"
+            },
             "providers": {
                 "local": {
                     "url": "http://127.0.0.1:8080/v1",
@@ -1770,6 +1776,7 @@ mod tests {
             "services",
             "voice",
             "granola",
+            "garmin",
             "providers",
             "support",
             "service_key_validation",
@@ -1791,6 +1798,7 @@ mod tests {
         // Malformed (non-object) shapes in redacted sections must still fail closed.
         let malformed = json!({
             "oura": "malformed-oura-SECRET",
+            "garmin": "malformed-garmin-SECRET",
             "backup": ["malformed-backup-SECRET"],
             "services": "malformed-services-SECRET",
             "voice": ["malformed-voice-SECRET"],
@@ -1803,7 +1811,7 @@ mod tests {
             super::project_public_config(malformed).expect("malformed projection succeeds");
         let malformed_text = serde_json::to_string(&projected_malformed).expect("JSON");
         assert!(!malformed_text.contains("SECRET"));
-        for section in ["oura", "backup", "services", "voice"] {
+        for section in ["oura", "garmin", "backup", "services", "voice"] {
             assert!(projected_malformed.get(section).is_none());
         }
     }
@@ -1893,6 +1901,7 @@ mod tests {
                 "services",
                 "voice",
                 "granola",
+                "garmin",
                 "providers",
             ] {
                 assert!(
@@ -1903,7 +1912,7 @@ mod tests {
         }
 
         // Direct writes to redacted sections remain refused and leak nothing.
-        for section in ["oura", "backup", "services", "voice"] {
+        for section in ["oura", "garmin", "backup", "services", "voice"] {
             let refused = router
                 .clone()
                 .oneshot(
@@ -1938,6 +1947,7 @@ mod tests {
             "services",
             "voice",
             "granola",
+            "garmin",
             "providers",
         ] {
             assert_eq!(

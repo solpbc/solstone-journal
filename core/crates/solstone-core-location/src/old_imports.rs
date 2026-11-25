@@ -187,19 +187,60 @@ pub fn read_old_bundles(journal: &Path) -> Vec<OldBundle> {
     bundles
 }
 
+/// A body source that writes windows under the new body-segments path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NewSource {
+    AppleHealth,
+    Oura,
+    Garmin,
+}
+
+impl NewSource {
+    /// A manifest's source family. `None` for a family outside the new body path.
+    #[must_use]
+    pub fn from_family(family: &str) -> Option<Self> {
+        match family {
+            "apple_health" => Some(Self::AppleHealth),
+            "oura" | "oura_api" => Some(Self::Oura),
+            "garmin" => Some(Self::Garmin),
+            _ => None,
+        }
+    }
+
+    /// The matching legacy bundle source, when one existed.
+    #[must_use]
+    pub fn old_source(self) -> Option<OldSource> {
+        match self {
+            Self::AppleHealth => Some(OldSource::AppleHealth),
+            Self::Oura => Some(OldSource::Oura),
+            Self::Garmin => None,
+        }
+    }
+
+    /// The source in the owner's words.
+    #[must_use]
+    pub fn words(self) -> &'static str {
+        match self {
+            Self::AppleHealth => "Apple Health",
+            Self::Oura => "Oura",
+            Self::Garmin => "Garmin",
+        }
+    }
+}
+
 /// One import of the new path: what it names itself as and the calendar it says
 /// it covered.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewImport {
     pub id: String,
-    pub source: OldSource,
+    pub source: NewSource,
     /// Inclusive `YYYYMMDD` ranges from its manifest's `span`, when written.
     pub span: Vec<(String, String)>,
 }
 
 /// Every import of the new path under `imports/`, sorted by directory name: a
 /// directory holding [`TOUCHED_FILE`] or [`PROGRESS_FILE`], with a source of
-/// Apple Health or Oura.
+/// Apple Health, Oura or Garmin.
 #[must_use]
 pub fn read_new_imports(journal: &Path) -> Vec<NewImport> {
     let imports = journal.join("imports");
@@ -229,7 +270,7 @@ pub fn read_new_imports(journal: &Path) -> Vec<NewImport> {
                     .and_then(|record| record.get("source_hint").cloned())
                     .and_then(|hint| hint.as_str().map(str::to_owned))
             });
-        let Some(source) = family.as_deref().and_then(OldSource::from_family) else {
+        let Some(source) = family.as_deref().and_then(NewSource::from_family) else {
             continue;
         };
         let span = manifest.as_ref().map_or_else(Vec::new, read_new_span);
@@ -335,7 +376,7 @@ impl<'a> Touched<'a> {
         }
         self.imports()
             .iter()
-            .filter(|import| import.source == source)
+            .filter(|import| import.source.old_source() == Some(source))
             .any(|import| {
                 import
                     .span

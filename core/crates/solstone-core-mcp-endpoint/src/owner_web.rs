@@ -1012,6 +1012,7 @@ fn journal_transcript_day_flags(root: &std::path::Path, days: &[String]) -> (boo
                         | "import.document"
                         | "import.ics"
                         | "import.oura"
+                        | "import.garmin"
                         | "import.strava"
                 )
                 || solstone_core_segment::is_calendar_stream(root, identity.stream)

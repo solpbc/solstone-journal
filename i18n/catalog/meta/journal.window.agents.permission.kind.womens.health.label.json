@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for cycle and pregnancy in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for cycle and pregnancy under body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "497e7f3f20e094af83a1699613bdcf1252db4a91b67b03fd52f9e2e9861b43f5",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

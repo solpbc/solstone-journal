@@ -24,9 +24,20 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::body_records::{BODY_RECORDS_FILE, RowKind, decode_rows};
 
-/// The record, beside the import folders.
+/// The Oura record, beside the import folders.
 pub const FETCHED_REL: &str = "imports/.oura-fetched.jsonl";
+/// The Garmin record, beside the import folders.
+pub const GARMIN_FETCHED_REL: &str = "imports/.garmin-fetched.jsonl";
 const OURA_STREAM: &str = "import.oura";
+const GARMIN_STREAM: &str = "import.garmin";
+
+fn rel_and_stream(source: &str) -> Result<(&'static str, &'static str), String> {
+    match source {
+        "oura" => Ok((FETCHED_REL, OURA_STREAM)),
+        "garmin" => Ok((GARMIN_FETCHED_REL, GARMIN_STREAM)),
+        other => Err(format!("unknown body fetched ledger source: {other}")),
+    }
+}
 
 /// A row id's mark in the record: the first 16 hex digits of its SHA-256.
 fn mark(id: &str) -> String {
@@ -39,22 +50,40 @@ fn mark(id: &str) -> String {
 }
 
 /// What the record holds, read once per run.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Fetched {
+    rel: &'static str,
     /// Each mark, with the days it was recorded on.
     marks: HashMap<String, BTreeSet<String>>,
 }
 
+impl Default for Fetched {
+    fn default() -> Self {
+        Self {
+            rel: FETCHED_REL,
+            marks: HashMap::new(),
+        }
+    }
+}
+
 impl Fetched {
-    /// Read the record, starting it from the journal's Oura rows when there is
-    /// none. One that can't be read is an error: forgetting it would bring back
-    /// everything the owner deleted.
+    /// Read Oura's fetched record, starting it from the journal's Oura rows
+    /// when there is none.
     pub fn load(journal: &Path) -> Result<Self, String> {
-        let path = journal.join(FETCHED_REL);
+        Self::load_for(journal, "oura")
+    }
+
+    /// Read `source`'s fetched record (`"oura"` or `"garmin"`), starting it
+    /// from the journal's rows for that source when there is none. One that
+    /// can't be read is an error: forgetting it would bring back everything
+    /// the owner deleted.
+    pub fn load_for(journal: &Path, source: &str) -> Result<Self, String> {
+        let (rel, stream) = rel_and_stream(source)?;
+        let path = journal.join(rel);
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Self::start(journal);
+                return Self::start_for(journal, rel, stream);
             }
             Err(error) => return Err(format!("{}: {error}", path.display())),
         };
@@ -84,18 +113,18 @@ impl Fetched {
                 }
             }
         }
-        Ok(Self { marks })
+        Ok(Self { rel, marks })
     }
 
-    /// The first record: every Oura row the journal holds now, by day.
-    fn start(journal: &Path) -> Result<Self, String> {
+    /// The first record: every row `stream` holds now, by day.
+    fn start_for(journal: &Path, rel: &'static str, stream: &str) -> Result<Self, String> {
         let mut by_day: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let chronicle = journal.join("chronicle");
         for day in fs::read_dir(&chronicle).into_iter().flatten().flatten() {
             let Some(day_name) = day.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
-            for window in fs::read_dir(day.path().join(OURA_STREAM))
+            for window in fs::read_dir(day.path().join(stream))
                 .into_iter()
                 .flatten()
                 .flatten()
@@ -121,7 +150,10 @@ impl Fetched {
                 );
             }
         }
-        let mut fetched = Self::default();
+        let mut fetched = Self {
+            rel,
+            marks: HashMap::new(),
+        };
         let mut text = String::new();
         for (day, marks) in by_day {
             text.push_str(&json!({"day": day, "ids": marks}).to_string());
@@ -130,7 +162,10 @@ impl Fetched {
                 fetched.marks.entry(mark).or_default().insert(day.clone());
             }
         }
-        let path = journal.join(FETCHED_REL);
+        let path = journal.join(rel);
+        if let Some(parent) = path.parent() {
+            let _ = solstone_core_journal_io::create_directory_with_mode(parent, 0o700);
+        }
         let _lock = solstone_core_journal_io::hold_or_reuse_lock(
             &path,
             solstone_core_journal_io::LockOptions {
@@ -138,23 +173,23 @@ impl Fetched {
                 ..Default::default()
             },
         )
-        .map_err(|error| format!("{FETCHED_REL}: {error}"))?;
+        .map_err(|error| format!("{rel}: {error}"))?;
         solstone_core_journal_io::atomic_replace(
             &path,
             text.as_bytes(),
             solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
         )
-        .map_err(|error| format!("{FETCHED_REL}: {error}"))?;
+        .map_err(|error| format!("{rel}: {error}"))?;
         Ok(fetched)
     }
 
-    /// Whether an Oura run brought a row with this id in before.
+    /// Whether a sync run brought a row with this id in before.
     #[must_use]
     pub fn contains(&self, id: &str) -> bool {
         self.marks.contains_key(&mark(id))
     }
 
-    /// The days an Oura run recorded a row with this id on: where the journal
+    /// The days a sync run recorded a row with this id on: where the journal
     /// first held it.
     #[must_use]
     pub fn days_of(&self, id: &str) -> Vec<String> {
@@ -165,7 +200,7 @@ impl Fetched {
     }
 
     /// Add the rows a day now holds that the record doesn't have yet. Call it
-    /// holding Oura's lock, once the day's rows are in the journal.
+    /// holding the source's lock, once the day's rows are in the journal.
     pub fn record<'i>(
         &mut self,
         journal: &Path,
@@ -180,15 +215,16 @@ impl Fetched {
         if new.is_empty() {
             return Ok(());
         }
+        let rel = self.rel;
         // Under the record's lock, on a line of its own even after a stop cut
         // the last one short: appending onto a cut line would make it a damaged
         // line in the middle, and the next load would refuse the whole record.
         solstone_core_journal_io::append_jsonl_with_options(
-            journal.join(FETCHED_REL),
+            journal.join(rel),
             &json!({"day": day, "ids": new}),
             solstone_core_journal_io::JsonlAppendOptions { mode: Some(0o600) },
         )
-        .map_err(|error| format!("{FETCHED_REL}: {error}"))?;
+        .map_err(|error| format!("{rel}: {error}"))?;
         for mark in new {
             self.marks.entry(mark).or_default().insert(day.to_owned());
         }

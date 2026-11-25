@@ -58,7 +58,7 @@ use solstone_core_import_sources::oura::{Hole, HoleReason, holes_of};
 use solstone_core_import_sources::oura_run::{
     ScanFindings, converging_dropped, pages_identity, scan_pages,
 };
-use solstone_core_import_sources::save::{self, RenderedImport, SegmentFile};
+use solstone_core_import_sources::save;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, remove_dir_all,
 };
@@ -763,7 +763,10 @@ impl Run<'_, '_> {
             day: window.0.clone(),
             segment: window.1.clone(),
             stream: self.source.stream.to_owned(),
-            hints: save::stream_hints(self.source.registry),
+            hints: self.source.registry.map_or_else(
+                || save::named_stream_hints(self.source.source),
+                save::stream_hints,
+            ),
             path: window_dir(self.journal, self.source, window).join(BODY_RECORDS_FILE),
         }
     }
@@ -782,7 +785,7 @@ impl Run<'_, '_> {
             journal: self.journal,
             import_dir: None,
             import_id: &self.import_id,
-            importer: self.source.registry.name(),
+            importer: self.source.source,
             revision: None,
             segments: &segments,
             files_created: &files,
@@ -1483,30 +1486,19 @@ impl Run<'_, '_> {
     fn write_window(
         &self,
         window: &WindowId,
-        (contents, units): (String, u64),
+        (contents, _units): (String, u64),
     ) -> Result<(), Stop> {
-        let rendered = RenderedImport {
-            skipped: 0,
-            source: self.source.registry,
-            entries: units,
-            files: vec![SegmentFile {
-                day: window.0.clone(),
-                segment: window.1.clone(),
-                name: BODY_RECORDS_FILE.to_owned(),
-                units,
-                contents,
-                calendar: false,
-                display_receipt: None,
-            }],
-            items: Vec::new(),
-            summary: String::new(),
-            calendar_counts: Default::default(),
-        };
         // A re-import's write takes a window the owner deleted; a sync's doesn't
         // reach one, since its decision left it deleted.
-        let outcome =
-            save::write_rendered_with(self.journal, None, &rendered, self.comes_back.get());
-        if let Some(error) = outcome.error {
+        if let Err(error) = save::write_body_window_file(
+            self.journal,
+            self.source.stream,
+            &window.0,
+            &window.1,
+            BODY_RECORDS_FILE,
+            &contents,
+            self.comes_back.get(),
+        ) {
             if !solstone_core_import::work_continues() {
                 return Err(Stop::Stopped);
             }
@@ -2512,7 +2504,7 @@ fn run_segments_bound(
         journal,
         &import_id,
         now_ms(),
-        Some(source.registry.name()),
+        Some(source.source),
     ) {
         Ok(facts) => facts.generation,
         Err(error) => {
@@ -2546,7 +2538,7 @@ fn run_segments_bound(
             journal,
             &import_id,
             generation,
-            source.registry.name(),
+            source.source,
             input,
             index_only,
         )
@@ -3015,7 +3007,7 @@ fn run_phases(
     solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
         journal_root: journal,
         import_id: &run.import_id,
-        source_type: source.registry.name(),
+        source_type: source.source,
         source_hash: &solstone_core_import::SourceHash::new(source_hash.to_owned()),
         entry_count: state.totals.entries,
         days_affected: &days,
@@ -3060,7 +3052,7 @@ fn run_phases(
         journal,
         &run.import_id,
         run.generation,
-        source.registry.name(),
+        source.source,
         terminal,
         &index_only,
     ) {

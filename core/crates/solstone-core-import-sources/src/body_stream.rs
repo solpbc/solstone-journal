@@ -39,7 +39,7 @@ pub struct BodySource {
     pub stream: &'static str,
     /// What its rows name as their source, and what its summary calls it.
     pub source: &'static str,
-    pub registry: RegistrySource,
+    pub registry: Option<RegistrySource>,
     /// Held for a whole run, so merging into a window can't race another import of
     /// this source.
     pub lock_rel: &'static str,
@@ -58,7 +58,7 @@ pub struct BodySource {
 pub const APPLE: BodySource = BodySource {
     stream: "import.apple_health",
     source: "apple_health",
-    registry: RegistrySource::AppleHealth,
+    registry: Some(RegistrySource::AppleHealth),
     lock_rel: "imports/.apple_health",
     run_dir_rel: "imports/.apple_health-run",
     zone_rel: "imports/.apple_health-zone.json",
@@ -71,7 +71,7 @@ pub const APPLE: BodySource = BodySource {
 pub const OURA: BodySource = BodySource {
     stream: "import.oura",
     source: "oura",
-    registry: RegistrySource::Oura,
+    registry: Some(RegistrySource::Oura),
     lock_rel: "imports/.oura",
     run_dir_rel: "imports/.oura-run",
     zone_rel: "imports/.oura-zone.json",
@@ -79,6 +79,19 @@ pub const OURA: BodySource = BodySource {
     tiles: TileIds::Window,
     lock_unavailable: "oura_lock_unavailable",
     zone_unrecognised: "oura_zone_unrecognised",
+};
+
+pub const GARMIN: BodySource = BodySource {
+    stream: "import.garmin",
+    source: "garmin",
+    registry: None,
+    lock_rel: "imports/.garmin",
+    run_dir_rel: "imports/.garmin-run",
+    zone_rel: "imports/.garmin-zone.json",
+    span: SpanPolicy::Document,
+    tiles: TileIds::Window,
+    lock_unavailable: "garmin_lock_unavailable",
+    zone_unrecognised: "garmin_zone_unrecognised",
 };
 
 /// The file a stream's windows hold, as the activity record writer reads it.

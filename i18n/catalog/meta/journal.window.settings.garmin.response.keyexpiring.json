@@ -1,0 +1,28 @@
+{
+  "description": "Garmin response keyexpiring in the journal's settings view.",
+  "context": "Journal window, settings view. Warning when the Garmin Personal API key is within 14 days of expiry.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4b621fb1fe8119c0237312c5f184254c7138907e9e9788f53dae799ca34beec6",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    },
+    {
+      "name": "slot2",
+      "kind": "mark-word",
+      "value": "Garmin Connect"
+    }
+  ]
+}

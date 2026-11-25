@@ -25,6 +25,8 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "health/sync",
     "health/brain.json",
     "health/init-restore.json",
+    // Short-lived local bearer JWT cache for Garmin Personal API.
+    "health/garmin-bearer.json",
     // Local restore obligation. A snapshot must not import, overwrite, or erase it.
     crate::whole_journal_restore::WHOLE_JOURNAL_RESTORE_FILE,
     // Local obligation: what an erase left for the backup to remove. A copy or
@@ -82,6 +84,10 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "imports/.oura-run/scan",
     "imports/.oura-run/placed",
     "imports/.oura-run/pages",
+    // Garmin's run stages the pages it fetched, which a run fetches again.
+    "imports/.garmin-run/scan",
+    "imports/.garmin-run/placed",
+    "imports/.garmin-run/pages",
     // Uncommitted upload staging is rebuilt or resumed from the sending device.
     "imports/.save-tmp",
     "imports/.uploads",

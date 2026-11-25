@@ -1,0 +1,16 @@
+{
+  "description": "Garmin response invalidrange in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin backfill date range validation error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "649692691b5ad43f76384f146a4f1e8deb8cf3eb8ccfbb46879b28f83425b79e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

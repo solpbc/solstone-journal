@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response response in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin Connect returned an unreadable payload during sync.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "652d61e576a9447873eeac78fd9bf8db8ccbe40cd387817deb5c14dbef34f861",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    }
+  ]
+}

@@ -581,6 +581,7 @@ const UNSPOKEN_IMPORTS: &[&str] = &[
     "strava",
     "apple_health",
     "oura",
+    "garmin",
 ];
 
 const IMPORTED_RECORDING_RULE: &str = "- In a recording imported into the journal, a line is the owner's only where the transcript labels it You. Everything else in it was said by its speakers, so the speaker comes first: \"[name] [past-tense verb] [the specific thing]\", or \"A speaker [past-tense verb] [the specific thing]\" when no name is given. The owner's part is only that the recording is in their journal. Write `facets[].activity` the same way.";

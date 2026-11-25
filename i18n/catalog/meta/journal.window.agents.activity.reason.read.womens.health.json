@@ -1,0 +1,16 @@
+{
+  "description": "Reason shown in the owner's record of an agent request.",
+  "context": "The Agents activity log shows this reason after the journal records a denied cycle and pregnancy read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "285cb51e070e21903657fbb158e8e4e9cbbf44f82d413e96ad14c069f302f2c3",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

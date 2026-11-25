@@ -36,6 +36,7 @@ pub(crate) trait TranscriptPageCheck {
 pub(crate) struct LiveTranscriptPages {
     speakers: Option<Option<solstone_core_transcripts::AgentSpeakers>>,
     categories: BTreeSet<solstone_core_indexer_query::AdmittedCategory>,
+    places_precision: Option<solstone_core_format::content::kinds::PlacesPrecision>,
     possible_names: Arc<ConnectionPossibleNames>,
     /// What the owner hid of their body data, read once a body window asks.
     hides: Option<crate::body_source::BodyHides>,
@@ -49,6 +50,7 @@ impl LiveTranscriptPages {
         Self {
             speakers: None,
             categories: snapshot.categories.clone(),
+            places_precision: snapshot.places_precision(),
             possible_names,
             hides: None,
         }
@@ -63,6 +65,7 @@ impl LiveTranscriptPages {
         Self {
             speakers: Some(speakers),
             categories: snapshot.categories.clone(),
+            places_precision: snapshot.places_precision(),
             possible_names,
             hides: None,
         }
@@ -96,23 +99,33 @@ impl TranscriptPageCheck for LiveTranscriptPages {
             ) else {
                 return Ok(None);
             };
+            let include_womens_health = self
+                .categories
+                .contains(&solstone_core_indexer_query::AdmittedCategory::WomensHealth);
             let hides = self
                 .hides
                 .get_or_insert_with(|| crate::body_source::BodyHides::read(journal_root));
-            match hides.shown(journal_root, day, identity.stream, segment) {
+            match hides.shown(
+                journal_root,
+                day,
+                identity.stream,
+                segment,
+                include_womens_health,
+            ) {
                 Some(left_out) => left_out,
                 None => return Ok(None),
             }
         } else {
             BTreeSet::new()
         };
-        match solstone_core_transcripts::read_segment_transcript_page_with_permissions(
+        match crate::body_source::read_body_aware_page(
             segment,
             None,
             speakers,
             possible_names.as_ref(),
             &left_out,
-            Some(&self.categories),
+            &self.categories,
+            self.places_precision,
         ) {
             Ok(page) if !page.entries.is_empty() => Ok(Some(page.version.fingerprint())),
             Ok(_)

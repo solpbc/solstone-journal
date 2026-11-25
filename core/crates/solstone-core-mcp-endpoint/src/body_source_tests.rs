@@ -3709,3 +3709,425 @@ fn get_week_body_range_paginates_cleanly_under_byte_limit_and_tools_list_stays_i
         }
     }
 }
+
+fn stream_window(
+    root: &Path,
+    day: &str,
+    stream: &str,
+    name: &str,
+    rows: &[BodyRow],
+    facet: Option<&str>,
+) {
+    if stream == "import.garmin" && !root.join("streams/import.garmin.json").exists() {
+        fs::create_dir_all(root.join("streams")).unwrap();
+        fs::write(
+            root.join("streams/import.garmin.json"),
+            json!({
+                "name": "import.garmin", "kind": "import:garmin", "host": null, "platform": null,
+                "created_at": 1, "last_day": null, "last_segment": null, "seq": 1,
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+    window_in(root, stream, day, name, rows, facet);
+}
+
+#[test]
+fn womens_health_is_withheld_across_garmin_and_apple_health_until_explicitly_granted() {
+    let journal = journal();
+    let root = journal.path();
+    fix_zone(root, "America/Denver");
+    fs::write(
+        root.join("imports/.garmin-zone.json"),
+        json!({"zone": "America/Denver"}).to_string(),
+    )
+    .unwrap();
+
+    // Garmin: mixed window (daily summary + menstrual cycle summary) + WH-only day on NEXT.
+    let mut garmin_daily = BodyRow::new(
+        RowKind::Dated,
+        "g_daily".into(),
+        "garmin",
+        "daily_summary",
+        "daily summary".into(),
+    );
+    garmin_daily.date = Some("2026-10-10".into());
+    garmin_daily.by = Some("Garmin".into());
+    garmin_daily.fields.insert("steps".into(), json!(8120));
+
+    let mut garmin_wh = BodyRow::new(
+        RowKind::Dated,
+        "g_wh".into(),
+        "garmin",
+        "menstrual_cycle_summary",
+        "menstrual cycle summary".into(),
+    );
+    garmin_wh.date = Some("2026-10-10".into());
+    garmin_wh.by = Some("Garmin".into());
+    garmin_wh
+        .fields
+        .insert("currentPhase".into(), json!("FOLLICULAR"));
+
+    let mut garmin_wh_only = BodyRow::new(
+        RowKind::Dated,
+        "g_wh_only".into(),
+        "garmin",
+        "menstrual_cycle_dayview",
+        "menstrual cycle day view".into(),
+    );
+    garmin_wh_only.date = Some("2026-10-11".into());
+    garmin_wh_only.by = Some("Garmin".into());
+    garmin_wh_only.fields.insert("flow".into(), json!("LIGHT"));
+
+    stream_window(
+        root,
+        DAY,
+        "import.garmin",
+        "000000_86400",
+        &[garmin_daily, garmin_wh],
+        None,
+    );
+    stream_window(
+        root,
+        NEXT,
+        "import.garmin",
+        "000000_86400",
+        &[garmin_wh_only],
+        None,
+    );
+
+    // Apple Health: mixed window (heart rate + MenstrualFlow + BasalBodyTemperature).
+    let ah_hr = reading("ah_hr", "2026-10-10 08:00:00 -0600", "64");
+    let mut ah_flow = BodyRow::new(
+        RowKind::Logged,
+        "ah_flow".into(),
+        "apple_health",
+        "HKCategoryTypeIdentifierMenstrualFlow",
+        "menstrual flow".into(),
+    );
+    ah_flow.start = Some("2026-10-10 08:05:00 -0600".into());
+    ah_flow.end = Some("2026-10-10 08:05:00 -0600".into());
+    ah_flow.by = Some("Apple Health".into());
+    ah_flow.value = Some("medium".into());
+
+    let mut ah_bbt = BodyRow::new(
+        RowKind::Reading,
+        "ah_bbt".into(),
+        "apple_health",
+        "HKQuantityTypeIdentifierBasalBodyTemperature",
+        "basal body temperature".into(),
+    );
+    ah_bbt.start = Some("2026-10-10 08:10:00 -0600".into());
+    ah_bbt.end = Some("2026-10-10 08:10:00 -0600".into());
+    ah_bbt.by = Some("Apple Health".into());
+    ah_bbt.value = Some("36.7".into());
+    ah_bbt.unit = Some("degC".into());
+
+    window(root, DAY, "080000_3600", &[ah_hr, ah_flow, ah_bbt], None);
+
+    // Build owner's full body.md on disk (which legitimately holds WH entries for the owner)
+    // and index it so we test MCP search/fetch filtering and query-token oracle prevention.
+    let owner_body_md =
+        solstone_core_location::body_day::render_day_document_for_agent(root, DAY, true)
+            .expect("owner body.md");
+    assert!(owner_body_md.contains("menstrual"), "{owner_body_md}");
+    fs::write(
+        root.join("chronicle").join(DAY).join("body.md"),
+        &owner_body_md,
+    )
+    .unwrap();
+    index(root);
+
+    // 1. Connection with ONLY `body` (no `womens_health`):
+    grant_kinds(root, &["body"], ReadScope::WholeJournal);
+
+    // WH-only day (NEXT) does NOT leak presence in other_sources or source listing.
+    let next_list = call(root, "list_transcripts", json!({"day": NEXT}));
+    assert!(next_list.get("other_sources").is_none(), "{next_list}");
+    let next_garmin = call(
+        root,
+        "list_transcripts",
+        json!({"day": NEXT, "source": "Garmin · imported"}),
+    );
+    assert!(
+        next_garmin["transcripts"].as_array().unwrap().is_empty(),
+        "{next_garmin}"
+    );
+
+    // Garmin mixed window on DAY: lists daily summary, omits menstrual_cycle_summary.
+    let garmin_day = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": "Garmin · imported"}),
+    );
+    let garmin_ref = garmin_day["transcripts"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let garmin_span = garmin_day["span_reference"].as_str().unwrap().to_owned();
+    let garmin_seg = call(root, "get_transcript", json!({"reference": garmin_ref}));
+    assert!(
+        garmin_seg.to_string().contains("daily summary"),
+        "{garmin_seg}"
+    );
+    assert!(
+        !garmin_seg.to_string().contains("menstrual"),
+        "{garmin_seg}"
+    );
+    let (span_entries, _) = every_entry(root, &garmin_span);
+    assert!(
+        span_entries.iter().any(|e| e.contains("daily summary")),
+        "{span_entries:?}"
+    );
+    assert!(
+        span_entries.iter().all(|e| !e.contains("menstrual")),
+        "{span_entries:?}"
+    );
+
+    // Apple Health mixed window on DAY: keeps heart rate, strips menstrual flow & basal body temperature.
+    let ah_day = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let ah_ref = ah_day["transcripts"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ah_span = ah_day["span_reference"].as_str().unwrap().to_owned();
+    let ah_seg = call(root, "get_transcript", json!({"reference": ah_ref}));
+    assert!(ah_seg.to_string().contains("64"), "{ah_seg}");
+    assert!(!ah_seg.to_string().contains("menstrual"), "{ah_seg}");
+    assert!(
+        !ah_seg.to_string().contains("basal body temperature"),
+        "{ah_seg}"
+    );
+    let (ah_entries, _) = every_entry(root, &ah_span);
+    assert!(
+        ah_entries.iter().any(|e| e.contains("64")),
+        "{ah_entries:?}"
+    );
+    assert!(
+        ah_entries
+            .iter()
+            .all(|e| !e.contains("menstrual") && !e.contains("basal body temperature")),
+        "{ah_entries:?}"
+    );
+
+    // Search on body.md: querying "menstrual" or "basal" returns ZERO hits (no oracle!).
+    for q in ["menstrual", "basal body temperature"] {
+        let found = call(root, "search", json!({"query": q, "day": DAY}));
+        assert!(
+            found["results"].as_array().unwrap().is_empty(),
+            "query {q:?} must not leak WH from body.md: {found}"
+        );
+    }
+    // Searching a non-WH term still finds body.md, and fetching it serves filtered markdown without WH.
+    let daily_found = call(
+        root,
+        "search",
+        json!({"query": "daily summary", "day": DAY}),
+    );
+    let body_md_ref = daily_found["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r.to_string().contains("body"))
+        .unwrap_or_else(|| panic!("expected body.md result: {daily_found}"))["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fetched_filtered = call(root, "fetch", json!({"reference": body_md_ref}));
+    let filtered_text = fetched_filtered.to_string();
+    assert!(filtered_text.contains("daily summary"), "{filtered_text}");
+    assert!(!filtered_text.contains("menstrual"), "{filtered_text}");
+    assert!(
+        !filtered_text.contains("basal body temperature"),
+        "{filtered_text}"
+    );
+
+    // 2. Grant `body` + `womens_health`: everything surfaces cleanly!
+    grant_kinds(root, &["body", "womens_health"], ReadScope::WholeJournal);
+
+    let next_list_wh = call(root, "list_transcripts", json!({"day": NEXT}));
+    assert_eq!(
+        next_list_wh["other_sources"],
+        json!(["Garmin · imported"]),
+        "{next_list_wh}"
+    );
+
+    let garmin_day_wh = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": "Garmin · imported"}),
+    );
+    let garmin_seg_wh = call(
+        root,
+        "get_transcript",
+        json!({"reference": garmin_day_wh["transcripts"][0]["reference"]}),
+    );
+    assert!(
+        garmin_seg_wh
+            .to_string()
+            .contains("menstrual cycle summary"),
+        "{garmin_seg_wh}"
+    );
+
+    let ah_day_wh = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let ah_seg_wh = call(
+        root,
+        "get_transcript",
+        json!({"reference": ah_day_wh["transcripts"][0]["reference"]}),
+    );
+    assert!(
+        ah_seg_wh.to_string().contains("menstrual flow"),
+        "{ah_seg_wh}"
+    );
+    assert!(
+        ah_seg_wh.to_string().contains("basal body temperature"),
+        "{ah_seg_wh}"
+    );
+
+    let wh_found = call(root, "search", json!({"query": "menstrual", "day": DAY}));
+    assert!(
+        !wh_found["results"].as_array().unwrap().is_empty(),
+        "{wh_found}"
+    );
+    let wh_ref = wh_found["results"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fetched_wh = call(root, "fetch", json!({"reference": wh_ref}));
+    assert!(fetched_wh.to_string().contains("menstrual"), "{fetched_wh}");
+
+    // 3. Revoking `womens_health` invalidates prior span/search references immediately.
+    let prior_span = garmin_day_wh["span_reference"].as_str().unwrap().to_owned();
+    grant_kinds(root, &["body"], ReadScope::WholeJournal);
+    assert!(probe_fails(
+        root,
+        "get_transcript",
+        json!({"reference": prior_span})
+    ));
+    assert!(probe_fails(root, "fetch", json!({"reference": wh_ref})));
+}
+
+#[test]
+fn garmin_workout_gps_coordinates_follow_places_precision_in_transcript_and_span_reads() {
+    let journal = journal();
+    let root = journal.path();
+    fix_zone(root, "America/Denver");
+    fs::write(
+        root.join("imports/.garmin-zone.json"),
+        json!({"zone": "America/Denver"}).to_string(),
+    )
+    .unwrap();
+
+    let mut run = BodyRow::new(
+        RowKind::Experience,
+        "g_run_1".into(),
+        "garmin",
+        "trail_running",
+        "trail running".into(),
+    );
+    run.experience = Some("workout".into());
+    run.by = Some("Garmin".into());
+    run.start = Some("2026-10-10T07:00:00-06:00".into());
+    run.end = Some("2026-10-10T07:04:00-06:00".into());
+    run.words = vec!["Morning Ridge Run".into()];
+    run.fields.insert("locationName".into(), json!("Boulder"));
+    run.fields.insert("distance".into(), json!(5200.0));
+    run.fields.insert("averageHR".into(), json!(154.0));
+    run.fields.insert("startLatitude".into(), json!(40.01731));
+    run.fields
+        .insert("startLongitude".into(), json!(-105.27289));
+    run.fields.insert("endLatitude".into(), json!(40.02418));
+    run.fields.insert("endLongitude".into(), json!(-105.28341));
+
+    stream_window(root, DAY, "import.garmin", "070000_300", &[run], None);
+
+    let read_both = |root: &Path| -> (String, String) {
+        let listed = call(
+            root,
+            "list_transcripts",
+            json!({"day": DAY, "source": "Garmin · imported"}),
+        );
+        let seg_ref = listed["transcripts"][0]["reference"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let span_ref = listed["span_reference"].as_str().unwrap().to_owned();
+        let seg_resp = call(root, "get_transcript", json!({"reference": seg_ref}));
+        let seg_text = seg_resp["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e.as_str().unwrap().replace('\\', ""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (entries, _) = every_entry(root, &span_ref);
+        let span_text = entries.join("\n");
+        (seg_text, span_text)
+    };
+
+    // 1. Body only (no places): no coords, no H3 cells; keeps locationName, title, stats.
+    grant_kinds(root, &["body"], ReadScope::WholeJournal);
+    let (seg, span) = read_both(root);
+    for text in [&seg, &span] {
+        assert!(text.contains("Morning Ridge Run"), "{text}");
+        assert!(text.contains("Boulder"), "{text}");
+        assert!(text.contains("5200"), "{text}");
+        assert!(!text.contains("startLatitude"), "{text}");
+        assert!(!text.contains("endLongitude"), "{text}");
+        assert!(!text.contains("40.01731"), "{text}");
+        assert!(!text.contains("startLocationCell"), "{text}");
+    }
+
+    // 2. Body + places (NamesOnly): same omission of coords while keeping locationName.
+    grant_kinds(
+        root,
+        &["body", "places", "places_names"],
+        ReadScope::WholeJournal,
+    );
+    let (seg, span) = read_both(root);
+    for text in [&seg, &span] {
+        assert!(text.contains("Boulder"), "{text}");
+        assert!(!text.contains("startLatitude"), "{text}");
+        assert!(!text.contains("startLocationCell"), "{text}");
+    }
+
+    // 3. Body + places (Approx): removes exact lat/lon, emits H3 res-8 startLocationCell & endLocationCell.
+    grant_kinds(
+        root,
+        &["body", "places", "places_approx"],
+        ReadScope::WholeJournal,
+    );
+    let (seg, span) = read_both(root);
+    for text in [&seg, &span] {
+        assert!(text.contains("Boulder"), "{text}");
+        assert!(text.contains("startLocationCell"), "{text}");
+        assert!(text.contains("endLocationCell"), "{text}");
+        assert!(text.contains("h3"), "{text}");
+        assert!(!text.contains("startLatitude"), "{text}");
+        assert!(!text.contains("40.01731"), "{text}");
+    }
+
+    // 4. Body + places (Full): exact startLatitude/startLongitude/endLatitude/endLongitude preserved.
+    grant_kinds(
+        root,
+        &["body", "places", "places_full"],
+        ReadScope::WholeJournal,
+    );
+    let (seg, span) = read_both(root);
+    for text in [&seg, &span] {
+        assert!(text.contains("startLatitude"), "{text}");
+        assert!(text.contains("40.01731"), "{text}");
+        assert!(text.contains("-105.27289"), "{text}");
+        assert!(text.contains("endLatitude"), "{text}");
+        assert!(!text.contains("startLocationCell"), "{text}");
+    }
+}

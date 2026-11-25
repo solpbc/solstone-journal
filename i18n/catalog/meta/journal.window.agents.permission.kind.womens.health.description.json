@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for cycle and pregnancy in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for cycle and pregnancy under body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5536f867cc1a41dd33a7f459a530d02bcf1dc4f2e66c24dfcd70936443372bf1",
+  "max_length": 240,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

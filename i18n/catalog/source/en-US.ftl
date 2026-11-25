@@ -22721,3 +22721,51 @@ journal.window.sources.syncs.state.paused = hourly sync off
 
 journal.window.sources.syncs.unavailable = couldn't load status
 
+
+journal.window.agents.permission.kind.womens.health.label = cycle and pregnancy
+
+journal.window.agents.permission.kind.womens.health.description = menstrual cycle, fertility, pregnancy and related logs from your body sources. needs body.
+
+journal.window.agents.activity.reason.read.womens.health = this connection does not have permission to read cycle and pregnancy
+
+journal.window.body.grid.source.list = { $date } · { $sources }
+
+journal.window.settings.garmin.response.invalidkey = that isn't a complete { $slot1 } Personal API key. it starts with { $slot2 }.
+
+journal.window.settings.garmin.response.invalidexpiry = enter an expiration date as { $slot1 }, or leave it blank.
+
+journal.window.settings.garmin.response.invalidrange = enter a valid date range ending on or before today.
+
+journal.window.settings.garmin.response.key = { $slot1 } no longer accepts this key. it may have expired, been revoked, or been replaced by a newer key. add a new key to carry on.
+
+journal.window.settings.garmin.response.keyexpiring = your { $slot1 } key is about to expire. create a new key in { $slot2 } and add it here to keep syncing without a gap.
+
+journal.window.settings.garmin.response.access = { $slot1 } turned this key away. check your key in { $slot2 }, or add a new key to carry on.
+
+journal.window.settings.garmin.response.limited = { $slot1 } asked your journal to slow down. it will try again on its next check.
+
+journal.window.settings.garmin.response.unavailable = couldn't reach { $slot1 }. your journal will try again on its next check.
+
+journal.window.settings.garmin.response.response = { $slot1 } sent something your journal couldn't read. it will try again on its next check.
+
+journal.window.settings.garmin.response.storage = your journal couldn't save what came from { $slot1 }. check that this computer has free space.
+
+journal.window.settings.garmin.response.busy = your journal is already checking { $slot1 }. try again when it finishes.
+
+journal.window.settings.garmin.response.stopped = the check stopped before it finished. your journal will pick it up on its next check.
+
+journal.window.settings.garmin.response.notconnected = { $slot1 } isn't connected.
+
+journal.window.settings.garmin.response.mobileunavailable = { $slot1 } syncing runs on a computer, not on a phone.
+
+journal.window.settings.garmin.paste.key = { $slot1 } didn't accept that key. copy it again from { $slot2 }, or create a new one.
+
+journal.window.settings.garmin.paste.access = { $slot1 } turned that key away. check your Personal API key in { $slot2 }, or create a new one.
+
+journal.window.settings.garmin.run.notfound = that { $slot1 } sync run isn't in your journal.
+
+journal.window.settings.garmin.run.deletefailed = your journal couldn't move that sync run to the trash.
+
+journal.window.settings.garmin.run.deleteheld = that sync run couldn't be moved to the trash right now. try again when any check or removal finishes.
+
+journal.window.settings.garmin.run.invalidrequest = couldn't move that sync run to the trash. reload and try again.

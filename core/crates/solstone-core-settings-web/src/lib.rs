@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use axum::{
     Extension, Router,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use solstone_core_convey_http::{coalesce::ResponseLocale, window_catalog::response_locale};
 use solstone_core_journal_io::LockOptions;
@@ -17,6 +17,7 @@ mod assets;
 mod config;
 mod convey;
 mod facets;
+mod garmin;
 mod granola;
 mod http;
 mod icons;
@@ -81,6 +82,15 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let granola_connect_root = journal_root.clone();
     let granola_disconnect_root = journal_root.clone();
     let granola_sync_root = journal_root.clone();
+    let garmin_get_root = journal_root.clone();
+    let garmin_connect_root = journal_root.clone();
+    let garmin_disconnect_root = journal_root.clone();
+    let garmin_sync_root = journal_root.clone();
+    let garmin_backfill_root = journal_root.clone();
+    let garmin_run_preview_root = journal_root.clone();
+    let garmin_run_delete_root = journal_root.clone();
+    let garmin_body_facet_get_root = journal_root.clone();
+    let garmin_body_facet_post_root = journal_root.clone();
     let plaud_get_root = journal_root.clone();
     let plaud_disconnect_root = journal_root.clone();
     let plaud_begin_root = journal_root.clone();
@@ -106,6 +116,67 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
             "/app/settings/api/granola/sync",
             post(move |locale: Option<Extension<ResponseLocale>>| {
                 granola::sync_now(response_locale(locale), granola_sync_root.clone())
+            }),
+        )
+        .route(
+            "/app/settings/api/garmin",
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                garmin::get(response_locale(locale), garmin_get_root.clone())
+            })
+            .post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                garmin::connect(response_locale(locale), garmin_connect_root.clone(), body)
+            })
+            .delete(move |locale: Option<Extension<ResponseLocale>>| {
+                garmin::disconnect(response_locale(locale), garmin_disconnect_root.clone())
+            }),
+        )
+        .route(
+            "/app/settings/api/garmin/sync",
+            post(move |locale: Option<Extension<ResponseLocale>>| {
+                garmin::sync_now(response_locale(locale), garmin_sync_root.clone())
+            }),
+        )
+        .route(
+            "/app/settings/api/garmin/backfill",
+            post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                garmin::backfill(response_locale(locale), garmin_backfill_root.clone(), body)
+            }),
+        )
+        .route(
+            "/app/settings/api/garmin/runs/{id}/delete",
+            get(move |locale: Option<Extension<ResponseLocale>>, path| {
+                garmin::run_delete_preview(
+                    response_locale(locale),
+                    garmin_run_preview_root.clone(),
+                    path,
+                )
+            }),
+        )
+        .route(
+            "/app/settings/api/garmin/runs/{id}",
+            delete(
+                move |locale: Option<Extension<ResponseLocale>>, path, headers, body| {
+                    garmin::run_delete(
+                        response_locale(locale),
+                        garmin_run_delete_root.clone(),
+                        path,
+                        headers,
+                        body,
+                    )
+                },
+            ),
+        )
+        .route(
+            "/app/settings/api/garmin/body-facet",
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                garmin::body_facet_get(response_locale(locale), garmin_body_facet_get_root.clone())
+            })
+            .post(move |locale: Option<Extension<ResponseLocale>>, body| {
+                garmin::body_facet_post(
+                    response_locale(locale),
+                    garmin_body_facet_post_root.clone(),
+                    body,
+                )
             }),
         )
         .route(

@@ -20,6 +20,7 @@ pub enum Kind {
     Documents,
     Screen,
     Body,
+    WomensHealth,
     Calendar,
     Places,
     Photos,
@@ -140,6 +141,17 @@ pub const KINDS: &[KindSpec] = &[
             description_id: "journal.window.agents.permission.kind.body.description",
         }),
         checked_by_default: true,
+    },
+    KindSpec {
+        kind: Kind::WomensHealth,
+        stored_word: "womens_health",
+        permission: Some(AdmittedCategory::WomensHealth),
+        query_alias: None,
+        permission_copy: Some(PermissionCopy {
+            label_id: "journal.window.agents.permission.kind.womens.health.label",
+            description_id: "journal.window.agents.permission.kind.womens.health.description",
+        }),
+        checked_by_default: false,
     },
     KindSpec {
         kind: Kind::Notes,
@@ -347,6 +359,7 @@ impl KindSpec {
         match self.kind {
             Kind::ProfilePics => Some("entities"),
             Kind::Screenshots => Some("screen_text"),
+            Kind::WomensHealth => Some("body"),
             _ => None,
         }
     }
@@ -521,7 +534,7 @@ fn import_summary_permission(journal: Option<&Path>, path: &str) -> Option<Admit
     let manifest = body_material::import_summary_manifest(journal, path)?;
     use AdmittedCategory as C;
     Some(match manifest["source_type"].as_str()? {
-        "apple_health" | "oura" | "strava" => C::Body,
+        "apple_health" | "oura" | "garmin" | "strava" => C::Body,
         "obsidian" | "evernote" | "kindle" => C::Notes,
         "document" => C::Documents,
         "ics" => C::Calendar,
@@ -763,6 +776,7 @@ mod tests {
                 (Kind::Screen, Some("screen_text")),
                 (Kind::Screenshots, Some("screenshots")),
                 (Kind::Body, Some("body")),
+                (Kind::WomensHealth, Some("womens_health")),
                 (Kind::Notes, Some("notes")),
                 (Kind::Documents, Some("documents")),
                 (Kind::Calendar, Some("calendar")),

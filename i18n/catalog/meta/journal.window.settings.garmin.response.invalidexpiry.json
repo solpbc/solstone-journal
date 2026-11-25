@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response invalidexpiry in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin key expiration date validation error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32920a29bafcbc5505ad7eddac197c6d22b484d263b00ae7cdd352a4b3e8f365",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "accepted-input",
+      "value": "YYYY-MM-DD"
+    }
+  ]
+}

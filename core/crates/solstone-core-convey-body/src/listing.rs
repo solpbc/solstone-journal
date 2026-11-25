@@ -15,10 +15,11 @@ use solstone_core_format::content::body_records::BODY_RECORD_STREAMS;
 use solstone_core_format::content::strava_body::STRAVA_STREAM;
 
 /// Every stream body data lands in, with its source key.
-pub(crate) fn body_streams() -> [(&'static str, &'static str); 3] {
+pub(crate) fn body_streams() -> [(&'static str, &'static str); 4] {
     [
         (BODY_RECORD_STREAMS[0], "apple_health"),
         (BODY_RECORD_STREAMS[1], "oura"),
+        (BODY_RECORD_STREAMS[2], "garmin"),
         (STRAVA_STREAM, "strava"),
     ]
 }

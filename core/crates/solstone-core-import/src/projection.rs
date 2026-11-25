@@ -876,6 +876,7 @@ fn derive_source_display(source_type: &str) -> String {
         "kindle" => "Kindle".to_owned(),
         "obsidian" => "Obsidian".to_owned(),
         "oura" => "Oura".to_owned(),
+        "garmin" => "Garmin".to_owned(),
         "plaud" => "Plaud".to_owned(),
         "audio" => "audio".to_owned(),
         "audio_archive" => "audio archive".to_owned(),

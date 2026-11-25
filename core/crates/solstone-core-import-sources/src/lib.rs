@@ -20,6 +20,7 @@ pub mod claude;
 pub mod conversations;
 pub mod document;
 pub mod evernote;
+pub mod garmin;
 pub mod gemini;
 pub mod ics;
 mod ics_calendar;

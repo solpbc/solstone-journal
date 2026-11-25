@@ -105,6 +105,11 @@
     "condition": "Path"
   },
   {
+    "path": "20260107/import.garmin/120000_60/body.jsonl",
+    "pattern": "*/import.garmin/*/body.jsonl",
+    "condition": "Path"
+  },
+  {
     "path": "20260107/import.strava/120000_60/workout.json",
     "pattern": "*/import.strava/*/workout.json",
     "condition": "Path"

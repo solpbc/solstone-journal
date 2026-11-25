@@ -12,10 +12,15 @@
 use std::path::Path;
 
 /// The streams a body import writes its windows, workouts and talent outputs to.
-pub const BODY_IMPORT_STREAMS: [&str; 3] = ["import.apple_health", "import.oura", "import.strava"];
+pub const BODY_IMPORT_STREAMS: [&str; 4] = [
+    "import.apple_health",
+    "import.oura",
+    "import.garmin",
+    "import.strava",
+];
 
 /// The import sources whose summaries describe body data.
-pub const BODY_IMPORT_SOURCES: [&str; 3] = ["apple_health", "oura", "strava"];
+pub const BODY_IMPORT_SOURCES: [&str; 4] = ["apple_health", "oura", "garmin", "strava"];
 
 /// The producer records the output paths in the manifest, and stamps the
 /// import ID and kind on each tile. Both records must describe the same job.

@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response storage in the journal's settings view.",
+  "context": "Journal window, settings view. Local journal write failure during Garmin sync.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1aa9064892f15d6b200d3cf8ae4ebc72668dee8199111c29e53c314e06407dee",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    }
+  ]
+}

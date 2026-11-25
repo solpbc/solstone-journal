@@ -1,0 +1,28 @@
+{
+  "description": "Garmin response invalidkey in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin Connect Personal API key validation error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e15f843785a9d44c2c79c44b397804c2664dbfd445e281b8442fe3553d8e16e2",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin Connect"
+    },
+    {
+      "name": "slot2",
+      "kind": "accepted-input",
+      "value": "GCDC_"
+    }
+  ]
+}

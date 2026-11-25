@@ -454,6 +454,7 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
             let words = match source.as_str() {
                 "apple_health" => "Apple Health".to_owned(),
                 "oura" => "Oura".to_owned(),
+                "garmin" => "Garmin".to_owned(),
                 "strava" => "Strava".to_owned(),
                 "chatgpt" => "ChatGPT".to_owned(),
                 "claude" => "Claude".to_owned(),

@@ -652,6 +652,61 @@ pub fn stream_hints(source: RegistrySource) -> StreamHints {
     hints(source)
 }
 
+/// Stream hints for a named import source that is not a file-registry importer
+/// (such as a sync-only body source).
+#[must_use]
+pub fn named_stream_hints(source: &str) -> StreamHints {
+    StreamHints {
+        kind: Some(Kind::Imported(ImportSource::Named(source.to_owned()))),
+        host: None,
+        platform: None,
+    }
+}
+
+/// Write a single body window's `body.jsonl` file with tombstone / reclaim
+/// enforcement, for any body source (file-registry or sync-only).
+pub fn write_body_window_file(
+    journal: &Path,
+    stream: &str,
+    day: &str,
+    segment: &str,
+    name: &str,
+    contents: &str,
+    reclaims: bool,
+) -> Result<(), SaveError> {
+    if !solstone_core_import::work_continues() {
+        return Err(SaveError {
+            path: journal
+                .join("chronicle")
+                .join(day)
+                .join(stream)
+                .join(segment)
+                .join(name),
+            detail: "stopped".to_owned(),
+        });
+    }
+    let segment_dir = journal
+        .join("chronicle")
+        .join(day)
+        .join(stream)
+        .join(segment);
+    let path = segment_dir.join(name);
+    let skip = if reclaims {
+        solstone_core_segment::reclaim_for_arrival(&segment_dir)
+            .map(|arrival| arrival == solstone_core_segment::Arrival::Removing)
+    } else {
+        solstone_core_segment::owner_deleted(&segment_dir)
+    };
+    match skip {
+        Ok(true) => Ok(()),
+        Ok(false) => write_segment_private(&path, contents.as_bytes(), None),
+        Err(error) => Err(SaveError {
+            path,
+            detail: error.to_string(),
+        }),
+    }
+}
+
 fn hints(source: RegistrySource) -> StreamHints {
     let source = match source {
         RegistrySource::Chatgpt => ImportSource::AiChat(AiChatSource::ChatGpt),

@@ -18,9 +18,10 @@ use jiff::{SignedDuration, Span, Timestamp, ZonedDateTime};
 use serde_json::{Value, json};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
-    BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, only_moved_rows, parse_source_time,
-    render_row,
+    BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, is_womens_health_row,
+    only_moved_rows, parse_source_time, render_row,
 };
+use solstone_core_format::content::kinds::PlacesPrecision;
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_TILE_FILE, strava_rows};
 use solstone_core_journal_config::TimeZone;
 use solstone_core_journal_io::paths::{
@@ -60,6 +61,150 @@ pub(crate) const BODY_NOT_GRANTED: &str = "this connection doesn't have the body
 /// brought in is read under it alone.
 pub(crate) fn holds_body(snapshot: &ConnectionReadSnapshot) -> bool {
     snapshot.categories.contains(&AdmittedCategory::Body)
+}
+
+/// Whether this connection may read Women's Health body rows (requires both
+/// `body` and its `womens_health` sub-option; `permissions.rs` already strips
+/// `womens_health` whenever `body` is absent).
+pub(crate) fn holds_womens_health(snapshot: &ConnectionReadSnapshot) -> bool {
+    snapshot.categories.contains(&AdmittedCategory::Body)
+        && snapshot
+            .categories
+            .contains(&AdmittedCategory::WomensHealth)
+}
+
+/// Stable tag mixed into body segment page cursors whenever workout coordinate
+/// precision changes.
+pub(crate) fn body_policy_tag(places_precision: Option<PlacesPrecision>) -> u8 {
+    match places_precision {
+        Some(PlacesPrecision::Full) => 0,
+        Some(PlacesPrecision::Approx) => 1,
+        Some(PlacesPrecision::NamesOnly) | None => 2,
+    }
+}
+
+const WORKOUT_COORD_KEYS: &[&str] = &[
+    "startLatitude",
+    "startLongitude",
+    "endLatitude",
+    "endLongitude",
+    "start_latitude",
+    "start_longitude",
+    "end_latitude",
+    "end_longitude",
+];
+
+fn extract_coord_pair(
+    fields: &mut std::collections::BTreeMap<String, Value>,
+    lat_keys: [&str; 2],
+    lon_keys: [&str; 2],
+) -> Option<(f64, f64)> {
+    let mut lat = None;
+    for key in lat_keys {
+        if let Some(value) = fields.remove(key)
+            && lat.is_none()
+        {
+            lat = value.as_f64();
+        }
+    }
+    let mut lon = None;
+    for key in lon_keys {
+        if let Some(value) = fields.remove(key)
+            && lon.is_none()
+        {
+            lon = value.as_f64();
+        }
+    }
+    match (lat, lon) {
+        (Some(lat), Some(lon)) if lat.is_finite() && lon.is_finite() => Some((lat, lon)),
+        _ => None,
+    }
+}
+
+/// Render a body row for an MCP agent connection, gating raw workout GPS
+/// coordinates on the connection's `places` precision (`Full` exact, `Approx`
+/// H3 res-8 ~1 km cell, `NamesOnly` / no `places` omitted while keeping
+/// `locationName` and all workout stats).
+pub(crate) fn render_row_for_connection(
+    row: &BodyRow,
+    places_precision: Option<PlacesPrecision>,
+) -> String {
+    if matches!(places_precision, Some(PlacesPrecision::Full))
+        || !WORKOUT_COORD_KEYS
+            .iter()
+            .any(|key| row.fields.contains_key(*key))
+    {
+        return render_row(row);
+    }
+    let mut adjusted = row.clone();
+    let start_pair = extract_coord_pair(
+        &mut adjusted.fields,
+        ["startLatitude", "start_latitude"],
+        ["startLongitude", "start_longitude"],
+    );
+    let end_pair = extract_coord_pair(
+        &mut adjusted.fields,
+        ["endLatitude", "end_latitude"],
+        ["endLongitude", "end_longitude"],
+    );
+    if matches!(places_precision, Some(PlacesPrecision::Approx)) {
+        if let Some((lat, lon)) = start_pair
+            && let Some(cell) = solstone_core_location::h3_cell::res8_cell(lat, lon)
+        {
+            adjusted.fields.insert(
+                "startLocationCell".to_owned(),
+                json!({
+                    "h3": cell.h3,
+                    "cell_lat": cell.cell_lat,
+                    "cell_lon": cell.cell_lon,
+                }),
+            );
+        }
+        if let Some((lat, lon)) = end_pair
+            && let Some(cell) = solstone_core_location::h3_cell::res8_cell(lat, lon)
+        {
+            adjusted.fields.insert(
+                "endLocationCell".to_owned(),
+                json!({
+                    "h3": cell.h3,
+                    "cell_lat": cell.cell_lat,
+                    "cell_lon": cell.cell_lon,
+                }),
+            );
+        }
+    }
+    render_row(&adjusted)
+}
+
+/// Read one segment transcript page enforcing this connection's body egress
+/// policies (Women's Health filtering and `places`-gated workout coordinates).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_body_aware_page(
+    segment: &Segment,
+    cursor: Option<&solstone_core_transcripts::SegmentTranscriptCursor>,
+    speakers: Option<&solstone_core_transcripts::AgentSpeakers>,
+    possible_names: Option<&solstone_core_transcripts::PossibleNameLabels>,
+    left_out: &BTreeSet<String>,
+    categories: &BTreeSet<AdmittedCategory>,
+    places_precision: Option<PlacesPrecision>,
+) -> Result<
+    solstone_core_transcripts::SegmentTranscriptPage,
+    solstone_core_transcripts::SegmentTranscriptReadError,
+> {
+    let renderer = |row: &BodyRow| render_row_for_connection(row, places_precision);
+    let policy = solstone_core_transcripts::BodyReadPolicy {
+        policy_tag: body_policy_tag(places_precision),
+        render_row: &renderer,
+    };
+    solstone_core_transcripts::read_segment_transcript_page_with_body_policy(
+        segment,
+        cursor,
+        speakers,
+        possible_names,
+        left_out,
+        Some(categories),
+        Some(&policy),
+    )
 }
 
 /// The one answer for a source label that reaches nothing, whatever kind of
@@ -254,6 +399,7 @@ impl BodyHides {
         day: &str,
         stream: &str,
         segment: &Segment,
+        include_womens_health: bool,
     ) -> Option<BTreeSet<String>> {
         if !segment.path().join(BODY_RECORDS_FILE).is_file()
             && !segment.path().join(STRAVA_TILE_FILE).is_file()
@@ -266,7 +412,7 @@ impl BodyHides {
         if self.day_hidden(day) {
             return None;
         }
-        if self.reaching(day).is_none() {
+        if self.reaching(day).is_none() && include_womens_health {
             return Some(BTreeSet::new());
         }
         let Ok(text) = std::fs::read_to_string(segment.path().join(BODY_RECORDS_FILE)) else {
@@ -282,7 +428,14 @@ impl BodyHides {
                 Err(_) => damaged = true,
             }
         }
-        let left_out = self.left_out(journal_root, day, stream, &rows);
+        let mut left_out = self.left_out(journal_root, day, stream, &rows);
+        if !include_womens_health {
+            for row in &rows {
+                if is_womens_health_row(row) {
+                    left_out.insert(row.id.clone());
+                }
+            }
+        }
         let all_hidden = !rows.is_empty() && left_out.len() == rows.len();
         (damaged || !all_hidden).then_some(left_out)
     }
@@ -367,9 +520,15 @@ fn windows_in_scope(
         {
             continue;
         }
-        // One holding only rows of a night that started on a hidden day reads
-        // as no window, as one holding only moved rows does.
-        let Some(left_out) = hides.shown(journal_root, day, stream, &segment) else {
+        // One holding only rows of a night that started on a hidden day, or
+        // only withheld Women's Health rows, reads as no window.
+        let Some(left_out) = hides.shown(
+            journal_root,
+            day,
+            stream,
+            &segment,
+            holds_womens_health(snapshot),
+        ) else {
             continue;
         };
         windows.push(Window {
@@ -431,6 +590,7 @@ pub(crate) fn week_totals(
                 {
                     if row.kind == RowKind::Moved
                         || window.left_out.contains(&row.id)
+                        || (!holds_womens_health(snapshot) && is_womens_health_row(&row))
                         || !seen.insert(row.id.clone())
                     {
                         continue;
@@ -471,6 +631,7 @@ pub(crate) fn week_totals(
                             if let Some(kcal) = row
                                 .fields
                                 .get("active_calories")
+                                .or_else(|| row.fields.get("activeKilocalories"))
                                 .filter(|value| !value.is_null())
                             {
                                 let counts = &mut movement
@@ -572,6 +733,7 @@ pub(crate) fn week_totals(
                 .or_else(|| {
                     row.fields
                         .get("total_sleep_duration")
+                        .or_else(|| row.fields.get("sleepTimeSeconds"))
                         .and_then(Value::as_u64)
                 });
             let mut stages_seconds = serde_json::Map::new();
@@ -585,11 +747,16 @@ pub(crate) fn week_totals(
             } else {
                 for (field, key) in [
                     ("awake_time", "awake"),
+                    ("awakeSleepSeconds", "awake"),
                     ("deep_sleep_duration", "deep"),
+                    ("deepSleepSeconds", "deep"),
                     ("light_sleep_duration", "light"),
+                    ("lightSleepSeconds", "light"),
                     ("rem_sleep_duration", "rem"),
+                    ("remSleepSeconds", "rem"),
                 ] {
-                    if let Some(seconds) = row.fields.get(field).and_then(Value::as_u64)
+                    if !stages_seconds.contains_key(key)
+                        && let Some(seconds) = row.fields.get(field).and_then(Value::as_u64)
                         && seconds > 0
                     {
                         stages_seconds.insert(key.to_owned(), json!(seconds));
@@ -634,6 +801,10 @@ fn sleep_stage_key(label: &str) -> Option<SleepStage> {
         }),
         "asleep core" => Some(SleepStage {
             key: "core",
+            counts_as_asleep: true,
+        }),
+        "asleep light" => Some(SleepStage {
+            key: "light",
             counts_as_asleep: true,
         }),
         "asleep rem" => Some(SleepStage {
@@ -1383,6 +1554,8 @@ fn window_rows(
     from: i64,
     to: i64,
     kind: Option<&str>,
+    include_womens_health: bool,
+    places_precision: Option<PlacesPrecision>,
 ) -> Result<Vec<Keyed>, ()> {
     let text =
         std::fs::read_to_string(window.segment.path().join(BODY_RECORDS_FILE)).map_err(|_| ())?;
@@ -1401,6 +1574,7 @@ fn window_rows(
                 good += 1;
                 if row.kind == RowKind::Moved
                     || window.left_out.contains(&row.id)
+                    || (!include_womens_health && is_womens_health_row(&row))
                     || kind.is_some_and(|kind| !is_kind(&row, kind))
                     || (behind
                         && !matches!(row.kind, RowKind::Count | RowKind::Stage | RowKind::Logged))
@@ -1414,7 +1588,12 @@ fn window_rows(
                     .map_or(start, |time| {
                         clock.order(&time).clamp(start, (end - 1).max(start))
                     });
-                rows.push((at, window.name.clone(), row.id.clone(), render_row(&row)));
+                rows.push((
+                    at,
+                    window.name.clone(),
+                    row.id.clone(),
+                    render_row_for_connection(&row, places_precision),
+                ));
             }
             Err(_) if kind.is_none() && !behind => rows.push((
                 start,
@@ -1523,6 +1702,8 @@ pub(crate) fn list_source(
         .collect();
     let ranged = in_range.clone();
     let clock = day_date(day).map(|date| Clock::new(journal_root, stream, date));
+    let include_womens_health = holds_womens_health(snapshot);
+    let places_precision = snapshot.places_precision();
     let mut unreadable = 0_u64;
     let in_range: Vec<&Window> = match (kind, clock.as_ref()) {
         (Some(kind), Some(clock)) => in_range
@@ -1534,6 +1715,8 @@ pub(crate) fn list_source(
                     i64::from(from) * 1000,
                     i64::from(to) * 1000,
                     Some(kind),
+                    include_womens_health,
+                    places_precision,
                 ) {
                     Ok(rows) => !rows.is_empty(),
                     // It can't say whether it holds the kind, so it isn't listed as
@@ -1559,6 +1742,8 @@ pub(crate) fn list_source(
                     i64::from(from) * 1000,
                     i64::from(to) * 1000,
                     None,
+                    include_womens_health,
+                    places_precision,
                 )
                 .is_ok_and(|rows| !rows.is_empty())
             })
@@ -1575,6 +1760,8 @@ pub(crate) fn list_source(
                 i64::from(from) * 1000,
                 i64::from(to) * 1000,
                 kind,
+                include_womens_health,
+                places_precision,
             ) {
                 Ok(rows) => began_earlier |= !rows.is_empty(),
                 Err(()) if kind.is_some() => unreadable += 1,
@@ -1617,13 +1804,14 @@ pub(crate) fn list_source(
     let mut last_name = None;
     for window in remaining.by_ref().take(request.limit) {
         last_name = Some(window.name.clone());
-        let page = solstone_core_transcripts::read_segment_transcript_page_with_permissions(
+        let page = read_body_aware_page(
             &window.segment,
             None,
             None,
             None,
             &window.left_out,
-            Some(&snapshot.categories),
+            &snapshot.categories,
+            places_precision,
         );
         // Freeze the page before the last deletion observation, as a single read does.
         if !released(journal_root, day, stream, &window.name) {
@@ -1838,7 +2026,15 @@ pub(crate) fn read_source_span(
                 break;
             }
             reached += 1;
-            let rows = window_rows(window, &clock, from_ms, to_ms, kind);
+            let rows = window_rows(
+                window,
+                &clock,
+                from_ms,
+                to_ms,
+                kind,
+                holds_womens_health(snapshot),
+                snapshot.places_precision(),
+            );
             // Under a kind, a window holding none of it doesn't count toward the cap.
             if kind.is_none() || rows.as_ref().is_ok_and(|rows| !rows.is_empty()) {
                 visited += 1;

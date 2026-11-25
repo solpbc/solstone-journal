@@ -1,0 +1,25 @@
+{
+  "description": "A Body calendar date with data from one or more body sources.",
+  "context": "Journal window. A Body calendar date with data from a formatted list of body sources.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "sources",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b0099a69c6d78699a30e29514c7003bb1d622002fcb627fb3ed63efd43a1ce45",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

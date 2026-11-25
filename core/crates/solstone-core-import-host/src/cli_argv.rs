@@ -501,7 +501,7 @@ fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
     match parsed {
         ParsedCommand::Sync { backend, .. } => ArgumentClass {
             sync_source: Some(backend.clone()),
-            body: if backend == "oura" {
+            body: if matches!(backend.as_str(), "oura" | "garmin") {
                 BodyAdmission::Held
             } else {
                 BodyAdmission::NotBody
@@ -595,7 +595,7 @@ fn dispatch_parsed(
         }
         ParsedCommand::RetiredNotesFolder => rendered(notes_folder_retired()),
         ParsedCommand::Sync { backend, options } => {
-            if dispatch.embedded() && backend == "oura" {
+            if dispatch.embedded() && matches!(backend.as_str(), "oura" | "garmin") {
                 return rendered(embedded_body_refused());
             }
             rendered(run_sync(&backend, &options, journal_path))
@@ -740,6 +740,7 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
 fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     match backend {
         "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
+        "garmin" => crate::body_commands::sync_garmin(&body_command(options), journal_path),
         "plaud" => run_plaud_sync(journal_path, options),
         "granola" => {
             let result = if options.save && !options.dry_run {

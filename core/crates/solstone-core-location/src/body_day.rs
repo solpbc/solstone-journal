@@ -723,6 +723,32 @@ pub(crate) fn render_display_document(
     document
 }
 
+/// Render a day's `body.md` document for an agent connection, withholding
+/// Women's Health rows when `include_womens_health` is false. Returns `None`
+/// when the day is hidden, unreadable, or holds no permitted rows.
+#[must_use]
+pub fn render_day_document_for_agent(
+    journal: &Path,
+    day: &str,
+    include_womens_health: bool,
+) -> Option<String> {
+    let hidden = read_hidden_days(journal);
+    let hidden = hidden.days()?;
+    let mut rows = shown_rows(journal, day, hidden, read_rows(journal, day).ok()?);
+    if !include_womens_health {
+        for source_rows in rows.values_mut() {
+            source_rows.retain(|row| {
+                !solstone_core_format::content::body_records::is_womens_health_row(row)
+            });
+        }
+        rows.retain(|_, source_rows| !source_rows.is_empty());
+    }
+    if rows.is_empty() {
+        return None;
+    }
+    Some(render_display_document(journal, day, &rows).into_text())
+}
+
 fn rebuild_day(
     journal: &Path,
     day: &str,

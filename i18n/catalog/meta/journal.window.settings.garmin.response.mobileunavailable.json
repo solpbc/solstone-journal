@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response mobileunavailable in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin Connect sync refused on embedded mobile platforms.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dce8784e3f657be2441017cf1239db4f1afbe61b231ca60c68d78cd1a28b6308",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin Connect"
+    }
+  ]
+}

@@ -13,7 +13,7 @@ use std::path::Path;
 use jiff::civil::Date;
 use jiff::{Span, Timestamp};
 use serde_json::json;
-use solstone_core_import_sources::body_stream::{APPLE, BodySource, OURA};
+use solstone_core_import_sources::body_stream::{APPLE, BodySource, GARMIN, OURA};
 
 use crate::body_segments::{
     AppleSegmentsRequest, ListedMoves, LiveOuraTransport, OuraImportError, OuraImportRequest,
@@ -483,6 +483,51 @@ pub(crate) fn sync_oura(command: &BodyCommand<'_>, journal: &Path) -> CliRun {
         Ok(outcome) => success(format!("{}\n", outcome.summary.trim_end())),
         Err(OuraImportError::Stop(stop)) => failure("", &format!("{}\n", stop.words()), 1),
         Err(OuraImportError::Failed(error)) => failure("", &format!("{error}\n"), 1),
+    }
+}
+
+/// Bring Garmin Connect up to date, or with no `--save` say what that would ask for.
+pub(crate) fn sync_garmin(command: &BodyCommand<'_>, journal: &Path) -> CliRun {
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let today = Timestamp::now().to_zoned_datetime(zone).date();
+    let range = match oura_range(command, today) {
+        Ok(range) => range,
+        Err(words) => return failure("", &words, 1),
+    };
+    if !command.save {
+        return match crate::garmin_sync::plan_lines(journal, range, today) {
+            Ok(lines) => success(lines),
+            Err(error) => failure("", &format!("{error}\n"), 1),
+        };
+    }
+    let (facet, listed) = match settled_facet(command, &GARMIN, journal) {
+        Ok(settled) => settled,
+        Err((run, _)) => return run,
+    };
+    let timestamp = owner_timestamp(journal);
+    match crate::garmin_sync::sync_garmin_live(
+        journal,
+        &timestamp,
+        facet.as_deref(),
+        listed,
+        range,
+        command.scheduled,
+    ) {
+        Ok(outcome) if command.json => success(format!(
+            "{}\n",
+            json!({
+                "schema": "solstone.body.import.result.v2",
+                "source": "garmin",
+                "import_id": outcome.import_id,
+                "published": outcome.windows_published,
+                "rows": outcome.rows_written,
+                "workouts": outcome.workouts_written,
+                "paused_for_key": outcome.paused_for_key,
+                "finished": true,
+            })
+        )),
+        Ok(outcome) => success(format!("{}\n", outcome.summary.trim_end())),
+        Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
 

@@ -483,6 +483,7 @@ fn kind_reason(kind: AdmittedCategory) -> Reason {
         AdmittedCategory::ScreenText => Reason::ReadScreenText,
         AdmittedCategory::Screenshots => Reason::ReadScreenshots,
         AdmittedCategory::Body => Reason::ReadBody,
+        AdmittedCategory::WomensHealth => Reason::ReadWomensHealth,
         AdmittedCategory::Notes => Reason::ReadNotes,
         AdmittedCategory::Documents => Reason::ReadDocuments,
         AdmittedCategory::Calendar => Reason::ReadCalendar,
@@ -1986,6 +1987,9 @@ fn search(
     let incoming_cursor_day = start_after.as_ref().map(|a| a.day.clone());
     let mut locations = BTreeMap::new();
     let mut location_documents = BTreeMap::new();
+    let mut filtered_body_documents: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut seen_filtered_body_path: Option<String> = None;
+    let may_read_womens_health = crate::body_source::holds_womens_health(snapshot);
     let may_read_locations = snapshot.categories.contains(&AdmittedCategory::Places)
         && matches!(snapshot.scope, ConnectionScope::WholeJournal);
     let mut results = Vec::new();
@@ -2052,6 +2056,8 @@ fn search(
         if batch_len == 0 {
             break;
         }
+        let batch_query = response.cleaned_query.clone();
+        let batch_relaxed = response.relaxed;
         let facet_declarations = FacetDeclarationSet::from_journal(journal_root).ok();
         let mut processed = 0;
         for hit in response.results {
@@ -2074,6 +2080,12 @@ fn search(
             });
             if location_file_day(&hit.metadata.path).is_some()
                 && seen_location_path.as_deref() == Some(hit.metadata.path.as_str())
+            {
+                continue;
+            }
+            if !may_read_womens_health
+                && body_file_day(&hit.metadata.path).is_some()
+                && seen_filtered_body_path.as_deref() == Some(hit.metadata.path.as_str())
             {
                 continue;
             }
@@ -2174,7 +2186,7 @@ fn search(
             // the segment's transcript grant (this row's own classification)
             // lets this connection read.
             let is_possible_name = is_possible_names_path(&hit.metadata.path);
-            let served_text = if is_possible_name {
+            let mut served_text = if is_possible_name {
                 let Some(entry) =
                     possible_names.indexed(&hit.metadata.path, hit.metadata.idx, &hit.text)
                 else {
@@ -2185,6 +2197,44 @@ fn search(
             } else {
                 served_text
             };
+            if !may_read_womens_health {
+                if let Some(day) = body_file_day(&hit.metadata.path) {
+                    let filtered = filtered_body_documents
+                        .entry(day.to_owned())
+                        .or_insert_with(|| {
+                            solstone_core_location::body_day::render_day_document_for_agent(
+                                journal_root,
+                                day,
+                                false,
+                            )
+                        })
+                        .clone();
+                    let Some(filtered) = filtered else {
+                        live_dropped = true;
+                        continue;
+                    };
+                    if !filtered_text_matches_query(&filtered, &batch_query, batch_relaxed) {
+                        live_dropped = true;
+                        continue;
+                    }
+                    served_text = filtered;
+                } else if solstone_core_format::content::body_material::is_body_import_summary(
+                    journal_root,
+                    &hit.metadata.path,
+                ) {
+                    let filtered =
+                        solstone_core_format::content::body_records::filter_womens_health_summary(
+                            &served_text,
+                        );
+                    if filtered.trim().is_empty()
+                        || !filtered_text_matches_query(&filtered, &batch_query, batch_relaxed)
+                    {
+                        live_dropped = true;
+                        continue;
+                    }
+                    served_text = filtered;
+                }
+            }
             let photo = crate::photo_picture::is_photo_description(&hit.metadata.path);
             let Some(category) = (if let Some(doc) = &topic {
                 doc.selected_kinds()
@@ -2606,6 +2656,9 @@ fn search(
             }
             if location_file_day(&hit.metadata.path).is_some() {
                 seen_location_path = Some(hit.metadata.path.clone());
+            }
+            if !may_read_womens_health && body_file_day(&hit.metadata.path).is_some() {
+                seen_filtered_body_path = Some(hit.metadata.path.clone());
             }
             results.push(value);
             if results.len() == request.limit {
@@ -3131,6 +3184,42 @@ fn location_file_day(path: &str) -> Option<&str> {
         .filter(|day| solstone_core_journal_io::is_day_key(day))
 }
 
+fn body_file_day(path: &str) -> Option<&str> {
+    path.strip_prefix("chronicle/")
+        .unwrap_or(path)
+        .strip_suffix("/body.md")
+        .filter(|day| solstone_core_journal_io::is_day_key(day))
+}
+
+/// Check whether a live-filtered document still satisfies the query tokens,
+/// preventing an oracle when Women's Health lines are withheld from `body.md`
+/// or a body import summary.
+fn filtered_text_matches_query(text: &str, query: &str, relaxed: bool) -> bool {
+    let tokens: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|tok| !tok.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    if tokens.is_empty() {
+        return true;
+    }
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    let matches_token = |tok: &str| {
+        words.iter().any(|word| {
+            word.starts_with(tok) || (word.len() >= 3 && tok.starts_with(word.as_str()))
+        })
+    };
+    if relaxed {
+        tokens.iter().any(|tok| matches_token(tok))
+    } else {
+        tokens.iter().all(|tok| matches_token(tok))
+    }
+}
+
 /// Current projection of a day the location writer has built. Older
 /// standalone documents still have to match their contained indexed bytes.
 fn current_location_document(journal: &Path, day: &str) -> Option<Option<String>> {
@@ -3413,6 +3502,27 @@ fn fetch(
                         .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
                     (doc.text.clone(), None, None)
                 }
+                ActivityAdmit::NotActivity(content)
+                    if !crate::body_source::holds_womens_health(snapshot)
+                        && body_file_day(&entry.path).is_some() =>
+                {
+                    let day = body_file_day(&entry.path).expect("body document day");
+                    // Keep the same freshness check against the on-disk document.
+                    match markdown_fetch(journal_root, &boundary, &entry.path, entry.idx, &content)?
+                    {
+                        MarkdownFetch::Document(_) | MarkdownFetch::IndexedChunk => {}
+                        MarkdownFetch::Reject => {
+                            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                        }
+                    }
+                    let text = solstone_core_location::body_day::render_day_document_for_agent(
+                        journal_root,
+                        day,
+                        false,
+                    )
+                    .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    (text, None, None)
+                }
                 ActivityAdmit::NotActivity(content) => {
                     let text = match markdown_fetch(
                         journal_root,
@@ -3426,6 +3536,19 @@ fn fetch(
                         MarkdownFetch::Reject => {
                             return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
                         }
+                    };
+                    let text = if !crate::body_source::holds_womens_health(snapshot)
+                        && solstone_core_format::content::body_material::is_body_import_summary(
+                            journal_root,
+                            &entry.path,
+                        ) {
+                        let filtered = solstone_core_format::content::body_records::filter_womens_health_summary(&text);
+                        if filtered.trim().is_empty() {
+                            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                        }
+                        filtered
+                    } else {
+                        text
                     };
                     (text, None, None)
                 }
@@ -4451,6 +4574,7 @@ fn list_transcripts(
         request.facet_id.as_deref(),
     );
     let holds_body = crate::body_source::holds_body(snapshot);
+    let holds_womens_health = crate::body_source::holds_womens_health(snapshot);
     let mut body_withheld = false;
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
 
@@ -4542,7 +4666,10 @@ fn list_transcripts(
                 // What the owner hid isn't counted: a hidden day's windows and
                 // workouts, and what a night or workout that started on one
                 // left on a later day.
-                if hides.shown(journal_root, day, &stream, &segment).is_none() {
+                if hides
+                    .shown(journal_root, day, &stream, &segment, holds_womens_health)
+                    .is_none()
+                {
                     continue;
                 }
                 // A Strava workout is body data too, but no source lists it:
@@ -4577,7 +4704,16 @@ fn list_transcripts(
                         &body_boundary,
                         &segment_assignment_probe_path(day, &stream, &name),
                         Some(&stream),
-                    );
+                    )
+                    && hides
+                        .shown(
+                            journal_root,
+                            day,
+                            &stream,
+                            &segment,
+                            crate::body_source::holds_womens_health(snapshot),
+                        )
+                        .is_some();
                 omitted_body = omitted_body || window && holds_body;
                 body_withheld = body_withheld || window && !holds_body;
                 continue;
@@ -4644,16 +4780,15 @@ fn list_transcripts(
             let page = if allowed {
                 // Read as get_transcript serves it, so `lines` counts nothing
                 // the owner hid.
-                Some(
-                    solstone_core_transcripts::read_segment_transcript_page_with_permissions(
-                        &segment,
-                        None,
-                        speakers.as_ref(),
-                        possible_names.labels(segment.path()).as_ref(),
-                        &left_out,
-                        Some(&snapshot.categories),
-                    ),
-                )
+                Some(crate::body_source::read_body_aware_page(
+                    &segment,
+                    None,
+                    speakers.as_ref(),
+                    possible_names.labels(segment.path()).as_ref(),
+                    &left_out,
+                    &snapshot.categories,
+                    snapshot.places_precision(),
+                ))
             } else {
                 None
             };
@@ -5009,16 +5144,15 @@ pub(crate) fn read_segment(
         // while it holds and only for an entity this connection may see.
         let possible_names =
             ConnectionPossibleNames::new(journal_root, snapshot).labels(segment.path());
-        Some(
-            solstone_core_transcripts::read_segment_transcript_page_with_permissions(
-                &segment,
-                continuation.as_ref(),
-                speakers.as_ref(),
-                possible_names.as_ref(),
-                &left_out,
-                Some(&snapshot.categories),
-            ),
-        )
+        Some(crate::body_source::read_body_aware_page(
+            &segment,
+            continuation.as_ref(),
+            speakers.as_ref(),
+            possible_names.as_ref(),
+            &left_out,
+            &snapshot.categories,
+            snapshot.places_precision(),
+        ))
     } else {
         None
     };

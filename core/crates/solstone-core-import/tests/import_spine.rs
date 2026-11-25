@@ -756,10 +756,10 @@ fn facets_adapter_writes_a_durable_force_audit_record() {
     let actions = journal.join("config/actions");
     let action = fs::read_dir(actions)
         .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.extension().and_then(OsStr::to_str) == Some("jsonl"))
+        .unwrap();
     let content = fs::read_to_string(action).unwrap();
     let record: Value = serde_json::from_str(&content).unwrap();
     assert_eq!(record["action"], "import_force_reimport");

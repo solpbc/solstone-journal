@@ -1559,7 +1559,7 @@ impl Plan {
     pub fn rendered(&mut self) -> RenderedImport {
         RenderedImport {
             skipped: 0,
-            source: APPLE.registry,
+            source: APPLE.registry.expect("apple health registry source"),
             entries: self.files.iter().map(|file| file.units).sum(),
             files: std::mem::take(&mut self.files),
             items: Vec::new(),

@@ -1,0 +1,23 @@
+{
+  "description": "Garmin sync run not found error in the journal's settings view.",
+  "context": "Journal window, settings view. Owner requested Trash preview or deletion for a missing Garmin run.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b342ddef28fbbbf9d2f39d5033fb7da44cb48d75f3fc14a8d8b115cbb3f6104a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    }
+  ]
+}

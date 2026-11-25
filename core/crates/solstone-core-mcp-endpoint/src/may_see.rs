@@ -343,5 +343,8 @@ pub(crate) fn segment_shown_within(
     {
         return None;
     }
-    hides.shown(journal_root, day, stream, segment)
+    let include_womens_health = boundary
+        .categories()
+        .contains(&solstone_core_indexer_query::AdmittedCategory::WomensHealth);
+    hides.shown(journal_root, day, stream, segment, include_womens_health)
 }

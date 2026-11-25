@@ -1,0 +1,16 @@
+{
+  "description": "Garmin sync run invalid request error in the journal's settings view.",
+  "context": "Journal window, settings view. Malformed body on Garmin sync run trash request.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9c1a64ff1e7e3a794cffdf6e37cc4f3205f8fcb81ac8085f744b9d497668096",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

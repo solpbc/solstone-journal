@@ -1,0 +1,16 @@
+{
+  "description": "Garmin sync run busy trash error in the journal's settings view.",
+  "context": "Journal window, settings view. Moving a Garmin sync run to the trash was held because another sync or removal is active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc998d8457e0f55cb3b610637ef74d60d167d3f3027a6faaffc4ecd0ba95a46a",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

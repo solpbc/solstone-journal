@@ -265,6 +265,15 @@ pub fn read_segment_transcript_page_leaving_out(
     )
 }
 
+/// Connection-specific rendering policy for `body.jsonl` rows (for example,
+/// gating workout GPS coordinates on the connection's `places` precision).
+/// `policy_tag` is mixed into the segment page version so a precision change
+/// invalidates stale continuation cursors.
+pub struct BodyReadPolicy<'a> {
+    pub policy_tag: u8,
+    pub render_row: &'a dyn Fn(&solstone_core_format::content::body_records::BodyRow) -> String,
+}
+
 /// Project only files the connection may read, after segment-route selection.
 /// Filter before numbering, versioning, paging or reading any file contents.
 pub fn read_segment_transcript_page_with_permissions(
@@ -275,11 +284,36 @@ pub fn read_segment_transcript_page_with_permissions(
     left_out: &BTreeSet<String>,
     permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
 ) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
+    read_segment_transcript_page_with_body_policy(
+        segment,
+        cursor,
+        speakers,
+        possible_names,
+        left_out,
+        permissions,
+        None,
+    )
+}
+
+/// [`read_segment_transcript_page_with_permissions`] with an optional body-row
+/// rendering policy for agent egress controls.
+pub fn read_segment_transcript_page_with_body_policy(
+    segment: &Segment,
+    cursor: Option<&SegmentTranscriptCursor>,
+    speakers: Option<&AgentSpeakers>,
+    possible_names: Option<&PossibleNameLabels>,
+    left_out: &BTreeSet<String>,
+    permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
+    body_policy: Option<&BodyReadPolicy<'_>>,
+) -> Result<SegmentTranscriptPage, SegmentTranscriptReadError> {
     let PermittedFiles {
         paths: files,
         media,
         content_kinds,
     } = permitted_transcript_files(segment, permissions)?;
+    let withhold_womens_health = permissions.is_some_and(|allowed| {
+        !allowed.contains(&solstone_core_format::content::AdmittedCategory::WomensHealth)
+    });
     let unresolved_conversation = media.values().any(|m| *m == ConversationMedium::Unresolved);
     let segment_origin = segment_origin(segment.path());
     let labels = speakers.and_then(|speakers| {
@@ -306,6 +340,8 @@ pub fn read_segment_transcript_page_with_permissions(
         &run_numbers,
         possible_names,
         left_out,
+        withhold_womens_health,
+        body_policy.map_or(0, |policy| policy.policy_tag),
     )?;
     let untimed_files: BTreeSet<_> = files
         .iter()
@@ -447,7 +483,7 @@ pub fn read_segment_transcript_page_with_permissions(
             let named = named_line.as_deref().unwrap_or(line);
             let labelled_line = name_labels
                 .and_then(|labels| label_line(named, labels.statements.get(&sentence_id?)?));
-            let text = if is_left_out(name, line, left_out) {
+            let text = if is_left_out(name, line, left_out, withhold_womens_health) {
                 String::new()
             } else {
                 project_line(
@@ -456,6 +492,7 @@ pub fn read_segment_transcript_page_with_permissions(
                     speech,
                     untimed_files.contains(path),
                     labelled_line.as_deref().unwrap_or(named),
+                    body_policy,
                 )
             };
             if !text.trim().is_empty() {
@@ -512,13 +549,28 @@ pub fn read_segment_transcript_page_with_permissions(
     })
 }
 
-/// Whether `line` of the file `name` is a body row the caller leaves out. A
-/// line that doesn't read as a row is never one.
-fn is_left_out(name: &str, line: &str, left_out: &BTreeSet<String>) -> bool {
-    !left_out.is_empty()
-        && name == solstone_core_format::content::body_records::BODY_RECORDS_FILE
-        && serde_json::from_str::<solstone_core_format::content::body_records::BodyRow>(line)
-            .is_ok_and(|row| left_out.contains(&row.id))
+/// Whether `line` of the file `name` is a body row the caller leaves out or
+/// withholds (such as Women's Health rows when `womens_health` is not granted).
+/// A line that doesn't read as a row is never one.
+fn is_left_out(
+    name: &str,
+    line: &str,
+    left_out: &BTreeSet<String>,
+    withhold_womens_health: bool,
+) -> bool {
+    if name != solstone_core_format::content::body_records::BODY_RECORDS_FILE {
+        return false;
+    }
+    if left_out.is_empty() && !withhold_womens_health {
+        return false;
+    }
+    serde_json::from_str::<solstone_core_format::content::body_records::BodyRow>(line).is_ok_and(
+        |row| {
+            left_out.contains(&row.id)
+                || (withhold_womens_health
+                    && solstone_core_format::content::body_records::is_womens_health_row(&row))
+        },
+    )
 }
 
 /// Whether this segment can supply a transcript page under these permissions.
@@ -655,6 +707,7 @@ fn is_transcript_name(name: &str) -> bool {
     .is_empty()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn source_version(
     files: &[PathBuf],
     media: &BTreeMap<PathBuf, ConversationMedium>,
@@ -662,6 +715,8 @@ fn source_version(
     run_numbers: &BTreeMap<String, BTreeMap<i64, i64>>,
     possible_names: Option<&PossibleNameLabels>,
     left_out: &BTreeSet<String>,
+    withhold_womens_health: bool,
+    body_policy_tag: u8,
 ) -> Result<SegmentTranscriptVersion, SegmentTranscriptReadError> {
     let mut hasher = DefaultHasher::new();
     labels.hash(&mut hasher);
@@ -671,6 +726,14 @@ fn source_version(
     }
     if !left_out.is_empty() {
         left_out.hash(&mut hasher);
+    }
+    let has_body_records = files.iter().any(|path| {
+        path.file_name().and_then(|name| name.to_str())
+            == Some(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
+    });
+    if has_body_records && (withhold_womens_health || body_policy_tag != 0) {
+        withhold_womens_health.hash(&mut hasher);
+        body_policy_tag.hash(&mut hasher);
     }
     for path in files {
         let metadata = fs::metadata(path).map_err(|_| SegmentTranscriptReadError::Io)?;
@@ -857,6 +920,7 @@ fn project_line(
     speech: bool,
     untimed: bool,
     line: &str,
+    body_policy: Option<&BodyReadPolicy<'_>>,
 ) -> String {
     let rel = format!("{segment_origin}/{name}");
     match classify(&rel) {
@@ -870,6 +934,12 @@ fn project_line(
             append_speaker_change_warning(&text, line)
         }
         ContentResolution::Indexed(Family::BodyRecords) => {
+            if let Some(policy) = body_policy {
+                return serde_json::from_str::<solstone_core_format::content::body_records::BodyRow>(
+                    line,
+                )
+                .map_or_else(|_| line.to_owned(), |row| (policy.render_row)(&row));
+            }
             solstone_core_format::content::format_file(
                 solstone_core_format::content::FileFormat::Content(Family::BodyRecords),
                 &rel,
@@ -1517,6 +1587,7 @@ mod tests {
                 false,
                 false,
                 &row.to_string(),
+                None,
             );
             assert_eq!(text.starts_with("[00:00:00]"), timed, "{stream}: {row}");
             assert!(text.ends_with("An exchange"));

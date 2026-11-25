@@ -1,0 +1,28 @@
+{
+  "description": "Garmin response access in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin Connect refused access on sync.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fdffcd8caf4b867ef5766a6fc441082cd23f01a3f9f7683e0f8bc45fdbf8db64",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    },
+    {
+      "name": "slot2",
+      "kind": "mark-word",
+      "value": "Garmin Connect"
+    }
+  ]
+}

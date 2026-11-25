@@ -1,0 +1,16 @@
+{
+  "description": "Garmin response stopped in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin sync stopped early.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe0ff8df2a86613928099931774962e5a7f5be44cccfa32b318241f35fafef6a",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

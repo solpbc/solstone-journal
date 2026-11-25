@@ -1010,7 +1010,8 @@ fn visible_rows(clause: &str) -> String {
 /// the index may be a day the owner hid. Every other row passes untouched.
 const BODY_DATA_ROWS_OPEN: &str = "(solstone_body_data_open() \
      OR NOT (path GLOB '*/import.apple_health/*' OR path GLOB '*/import.oura/*' \
-     OR path GLOB '*/import.strava/*' OR path GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/body.md'))";
+     OR path GLOB '*/import.garmin/*' OR path GLOB '*/import.strava/*' \
+     OR path GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/body.md'))";
 
 /// Register `solstone_body_data_open()`: whether the owner's hidden body days
 /// can be read, asked once when the reader opens.

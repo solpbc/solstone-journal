@@ -1,0 +1,16 @@
+{
+  "description": "Garmin sync run trash error in the journal's settings view.",
+  "context": "Journal window, settings view. Moving a Garmin sync run to the trash failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90cb8d5c590afe9b6ccfebe15a9f36784771da0cd788ff706b77959697bcfaa4",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

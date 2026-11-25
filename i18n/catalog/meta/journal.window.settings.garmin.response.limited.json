@@ -1,0 +1,23 @@
+{
+  "description": "Garmin response limited in the journal's settings view.",
+  "context": "Journal window, settings view. Garmin Connect rate-limited a sync.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e30a87f4d0b9785ac574cf5e7ae7521fb0ddee3ee5f9305c0337a0fc9a311460",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "slot1",
+      "kind": "mark-word",
+      "value": "Garmin"
+    }
+  ]
+}
