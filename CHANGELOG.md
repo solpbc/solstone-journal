@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - each day's searchable body summary now includes reading values and ranges, daily totals for steps, distance and flights climbed (separately for each source and named app or device, where entries of the same kind don't overlap), and Apple Health sleep-stage durations. for Oura's daily readiness, sleep, activity and other daily entries, the searchable summary lists them by name only, without their scores or values.
 - connected agents also receive updated instructions for reading daily body summaries across a week or date range, including that each night is filed on the morning it ended and that a split night can have more than one entry.
 - the import page on android and iphone development journals no longer has a Plaud row.
+- each stretch's screen description now more often puts an article, documentation page or PDF you're reading in a browser in the reading category, and keeps search results, front pages, shopping and listings in browsing.
 
 ### Fixed
 
