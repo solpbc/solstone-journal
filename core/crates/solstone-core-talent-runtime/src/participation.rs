@@ -868,6 +868,8 @@ pub fn judge_again(
         .collect::<Vec<_>>();
     let admitted_people_by_id = admitted_non_owner_people_map(&people, owner.id.as_deref());
     let detected_people = detected_admitted_people(&detected, &people, &admitted_people_by_id);
+    let hidden_ids = solstone_core_entity::hidden_participation_entity_ids(journal);
+    let detected_day_people = detected_day_person_entities(journal, facet, day, &owner, &hidden_ids)?;
     let voices = solstone_core_transcripts::VoiceNames {
         principal: owner.id.clone().unwrap_or_default(),
         owner_voice_confirmed: false,
@@ -924,15 +926,35 @@ pub fn judge_again(
                     || !people.iter().any(|person| person.id.as_deref() == Some(id))
             });
         let mut entity_id = if from_the_name {
-            resolve_participation_person(
+            let origin = json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"});
+            match resolve_participation_person(
                 journal,
                 &listed_name,
                 &detected_people,
                 &people,
                 &admitted_people_by_id,
                 facet,
-                json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}),
-            )?
+                origin.clone(),
+            )? {
+                Some(id) => Some(id),
+                None if crate::possible_names::retrieval::compact(&listed_name)
+                    .chars()
+                    .count()
+                    > 2 =>
+                {
+                    solstone_core_entity::resolve_activity_name(
+                        journal,
+                        &listed_name,
+                        &detected_day_people,
+                        facet,
+                        origin,
+                        90.0,
+                    )
+                    .map_err(|error| error.to_string())?
+                    .filter(|id| !hidden_ids.contains(id) && owner.id.as_deref() != Some(id.as_str()))
+                }
+                None => None,
+            }
         } else {
             linked.clone()
         };
@@ -1551,6 +1573,71 @@ fn detected_admitted_people(
         }
     }
     out
+}
+
+/// Day-detected `Person` rows on `(facet, day)` that are not blocked, retired,
+/// short initials, or the journal owner, used by [`judge_again`] when a reopened
+/// ambiguity question restores a historical day-detected person link.
+fn detected_day_person_entities(
+    journal: &std::path::Path,
+    facet: &str,
+    day: &str,
+    owner: &crate::JournalOwner,
+    hidden_ids: &BTreeSet<String>,
+) -> Result<Vec<solstone_core_entity::EntityResolutionEntity>, String> {
+    let rows = solstone_core_facets::read_detected_entities(journal, facet, day)
+        .map_err(|error| error.to_string())?;
+    let mut out = Vec::new();
+    for item in rows.into_iter().filter_map(|v| v.as_object().cloned()) {
+        let is_person = item
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("person"));
+        if !is_person {
+            continue;
+        }
+        let blocked = item
+            .get("blocked")
+            .is_some_and(solstone_core_facets::activity_value_truthy);
+        if blocked {
+            continue;
+        }
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        if crate::possible_names::retrieval::compact(&name)
+            .chars()
+            .count()
+            <= 2
+            || owner.actor(&name) == crate::NamedActor::Owner
+            || owner.sounds_like(&name)
+        {
+            continue;
+        }
+        let id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned);
+        if id
+            .as_deref()
+            .is_some_and(|id| hidden_ids.contains(id) || owner.id.as_deref() == Some(id))
+        {
+            continue;
+        }
+        out.push(solstone_core_entity::EntityResolutionEntity {
+            id,
+            name,
+            aka: crate::string_values(&item, "aka"),
+            emails: crate::string_values(&item, "emails"),
+            blocked: false,
+        });
+    }
+    Ok(out)
 }
 
 /// Resolve a participation entry's name strictly to a live, unblocked
