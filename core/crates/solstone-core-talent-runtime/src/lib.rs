@@ -42,6 +42,7 @@ pub mod pulse;
 mod screen_batch;
 mod sense_grounding;
 mod sense_idle;
+mod sense_redaction;
 pub mod source_passages;
 pub mod speaker_attribution;
 pub mod story;
@@ -1654,6 +1655,7 @@ pub(crate) fn generate_and_write(
     let response =
         sense_grounding::ground(prepared, &context.journal, &response).unwrap_or(response);
     let response = sense_idle::enforce(prepared, &context.journal, &response).unwrap_or(response);
+    let response = sense_redaction::scrub(prepared, &response).unwrap_or(response);
     if let Some((stage, state)) = stage {
         if let Some(callback) = stage.unavailable_commit
             && prepared

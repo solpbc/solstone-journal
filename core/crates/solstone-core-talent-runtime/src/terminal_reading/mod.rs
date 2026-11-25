@@ -54,7 +54,10 @@ fn desktop_context(records: &[serde_json::Map<String, Value>]) -> String {
         let row = fields
             .iter()
             .map(|(key, value)| match value {
-                Value::String(text) => format!("{key} \"{text}\""),
+                Value::String(text) => format!(
+                    "{key} \"{}\"",
+                    solstone_core_format::content::screen_text::redact_inline(text)
+                ),
                 other => format!("{key} {other}"),
             })
             .collect::<Vec<_>>()

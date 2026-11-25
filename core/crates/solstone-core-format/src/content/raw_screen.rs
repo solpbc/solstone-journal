@@ -173,7 +173,7 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Scr
                 "window": {
                     "id": tmux.window.id,
                     "index": tmux.window.index,
-                    "name": tmux.window.name,
+                    "name": super::screen_text::redact_inline(tmux.window.name),
                 },
                 "panes": pane_changes,
             });
@@ -253,6 +253,7 @@ fn render_frame(
             let value = if category == "tmux" {
                 view = value.clone();
                 super::omit_tmux_capture_fields(&mut view);
+                sanitize_tmux_value(&mut view);
                 &view
             } else {
                 value
@@ -456,15 +457,49 @@ struct SanitizedTerminal {
     links: Vec<Value>,
 }
 
+fn sanitize_tmux_value(tmux: &mut Value) {
+    if let Some(panes) = tmux.get_mut("panes").and_then(Value::as_array_mut) {
+        for pane in panes.iter_mut().filter_map(Value::as_object_mut) {
+            if let Some(Value::String(content)) = pane.get_mut("content") {
+                *content = sanitize_terminal(content).text;
+            }
+            if let Some(Value::Array(links)) = pane.get_mut("links") {
+                for link in links.iter_mut().filter_map(Value::as_object_mut) {
+                    for field in ["label", "target"] {
+                        if let Some(Value::String(text)) = link.get_mut(field) {
+                            *text = super::screen_text::redact_inline(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(Value::String(name)) = tmux
+        .get_mut("window")
+        .and_then(Value::as_object_mut)
+        .and_then(|window| window.get_mut("name"))
+    {
+        *name = super::screen_text::redact_inline(name);
+    }
+    if let Some(windows) = tmux.get_mut("windows").and_then(Value::as_array_mut) {
+        for window in windows.iter_mut().filter_map(Value::as_object_mut) {
+            if let Some(Value::String(name)) = window.get_mut("name") {
+                *name = super::screen_text::redact_inline(name);
+            }
+        }
+    }
+}
+
 fn sanitize_terminal(content: &str) -> SanitizedTerminal {
     let mut output = String::new();
     let mut links = Vec::new();
     let mut active_link: Option<(String, usize)> = None;
+    let mut conceal = false;
     let mut characters = content.chars().peekable();
     while let Some(character) = characters.next() {
         match character {
             '\u{1b}' => match characters.next() {
-                Some('[') => consume_csi(&mut characters),
+                Some('[') => consume_csi(&mut characters, &mut conceal),
                 Some(']') => {
                     let command = consume_control_string(&mut characters, true);
                     update_osc_link(&command, &output, &mut active_link, &mut links);
@@ -477,7 +512,7 @@ fn sanitize_terminal(content: &str) -> SanitizedTerminal {
                 }
                 Some(_) | None => {}
             },
-            '\u{9b}' => consume_csi(&mut characters),
+            '\u{9b}' => consume_csi(&mut characters, &mut conceal),
             '\u{9d}' => {
                 let command = consume_control_string(&mut characters, true);
                 update_osc_link(&command, &output, &mut active_link, &mut links);
@@ -485,24 +520,63 @@ fn sanitize_terminal(content: &str) -> SanitizedTerminal {
             '\u{90}' | '\u{98}' | '\u{9e}' | '\u{9f}' => {
                 consume_control_string(&mut characters, false);
             }
-            '\n' | '\t' => output.push(character),
-            _ if !character.is_control() => output.push(character),
+            '\n' => output.push('\n'),
+            '\t' if !conceal => output.push('\t'),
+            _ if !character.is_control() && !conceal => output.push(character),
             _ => {}
         }
     }
     if let Some((target, start)) = active_link {
-        links.push(json!({"label": &output[start..], "target": target}));
+        push_osc_link(&mut links, &output[start..], &target);
     }
     SanitizedTerminal {
-        text: output,
+        text: super::screen_text::redact_text_preserving_lines(&output),
         links,
     }
 }
 
-fn consume_csi(characters: &mut Peekable<Chars<'_>>) {
+fn consume_csi(characters: &mut Peekable<Chars<'_>>, conceal: &mut bool) {
+    let mut params = String::new();
+    let mut final_byte = None;
     for parameter in characters.by_ref() {
         if ('\u{40}'..='\u{7e}').contains(&parameter) {
+            final_byte = Some(parameter);
             break;
+        }
+        params.push(parameter);
+    }
+    if final_byte == Some('m')
+        && params
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b';' | b':'))
+    {
+        if params.is_empty() {
+            *conceal = false;
+            return;
+        }
+        let mut parts = params.split(';');
+        while let Some(part) = parts.next() {
+            let (head, has_subparams) = match part.split_once(':') {
+                Some((head, _)) => (head, true),
+                None => (part, false),
+            };
+            let code = head.parse::<u32>().unwrap_or(0);
+            match code {
+                0 | 28 => *conceal = false,
+                8 => *conceal = true,
+                38 | 48 | 58 if !has_subparams => {
+                    match parts.next().and_then(|next| next.parse::<u32>().ok()) {
+                        Some(5) => {
+                            parts.next();
+                        }
+                        Some(2) => {
+                            parts.nth(2);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -530,6 +604,13 @@ fn consume_control_string(characters: &mut Peekable<Chars<'_>>, bell_terminates:
     command
 }
 
+fn push_osc_link(links: &mut Vec<Value>, label: &str, target: &str) {
+    links.push(json!({
+        "label": super::screen_text::redact_inline(label),
+        "target": super::screen_text::redact_inline(target),
+    }));
+}
+
 fn update_osc_link(
     command: &str,
     output: &str,
@@ -544,12 +625,10 @@ fn update_osc_link(
     };
     if uri.is_empty() {
         if let Some((target, start)) = active_link.take() {
-            links.push(json!({"label": &output[start..], "target": target}));
+            push_osc_link(links, &output[start..], &target);
         }
-    } else {
-        if let Some((target, start)) = active_link.replace((uri.to_owned(), output.len())) {
-            links.push(json!({"label": &output[start..], "target": target}));
-        }
+    } else if let Some((target, start)) = active_link.replace((uri.to_owned(), output.len())) {
+        push_osc_link(links, &output[start..], &target);
     }
 }
 
@@ -1281,5 +1360,98 @@ mod tests {
                 json!({"label":"label β", "target":"https://b.test/μ"}),
             ]
         );
+    }
+
+    #[test]
+    fn concealed_sgr_text_and_credentials_are_redacted_in_structured_and_fallback_paths() {
+        let jwt =
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let pane_body = format!(
+            concat!(
+                "visible \x1b[8mhidden_zero\x1b[0m after0\n",
+                "keep \x1b[8mhidden_empty\x1b[m after_empty\n",
+                "keep \x1b[1;8mhidden_28\x1b[28m after28\n",
+                "\x1b[38;5;8mgrey_visible\x1b[0m \x1b[38:2::10:20:8mtruecolor_visible\x1b[0m\n",
+                "$ vault unlock --password hunter2 --token mytok123 --api-key sk-proj-abc123DEF456ghi789\n",
+                "$ curl -H 'Authorization: Bearer {jwt}' https://api.example.test\n",
+                "keys ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5 AKIAIOSFODNN7EXAMPLE\n",
+                "\x1b]8;;https://example.test/auth?access_token=linksecret&view=1\x1b\\open --token labelsecret\x1b]8;;\x1b\\\n",
+                "commit dbc2c5b8cf11395ac2842f300ea6f52f05c8216d ok\n"
+            ),
+            jwt = jwt
+        );
+        let canonical = tmux_record(0.0, "@7", json!([pane("%1", &pane_body)]));
+        let structured = render_for_screen_talent(
+            "20260903/device/102159_300/tmux_0_screen.jsonl",
+            std::slice::from_ref(&canonical),
+        );
+        let structured_text = &structured.chunks[0].content;
+        for leaked in [
+            "hidden_zero",
+            "hidden_empty",
+            "hidden_28",
+            "hunter2",
+            "mytok123",
+            "sk-proj-abc123DEF456ghi789",
+            jwt,
+            "ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5",
+            "AKIAIOSFODNN7EXAMPLE",
+            "linksecret",
+            "labelsecret",
+        ] {
+            assert!(
+                !structured_text.contains(leaked),
+                "structured path leaked {leaked}: {structured_text}"
+            );
+        }
+        assert!(structured_text.contains("visible  after0"));
+        assert!(structured_text.contains("grey_visible"));
+        assert!(structured_text.contains("truecolor_visible"));
+        assert!(structured_text.contains("dbc2c5b8cf11395ac2842f300ea6f52f05c8216d"));
+        let proj = projected_json(structured_text);
+        assert_eq!(
+            proj["panes"][0]["links"][0]["target"],
+            "https://example.test/auth?access_token=[REDACTED]&view=1"
+        );
+        assert_eq!(
+            proj["panes"][0]["links"][0]["label"],
+            "open --token [REDACTED]"
+        );
+
+        // Generic fallback in render_for_screen_talent (extra unrecognized pane field)
+        // and render_for_locale both sanitize & redact tmux pane content too.
+        let mut fallback_record = canonical;
+        fallback_record["content"]["tmux"]["panes"][0]["unrecognized"] = json!(true);
+        let fallback = render_for_screen_talent(
+            "20260903/device/102159_300/tmux_0_screen.jsonl",
+            std::slice::from_ref(&fallback_record),
+        );
+        assert!(fallback.tmux_chunk_indices.is_empty());
+        let generic = render(
+            "20260903/device/102159_300/tmux_0_screen.jsonl",
+            &[fallback_record],
+        );
+        for rendered in [&fallback.chunks[0].content, &generic.chunks[0].content] {
+            for leaked in [
+                "hidden_zero",
+                "hidden_empty",
+                "hidden_28",
+                "hunter2",
+                "mytok123",
+                "sk-proj-abc123DEF456ghi789",
+                jwt,
+                "ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5",
+                "AKIAIOSFODNN7EXAMPLE",
+                "linksecret",
+                "labelsecret",
+            ] {
+                assert!(
+                    !rendered.contains(leaked),
+                    "fallback path leaked {leaked}: {rendered}"
+                );
+            }
+            assert!(rendered.contains("grey_visible"));
+            assert!(rendered.contains("dbc2c5b8cf11395ac2842f300ea6f52f05c8216d"));
+        }
     }
 }

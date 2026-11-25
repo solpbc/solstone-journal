@@ -108,11 +108,21 @@ fn typed_row(pane: &Value) -> Option<String> {
 
 /// A row's text, leaving out concealed text and dim text from column `x` on.
 fn row_text(pane: &Value, y: usize, x: usize) -> Option<String> {
-    let row = *split_lines(pane["content"].as_str()?).get(y)?;
+    let lines = split_lines(pane["content"].as_str()?);
+    let row = *lines.get(y)?;
     let text = display_line(row.trim_end_matches(['\r', '\n']), Some(x), false)
         .trim()
         .to_owned();
-    (!text.is_empty() && text.len() <= INPUT_MAX_BYTES).then_some(text)
+    if text.is_empty() || text.len() > INPUT_MAX_BYTES {
+        return None;
+    }
+    if y > 0 {
+        let above = display_line(lines[y - 1].trim_end_matches(['\r', '\n']), None, false);
+        if solstone_core_format::content::screen_text::is_bare_password_prompt(&above) {
+            return Some("[REDACTED]".to_owned());
+        }
+    }
+    Some(text)
 }
 
 /// Every typed input in the frames, oldest first.

@@ -275,6 +275,7 @@ fn pane_lines(pane: &Value) -> Vec<String> {
         (pane["active"] == true && pane["cursor_visible"] == true && pane["pane_in_mode"] == false)
             .then(|| Some((pane["cursor_y"].as_u64()?, pane["cursor_x"].as_u64()?)))
             .flatten();
+    let mut redact_following = false;
     cursor::split_lines(content)
         .iter()
         .enumerate()
@@ -282,7 +283,11 @@ fn pane_lines(pane: &Value) -> Vec<String> {
             let dim_from = cursor_row
                 .filter(|(y, _)| *y as usize == row)
                 .map(|(_, x)| x as usize);
-            display_line(line.trim_end_matches(['\r', '\n']), dim_from, true)
+            let displayed = display_line(line.trim_end_matches(['\r', '\n']), dim_from, true);
+            solstone_core_format::content::screen_text::redact_line_with_state(
+                &displayed,
+                &mut redact_following,
+            )
         })
         .collect()
 }
@@ -317,15 +322,15 @@ pub(super) fn read(
         let time = frame["timestamp"].as_f64().unwrap_or(0.0);
         let tmux = &frame["content"]["tmux"];
         let window_id = tmux["window"]["id"].as_str().unwrap_or("").to_owned();
-        let window = tmux["window"]["name"]
-            .as_str()
-            .unwrap_or(&window_id)
-            .to_owned();
+        let window = solstone_core_format::content::screen_text::redact_inline(
+            tmux["window"]["name"].as_str().unwrap_or(&window_id),
+        );
         for listed in tmux["windows"].as_array().into_iter().flatten() {
-            if let Some(listed) = listed["name"].as_str()
-                && !session.windows.iter().any(|w| w == listed)
-            {
-                session.windows.push(listed.to_owned());
+            if let Some(listed) = listed["name"].as_str() {
+                let listed = solstone_core_format::content::screen_text::redact_inline(listed);
+                if !session.windows.iter().any(|w| w == &listed) {
+                    session.windows.push(listed);
+                }
             }
         }
         if !session.windows.contains(&window) {
@@ -437,7 +442,7 @@ pub(super) fn read(
         let Some(state) = states.get(&(input.window.clone(), input.pane.clone())) else {
             continue;
         };
-        let text = input.text();
+        let text = solstone_core_format::content::screen_text::redact_inline(&input.text());
         // The pane's echo of a typed line is the same words: they show once, as typed.
         for item in &mut session.items {
             if item.kind == Kind::NewText && item.pane == state.index {
@@ -593,5 +598,56 @@ mod tests {
                 (Kind::NewText, "⏺ Running tests".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn typed_and_displayed_credentials_are_redacted_while_preserving_git_shas() {
+        let jwt =
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let typing = |time: f64, content: &str, x: u64, y: u64| {
+            frame(
+                time,
+                json!([{"id":"%0","active":true,"content":content,"cursor_x":x,"cursor_y":y,"cursor_visible":true,"pane_in_mode":false}]),
+            )
+        };
+        let typed_cmd = "$ vault unlock --password hunter2 --token mytok123 --api-key sk-proj-abc123DEF456ghi789";
+        let frames = vec![
+            typing(0.0, "$ \n", 2, 0),
+            typing(5.0, &format!("{typed_cmd}\n"), typed_cmd.len() as u64, 0),
+            typing(
+                10.0,
+                &format!(
+                    "{typed_cmd}\nAuthorization: Bearer {jwt}\nghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5 AKIAIOSFODNN7EXAMPLE\nPassword:\nswordfish\n\x1b[8mconcealed_secret\x1b[0m\ncommit dbc2c5b8cf11395ac2842f300ea6f52f05c8216d\n$ \n"
+                ),
+                2,
+                7,
+            ),
+        ];
+        let session = read("s", &frames, 6000, &Shown::new());
+        let joined = session
+            .items
+            .iter()
+            .flat_map(|item| item.lines.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        for leaked in [
+            "hunter2",
+            "mytok123",
+            "sk-proj-abc123DEF456ghi789",
+            jwt,
+            "ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5",
+            "AKIAIOSFODNN7EXAMPLE",
+            "swordfish",
+            "concealed_secret",
+        ] {
+            assert!(!joined.contains(leaked), "leaked {leaked}: {joined}");
+        }
+        assert!(joined.contains("dbc2c5b8cf11395ac2842f300ea6f52f05c8216d"));
+        assert!(session.items.iter().any(|item| {
+            item.kind == Kind::Typed
+                && item.lines
+                    == vec!["$ vault unlock --password [REDACTED] --token [REDACTED] --api-key [REDACTED]"]
+        }));
     }
 }
