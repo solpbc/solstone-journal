@@ -204,10 +204,89 @@ pub(crate) fn load_transcript(
     load_transcript_in(None, journal, composed)
 }
 
+fn effective_stream(composed: &Map<String, Value>) -> Option<&str> {
+    composed
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| !stream.is_empty())
+        .or_else(|| {
+            composed
+                .get("activity")
+                .and_then(|activity| activity.get("stream"))
+                .and_then(Value::as_str)
+                .filter(|stream| !stream.is_empty())
+        })
+}
+
+fn is_meeting_activity(composed: &Map<String, Value>) -> bool {
+    composed
+        .get("activity")
+        .and_then(Value::as_object)
+        .and_then(|activity| activity.get("activity"))
+        .and_then(Value::as_str)
+        == Some("meeting")
+}
+
+/// Whether off-call percept scoping applies to this meeting activity, evaluated
+/// across the whole `activity.segments` span (falling back to `fallback_span`
+/// only when `activity.segments` is absent or empty) so a single silent segment
+/// inside an active call never fails open to side terminal or browser text.
+pub(crate) fn meeting_scope_active(
+    journal: &Path,
+    composed: &Map<String, Value>,
+    fallback_span: &[&str],
+) -> bool {
+    if !is_meeting_activity(composed) {
+        return false;
+    }
+    let day = composed
+        .get("day")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if day.is_empty() {
+        return false;
+    }
+    let stream = effective_stream(composed);
+    let activity_segments = composed
+        .get("activity")
+        .and_then(|activity| activity.get("segments"))
+        .and_then(Value::as_array)
+        .map(|segments| {
+            segments
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|key| !key.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|segments| !segments.is_empty());
+    let scope_span = activity_segments.as_deref().unwrap_or(fallback_span);
+    let include_speech = composed
+        .get("sources")
+        .and_then(Value::as_object)
+        .and_then(|sources| sources.get("transcripts"))
+        .is_some_and(source_is_enabled);
+    solstone_core_transcripts::span_has_meeting_evidence(
+        journal,
+        day,
+        scope_span,
+        stream,
+        include_speech,
+    )
+}
+
 pub(crate) fn load_transcript_in(
     display_locale: Option<&str>,
     journal: &Path,
     composed: &Map<String, Value>,
+) -> Result<LoadedTranscript, String> {
+    load_transcript_in_with_meeting_scope(display_locale, journal, composed, None)
+}
+
+pub(crate) fn load_transcript_in_with_meeting_scope(
+    display_locale: Option<&str>,
+    journal: &Path,
+    composed: &Map<String, Value>,
+    meeting_scope_override: Option<bool>,
 ) -> Result<LoadedTranscript, String> {
     let day = composed
         .get("day")
@@ -236,18 +315,30 @@ pub(crate) fn load_transcript_in(
     }
     // An activity's segments are read from the stream its record names, when
     // the request names none: another stream can hold the same segment key.
-    let stream = composed.get("stream").and_then(Value::as_str).or_else(|| {
-        composed
-            .get("activity")
-            .and_then(|activity| activity.get("stream"))
-            .and_then(Value::as_str)
-    });
+    let stream = effective_stream(composed);
+    let has_activity = composed
+        .get("activity")
+        .is_some_and(|value| !value.is_null());
     let screen_projection = composed.get("name").and_then(Value::as_str) == Some("screen");
     let span = composed
         .get("span")
         .and_then(Value::as_array)
         .map(|span| span.iter().filter_map(Value::as_str).collect::<Vec<_>>())
         .unwrap_or_default();
+    let segment_key = composed.get("segment").and_then(Value::as_str);
+    let use_meeting_scope = match meeting_scope_override {
+        Some(active) => active,
+        None if sources.percepts && is_meeting_activity(composed) => {
+            if !span.is_empty() {
+                meeting_scope_active(journal, composed, &span)
+            } else if let Some(segment) = segment_key {
+                meeting_scope_active(journal, composed, &[segment])
+            } else {
+                false
+            }
+        }
+        None => false,
+    };
     // A work story reads each screen line marked by how long it has been
     // showing, so a line that stays put is not told as happening again. Only
     // over the activity's whole span: one of its segments read alone would
@@ -269,8 +360,12 @@ pub(crate) fn load_transcript_in(
         };
         let projection = if screen_projection {
             PerceptProjection::ScreenTalent
+        } else if use_meeting_scope {
+            PerceptProjection::MeetingSpan
         } else if screen_age {
             PerceptProjection::StoryScreenAge
+        } else if has_activity {
+            PerceptProjection::ActivitySpan
         } else {
             PerceptProjection::Generic
         };
@@ -295,12 +390,24 @@ pub(crate) fn load_transcript_in(
             }
             None => error.to_string(),
         })?
-    } else if let Some(segment) = composed.get("segment").and_then(Value::as_str) {
+    } else if let Some(segment) = segment_key {
         if screen_projection {
             cluster_period_for_screen_talent_with_memory(journal, day, segment, &sources, stream)
         } else if composed.get("name").and_then(Value::as_str) == Some("sense") {
             solstone_core_transcripts::cluster_period_for_terminal_sense_with_memory(
                 journal, day, segment, &sources, stream,
+            )
+        } else if has_activity {
+            use solstone_core_transcripts::{
+                PerceptProjection, cluster_period_with_projection_and_memory,
+            };
+            let projection = if use_meeting_scope {
+                PerceptProjection::MeetingSpan
+            } else {
+                PerceptProjection::ActivitySpan
+            };
+            cluster_period_with_projection_and_memory(
+                journal, day, segment, &sources, stream, projection,
             )
         } else {
             cluster_period_with_memory(journal, day, segment, &sources, stream)
@@ -796,5 +903,281 @@ mod tests {
         // Live capture keeps its anonymous numbers.
         let journal = heard_owner_journal("mic", "single", 4);
         assert_eq!(heard(&journal, "mic"), None);
+    }
+
+    #[test]
+    fn activity_loads_filter_unfocused_browser_tabs_including_single_segment_fallbacks() {
+        let journal = TempDir::new().unwrap();
+        for seg in ["100000_300", "100500_300"] {
+            let dir = journal.path().join("chronicle/20260903/laptop").join(seg);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("browser_events.jsonl"),
+                concat!(
+                    r#"{"t":"segment_start","ts":1,"title":"Spec","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Active tab body"}]}"#,
+                    "\n",
+                    r#"{"t":"segment_start","ts":2,"title":"Social","tab":{"front":false,"focused":true},"blocks":[{"type":"text","text":"Background tab noise"}]}"#,
+                    "\n",
+                ),
+            )
+            .unwrap();
+        }
+        let activity = json!({
+            "id": "coding_100000",
+            "activity": "coding",
+            "stream": "laptop",
+            "segments": ["100000_300", "100500_300"]
+        });
+        let sources = json!({"transcripts": false, "percepts": true, "talents": false});
+
+        // Whole-span `work` (`StoryScreenAge`), 1-segment `work` fallback (`ActivitySpan`),
+        // `conversation` (`ActivitySpan`), and `participation` (`ActivitySpan`) all filter
+        // unfocused background tabs.
+        for (name, span) in [
+            ("work", json!(["100000_300", "100500_300"])),
+            ("work", json!(["100500_300"])),
+            ("conversation", json!(["100000_300", "100500_300"])),
+            ("participation", json!(["100000_300", "100500_300"])),
+        ] {
+            let config = json!({
+                "name": name,
+                "day": "20260903",
+                "span": span,
+                "activity": activity,
+                "sources": sources
+            });
+            let loaded = load_transcript(journal.path(), config.as_object().unwrap()).unwrap();
+            assert!(
+                loaded.text.contains("Active tab body"),
+                "{name}: {}",
+                loaded.text
+            );
+            assert!(
+                !loaded.text.contains("Background tab noise"),
+                "{name}: {}",
+                loaded.text
+            );
+            assert!(
+                loaded.text.contains("- Social · background tab"),
+                "{name}: {}",
+                loaded.text
+            );
+        }
+
+        // A non-activity Generic span read keeps unfocused tabs intact.
+        let generic = load_transcript(
+            journal.path(),
+            json!({
+                "name": "other",
+                "day": "20260903",
+                "span": ["100000_300"],
+                "stream": "laptop",
+                "sources": sources
+            })
+            .as_object()
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(generic.text.contains("Active tab body"), "{}", generic.text);
+        assert!(
+            generic.text.contains("Background tab noise"),
+            "{}",
+            generic.text
+        );
+    }
+
+    #[test]
+    fn meeting_activity_scopes_percepts_and_fails_open_only_when_whole_span_has_no_evidence() {
+        let journal = TempDir::new().unwrap();
+        let seg1 = journal.path().join("chronicle/20260903/laptop/090000_300");
+        let seg2 = journal.path().join("chronicle/20260903/laptop/090500_300");
+        fs::create_dir_all(seg1.join("talents")).unwrap();
+        fs::create_dir_all(seg2.join("talents")).unwrap();
+
+        fs::write(
+            seg1.join("audio.jsonl"),
+            r#"{"start":"09:00:05","text":"Let us review the launch plan."}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("center_DP-1_screen.jsonl"),
+            [
+                json!({"timestamp": 10.0, "analysis": {"primary": "meeting"}, "content": {"meeting": {"platform": "Zoom", "participants": [{"name": "Sam", "status": "speaking", "video": true}]}}}),
+                json!({"timestamp": 20.0, "analysis": {"primary": "terminal"}, "content": {"terminal": "$ side-shell-one"}}),
+            ]
+            .map(|r| r.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Side Tab","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Side browser one"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("090000_300_desktop_activity.jsonl"),
+            r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1000,"end_ts":2000,"app":"Terminal","title":"Side term"}"#,
+        )
+        .unwrap();
+
+        // Segment 2 is a silent mid-call segment: header-only audio stub and only off-call percepts.
+        fs::write(seg2.join("audio.jsonl"), r#"{"raw":"audio.flac"}"#).unwrap();
+        fs::write(
+            seg2.join("center_DP-1_screen.jsonl"),
+            [
+                json!({"raw": "seg2.mp4", "platform": "ios", "sources": ["screen"]}),
+                json!({"timestamp": 10.0, "analysis": {"primary": "terminal"}, "content": {"terminal": "$ muted-side-shell"}}),
+            ]
+            .map(|r| r.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("tmux_0_screen.jsonl"),
+            include_str!(
+                "../../solstone-core-format/tests/data/golden/tmux-observer-envelope-main.jsonl"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Docs","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Muted browser text"}]}"#,
+        )
+        .unwrap();
+
+        let activity = json!({
+            "id": "meeting_090000",
+            "activity": "meeting",
+            "stream": "laptop",
+            "segments": ["090000_300", "090500_300"]
+        });
+
+        for name in ["conversation", "participation"] {
+            let loaded = load_transcript(
+                journal.path(),
+                json!({
+                    "name": name,
+                    "day": "20260903",
+                    "span": ["090000_300", "090500_300"],
+                    "activity": activity,
+                    "sources": {"transcripts": true, "percepts": true, "talents": false}
+                })
+                .as_object()
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                loaded.text.contains("Let us review the launch plan."),
+                "{name}: {}",
+                loaded.text
+            );
+            assert!(loaded.text.contains("Sam"), "{name}: {}", loaded.text);
+            assert_eq!(loaded.counts.percepts, 1, "{name}: {}", loaded.text);
+            assert_eq!(loaded.text.matches("### Screen Activity").count(), 1);
+            for hidden in [
+                "side-shell-one",
+                "Side browser one",
+                "Side term",
+                "muted-side-shell",
+                "Terminal session 'main'",
+                "Muted browser text",
+            ] {
+                assert!(!loaded.text.contains(hidden), "{name} leaked {hidden}");
+            }
+        }
+
+        // Loading the silent mid-call segment alone (as `story_input` does) evaluates fail-open
+        // over `activity.segments`, so it stays scoped and emits no bare `### Screen Activity`.
+        let silent_seg = load_transcript(
+            journal.path(),
+            json!({
+                "name": "conversation",
+                "day": "20260903",
+                "span": ["090500_300"],
+                "activity": activity,
+                "sources": {"transcripts": true, "percepts": true, "talents": false}
+            })
+            .as_object()
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(silent_seg.counts.percepts, 0, "{}", silent_seg.text);
+        assert!(
+            !silent_seg.text.contains("### Screen Activity"),
+            "{}",
+            silent_seg.text
+        );
+        assert!(
+            !silent_seg.text.contains("muted-side-shell"),
+            "{}",
+            silent_seg.text
+        );
+        assert!(
+            !silent_seg.text.contains("Muted browser text"),
+            "{}",
+            silent_seg.text
+        );
+
+        // Fail-open control: a 2-segment meeting with ZERO speech lines and ZERO meeting/calendar
+        // frames across all segments falls back to full `ActivitySpan` attended percepts.
+        let fo1 = journal.path().join("chronicle/20260903/laptop/100000_300");
+        let fo2 = journal.path().join("chronicle/20260903/laptop/100500_300");
+        fs::create_dir_all(&fo1).unwrap();
+        fs::create_dir_all(&fo2).unwrap();
+        fs::write(fo1.join("audio.jsonl"), r#"{"raw":"audio.flac"}"#).unwrap();
+        fs::write(
+            fo1.join("screen.jsonl"),
+            json!({"timestamp": 10.0, "analysis": {"primary": "browsing"}, "content": {"browsing": "Shared slide deck"}})
+                .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            fo2.join("browser_events.jsonl"),
+            concat!(
+                r#"{"t":"segment_start","ts":1,"title":"Agenda","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Attended agenda notes"}]}"#,
+                "\n",
+                r#"{"t":"segment_start","ts":2,"title":"Mail","tab":{"front":false,"focused":true},"blocks":[{"type":"text","text":"Unfocused mail text"}]}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let fail_open = load_transcript(
+            journal.path(),
+            json!({
+                "name": "conversation",
+                "day": "20260903",
+                "span": ["100000_300", "100500_300"],
+                "activity": {
+                    "id": "meeting_100000",
+                    "activity": "meeting",
+                    "stream": "laptop",
+                    "segments": ["100000_300", "100500_300"]
+                },
+                "sources": {"transcripts": true, "percepts": true, "talents": false}
+            })
+            .as_object()
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            fail_open.text.contains("Shared slide deck"),
+            "{}",
+            fail_open.text
+        );
+        assert!(
+            fail_open.text.contains("Attended agenda notes"),
+            "{}",
+            fail_open.text
+        );
+        assert!(
+            !fail_open.text.contains("Unfocused mail text"),
+            "{}",
+            fail_open.text
+        );
+        assert!(
+            fail_open.text.contains("- Mail · background tab"),
+            "{}",
+            fail_open.text
+        );
     }
 }

@@ -391,8 +391,16 @@ struct Segment {
 pub enum PerceptProjection {
     Generic,
     ScreenTalent,
-    /// Generic, with screen lines marked by how long they have been showing.
+    /// Generic, with screen lines marked by how long they have been showing,
+    /// and browser reads limited to pages in front of a focused window.
     StoryScreenAge,
+    /// Activity-span talent read: browser pages not in front of a focused
+    /// window contribute only their open-page summary, never their text.
+    ActivitySpan,
+    /// Meeting-activity talent read: keeps only `meeting` and `calendar` screen
+    /// frames (excluding tmux captures) and suppresses browser, desktop
+    /// activity, and protected video percepts.
+    MeetingSpan,
     TerminalSense,
     SpeechEvidence,
 }
@@ -586,7 +594,7 @@ fn cluster_period_with_projection(
     (disclose_memory_incomplete(transcript, &memory), counts)
 }
 
-fn cluster_period_with_projection_and_memory(
+pub fn cluster_period_with_projection_and_memory(
     root: &Path,
     day: &str,
     key: &str,
@@ -805,6 +813,145 @@ pub fn speech_evidence_for_span(
         .into_iter()
         .filter_map(|entry| entry.speech_evidence)
         .collect()
+}
+
+/// Whether any segment in `span` holds at least one speech transcript line
+/// (when `include_speech` is true) or at least one surviving `meeting` or
+/// `calendar` screen frame (excluding tmux captures).
+pub fn span_has_meeting_evidence(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    stream: Option<&str>,
+    include_speech: bool,
+) -> bool {
+    if span.is_empty() {
+        return false;
+    }
+    let stream = stream.filter(|stream| !stream.is_empty());
+    let segments = all_segments(root, day);
+    span.iter().any(|key| {
+        segments
+            .iter()
+            .find(|segment| {
+                segment.key == *key
+                    && match stream {
+                        Some(stream) => segment.stream.matches(stream),
+                        None => !segment.is_body_window(),
+                    }
+            })
+            .is_some_and(|segment| segment_has_meeting_evidence(segment, day, include_speech))
+    })
+}
+
+fn segment_has_meeting_evidence(segment: &Segment, day: &str, include_speech: bool) -> bool {
+    if segment.is_strava_tile() {
+        return false;
+    }
+    let files = sorted_files(&segment.path);
+    if include_speech
+        && files
+            .iter()
+            .any(|path| file_has_speech_lines(path, segment, day))
+    {
+        return true;
+    }
+    files.iter().any(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                PerceptFamily::Screen.matches(name) && !is_tmux_screen_filename(name)
+            })
+            && file_has_meeting_screen_frames(path)
+    })
+}
+
+fn file_has_speech_lines(path: &Path, segment: &Segment, day: &str) -> bool {
+    if !ordinary_transcript_file(path) {
+        return false;
+    }
+    if let Some(relative) = conversation_relative(path) {
+        match read_talent_conversation(path, &relative, |file, medium| {
+            use std::io::Read;
+            let mut text = String::new();
+            file.read_to_string(&mut text)?;
+            Ok((medium, text))
+        }) {
+            Ok((ConversationMedium::Spoken, text)) => {
+                audio_text_has_speech_lines(path, &text, segment, day)
+            }
+            _ => false,
+        }
+    } else {
+        fs::read_to_string(path)
+            .is_ok_and(|text| audio_text_has_speech_lines(path, &text, segment, day))
+    }
+}
+
+fn audio_text_has_speech_lines(path: &Path, text: &str, segment: &Segment, day: &str) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let rel = match segment.record_stream() {
+        Some(stream) => format!("{day}/{stream}/{}/{}", segment.key, name),
+        None => format!("{}/{}", segment.path.display(), name),
+    };
+    let (records, _) = parse_raw_percept_records(text);
+    let produced =
+        produce_raw_percept_chunks_by_shape(RawPerceptFamily::Audio, Some(&rel), &records);
+    if produced.chunks.is_empty() {
+        return false;
+    }
+    if produced.agent_override.as_deref() == Some("granola") {
+        return true;
+    }
+    produced
+        .chunks
+        .iter()
+        .any(|chunk| chunk.source.as_ref().is_some_and(record_has_speech_text))
+}
+
+fn record_has_speech_text(record: &Map<String, Value>) -> bool {
+    ["corrected", "text"].iter().any(|key| {
+        record
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|text| !text.trim().is_empty())
+    })
+}
+
+fn file_has_meeting_screen_frames(path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let (records, _) = parse_raw_percept_records(&text);
+    records.iter().any(is_meeting_screen_frame)
+}
+
+fn is_tmux_screen_filename(name: &str) -> bool {
+    name.starts_with("tmux_")
+}
+
+fn is_screen_capture_header(record: &Map<String, Value>) -> bool {
+    !record.contains_key("timestamp") && record.contains_key("raw")
+}
+
+fn is_meeting_screen_frame(record: &Map<String, Value>) -> bool {
+    if !record.contains_key("timestamp") {
+        return false;
+    }
+    let primary = record
+        .get("analysis")
+        .and_then(Value::as_object)
+        .and_then(|analysis| analysis.get("primary"))
+        .and_then(Value::as_str);
+    if !matches!(primary, Some("meeting" | "calendar")) {
+        return false;
+    }
+    !record
+        .get("content")
+        .and_then(Value::as_object)
+        .is_some_and(|content| content.contains_key("tmux"))
 }
 
 fn span_entries(
@@ -1312,7 +1459,11 @@ fn process_segment(
         for path in files.iter().filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| PerceptFamily::Screen.matches(name))
+                .is_some_and(|name| {
+                    PerceptFamily::Screen.matches(name)
+                        && !(projection == PerceptProjection::MeetingSpan
+                            && is_tmux_screen_filename(name))
+                })
         }) {
             let content = match marked.and_then(|marked| marked.get(path)) {
                 Some(text) => raw_content_of(
@@ -1342,177 +1493,183 @@ fn process_segment(
                 entries.push(projected);
             }
         }
-        let mut browser = files
-            .iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| PerceptFamily::Browser.matches(name))
-            })
-            .collect::<Vec<_>>();
-        browser.sort();
-        for path in browser {
-            match fs::read_to_string(path) {
-                Ok(text) => {
-                    // Sense and Screen read what the owner had in front: a background tab or an
-                    // unfocused window contributes its page and state, not its text.
-                    let produced = if matches!(
-                        projection,
-                        PerceptProjection::TerminalSense | PerceptProjection::ScreenTalent
-                    ) {
-                        produce_browser_attended_chunks(&text)
-                    } else {
-                        produce_chunks(
-                            Family::Browser,
-                            path.file_name()
-                                .and_then(|name| name.to_str())
-                                .unwrap_or_default(),
-                            &text,
-                        )
-                    };
-                    let content = produced
-                        .chunks
-                        .into_iter()
-                        .map(|chunk| chunk.content)
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                    if !content.is_empty() {
-                        entries.push(entry(
-                            start,
-                            end,
-                            segment,
-                            "browser",
-                            content,
-                            stream.clone(),
-                            None,
-                        ));
-                    }
-                }
-                Err(error) => {
-                    log::warn!("unable to read JSONL input {}: {error}", path.display());
-                }
-            }
-        }
-        let mut protected_video = files
-            .iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| PerceptFamily::ProtectedVideo.matches(name))
-            })
-            .collect::<Vec<_>>();
-        protected_video.sort();
-        for path in protected_video {
-            match fs::read_to_string(path) {
-                Ok(text) => {
-                    let name = path
-                        .file_name()
+        if projection != PerceptProjection::MeetingSpan {
+            let mut browser = files
+                .iter()
+                .filter(|path| {
+                    path.file_name()
                         .and_then(|name| name.to_str())
-                        .unwrap_or_default();
-                    let content = produce_chunks(Family::ProtectedVideo, name, &text)
-                        .chunks
-                        .into_iter()
-                        .map(|chunk| chunk.content)
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                    if !content.is_empty() {
-                        entries.push(entry(
-                            start,
-                            end,
-                            segment,
-                            "protected_video",
-                            content,
-                            stream.clone(),
-                            None,
-                        ));
-                    }
-                }
-                Err(error) => {
-                    log::warn!("unable to read JSONL input {}: {error}", path.display());
-                }
-            }
-        }
-        let mut desktop_activity = files
-            .iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| PerceptFamily::DesktopActivity.matches(name))
-            })
-            .collect::<Vec<_>>();
-        desktop_activity.sort();
-        for path in desktop_activity {
-            match fs::read_to_string(path) {
-                Ok(text) => {
-                    let name = path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or_default();
-                    let rel = format!(
-                        "{day}/{}/{}/{name}",
-                        stream.as_deref().unwrap_or_default(),
-                        segment.key
-                    );
-                    let produced = produce_chunks(Family::DesktopActivity, &rel, &text);
-                    let content = produced
-                        .chunks
-                        .iter()
-                        .map(|chunk| chunk.content.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                    if !content.is_empty() {
-                        let mut activity_entry = entry(
-                            start,
-                            end,
-                            segment,
-                            "desktop_activity",
-                            content,
-                            stream.clone(),
-                            None,
-                        );
-                        // Terminal reading may preserve this context beside its screen
-                        // reading only when it can bind it to these same producer bytes.
-                        if matches!(
+                        .is_some_and(|name| PerceptFamily::Browser.matches(name))
+                })
+                .collect::<Vec<_>>();
+            browser.sort();
+            for path in browser {
+                match fs::read_to_string(path) {
+                    Ok(text) => {
+                        // Sense, Screen, and activity talents read what the owner had in front:
+                        // a background tab or an unfocused window contributes its page and state,
+                        // not its text. Generic keeps every page in full for the raw transcript view.
+                        let produced = if matches!(
                             projection,
-                            PerceptProjection::TerminalSense | PerceptProjection::ScreenTalent
-                        ) && text.len() <= ENTRY_SOURCE_MAX_BYTES
-                        {
-                            let (records, unparsed_lines) = parse_raw_percept_records(&text);
-                            let mut offset = 0;
-                            let chunk_offsets = produced
-                                .chunks
-                                .iter()
-                                .map(|chunk| {
-                                    let at = offset;
-                                    offset += chunk.content.len() + 2;
-                                    at
-                                })
-                                .collect();
-                            activity_entry.source = Some(EntrySource {
-                                conversation_medium: None,
-                                path: path.to_owned(),
-                                sha256: format!("{:x}", Sha256::digest(text.as_bytes())),
-                                rendered_range: 0..0,
-                                stream: segment.record_stream().map(str::to_owned),
-                                file: name.to_owned(),
-                                records,
-                                unparsed_lines,
-                                chunks: produced
+                            PerceptProjection::TerminalSense
+                                | PerceptProjection::ScreenTalent
+                                | PerceptProjection::StoryScreenAge
+                                | PerceptProjection::ActivitySpan
+                        ) {
+                            produce_browser_attended_chunks(&text)
+                        } else {
+                            produce_chunks(
+                                Family::Browser,
+                                path.file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or_default(),
+                                &text,
+                            )
+                        };
+                        let content = produced
+                            .chunks
+                            .into_iter()
+                            .map(|chunk| chunk.content)
+                            .collect::<Vec<_>>()
+                            .join("\n\n");
+                        if !content.is_empty() {
+                            entries.push(entry(
+                                start,
+                                end,
+                                segment,
+                                "browser",
+                                content,
+                                stream.clone(),
+                                None,
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("unable to read JSONL input {}: {error}", path.display());
+                    }
+                }
+            }
+            let mut protected_video = files
+                .iter()
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| PerceptFamily::ProtectedVideo.matches(name))
+                })
+                .collect::<Vec<_>>();
+            protected_video.sort();
+            for path in protected_video {
+                match fs::read_to_string(path) {
+                    Ok(text) => {
+                        let name = path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default();
+                        let content = produce_chunks(Family::ProtectedVideo, name, &text)
+                            .chunks
+                            .into_iter()
+                            .map(|chunk| chunk.content)
+                            .collect::<Vec<_>>()
+                            .join("\n\n");
+                        if !content.is_empty() {
+                            entries.push(entry(
+                                start,
+                                end,
+                                segment,
+                                "protected_video",
+                                content,
+                                stream.clone(),
+                                None,
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("unable to read JSONL input {}: {error}", path.display());
+                    }
+                }
+            }
+            let mut desktop_activity = files
+                .iter()
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| PerceptFamily::DesktopActivity.matches(name))
+                })
+                .collect::<Vec<_>>();
+            desktop_activity.sort();
+            for path in desktop_activity {
+                match fs::read_to_string(path) {
+                    Ok(text) => {
+                        let name = path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default();
+                        let rel = format!(
+                            "{day}/{}/{}/{name}",
+                            stream.as_deref().unwrap_or_default(),
+                            segment.key
+                        );
+                        let produced = produce_chunks(Family::DesktopActivity, &rel, &text);
+                        let content = produced
+                            .chunks
+                            .iter()
+                            .map(|chunk| chunk.content.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n\n");
+                        if !content.is_empty() {
+                            let mut activity_entry = entry(
+                                start,
+                                end,
+                                segment,
+                                "desktop_activity",
+                                content,
+                                stream.clone(),
+                                None,
+                            );
+                            // Terminal reading may preserve this context beside its screen
+                            // reading only when it can bind it to these same producer bytes.
+                            if matches!(
+                                projection,
+                                PerceptProjection::TerminalSense | PerceptProjection::ScreenTalent
+                            ) && text.len() <= ENTRY_SOURCE_MAX_BYTES
+                            {
+                                let (records, unparsed_lines) = parse_raw_percept_records(&text);
+                                let mut offset = 0;
+                                let chunk_offsets = produced
                                     .chunks
                                     .iter()
-                                    .filter_map(|chunk| {
-                                        Some((chunk.content.clone(), chunk.source.clone()?))
+                                    .map(|chunk| {
+                                        let at = offset;
+                                        offset += chunk.content.len() + 2;
+                                        at
                                     })
-                                    .collect(),
-                                chunk_offsets,
-                                voice_named: BTreeSet::new(),
-                            });
+                                    .collect();
+                                activity_entry.source = Some(EntrySource {
+                                    conversation_medium: None,
+                                    path: path.to_owned(),
+                                    sha256: format!("{:x}", Sha256::digest(text.as_bytes())),
+                                    rendered_range: 0..0,
+                                    stream: segment.record_stream().map(str::to_owned),
+                                    file: name.to_owned(),
+                                    records,
+                                    unparsed_lines,
+                                    chunks: produced
+                                        .chunks
+                                        .iter()
+                                        .filter_map(|chunk| {
+                                            Some((chunk.content.clone(), chunk.source.clone()?))
+                                        })
+                                        .collect(),
+                                    chunk_offsets,
+                                    voice_named: BTreeSet::new(),
+                                });
+                            }
+                            entries.push(activity_entry);
                         }
-                        entries.push(activity_entry);
                     }
-                }
-                Err(error) => {
-                    log::warn!("unable to read JSONL input {}: {error}", path.display());
+                    Err(error) => {
+                        log::warn!("unable to read JSONL input {}: {error}", path.display());
+                    }
                 }
             }
         }
@@ -1784,6 +1941,50 @@ fn raw_content_from_text(
                 produced.error,
                 produced.tmux_chunk_indices,
             )
+        }
+        (RawPerceptFamily::RawScreen, PerceptProjection::MeetingSpan) => {
+            let (parsed_records, unparsed_lines) = parse_raw_percept_records(&text);
+            let capture_header = parsed_records
+                .first()
+                .filter(|record| is_screen_capture_header(record))
+                .cloned();
+            let surviving_frames = parsed_records
+                .into_iter()
+                .filter(is_meeting_screen_frame)
+                .collect::<Vec<_>>();
+            if surviving_frames.is_empty() {
+                return None;
+            }
+            let mut records =
+                Vec::with_capacity(usize::from(capture_header.is_some()) + surviving_frames.len());
+            if let Some(header) = capture_header {
+                records.push(header);
+            }
+            records.extend(surviving_frames);
+            let produced = produce_raw_percept_chunks_by_shape(family, Some(&rel), &records);
+            if produced.chunks.is_empty() {
+                return None;
+            }
+            if text.len() <= ENTRY_SOURCE_MAX_BYTES {
+                source = Some(EntrySource {
+                    conversation_medium: None,
+                    path: path.to_owned(),
+                    sha256: source_sha256,
+                    rendered_range: 0..0,
+                    stream: segment.record_stream().map(str::to_owned),
+                    file: name.to_owned(),
+                    chunks: produced
+                        .chunks
+                        .iter()
+                        .filter_map(|chunk| Some((chunk.content.clone(), chunk.source.clone()?)))
+                        .collect(),
+                    chunk_offsets: Vec::new(),
+                    records,
+                    unparsed_lines,
+                    voice_named: BTreeSet::new(),
+                });
+            }
+            (produced.header, produced.chunks, produced.error, Vec::new())
         }
         _ => {
             let (records, unparsed_lines) = parse_raw_percept_records(&text);
@@ -3290,6 +3491,314 @@ mod tests {
             assert!(!attended.contains("Caption in the background"));
             assert!(attended.contains("- Video · background tab · media playing"));
         }
+    }
+
+    #[test]
+    fn activity_and_story_projections_filter_unfocused_browser_tabs_while_generic_preserves_them() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("browser_events.jsonl"),
+            concat!(
+                r#"{"t":"segment_start","ts":1,"title":"Design Doc","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Focused doc paragraph"}]}"#,
+                "\n",
+                r#"{"t":"segment_start","ts":2,"title":"Inbox","tab":{"front":false,"focused":true},"blocks":[{"type":"text","text":"Background inbox preview"}]}"#,
+                "\n",
+                r#"{"t":"segment_start","ts":3,"title":"News","tab":{"front":true,"focused":false},"blocks":[{"type":"text","text":"Unfocused window headline"}]}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let sources = sources(false, true, TalentSource::Disabled);
+
+        let generic = cluster_span(root.path(), DAY, &[SEGMENT], &sources, None)
+            .unwrap()
+            .0;
+        let story =
+            cluster_span_with_screen_age_with_memory(root.path(), DAY, &[SEGMENT], &sources, None)
+                .unwrap()
+                .0
+                .text;
+        let activity_span = cluster_span_with_projection_and_memory(
+            root.path(),
+            DAY,
+            &[SEGMENT],
+            &sources,
+            None,
+            PerceptProjection::ActivitySpan,
+        )
+        .unwrap()
+        .0
+        .text;
+        let activity_period = cluster_period_with_projection_and_memory(
+            root.path(),
+            DAY,
+            SEGMENT,
+            &sources,
+            None,
+            PerceptProjection::ActivitySpan,
+        )
+        .0
+        .text;
+
+        assert!(generic.contains("Focused doc paragraph"), "{generic}");
+        assert!(generic.contains("Background inbox preview"), "{generic}");
+        assert!(generic.contains("Unfocused window headline"), "{generic}");
+
+        for attended in [&story, &activity_span, &activity_period] {
+            assert!(attended.contains("Focused doc paragraph"), "{attended}");
+            assert!(!attended.contains("Background inbox preview"), "{attended}");
+            assert!(
+                !attended.contains("Unfocused window headline"),
+                "{attended}"
+            );
+            assert!(
+                attended.contains("## Open, not in front of a focused window"),
+                "{attended}"
+            );
+            assert!(attended.contains("- Inbox ·"), "{attended}");
+            assert!(attended.contains("- News ·"), "{attended}");
+        }
+    }
+
+    #[test]
+    fn meeting_projection_scopes_screen_frames_and_suppresses_off_call_percepts() {
+        let root = TempDir::new().unwrap();
+        let seg1 = root.path().join("chronicle").join(DAY).join("090000_300");
+        let seg2 = root.path().join("chronicle").join(DAY).join("090500_300");
+        fs::create_dir_all(&seg1).unwrap();
+        fs::create_dir_all(&seg2).unwrap();
+
+        fs::write(
+            seg1.join("audio.jsonl"),
+            r#"{"start":"09:00:05","text":"Agreed on the launch timeline."}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("center_DP-1_screen.jsonl"),
+            [
+                json!({"raw": "screen.mp4", "platform": "ios", "sources": ["screen"]}),
+                json!({
+                    "timestamp": 10.0,
+                    "analysis": {"primary": "meeting", "visual_description": "Video call tiles"},
+                    "content": {"meeting": {"platform": "Meet", "participants": [{"name": "Mina", "status": "speaking", "video": true}]}}
+                }),
+                json!({
+                    "timestamp": 20.0,
+                    "analysis": {"primary": "calendar", "visual_description": "Weekly standup invite"},
+                    "content": {"calendar": "Weekly standup 9:00 AM"}
+                }),
+                json!({
+                    "timestamp": 30.0,
+                    "analysis": {"primary": "terminal", "visual_description": "Shell pane"},
+                    "content": {"terminal": "$ secret-side-command"}
+                }),
+                json!({
+                    "timestamp": 40.0,
+                    "analysis": {"primary": "browsing", "visual_description": "SSO tab"},
+                    "content": {"browsing": "Sign in to SSO portal"}
+                }),
+                json!({
+                    "timestamp": 50.0,
+                    "analysis": {"primary": "meeting", "visual_description": "Embedded tmux"},
+                    "content": {"tmux": {"session": "ops", "panes": []}}
+                }),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        // A second monitor with a capture header and zero surviving meeting/calendar frames
+        // must produce no bare `### Screen Activity` header and no `counts.percepts` increment.
+        fs::write(
+            seg1.join("left_DP-2_screen.jsonl"),
+            [
+                json!({"raw": "left.mp4", "platform": "ios", "sources": ["screen"]}),
+                json!({
+                    "timestamp": 15.0,
+                    "analysis": {"primary": "social", "visual_description": "Chat feed"},
+                    "content": {"social": "Off-call chat thread"}
+                }),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("tmux_0_screen.jsonl"),
+            include_str!(
+                "../../solstone-core-format/tests/data/golden/tmux-observer-envelope-main.jsonl"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Side Tab","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Off-call focused browser text"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("090000_300_desktop_activity.jsonl"),
+            r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1000,"end_ts":2000,"app":"Code","title":"Side editor"}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("090000_300_protected_video.jsonl"),
+            r#"{"t":"protected_video","ts":1000,"end_ts":2000,"service":"Netflix","title":"Show"}"#,
+        )
+        .unwrap();
+
+        // Segment 2 has only off-call screen/tmux/browser/desktop percepts (no speech, no meeting frames).
+        fs::write(
+            seg2.join("screen.jsonl"),
+            [
+                json!({"raw": "seg2.mp4", "platform": "android", "sources": ["screen"]}),
+                json!({
+                    "timestamp": 10.0,
+                    "analysis": {"primary": "terminal", "visual_description": "Muted side terminal"},
+                    "content": {"terminal": "$ cargo check"}
+                }),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Docs","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Muted segment browser text"}]}"#,
+        )
+        .unwrap();
+
+        let (rendered, counts, _) = cluster_span_with_projection_and_memory(
+            root.path(),
+            DAY,
+            &["090000_300", "090500_300"],
+            &sources(true, true, TalentSource::Disabled),
+            None,
+            PerceptProjection::MeetingSpan,
+        )
+        .unwrap();
+
+        assert_eq!(counts.transcripts, 1);
+        assert_eq!(counts.percepts, 1);
+        assert_eq!(rendered.text.matches("### Screen Activity").count(), 1);
+        assert!(rendered.text.contains("Agreed on the launch timeline."));
+        assert!(rendered.text.contains("iPhone or iPad"));
+        assert!(rendered.text.contains("Video call tiles"));
+        assert!(rendered.text.contains("Weekly standup 9:00 AM"));
+        for suppressed in [
+            "secret-side-command",
+            "Sign in to SSO portal",
+            "Embedded tmux",
+            "Off-call chat thread",
+            "left - DP-2",
+            "Terminal session 'main'",
+            "Off-call focused browser text",
+            "Side editor",
+            "Netflix",
+            "Android phone or tablet",
+            "cargo check",
+            "Muted segment browser text",
+            "### Browser Content",
+            "### desktop activity",
+            "### Protected video",
+        ] {
+            assert!(
+                !rendered.text.contains(suppressed),
+                "unexpected {suppressed:?} in:\n{}",
+                rendered.text
+            );
+        }
+    }
+
+    #[test]
+    fn span_has_meeting_evidence_distinguishes_real_evidence_from_stubs_and_off_call_noise() {
+        let root = TempDir::new().unwrap();
+        let seg1 = root.path().join("chronicle").join(DAY).join("090000_300");
+        let seg2 = root.path().join("chronicle").join(DAY).join("090500_300");
+        fs::create_dir_all(&seg1).unwrap();
+        fs::create_dir_all(&seg2).unwrap();
+
+        // Header-only audio stub, blank-text speech row, off-call screen, tmux-tagged meeting frame,
+        // and tmux capture do NOT count as meeting evidence.
+        fs::write(
+            seg1.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\",\"duration\":300.0}\n{\"start\":\"09:00:01\",\"text\":\"   \"}\n",
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("screen.jsonl"),
+            [
+                json!({"timestamp": 10.0, "analysis": {"primary": "terminal"}, "content": {"terminal": "$ ls"}}),
+                json!({"timestamp": 20.0, "analysis": {"primary": "meeting"}, "content": {"tmux": {"session": "s"}}}),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("tmux_0_screen.jsonl"),
+            json!({"timestamp": 10.0, "analysis": {"primary": "meeting"}, "content": {"meeting": {"platform": "Meet"}}})
+                .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Docs","blocks":[{"type":"text","text":"Page"}]}"#,
+        )
+        .unwrap();
+
+        assert!(!span_has_meeting_evidence(
+            root.path(),
+            DAY,
+            &["090000_300", "090500_300"],
+            None,
+            true,
+        ));
+
+        // Adding a calendar screen frame in segment 2 supplies evidence across the whole span.
+        fs::write(
+            seg2.join("screen.jsonl"),
+            json!({"timestamp": 10.0, "analysis": {"primary": "calendar"}, "content": {"calendar": "Sync"}})
+                .to_string(),
+        )
+        .unwrap();
+        assert!(span_has_meeting_evidence(
+            root.path(),
+            DAY,
+            &["090000_300", "090500_300"],
+            None,
+            true,
+        ));
+        assert!(span_has_meeting_evidence(
+            root.path(),
+            DAY,
+            &["090000_300", "090500_300"],
+            None,
+            false,
+        ));
+
+        // Removing the calendar frame and adding real speech in segment 1 supplies evidence
+        // when speech is included.
+        fs::remove_file(seg2.join("screen.jsonl")).unwrap();
+        fs::write(
+            seg1.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"09:00:05\",\"text\":\"Let us ship Friday.\"}\n",
+        )
+        .unwrap();
+        assert!(span_has_meeting_evidence(
+            root.path(),
+            DAY,
+            &["090000_300", "090500_300"],
+            None,
+            true,
+        ));
+        assert!(!span_has_meeting_evidence(
+            root.path(),
+            DAY,
+            &["090000_300", "090500_300"],
+            None,
+            false,
+        ));
     }
 
     #[test]
