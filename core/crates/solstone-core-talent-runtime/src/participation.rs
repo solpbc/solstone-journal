@@ -5001,7 +5001,7 @@ mod tests {
     }
 
     #[test]
-    fn participation_only_links_unblocked_unretired_person_and_rejects_short_tokens_and_non_persons() {
+    fn participation_links_only_unblocked_unretired_person_entities() {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
         write_json(
