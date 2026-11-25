@@ -516,6 +516,9 @@ pub(crate) fn check_index_todo(
     if let Err(error) = solstone_core_indexer_store::todo::queue_build_if_absent(journal) {
         log::warn!(target: "solstone::indexer", "could not check for a missing search index: {error}");
     }
+    if let Err(error) = solstone_core_indexer_store::todo::queue_upgrade_if_needed(journal) {
+        log::warn!(target: "solstone::indexer", "could not check for a search index upgrade: {error}");
+    }
     match solstone_core_indexer_store::todo::has_due(journal, now_ms) {
         Ok(true) if !queue.contains_reference("index-todo") => {
             submit_task(

@@ -887,7 +887,8 @@ fn source_channel(
         _ => {}
     }
     match classify(&rel) {
-        ContentResolution::Unindexed(RawPerceptFamily::Audio) => "Transcript",
+        ContentResolution::Indexed(Family::Audio)
+        | ContentResolution::Unindexed(RawPerceptFamily::Audio) => "Transcript",
         ContentResolution::Indexed(Family::BodyRecords) => "Body Records",
         _ if speech => "Transcript",
         _ => match stream {
@@ -925,7 +926,8 @@ fn project_line(
 ) -> String {
     let rel = format!("{segment_origin}/{name}");
     match classify(&rel) {
-        ContentResolution::Unindexed(RawPerceptFamily::Audio) => {
+        ContentResolution::Indexed(Family::Audio)
+        | ContentResolution::Unindexed(RawPerceptFamily::Audio) => {
             let text = produce_raw_percept_chunks(RawPerceptFamily::Audio, &rel, line)
                 .chunks
                 .into_iter()
@@ -1005,6 +1007,279 @@ fn project_line(
                 .join("\n")
             }
         }
+    }
+}
+
+/// Largest speech transcript file opened to verify and format an indexed search hit.
+const MAX_INDEXED_SPEECH_FILE_BYTES: usize = 32 * 1024 * 1024;
+
+/// One indexed speech transcript line resolved live from disk with the same
+/// speaker naming, run numbering, and possible-name labelling as `get_transcript`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedSpeechLine {
+    /// Full rendered line as `get_transcript` renders it (e.g. `[16:37:14] Nick Sorrell: ...`).
+    pub text: String,
+    /// Exact line wall clock from the JSONL record (e.g. `16:37:14`), omitted when untimed or absent.
+    pub time: Option<String>,
+    /// Display speaker resolved identically to `get_transcript`, omitted when unlabelled.
+    pub speaker: Option<String>,
+    /// True when the source file carries `"untimed": true` in its header.
+    pub untimed: bool,
+}
+
+enum CachedSpeechFile {
+    Unreadable,
+    Granola {
+        untimed: bool,
+        chunks: Vec<solstone_core_format::content::IndexChunk>,
+    },
+    Speech {
+        untimed: bool,
+        metadata: Option<serde_json::Map<String, Value>>,
+        labels: Option<BTreeMap<i64, String>>,
+        run_numbers: Option<BTreeMap<i64, i64>>,
+        /// One entry per emitted chunk index: `(indexed_content, raw_line, statement_ordinal)`.
+        lines: Vec<(String, String, i64)>,
+    },
+}
+
+/// Per-response cache for live verification and speaker display of indexed speech lines.
+#[derive(Default)]
+pub struct SpeechLineCache {
+    files: BTreeMap<String, CachedSpeechFile>,
+}
+
+impl SpeechLineCache {
+    /// Resolve one indexed speech chunk against the live file on disk.
+    ///
+    /// Returns `None` if the segment or file is missing, unreadable, outside the
+    /// journal, or has changed so that chunk `chunk_idx` no longer matches
+    /// `expected_indexed_content`.
+    pub fn resolve_line(
+        &mut self,
+        journal_root: &Path,
+        rel: &str,
+        chunk_idx: i64,
+        expected_indexed_content: &str,
+        speakers: Option<&AgentSpeakers>,
+        possible_names: Option<&PossibleNameLabels>,
+    ) -> Option<ResolvedSpeechLine> {
+        let idx = usize::try_from(chunk_idx).ok()?;
+        let normalized = rel.strip_prefix("chronicle/").unwrap_or(rel);
+        let filename = normalized.rsplit('/').next()?;
+        let cached = self
+            .files
+            .entry(normalized.to_owned())
+            .or_insert_with(|| load_cached_speech_file(journal_root, normalized, speakers));
+        match cached {
+            CachedSpeechFile::Unreadable => None,
+            CachedSpeechFile::Granola { untimed, chunks } => {
+                let chunk = chunks.get(idx)?;
+                if chunk.content.trim() != expected_indexed_content.trim() {
+                    return None;
+                }
+                let source = chunk.source.as_ref();
+                let is_spoken = source.is_some_and(|record| record.contains_key("source_ms"));
+                let time = (!*untimed && is_spoken)
+                    .then(|| {
+                        source
+                            .and_then(|record| record.get("start"))
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_owned)
+                    })
+                    .flatten();
+                let speaker = is_spoken
+                    .then(|| {
+                        source
+                            .and_then(|record| record.get("speaker"))
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_owned)
+                    })
+                    .flatten();
+                Some(ResolvedSpeechLine {
+                    text: chunk.content.clone(),
+                    time,
+                    speaker,
+                    untimed: *untimed,
+                })
+            }
+            CachedSpeechFile::Speech {
+                untimed,
+                metadata,
+                labels,
+                run_numbers,
+                lines,
+            } => {
+                let (indexed_content, raw_line, statement_ordinal) = lines.get(idx)?;
+                if indexed_content.trim() != expected_indexed_content.trim() {
+                    return None;
+                }
+                let named_line = labels
+                    .as_ref()
+                    .and_then(|names| {
+                        let speaker = names.get(statement_ordinal)?;
+                        let mut value: Value = serde_json::from_str(raw_line).ok()?;
+                        value
+                            .as_object_mut()?
+                            .insert("speaker".into(), Value::String(speaker.clone()));
+                        Some(value.to_string())
+                    })
+                    .or_else(|| {
+                        run_numbers
+                            .as_ref()
+                            .and_then(|numbers| crate::renumber_line(raw_line, numbers))
+                    });
+                let named = named_line.as_deref().unwrap_or(raw_line.as_str());
+                let name_labels = possible_names.filter(|labels| labels.file == filename);
+                let labelled_line = name_labels.and_then(|labels| {
+                    label_line(named, labels.statements.get(statement_ordinal)?)
+                });
+                let final_line = labelled_line.as_deref().unwrap_or(named);
+                let final_record = serde_json::from_str::<Value>(final_line).ok().and_then(
+                    |value| match value {
+                        Value::Object(map) => Some(map),
+                        _ => None,
+                    },
+                )?;
+                let speaker = solstone_core_format::content::audio_speaker_label(
+                    normalized,
+                    metadata.as_ref(),
+                    &final_record,
+                )
+                .filter(|s| !s.is_empty());
+                let time = (!*untimed)
+                    .then(|| {
+                        final_record
+                            .get("start")
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_owned)
+                    })
+                    .flatten();
+                let mut pair = Vec::with_capacity(2);
+                if let Some(meta) = metadata {
+                    pair.push(meta.clone());
+                }
+                pair.push(final_record);
+                let rendered = solstone_core_format::content::produce_chunks_by_shape(
+                    Family::Audio,
+                    Some(normalized),
+                    &pair,
+                )
+                .chunks
+                .into_iter()
+                .map(|chunk| chunk.content)
+                .collect::<Vec<_>>()
+                .join("\n");
+                let text = append_speaker_change_warning(&rendered, raw_line);
+                if text.trim().is_empty() {
+                    return None;
+                }
+                Some(ResolvedSpeechLine {
+                    text,
+                    time,
+                    speaker,
+                    untimed: *untimed,
+                })
+            }
+        }
+    }
+}
+
+fn load_cached_speech_file(
+    journal_root: &Path,
+    normalized_rel: &str,
+    speakers: Option<&AgentSpeakers>,
+) -> CachedSpeechFile {
+    let parts: Vec<&str> = normalized_rel.split('/').collect();
+    let [day, stream, seg_key, filename] = parts.as_slice() else {
+        return CachedSpeechFile::Unreadable;
+    };
+    let Ok(Some(segment)) = Segment::resolve_exact(journal_root, day, stream, seg_key) else {
+        return CachedSpeechFile::Unreadable;
+    };
+    let file_path = segment.path().join(filename);
+    let Ok(meta) = fs::symlink_metadata(&file_path) else {
+        return CachedSpeechFile::Unreadable;
+    };
+    if !meta.file_type().is_file() || meta.len() > MAX_INDEXED_SPEECH_FILE_BYTES as u64 {
+        return CachedSpeechFile::Unreadable;
+    }
+    let Ok(file) = File::open(&file_path) else {
+        return CachedSpeechFile::Unreadable;
+    };
+    let mut bytes = Vec::new();
+    if file
+        .take(MAX_INDEXED_SPEECH_FILE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() > MAX_INDEXED_SPEECH_FILE_BYTES
+    {
+        return CachedSpeechFile::Unreadable;
+    }
+    let Ok(text) = String::from_utf8(bytes) else {
+        return CachedSpeechFile::Unreadable;
+    };
+    let produced = produce_chunks(Family::Audio, normalized_rel, &text);
+    let mut parsed_lines: Vec<(String, serde_json::Map<String, Value>)> = Vec::new();
+    for raw in text.lines() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
+            parsed_lines.push((raw.to_owned(), map));
+        }
+    }
+    let metadata = parsed_lines
+        .first()
+        .filter(|(_, record)| !record.contains_key("start"))
+        .map(|(_, record)| record.clone());
+    let untimed = metadata
+        .as_ref()
+        .is_some_and(|meta| meta.get("untimed") == Some(&Value::Bool(true)));
+    if metadata.as_ref().is_some_and(|meta| {
+        meta.get(solstone_core_format::content::granola::HEADER_KEY)
+            .is_some_and(Value::is_object)
+    }) {
+        return CachedSpeechFile::Granola {
+            untimed,
+            chunks: produced.chunks,
+        };
+    }
+    let labels = speakers.and_then(|speakers| {
+        let (source, names) = local_speaker_names(segment.path(), speakers)?;
+        (filename.strip_suffix(".jsonl") == Some(source.as_str())).then_some(names)
+    });
+    let run_numbers = speakers.and_then(|_| {
+        let stem = filename.strip_suffix(".jsonl")?;
+        crate::run_numbers_by_source(segment.path(), std::slice::from_ref(&file_path)).remove(stem)
+    });
+    let mut lines = Vec::with_capacity(produced.chunks.len());
+    let mut statement_ordinal = 0_u64;
+    let mut chunk_iter = produced.chunks.into_iter().peekable();
+    for (index, (raw, record)) in parsed_lines.into_iter().enumerate() {
+        if index == 0 && metadata.is_some() {
+            continue;
+        }
+        let Some(ordinal) = next_statement_ordinal(&raw, &mut statement_ordinal) else {
+            continue;
+        };
+        if let Some(chunk) = chunk_iter.peek()
+            && chunk.source.as_ref() == Some(&record)
+        {
+            let chunk = chunk_iter.next().expect("peeked chunk");
+            lines.push((chunk.content, raw, ordinal));
+        }
+    }
+    CachedSpeechFile::Speech {
+        untimed,
+        metadata,
+        labels,
+        run_numbers,
+        lines,
     }
 }
 

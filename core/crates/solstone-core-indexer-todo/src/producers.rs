@@ -46,6 +46,10 @@ pub const PRODUCERS: &[(Family, &str)] = &[
         Family::PossibleNames,
         "possible-names talent publication through solstone-core-possible-names",
     ),
+    (
+        Family::Audio,
+        "transcribe publication, audio import publication and Granola sync",
+    ),
 ];
 
 pub const CATCH_ALL_ONLY: &[(Family, &str)] = &[(

@@ -7590,6 +7590,7 @@ dependencies = [
  "solstone-core-ced-analyze",
  "solstone-core-cli-copy",
  "solstone-core-format",
+ "solstone-core-indexer-todo",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",

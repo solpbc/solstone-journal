@@ -604,6 +604,7 @@ fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
     let request = ConnectionSearchRequest {
         query: "connection-recency".to_owned(),
         limit: 2,
+        order: Order::Recency,
         ..ConnectionSearchRequest::default()
     };
     let first = crate::search_connection(&root, &boundary, &request, reference_date()).unwrap();
@@ -623,6 +624,7 @@ fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
                 day: anchor.metadata.day.clone(),
                 path: anchor.metadata.path.clone(),
                 idx: anchor.metadata.idx,
+                score_bits: None,
             }),
             ..request
         },
@@ -653,6 +655,7 @@ fn connection_pages(root: &Path, query: &str) -> Vec<Vec<(String, String, i64)>>
             &ConnectionSearchRequest {
                 query: query.to_owned(),
                 limit: 2,
+                order: Order::Recency,
                 start_after: start_after.clone(),
                 ..ConnectionSearchRequest::default()
             },
@@ -677,6 +680,7 @@ fn connection_pages(root: &Path, query: &str) -> Vec<Vec<(String, String, i64)>>
             day: last.metadata.day.clone(),
             path: last.metadata.path.clone(),
             idx: last.metadata.idx,
+            score_bits: None,
         });
         pages.push(page);
     }
@@ -4665,5 +4669,163 @@ fn a_connection_gets_a_body_entry_only_as_its_admission_says_and_a_refused_one_l
             .collect::<Vec<_>>(),
         [0]
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn connection_text_search_ranks_multi_term_and_rare_matches_ahead_of_newer_common_word_flood() {
+    let root = temp_root("connection-bm25-relevance");
+    for day in 1..=12 {
+        write_rel(
+            &root,
+            &format!("chronicle/202512{day:02}/talk/180000_300/talents/audio.md"),
+            "Quiet supper at home with soup and bread.\n",
+        );
+    }
+    write_rel(
+        &root,
+        "chronicle/20250220/talk/194000_720/audio.jsonl",
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"19:41:16\",\"speaker\":\"(the templar)\",\"text\":\"Southwell verses by heart and a stranger at supper\"}\n",
+        ),
+    );
+    scan_journal(&root, true).expect("scan");
+    let boundary = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+
+    // Relaxed OR query ("Southwell supper stranger quicksilver") must rank the
+    // February multi-term hit #1 ahead of all 12 December single-word "supper" hits.
+    let response = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "Southwell supper stranger quicksilver".to_string(),
+            limit: 20,
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(response.order, Order::Relevance);
+    assert!(response.relaxed);
+    assert!(response.speech_transcripts_indexed);
+    assert!(!response.results.is_empty());
+    assert_eq!(response.results[0].metadata.day, "20250220");
+    assert_eq!(
+        response.results[0].metadata.path,
+        "20250220/talk/194000_720/audio.jsonl"
+    );
+
+    // Blank-query browsing stays Recency (newest December day first).
+    let browse = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: String::new(),
+            day_from: Some("20250101".to_string()),
+            day_to: Some("20251231".to_string()),
+            limit: 5,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(browse.order, Order::Recency);
+    assert_eq!(browse.results[0].metadata.day, "20251212");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn connection_relevance_pagination_matches_between_keyed_and_fallback_paths() {
+    let root = temp_root("connection-bm25-cursor");
+    // Mix of distinct scores (1, 2, 3 term occurrences) and identical-score ties across days.
+    for (day, text) in [
+        ("20250110", "kestrel kestrel kestrel rareword"),
+        ("20250210", "kestrel kestrel"),
+        ("20250310", "kestrel"),
+        ("20250410", "kestrel"),
+        ("20250510", "kestrel"),
+        ("20250610", "kestrel kestrel"),
+        ("20250710", "kestrel"),
+    ] {
+        write_rel(
+            &root,
+            &format!("chronicle/{day}/talk/100000_300/talents/audio.md"),
+            text,
+        );
+    }
+    scan_journal(&root, true).expect("scan");
+    let boundary = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+
+    let paginate_all = |root: &Path| -> Vec<(String, i64)> {
+        let mut collected = Vec::new();
+        let mut cursor = None;
+        loop {
+            let response = crate::search_connection(
+                root,
+                &boundary,
+                &ConnectionSearchRequest {
+                    query: "kestrel rareword missingterm".to_string(),
+                    limit: 2,
+                    relax: true,
+                    start_after: cursor.clone(),
+                    ..ConnectionSearchRequest::default()
+                },
+                reference_date(),
+            )
+            .unwrap();
+            assert_eq!(response.order, Order::Relevance);
+            assert!(response.relaxed);
+            if response.results.is_empty() {
+                break;
+            }
+            let last = response.results.last().unwrap();
+            cursor = Some(crate::types::ConnectionStartAfter {
+                day: last.metadata.day.clone(),
+                path: last.metadata.path.clone(),
+                idx: last.metadata.idx,
+                score_bits: Some(last.score.to_bits()),
+            });
+            for hit in response.results {
+                collected.push((hit.metadata.path, hit.metadata.idx));
+            }
+        }
+        collected
+    };
+
+    assert!(solstone_core_indexer_store::chunk_sources::path_lookup_ready(&read_only(&root)));
+    let single_shot: Vec<(String, i64)> = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "kestrel rareword missingterm".to_string(),
+            limit: 50,
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap()
+    .results
+    .into_iter()
+    .map(|hit| (hit.metadata.path, hit.metadata.idx))
+    .collect();
+    assert_eq!(single_shot.len(), 7);
+    assert_eq!(
+        single_shot[0].0,
+        "20250110/talk/100000_300/talents/audio.md"
+    );
+
+    let paged_keyed = paginate_all(&root);
+    assert_eq!(paged_keyed, single_shot);
+
+    // Disable chunk_source_readiness to exercise the fallback CTE path.
+    Connection::open(db_path(&root))
+        .unwrap()
+        .execute("UPDATE chunk_source_readiness SET ready = 0", [])
+        .unwrap();
+    let paged_fallback = paginate_all(&root);
+    assert_eq!(paged_fallback, single_shot);
     fs::remove_dir_all(root).unwrap();
 }

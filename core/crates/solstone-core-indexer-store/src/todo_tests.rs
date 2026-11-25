@@ -1441,3 +1441,129 @@ fn a_file_saved_again_after_its_turn_leads_the_next_drain() {
     assert_eq!(order[0]["path"], hot.as_str());
     assert_eq!(order[first.processed]["path"], hot.as_str());
 }
+
+#[test]
+fn speech_transcript_patterns_index_line_by_line_under_transcripts_category() {
+    let journal = Journal::new();
+    let audio_rel = "20260717/talk/090000_300/audio.jsonl";
+    let mic_rel = "20260717/talk/091000_300/mic_audio.jsonl";
+    let sys_rel = "20260717/talk/091000_300/sys_audio.jsonl";
+    let imported_rel = "20260717/import.audio/092000_300/imported_audio.jsonl";
+    let transcript_rel = "20260717/talk/093000_300/session_transcript.jsonl";
+
+    journal.save(
+        audio_rel,
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"09:00:10\",\"speaker\":1,\"text\":\"false beards in the tiring house\"}\n",
+            "{\"start\":\"09:00:25\",\"speaker\":2,\"text\":\"two cloaks by dusk\"}\n",
+        ),
+    );
+    journal.save(
+        mic_rel,
+        "{\"start\":\"09:10:05\",\"speaker\":1,\"text\":\"mic side remark\"}\n",
+    );
+    journal.save(
+        sys_rel,
+        "{\"start\":\"09:10:12\",\"text\":\"remote side remark\"}\n",
+    );
+    journal.save(
+        imported_rel,
+        "{\"start\":\"09:20:00\",\"speaker\":1,\"text\":\"imported voice memo line\"}\n",
+    );
+    journal.save(
+        transcript_rel,
+        "{\"start\":\"09:30:04\",\"speaker\":1,\"text\":\"named transcript line\"}\n",
+    );
+
+    let report = scan_journal(journal.path(), true).unwrap();
+    assert_eq!(report.failed, 0, "{report:?}");
+
+    let conn = open_index(journal.path()).unwrap();
+    assert!(crate::generation::speech_transcripts_indexed(&conn).unwrap());
+    for (rel, expected_chunks) in [
+        (audio_rel, 2_i64),
+        (mic_rel, 1_i64),
+        (sys_rel, 1_i64),
+        (imported_rel, 1_i64),
+        (transcript_rel, 1_i64),
+    ] {
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM chunks WHERE path=?", [rel], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, expected_chunks, "{rel}");
+        let category: String = conn
+            .query_row(
+                "SELECT category FROM chunk_classification WHERE path=?",
+                [rel],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(category, "transcripts", "{rel}");
+    }
+}
+
+#[test]
+fn pre_upgrade_index_automatically_queues_full_scan_once_and_marks_upgraded() {
+    let journal = Journal::new();
+    let note_rel = "20260717/talk/090000_300/talents/activity.md";
+    let audio_rel = "20260717/talk/090000_300/audio.jsonl";
+    journal.save(note_rel, "morning walk around the yard");
+    journal.save(
+        audio_rel,
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"09:01:14\",\"speaker\":1,\"text\":\"benchers knew the verses by heart\"}\n",
+        ),
+    );
+    scan_journal(journal.path(), true).unwrap();
+
+    // Roll the index back to a pre-upgrade 2.0.90 state: note indexed, speech
+    // transcript never indexed, upgrade marker absent from index_meta.
+    {
+        let conn = open_index(journal.path()).unwrap();
+        conn.execute("DELETE FROM chunk_sources WHERE path=?", [audio_rel])
+            .unwrap();
+        conn.execute("DELETE FROM chunk_classification WHERE path=?", [audio_rel])
+            .unwrap();
+        conn.execute("DELETE FROM chunks WHERE path=?", [audio_rel])
+            .unwrap();
+        conn.execute("DELETE FROM files WHERE path=?", [audio_rel])
+            .unwrap();
+        conn.execute(
+            "DELETE FROM index_meta WHERE key=?",
+            [crate::generation::META_SPEECH_TRANSCRIPTS_INDEXED],
+        )
+        .unwrap();
+        assert!(!crate::generation::speech_transcripts_indexed(&conn).unwrap());
+    }
+
+    assert!(queue_upgrade_if_needed(journal.path()).unwrap());
+    assert_eq!(
+        inspect(journal.path()).unwrap().keys,
+        [Token::ScanFull.key()]
+    );
+    // Repeated ticks do not double-queue while the upgrade pass is pending.
+    assert!(!queue_upgrade_if_needed(journal.path()).unwrap());
+
+    let report = drain_now(journal.path()).unwrap();
+    assert_eq!(report.failed, 0, "{report:?}");
+
+    let conn = open_index(journal.path()).unwrap();
+    assert!(crate::generation::speech_transcripts_indexed(&conn).unwrap());
+    let speech_chunks: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM chunks WHERE path=?",
+            [audio_rel],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(speech_chunks, 1);
+    drop(conn);
+
+    // Steady state: once upgraded, queue_upgrade_if_needed is a no-op.
+    assert!(!queue_upgrade_if_needed(journal.path()).unwrap());
+    assert!(listed(journal.path()).is_empty());
+}

@@ -1238,6 +1238,13 @@ pub(crate) fn process_one_with_in(
         redo,
     })?;
     drop(observation);
+    if let Err(error) = solstone_core_indexer_todo::enqueue_path(journal_path, &jsonl_path) {
+        log::warn!(
+            target: "solstone::transcribe",
+            "search index update not queued for {}: {error}",
+            jsonl_path.display()
+        );
+    }
     finish_voice_only_deletion(
         locale,
         journal_path,

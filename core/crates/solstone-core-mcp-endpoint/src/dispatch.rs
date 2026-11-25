@@ -68,15 +68,19 @@ const MAX_CARD_NOTE_BYTES: u64 = 2048;
 
 static REFERENCES: OnceLock<ReferenceCodec> = OnceLock::new();
 
-// The plain-words reading of each empty result. ⚠ Search does not cover raw
-// transcripts (`coverage.transcript_index`), so an empty search must never be
-// worded as "the journal has nothing".
-const SEARCH_EMPTY: &str = "No results. Nothing this connection can search in the journal \
-matches this. This is a complete answer, not an error, but it does not show that something \
-never happened: search does not read conversations word for word. If the owner named a day, \
-call list_transcripts for that day, narrowed to any time they mention, then get_transcript. \
-Otherwise tell the owner a search of the journal found nothing on this, rather than reading \
-transcripts one by one.";
+// The plain-words reading of each empty result. An empty search never proves
+// something never happened: an unrecorded moment, a different word, or a
+// permission boundary can still leave a query empty.
+const SEARCH_EMPTY: &str = "no results. nothing this connection can search in the journal \
+matches this. this is a complete answer, not an error, though it does not show that something \
+never happened. if the owner named a day and transcripts are allowed, call list_transcripts for \
+that day, narrowed to any time they mention, then get_transcript. otherwise tell the owner a \
+search of the journal found nothing on this, rather than reading transcripts one by one.";
+const SEARCH_EMPTY_UNINDEXED_SPEECH: &str = "no results. nothing this connection can search in \
+the journal matches this. this is a complete answer, not an error, and spoken transcripts aren't \
+indexed yet. if the owner named a day and transcripts are allowed, call list_transcripts for \
+that day, narrowed to any time they mention, then get_transcript. otherwise tell the owner a \
+search of the journal found nothing on this, rather than reading transcripts one by one.";
 const SEARCH_EMPTY_INCOMPLETE: &str = "No results, but this search did not check the whole \
 index, so it does not show the journal has nothing on this. Tell the owner the search came back \
 empty and may be incomplete.";
@@ -1880,6 +1884,7 @@ struct SearchAnchor {
     path: String,
     idx: i64,
     row_id: i64,
+    score_bits: Option<u64>,
     content_fingerprint: String,
     activity_proof: Option<String>,
     omit_cursor: bool,
@@ -1970,7 +1975,10 @@ fn search(
         })
         .transpose()?;
     let mut start_after = resolved_cursor.as_ref().map(|(sa, _)| sa.clone());
-    let mut seen_location_path: Option<String> = resolved_cursor.and_then(|(_, path)| path);
+    let mut seen_location_paths: BTreeSet<String> = resolved_cursor
+        .and_then(|(_, path)| path)
+        .into_iter()
+        .collect();
     if implicit_end {
         // Blank-query browsing is newest-first. On a later page the cursor
         // already bounds it, so the query identity does not depend on midnight.
@@ -1989,7 +1997,7 @@ fn search(
     let mut locations = BTreeMap::new();
     let mut location_documents = BTreeMap::new();
     let mut filtered_body_documents: BTreeMap<String, Option<String>> = BTreeMap::new();
-    let mut seen_filtered_body_path: Option<String> = None;
+    let mut seen_filtered_body_paths: BTreeSet<String> = BTreeSet::new();
     let may_read_womens_health = crate::body_source::holds_womens_health(snapshot);
     let may_read_locations = snapshot.categories.contains(&AdmittedCategory::Places)
         && matches!(snapshot.scope, ConnectionScope::WholeJournal);
@@ -2003,6 +2011,7 @@ fn search(
     let mut examined = 0_usize;
     let mut live_dropped = false;
     let mut index_coverage_complete = true;
+    let mut speech_transcripts_indexed = true;
     let mut degraded = false;
     let mut relaxed = false;
     let mut has_more = false;
@@ -2011,16 +2020,19 @@ fn search(
     // may not see never matches, counts, relaxes the query or anchors a cursor.
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
     let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names), snapshot);
+    let mut speech_lines = solstone_core_transcripts::SpeechLineCache::default();
     let mut import_previews = BTreeMap::new();
     let mut sources: Option<BTreeMap<String, String>> = None;
-    let mut seen_document_path = (!request.query.trim().is_empty())
+    let mut seen_document_paths: BTreeSet<String> = (!request.query.trim().is_empty())
         .then(|| {
             start_after
                 .as_ref()
                 .filter(|cursor| cursor.path.ends_with("/document_transcript.md"))
                 .map(|cursor| cursor.path.clone())
         })
-        .flatten();
+        .flatten()
+        .into_iter()
+        .collect();
     let person_filter_owner = request
         .person
         .as_ref()
@@ -2055,12 +2067,14 @@ fn search(
         )
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
+        speech_transcripts_indexed &= response.speech_transcripts_indexed;
         degraded |= response.degraded.is_some();
         relaxed |= response.relaxed;
         let batch_len = response.results.len();
         if batch_len == 0 {
             break;
         }
+        let batch_order = response.order;
         let batch_query = response.cleaned_query.clone();
         let batch_relaxed = response.relaxed;
         let facet_declarations = FacetDeclarationSet::from_journal(journal_root).ok();
@@ -2068,10 +2082,13 @@ fn search(
         for hit in response.results {
             processed += 1;
             examined += 1;
+            let hit_score_bits = (batch_order == solstone_core_indexer_query::Order::Relevance)
+                .then(|| hit.score.to_bits());
             start_after = Some(ConnectionStartAfter {
                 day: hit.metadata.day.clone(),
                 path: hit.metadata.path.clone(),
                 idx: hit.metadata.idx,
+                score_bits: hit_score_bits,
             });
             anchor = Some(SearchAnchor {
                 day: hit.metadata.day.clone(),
@@ -2079,18 +2096,19 @@ fn search(
                 path: hit.metadata.path.clone(),
                 idx: hit.metadata.idx,
                 row_id: hit.row_id,
+                score_bits: hit_score_bits,
                 content_fingerprint: digest(&hit.text),
                 activity_proof: None,
                 omit_cursor: false,
             });
             if location_file_day(&hit.metadata.path).is_some()
-                && seen_location_path.as_deref() == Some(hit.metadata.path.as_str())
+                && seen_location_paths.contains(&hit.metadata.path)
             {
                 continue;
             }
             if !may_read_womens_health
                 && body_file_day(&hit.metadata.path).is_some()
-                && seen_filtered_body_path.as_deref() == Some(hit.metadata.path.as_str())
+                && seen_filtered_body_paths.contains(&hit.metadata.path)
             {
                 continue;
             }
@@ -2191,6 +2209,9 @@ fn search(
             // the segment's transcript grant (this row's own classification)
             // lets this connection read.
             let is_possible_name = is_possible_names_path(&hit.metadata.path);
+            let is_speech_line =
+                solstone_core_format::content::is_audio_transcript_path(&hit.metadata.path);
+            let mut resolved_speech: Option<solstone_core_transcripts::ResolvedSpeechLine> = None;
             let mut served_text = if is_possible_name {
                 let Some(entry) =
                     possible_names.indexed(&hit.metadata.path, hit.metadata.idx, &hit.text)
@@ -2199,6 +2220,25 @@ fn search(
                     continue;
                 };
                 crate::possible_names::matched_text(&entry)
+            } else if is_speech_line {
+                let segment_dir = speech_segment_dir(journal_root, &hit.metadata.path);
+                let line_possible_names = segment_dir
+                    .as_deref()
+                    .and_then(|dir| possible_names.labels(dir));
+                let Some(resolved) = speech_lines.resolve_line(
+                    journal_root,
+                    &hit.metadata.path,
+                    hit.metadata.idx,
+                    &served_text,
+                    checker.speakers(journal_root),
+                    line_possible_names.as_ref(),
+                ) else {
+                    live_dropped = true;
+                    continue;
+                };
+                let text = resolved.text.clone();
+                resolved_speech = Some(resolved);
+                text
             } else {
                 served_text
             };
@@ -2266,7 +2306,7 @@ fn search(
             {
                 continue;
             }
-            if is_document && seen_document_path.as_deref() == Some(hit.metadata.path.as_str()) {
+            if is_document && seen_document_paths.contains(&hit.metadata.path) {
                 continue;
             }
             if !matches_find_filters(
@@ -2613,6 +2653,17 @@ fn search(
                 // Tentative: the journal's guess at who or what was meant.
                 value["possible_name"] = Value::Bool(true);
             }
+            if let Some(speech) = &resolved_speech {
+                if let Some(time) = &speech.time {
+                    value["time"] = Value::String(time.clone());
+                }
+                if let Some(speaker) = &speech.speaker {
+                    value["speaker"] = Value::String(speaker.clone());
+                }
+                if speech.untimed {
+                    value["untimed"] = Value::Bool(true);
+                }
+            }
             if let Some(offset_ms) = hit.metadata.group_offset_ms {
                 let segment = solstone_core_format::content::screen_text::screen_text_segment(
                     &hit.metadata.path,
@@ -2662,13 +2713,13 @@ fn search(
                 value["more_segments"] = Value::Bool(true);
             }
             if is_document {
-                seen_document_path = Some(hit.metadata.path.clone());
+                seen_document_paths.insert(hit.metadata.path.clone());
             }
             if location_file_day(&hit.metadata.path).is_some() {
-                seen_location_path = Some(hit.metadata.path.clone());
+                seen_location_paths.insert(hit.metadata.path.clone());
             }
             if !may_read_womens_health && body_file_day(&hit.metadata.path).is_some() {
-                seen_filtered_body_path = Some(hit.metadata.path.clone());
+                seen_filtered_body_paths.insert(hit.metadata.path.clone());
             }
             results.push(value);
             if results.len() == request.limit {
@@ -2685,10 +2736,9 @@ fn search(
         .filter(|anchor| !anchor.omit_cursor)
         .filter(|_| has_more || examined == MAX_SEARCH_EXAMINED_ROWS)
         .map(|anchor| {
-            let emitted_location_path = seen_location_path
-                .as_ref()
-                .filter(|path| *path == &anchor.path)
-                .cloned();
+            let emitted_location_path = seen_location_paths
+                .contains(&anchor.path)
+                .then(|| anchor.path.clone());
             codec().mint(
                 principal.connection,
                 snapshot.generation,
@@ -2707,6 +2757,7 @@ fn search(
                     path: anchor.path,
                     idx: anchor.idx,
                     row_id: anchor.row_id,
+                    score_bits: anchor.score_bits,
                     content_fingerprint: anchor.content_fingerprint,
                     activity_proof: anchor.activity_proof,
                     emitted_location_path,
@@ -2765,13 +2816,18 @@ fn search(
         }
     }
     let complete = index_coverage_complete && live_examination_complete && !degraded;
+    let transcript_index_note = if speech_transcripts_indexed {
+        "search reads spoken transcript lines when transcripts are allowed. use get_transcript on a result's segment for surrounding context before quoting anyone."
+    } else {
+        "spoken transcripts aren't indexed yet. when transcripts are allowed, use get_transcript on a result's segment to read conversations word for word."
+    };
     let mut response_val = json!({
         "results": results,
         "next_cursor": next_cursor,
         "coverage": {
             "index_classification_complete": index_coverage_complete,
             "live_examination_complete": live_examination_complete,
-            "transcript_index": "Search does not read conversations word for word. Read the segments a result lists with get_transcript.",
+            "transcript_index": transcript_index_note,
         },
         "degraded": degraded,
         "relaxed": relaxed,
@@ -2845,10 +2901,12 @@ fn search(
     if count == 0 && body_withheld {
         prepared = prepared.when_empty(crate::body_source::BODY_NOT_GRANTED);
     } else if count == 0 && resolution.status != EntityResolutionStatus::Incomplete {
-        prepared = prepared.when_empty(if complete {
+        prepared = prepared.when_empty(if !complete {
+            SEARCH_EMPTY_INCOMPLETE
+        } else if speech_transcripts_indexed {
             SEARCH_EMPTY
         } else {
-            SEARCH_EMPTY_INCOMPLETE
+            SEARCH_EMPTY_UNINDEXED_SPEECH
         });
     }
     Ok(prepared)
@@ -3118,9 +3176,21 @@ fn resolve_search_cursor(
             day: cursor.day,
             path: cursor.path,
             idx: cursor.idx,
+            score_bits: cursor.score_bits,
         },
         cursor.emitted_location_path,
     ))
+}
+
+fn speech_segment_dir(journal_root: &Path, path: &str) -> Option<std::path::PathBuf> {
+    let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+    let parts: Vec<&str> = rel.split('/').collect();
+    let [day, stream, seg_key, _] = parts.as_slice() else {
+        return None;
+    };
+    solstone_core_journal_io::paths::Segment::resolve_exact(journal_root, day, stream, seg_key)
+        .ok()?
+        .map(|segment| segment.path().to_path_buf())
 }
 
 /// The row that holds `path` at `idx` for this boundary now, and whether it
@@ -3414,6 +3484,8 @@ fn fetch(
                 entry.row_id,
             )?
             .unwrap_or((entry.row_id, false));
+            let mut resolved_speech: Option<solstone_core_transcripts::ResolvedSpeechLine> = None;
+            let mut fetch_speakers: Option<Option<solstone_core_transcripts::AgentSpeakers>> = None;
             let (text, hidden, record) = match admit_activity(
                 journal_root,
                 &boundary,
@@ -3502,6 +3574,32 @@ fn fetch(
                         .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
                     (crate::possible_names::matched_text(&live), None, None)
                 }
+                // An indexed speech line is verified and rendered live, matching get_transcript.
+                ActivityAdmit::NotActivity(content)
+                    if solstone_core_format::content::is_audio_transcript_path(&entry.path) =>
+                {
+                    let speakers = fetch_speakers
+                        .get_or_insert_with(|| {
+                            solstone_core_talent_runtime::agent_speakers(journal_root)
+                        })
+                        .as_ref();
+                    let line_possible_names = speech_segment_dir(journal_root, &entry.path)
+                        .as_deref()
+                        .and_then(|dir| possible_names.labels(dir));
+                    let resolved = solstone_core_transcripts::SpeechLineCache::default()
+                        .resolve_line(
+                            journal_root,
+                            &entry.path,
+                            entry.idx,
+                            &content,
+                            speakers,
+                            line_possible_names.as_ref(),
+                        )
+                        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    let text = resolved.text.clone();
+                    resolved_speech = Some(resolved);
+                    (text, None, None)
+                }
                 ActivityAdmit::NotActivity(content) if location_file_day(&entry.path).is_some() => {
                     let day = location_file_day(&entry.path).expect("location document day");
                     let text =
@@ -3588,7 +3686,12 @@ fn fetch(
                 more_segments: false,
                 activity_record: record.as_ref(),
             }];
-            let mut checker = LiveTranscriptPages::new(possible_names, snapshot);
+            let mut checker = match fetch_speakers {
+                Some(speakers) => {
+                    LiveTranscriptPages::with_speakers(speakers, possible_names, snapshot)
+                }
+                None => LiveTranscriptPages::new(possible_names, snapshot),
+            };
             let mut response_checks = 0;
             if allowed {
                 issue_segment_links(
@@ -3636,6 +3739,23 @@ fn fetch(
                 if let Some(time_source) = clock.time_source {
                     value["time_source"] = Value::String(time_source.to_owned());
                 }
+            }
+            if let Some(speech) = &resolved_speech {
+                if let Some(time) = &speech.time {
+                    value["time"] = Value::String(time.clone());
+                }
+                if let Some(speaker) = &speech.speaker {
+                    value["speaker"] = Value::String(speaker.clone());
+                }
+                if speech.untimed {
+                    value["untimed"] = Value::Bool(true);
+                }
+                crate::journal_links::Recordings::default().entry(
+                    journal_root,
+                    &mut value,
+                    &entry.path,
+                    None,
+                );
             }
             if let Some(doc) = &topic {
                 insert_topic_kinds(&mut value, doc);

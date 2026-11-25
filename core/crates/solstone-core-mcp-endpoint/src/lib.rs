@@ -96,6 +96,8 @@ mod sme_account_replace;
 #[cfg(feature = "test-hooks")]
 mod source_freeze_barrier;
 mod source_release;
+#[cfg(test)]
+mod speech_search_tests;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix, not(feature = "full-tests")))]

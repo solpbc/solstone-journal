@@ -7345,6 +7345,7 @@ dependencies = [
  "solstone-core-cli-copy",
  "solstone-core-distribution",
  "solstone-core-format",
+ "solstone-core-indexer-todo",
  "solstone-core-installation-identity",
  "solstone-core-installed-payload",
  "solstone-core-journal",

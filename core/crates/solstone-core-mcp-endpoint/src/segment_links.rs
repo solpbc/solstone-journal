@@ -70,6 +70,17 @@ impl LiveTranscriptPages {
             hides: None,
         }
     }
+
+    /// Resolve the journal's agent speakers once per response and reuse them
+    /// across segment link checks and indexed speech line display.
+    pub(crate) fn speakers(
+        &mut self,
+        journal_root: &Path,
+    ) -> Option<&solstone_core_transcripts::AgentSpeakers> {
+        self.speakers
+            .get_or_insert_with(|| solstone_core_talent_runtime::agent_speakers(journal_root))
+            .as_ref()
+    }
 }
 
 impl TranscriptPageCheck for LiveTranscriptPages {

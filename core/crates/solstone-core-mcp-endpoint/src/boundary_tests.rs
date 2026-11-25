@@ -407,7 +407,7 @@ fn kinds_keep_old_grants_strict_across_segment_search_and_fetch() {
             "speechneedle",
             "transcripts",
             true,
-            false,
+            true,
         ),
         (
             "20260914/default/090000_300/note_transcript.md",
@@ -1231,7 +1231,10 @@ fn an_empty_result_says_so_in_words_and_a_served_one_does_not() {
         .empty_note
         .clone()
         .expect("an empty search carries a plain note");
-    assert!(note.starts_with("No results"), "{note}");
+    assert!(
+        note.to_ascii_lowercase().starts_with("no results"),
+        "{note}"
+    );
 
     let rendered = crate::jsonrpc::tool_result(empty.value, empty.empty_note.as_deref());
     // The note rides in the typed result: a client reading structuredContent
@@ -19343,7 +19346,16 @@ fn transcripts_only_connection_never_sees_unpermitted_kinds_or_sources() {
     .unwrap();
     assert_no_foreign_kind_or_source("search", &search);
     let hits = search["results"].as_array().unwrap();
-    assert!(hits.is_empty(), "{search}");
+    assert_eq!(hits.len(), 1, "{search}");
+    assert_eq!(hits[0]["content_kind"], "transcripts");
+    assert_eq!(hits[0]["time"], "10:00:05");
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": hits[0]["reference"]}),
+    )
+    .unwrap();
+    assert_no_foreign_kind_or_source("fetch", &fetched);
 
     // list_transcripts + get_transcript (single and span)
     let listed = probe(&journal, "list_transcripts", json!({"day": day})).unwrap();
@@ -20825,8 +20837,12 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
         .collect();
     assert_eq!(search_docs.len(), 2, "{searched}");
     assert_eq!(search_screens.len(), 2, "{searched}");
-    assert_eq!(search_docs[0]["title"], "Theatre lease terms");
-    assert_eq!(search_docs[1]["title"], "Greenwich warrant");
+    let first_doc_title = search_docs[0]["title"].as_str().unwrap().to_owned();
+    let second_doc_title = search_docs[1]["title"].as_str().unwrap().to_owned();
+    assert_eq!(
+        std::collections::BTreeSet::from([first_doc_title.as_str(), second_doc_title.as_str()]),
+        std::collections::BTreeSet::from(["Theatre lease terms", "Greenwich warrant"]),
+    );
 
     // Fetching the collapsed hit still returns the entire document across all pages.
     let fetched = probe(
@@ -20842,7 +20858,7 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
     );
 
     // Paginated keyword search with limit=1 crosses the document boundary without repeating
-    // remaining chunks of the first document on page 2.
+    // remaining chunks of the first document on page 2 or page 3.
     let page1 = probe(
         &journal,
         "search",
@@ -20850,7 +20866,7 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
     )
     .unwrap();
     assert_eq!(page1["results"].as_array().unwrap().len(), 1, "{page1}");
-    assert_eq!(page1["results"][0]["title"], "Theatre lease terms");
+    assert_eq!(page1["results"][0]["title"], first_doc_title);
     let cursor1 = page1["next_cursor"].as_str().expect("cursor to second PDF");
     let page2 = probe(
         &journal,
@@ -20859,7 +20875,7 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
     )
     .unwrap();
     assert_eq!(page2["results"].as_array().unwrap().len(), 1, "{page2}");
-    assert_eq!(page2["results"][0]["title"], "Greenwich warrant");
+    assert_eq!(page2["results"][0]["title"], second_doc_title);
     if let Some(cursor2) = page2["next_cursor"].as_str() {
         let page3 = probe(
             &journal,

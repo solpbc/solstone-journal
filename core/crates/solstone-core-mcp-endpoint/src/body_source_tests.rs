@@ -1862,16 +1862,26 @@ fn an_agent_finds_an_oura_workout_and_its_day_and_pages_its_heart_rate() {
         );
     }
 
-    // The hit's link reaches the workout with every field.
+    // The workout hit's link reaches the workout with every field.
     let found = call(
         root,
         "search",
         json!({"query": "synthetic hill loop", "day": DAY}),
     );
+    let workout_hit = found["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row.get("segments")
+                .and_then(Value::as_array)
+                .is_some_and(|segs| !segs.is_empty())
+        })
+        .expect("workout hit with segment link");
     let fetched = call(
         root,
         "fetch",
-        json!({"reference": found["results"][0]["reference"]}),
+        json!({"reference": workout_hit["reference"]}),
     );
     assert!(fetched.to_string().contains("2412.9 m"), "{fetched}");
     let link = fetched["segments"][0]["reference"].as_str().unwrap();

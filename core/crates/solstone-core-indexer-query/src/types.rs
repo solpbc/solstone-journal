@@ -338,6 +338,9 @@ pub struct ConnectionStartAfter {
     pub day: String,
     pub path: String,
     pub idx: i64,
+    /// IEEE-754 bits of the anchor's BM25 score when paging a relevance-ordered search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score_bits: Option<u64>,
 }
 
 /// One FTS row, shaped like the Python journal search result.
@@ -442,6 +445,9 @@ pub struct ConnectionSearchHit {
     pub id: String,
     pub text: String,
     pub metadata: SearchMetadata,
+    /// Internal BM25 score used only to anchor relevance-ordered continuation cursors.
+    #[serde(skip)]
+    pub score: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -459,6 +465,7 @@ pub struct ConnectionSearchResponse {
     pub relaxed: bool,
     pub cleaned_query: String,
     pub coverage_complete: bool,
+    pub speech_transcripts_indexed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub degraded: Option<ConnectionIndexDegraded>,
 }

@@ -130,6 +130,9 @@ pub(crate) struct CursorReference {
     pub path: String,
     pub idx: i64,
     pub row_id: i64,
+    /// IEEE-754 bits of the anchor's BM25 score when paging a relevance-ordered search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score_bits: Option<u64>,
     pub content_fingerprint: String,
     /// File digest bound into an activity cursor. Absent for every other cursor.
     #[serde(default, skip_serializing_if = "Option::is_none")]

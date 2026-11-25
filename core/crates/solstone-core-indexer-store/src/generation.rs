@@ -42,6 +42,7 @@ const META_GENERATION: &str = "generation";
 const META_LAST_COMPATIBLE: &str = "last_compatible_generation";
 const META_WRITER_VERSION: &str = "writer_version";
 const META_LAST_SCAN: &str = "last_scan";
+pub const META_SPEECH_TRANSCRIPTS_INDEXED: &str = "speech_transcripts_indexed";
 
 /// The stamp as found in a file, before any defaulting.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -138,6 +139,24 @@ fn read_meta(conn: &Connection, key: &str) -> Result<Option<String>, StoreError>
             row.get(0)
         })
         .optional()?)
+}
+
+/// Whether this index has completed a scan since speech transcript indexing was introduced.
+pub fn speech_transcripts_indexed(conn: &Connection) -> Result<bool, StoreError> {
+    if !sqlite_table_exists(conn, "index_meta")? {
+        return Ok(false);
+    }
+    Ok(read_meta(conn, META_SPEECH_TRANSCRIPTS_INDEXED)?.as_deref() == Some("1"))
+}
+
+/// Record that this index has completed a scan with speech transcript indexing active.
+pub(crate) fn mark_speech_transcripts_indexed(conn: &Connection) -> Result<(), StoreError> {
+    conn.execute(CREATE_INDEX_META, [])?;
+    conn.execute(
+        "INSERT OR IGNORE INTO index_meta(key, value) VALUES (?, '1')",
+        [META_SPEECH_TRANSCRIPTS_INDEXED],
+    )?;
+    Ok(())
 }
 
 /// Refuse a newer generation, else bring the stamp current. Writes only when a

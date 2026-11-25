@@ -690,6 +690,9 @@ mod tests {
         assert_eq!(
             rels,
             vec![
+                "20240101/default/123456_300/audio.jsonl",
+                "20240101/default/123456_300/left_audio.jsonl",
+                "20240101/default/123456_300/left_transcript.jsonl",
                 "20240101/default/123456_300/talents/audio.md",
                 "20240101/default/123456_300/talents/documents.json",
                 "20240101/default/123456_300/talents/screen.json",
@@ -709,9 +712,6 @@ mod tests {
         );
         assert!(!files.contains_key("20240101/default/123456_300/talents/morning_briefing.json"));
         for unindexed in [
-            "20240101/default/123456_300/audio.jsonl",
-            "20240101/default/123456_300/left_audio.jsonl",
-            "20240101/default/123456_300/left_transcript.jsonl",
             "20240101/default/123456_300/screen.jsonl",
             "20240101/default/123456_300/left_screen.jsonl",
             "20240101/phone/123456_300/location.jsonl",
@@ -797,6 +797,7 @@ mod tests {
             "chronicle/20240101/default/123456_300/talents/sense.json",
         );
         write(&root, "chronicle/20240101/default/123456_300/audio.jsonl");
+        write(&root, "chronicle/20240101/default/123456_300/screen.jsonl");
         write(&root, "facets/work/activities/20240101.jsonl");
         write(&root, "entities/alice/entity.json");
 
@@ -804,7 +805,8 @@ mod tests {
         let status = discover_index_status_files(&root).expect("status");
         assert_eq!(status, oracle);
         assert!(status.contains_key("20240101/default/123456_300/talents/sense.json"));
-        assert!(!status.contains_key("20240101/default/123456_300/audio.jsonl"));
+        assert!(status.contains_key("20240101/default/123456_300/audio.jsonl"));
+        assert!(!status.contains_key("20240101/default/123456_300/screen.jsonl"));
         assert!(!status.contains_key("entities/alice/entity.json"));
         fs::remove_dir_all(root).expect("cleanup");
     }

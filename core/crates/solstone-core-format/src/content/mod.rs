@@ -125,6 +125,8 @@ pub enum Family {
     Calendar,
     /// Possible names a segment's audio may refer to. This family is path-selected only.
     PossibleNames,
+    /// Speech transcript lines. This family is path-selected only.
+    Audio,
 }
 
 /// Content that can be rendered for direct consumption but is deliberately
@@ -136,7 +138,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 22] = [
+const ALL_FAMILIES: [Family; 23] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -159,6 +161,7 @@ const ALL_FAMILIES: [Family; 22] = [
     Family::ScreenText,
     Family::Calendar,
     Family::PossibleNames,
+    Family::Audio,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1163,11 +1166,14 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         pattern: "*/*/*/audio.jsonl",
         root: PatternRoot::DayRooted,
         format: FileFormat::Raw(RawPerceptFamily::Audio),
-        classification: ContentResolution::Unindexed(RawPerceptFamily::Audio),
-        disposition: IndexDisposition::Excluded,
+        classification: ContentResolution::Indexed(Family::Audio),
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
         kind: KindAssignment::Settled(Kind::Transcripts),
         unit: ContentUnit::Segment,
-        offered_to: OfferedTo::DASHBOARD_AGENT_TALENTS,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
         condition: FileCondition::Path,
         segment: Some(SegmentRule::new(OfferedTo::DASHBOARD_AGENT_TALENTS)),
     },
@@ -1175,11 +1181,14 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         pattern: "*/*/*/*_audio.jsonl",
         root: PatternRoot::DayRooted,
         format: FileFormat::Raw(RawPerceptFamily::Audio),
-        classification: ContentResolution::Unindexed(RawPerceptFamily::Audio),
-        disposition: IndexDisposition::Excluded,
+        classification: ContentResolution::Indexed(Family::Audio),
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
         kind: KindAssignment::Settled(Kind::Transcripts),
         unit: ContentUnit::Segment,
-        offered_to: OfferedTo::DASHBOARD_AGENT_TALENTS,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
         condition: FileCondition::Path,
         segment: Some(SegmentRule::new(OfferedTo::DASHBOARD_AGENT_TALENTS)),
     },
@@ -1187,11 +1196,14 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         pattern: "*/*/*/*_transcript.jsonl",
         root: PatternRoot::DayRooted,
         format: FileFormat::Raw(RawPerceptFamily::Audio),
-        classification: ContentResolution::Unindexed(RawPerceptFamily::Audio),
-        disposition: IndexDisposition::Excluded,
+        classification: ContentResolution::Indexed(Family::Audio),
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
         kind: KindAssignment::Settled(Kind::Transcripts),
         unit: ContentUnit::Segment,
-        offered_to: OfferedTo::AGENT_TALENTS,
+        offered_to: OfferedTo::SEARCH_AGENT_TALENTS,
         condition: FileCondition::Path,
         segment: Some(SegmentRule::new(OfferedTo::AGENT_TALENTS)),
     },
@@ -2294,6 +2306,13 @@ pub fn resolve_spec(rel: &str) -> Option<FamilyPattern> {
         .and_then(FilePattern::index_spec)
 }
 
+/// Whether `path` resolves to an indexed speech transcript file (`Family::Audio`).
+#[must_use]
+pub fn is_audio_transcript_path(path: &str) -> bool {
+    let normalized = path.strip_prefix("chronicle/").unwrap_or(path);
+    resolve_spec(normalized).is_some_and(|spec| spec.family == Family::Audio)
+}
+
 pub fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = FamilyPattern> {
     filter_patterns_for_root(INDEX_FAMILY_PATTERNS, root).filter_map(FilePattern::index_spec)
 }
@@ -2378,6 +2397,7 @@ pub fn produce_chunks_by_shape_for_locale(
         Family::BodyRecords => body_records::render_for_locale(records, locale),
         Family::Calendar => render_calendar(records),
         Family::PossibleNames => possible_names::render_for_locale(records, locale),
+        Family::Audio => audio::render(rel_text, records),
         Family::AgentMemory => ProducedChunks {
             chunks: Vec::new(),
             agent_override: Some("memory".to_string()),
@@ -3494,7 +3514,11 @@ mod tests {
     fn classifies_non_indexed_and_unrecognized_paths() {
         assert_eq!(
             classify("20240101/default/123456_300/audio.jsonl"),
-            ContentResolution::Unindexed(RawPerceptFamily::Audio)
+            ContentResolution::Indexed(Family::Audio)
+        );
+        assert_eq!(
+            classify("20240101/default/123456_300/screen.jsonl"),
+            ContentResolution::Unindexed(RawPerceptFamily::RawScreen)
         );
         assert_eq!(
             classify("entities/alice/entity.json"),
@@ -3584,7 +3608,11 @@ mod tests {
 
         assert_eq!(
             classify("20260101/default/123456_300/left_audio.jsonl"),
-            ContentResolution::Unindexed(RawPerceptFamily::Audio),
+            ContentResolution::Indexed(Family::Audio),
+        );
+        assert_eq!(
+            classify("20260101/default/123456_300/left_screen.jsonl"),
+            ContentResolution::Unindexed(RawPerceptFamily::RawScreen),
         );
     }
 
@@ -3657,7 +3685,7 @@ mod tests {
             assert!(
                 INDEX_FAMILY_PATTERNS
                     .iter()
-                    .any(|pattern| pattern.format == FileFormat::Content(family)),
+                    .any(|pattern| pattern.classification == ContentResolution::Indexed(family)),
                 "{family:?} has no registered content pattern"
             );
         }

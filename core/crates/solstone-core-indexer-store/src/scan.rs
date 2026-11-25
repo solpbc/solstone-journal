@@ -692,6 +692,7 @@ fn scan_journal_pass(
     let db_mtimes = load_file_mtimes(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
     let mut to_index = Vec::new();
+    let mut speech_failed = false;
     for (rel, path) in &files {
         let memory_note = is_memory_note(rel);
         let observed_mtime = if memory_note {
@@ -731,6 +732,9 @@ fn scan_journal_pass(
                 } else if !is_not_found(&error) {
                     // A file removed since discovery is gone, not failed.
                     report.fail(Some(rel), None);
+                    if solstone_core_format::content::is_audio_transcript_path(rel) {
+                        speech_failed = true;
+                    }
                 }
             }
         }
@@ -913,6 +917,9 @@ fn scan_journal_pass(
                 crate::recovery::report_if_damage_text(journal, &error.to_string());
                 report.skipped += 1;
                 report.fail(Some(rel), Some(*mtime));
+                if family == Family::Audio {
+                    speech_failed = true;
+                }
                 report.warnings.push(crate::cli_detail::io_message(&error));
                 continue;
             }
@@ -921,7 +928,12 @@ fn scan_journal_pass(
         commit_scanned(tx, checkpoint)?;
         report.warnings.extend(outcome.warnings);
         match outcome.undecidable {
-            Some(cause) => report.undecided(rel, *mtime, cause),
+            Some(cause) => {
+                if family == Family::Audio {
+                    speech_failed = true;
+                }
+                report.undecided(rel, *mtime, cause);
+            }
             None => report.indexed += 1,
         }
     }
@@ -975,6 +987,14 @@ fn scan_journal_pass(
     report.failed += edge_report.failures.len();
     report.failures.extend(edge_report.failures);
     report.warnings.extend(edge_report.warnings);
+    if !speech_failed
+        && retained_rows == 0
+        && !crate::generation::speech_transcripts_indexed(&conn)?
+    {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        crate::generation::mark_speech_transcripts_indexed(&tx)?;
+        commit_scanned(tx, checkpoint)?;
+    }
     // A pass that walked every discovered path, light or full, with no failed
     // file and no row left unreconciled leaves an index that matches the
     // journal. Other warnings are reported, not gating. Only a transition
@@ -6768,24 +6788,6 @@ mod tests {
     #[test]
     fn raw_percept_patterns_remain_unindexed_without_content_chunks() {
         for (suffix, rel, family, edge_source) in [
-            (
-                "audio",
-                "20260717/default/090000_300/audio.jsonl",
-                RawPerceptFamily::Audio,
-                false,
-            ),
-            (
-                "split-audio",
-                "20260717/default/090000_300/left_audio.jsonl",
-                RawPerceptFamily::Audio,
-                false,
-            ),
-            (
-                "transcript",
-                "20260717/default/090000_300/session_transcript.jsonl",
-                RawPerceptFamily::Audio,
-                false,
-            ),
             (
                 "screen",
                 "20260717/default/090000_300/screen.jsonl",

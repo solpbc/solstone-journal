@@ -861,6 +861,52 @@ pub fn queue_build_if_absent(journal: &Path) -> Result<bool, StoreError> {
     Ok(true)
 }
 
+/// Queue a full scan when an existing search index predates speech transcript indexing.
+///
+/// Opens the index read-only and takes no writer lease. Steady-state upgraded
+/// indexes return `Ok(false)` after one primary-key lookup in `index_meta`.
+///
+/// # Errors
+///
+/// Checking or queueing the full-scan token failed on disk.
+pub fn queue_upgrade_if_needed(journal: &Path) -> Result<bool, StoreError> {
+    let path = crate::db::db_path(journal);
+    if !crate::generation::has_sqlite_header(&path) {
+        return Ok(false);
+    }
+    if listed_attempts(journal, Token::ScanFull)?.is_some() {
+        return Ok(false);
+    }
+    let Ok(conn) =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
+        return Ok(false);
+    };
+    if conn
+        .execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=1000;")
+        .is_err()
+    {
+        return Ok(false);
+    }
+    let Ok(stamp) = crate::generation::read_stamp(&conn) else {
+        return Ok(false);
+    };
+    if !stamp.writable() {
+        return Ok(false);
+    }
+    match crate::generation::speech_transcripts_indexed(&conn) {
+        Ok(true) | Err(_) => return Ok(false),
+        Ok(false) => {}
+    }
+    drop(conn);
+    enqueue_token(journal, Token::ScanFull)?;
+    log::info!(
+        target: "solstone::indexer",
+        "search index predates speech transcript indexing; queued a full pass to upgrade it"
+    );
+    Ok(true)
+}
+
 /// How long an owner's trash change waits for the index writer before it
 /// leaves its paths to the queued drain.
 pub const REFRESH_NOW_WAIT: Duration = Duration::from_secs(3);

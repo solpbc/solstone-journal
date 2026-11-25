@@ -196,6 +196,7 @@ fn search_connection_admitting(
     if no_tokenizable_term && !day_bounded {
         return Ok(ConnectionSearchResponse {
             coverage_complete: connection.classification_coverage_complete()?,
+            speech_transcripts_indexed: connection.speech_transcripts_indexed(),
             degraded: connection.connection_index_degraded()?,
             ..empty_connection_response(compilation.temporal.remaining_text.clone())
         });
@@ -209,16 +210,23 @@ fn search_connection_admitting(
         compilation,
         Some(boundary.connection().expect("connection boundary")),
     )?;
-    append_connection_start_after(&mut plan, request.start_after.as_ref());
-    let order = Order::Recency;
+    let order = if plan.has_live_match_expression {
+        request.order
+    } else {
+        Order::Recency
+    };
+    if order == Order::Recency {
+        append_connection_start_after(&mut plan, request.start_after.as_ref());
+    }
     let results = connection
-        .fetch_connection_hits(&plan, request.limit)?
+        .fetch_connection_hits(&plan, request.limit, order, request.start_after.as_ref())?
         .into_iter()
         .map(|hit| ConnectionSearchHit {
             row_id: hit.row_id,
             id: hit.id,
             text: hit.text,
             metadata: hit.metadata,
+            score: hit.score,
         })
         .collect();
     Ok(ConnectionSearchResponse {
@@ -227,6 +235,7 @@ fn search_connection_admitting(
         relaxed,
         cleaned_query,
         coverage_complete: connection.classification_coverage_complete()?,
+        speech_transcripts_indexed: connection.speech_transcripts_indexed(),
         degraded: connection.connection_index_degraded()?,
     })
 }
@@ -238,6 +247,7 @@ fn empty_connection_response(cleaned_query: String) -> ConnectionSearchResponse 
         relaxed: false,
         cleaned_query,
         coverage_complete: false,
+        speech_transcripts_indexed: false,
         degraded: None,
     }
 }
@@ -279,6 +289,45 @@ fn append_connection_start_after(
             start_after.idx.to_string(),
         ],
     );
+}
+
+const COLLAPSED_RELEVANCE_PATH_SQL: &str =
+    "(chunks.path LIKE '%/document_transcript.md' OR chunks.path LIKE '%/location.md')";
+
+fn append_relevance_start_after(
+    clause: &mut String,
+    values: &mut Vec<Value>,
+    start_after: Option<&crate::types::ConnectionStartAfter>,
+) {
+    let Some(start_after) = start_after else {
+        return;
+    };
+    if let Some(score_bits) = start_after.score_bits {
+        let score = f64::from_bits(score_bits);
+        clause.push_str(
+            " AND (score > ? OR (score = ? AND (COALESCE(day, '') < ? OR (COALESCE(day, '') = ? AND (path < ? OR (path = ? AND idx < ?))))))",
+        );
+        values.extend([
+            Value::Real(score),
+            Value::Real(score),
+            Value::Text(start_after.day.clone()),
+            Value::Text(start_after.day.clone()),
+            Value::Text(start_after.path.clone()),
+            Value::Text(start_after.path.clone()),
+            Value::Integer(start_after.idx),
+        ]);
+    } else {
+        clause.push_str(
+            " AND (COALESCE(day, '') < ? OR (COALESCE(day, '') = ? AND (path < ? OR (path = ? AND idx < ?))))",
+        );
+        values.extend([
+            Value::Text(start_after.day.clone()),
+            Value::Text(start_after.day.clone()),
+            Value::Text(start_after.path.clone()),
+            Value::Text(start_after.path.clone()),
+            Value::Integer(start_after.idx),
+        ]);
+    }
 }
 
 /// Return whether one exact journal path and chunk index are represented in the index.
@@ -2139,21 +2188,207 @@ impl QueryConnection {
         self.fetch_hits_with_ordering(plan, limit, offset, ordering)
     }
 
+    fn speech_transcripts_indexed(&self) -> bool {
+        solstone_core_indexer_store::generation::speech_transcripts_indexed(&self.connection)
+            .unwrap_or(false)
+    }
+
     fn fetch_connection_hits(
         &mut self,
         plan: &SqlPlan,
         limit: usize,
+        order: Order,
+        start_after: Option<&crate::types::ConnectionStartAfter>,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
         const CONNECTION_RECENCY_ORDER: &str =
             "ORDER BY COALESCE(day, '') DESC, path DESC, idx DESC";
         self.fetch_hook()?;
-        if let Some(key) = &plan.key
-            && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(&self.connection)
-            && let Some(hits) = self.fetch_connection_hits_by_keys(plan, key, limit)?
-        {
-            return Ok(hits);
+        if limit == 0 {
+            return Ok(Vec::new());
         }
-        self.query_hits(plan, limit, 0, CONNECTION_RECENCY_ORDER)
+        match order {
+            Order::Recency => {
+                if let Some(key) = &plan.key
+                    && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(
+                        &self.connection,
+                    )
+                    && let Some(hits) = self.fetch_connection_hits_by_keys(plan, key, limit)?
+                {
+                    return Ok(hits);
+                }
+                self.query_hits(plan, limit, 0, CONNECTION_RECENCY_ORDER)
+            }
+            Order::Relevance => {
+                if let Some(key) = &plan.key
+                    && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(
+                        &self.connection,
+                    )
+                    && let Some(hits) =
+                        self.fetch_connection_hits_by_keys_relevance(plan, key, limit, start_after)?
+                {
+                    return Ok(hits);
+                }
+                self.fetch_connection_hits_relevance(plan, limit, start_after)
+            }
+        }
+    }
+
+    /// Relevance-ordered connection search using the FTS5 inverted index and
+    /// `chunk_sources` keys so that `chunks` content pages are only read for
+    /// returned batches. `bm25(chunks)` reads only postings and `docsize`.
+    fn fetch_connection_hits_by_keys_relevance(
+        &mut self,
+        plan: &SqlPlan,
+        key: &KeyPlan,
+        limit: usize,
+        start_after: Option<&crate::types::ConnectionStartAfter>,
+    ) -> Result<Option<Vec<SearchHit>>, IndexAccessError> {
+        if limit == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        let Some((expression, row_clause, row_params)) = keyed_row_clause(plan, key) else {
+            return Ok(None);
+        };
+        let key_clause = &key.clause;
+        let mut values = vec![Value::Text(expression.clone())];
+        values.extend(key.params.iter().cloned().map(Value::Text));
+        values.extend(key.params.iter().cloned().map(Value::Text));
+        let mut outer_filter = String::from("1=1");
+        append_relevance_start_after(&mut outer_filter, &mut values, start_after);
+        let sql = format!(
+            "WITH matched(rid, score) AS MATERIALIZED (SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ?) \
+             SELECT rid, score, unkeyed FROM ( \
+                 SELECT matched.rid AS rid, matched.score AS score, (chunks.rowid IS NULL) AS unkeyed, \
+                        chunks.day AS day, chunks.path AS path, chunks.idx AS idx \
+                 FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
+                 WHERE chunks.rowid IS NULL OR (({key_clause}) AND NOT {COLLAPSED_RELEVANCE_PATH_SQL}) \
+                 UNION ALL \
+                 SELECT rid, score, 0 AS unkeyed, day, path, idx FROM ( \
+                     SELECT matched.rid AS rid, matched.score AS score, \
+                            chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
+                            ROW_NUMBER() OVER (PARTITION BY chunks.path ORDER BY matched.score ASC, chunks.idx DESC, matched.rid DESC) AS rn \
+                     FROM matched JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
+                     WHERE ({key_clause}) AND {COLLAPSED_RELEVANCE_PATH_SQL} \
+                 ) WHERE rn = 1 \
+             ) \
+             WHERE unkeyed OR ({outer_filter}) \
+             ORDER BY unkeyed DESC, score ASC, COALESCE(day, '') DESC, path DESC, idx DESC, rid DESC"
+        );
+        let (extra_columns, joins) = self.hit_projection()?;
+        let batch = limit.min(500);
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|error| self.classify(error))?;
+        let mut candidates = statement
+            .query(params_from_iter(values.iter()))
+            .map_err(|error| self.classify(error))?;
+        let mut hits = Vec::new();
+        let mut pending: Vec<(i64, f64)> = Vec::with_capacity(batch);
+        let mut first = true;
+        loop {
+            let row = candidates.next().map_err(|error| self.classify(error))?;
+            let done = row.is_none();
+            if let Some(row) = row {
+                let unkeyed: bool = row.get(2).map_err(|error| self.classify(error))?;
+                if first && unkeyed {
+                    return Ok(None);
+                }
+                first = false;
+                let rid: i64 = row.get(0).map_err(|error| self.classify(error))?;
+                let score: f64 = row.get(1).map_err(|error| self.classify(error))?;
+                pending.push((rid, score));
+                if pending.len() < batch {
+                    continue;
+                }
+            }
+            if !pending.is_empty() {
+                let sql = format!(
+                    "SELECT content, path, day, facet, agent, stream, idx, 0.0, chunks.rowid, {extra_columns} \
+                     FROM chunks{joins} WHERE chunks.rowid IN ({}) AND {row_clause}",
+                    category_placeholders(pending.len())
+                );
+                let mut row_values: Vec<Value> = pending
+                    .iter()
+                    .map(|(rid, _)| Value::Integer(*rid))
+                    .collect();
+                row_values.extend(row_params.iter().cloned().map(Value::Text));
+                let mut admitted: BTreeMap<i64, SearchHit> = self
+                    .hit_rows(&sql, &row_values)?
+                    .into_iter()
+                    .map(|hit| (hit.row_id, hit))
+                    .collect();
+                for (row_id, score) in pending.drain(..) {
+                    if let Some(mut hit) = admitted.remove(&row_id) {
+                        hit.score = score;
+                        hits.push(hit);
+                        if hits.len() == limit {
+                            return Ok(Some(hits));
+                        }
+                    }
+                }
+            }
+            if done {
+                return Ok(Some(hits));
+            }
+        }
+    }
+
+    fn fetch_connection_hits_relevance(
+        &mut self,
+        plan: &SqlPlan,
+        limit: usize,
+        start_after: Option<&crate::types::ConnectionStartAfter>,
+    ) -> Result<Vec<SearchHit>, IndexAccessError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let Some(rest) = plan.where_clause.strip_prefix(MATCH_CLAUSE) else {
+            return self.query_hits(
+                plan,
+                limit,
+                0,
+                "ORDER BY bm25(chunks) ASC, COALESCE(day, '') DESC, path DESC, idx DESC",
+            );
+        };
+        let Some(expression) = plan.params.first() else {
+            return Ok(Vec::new());
+        };
+        let (extra_columns, joins) = self.hit_projection()?;
+        let base_where = format!("1=1{rest}");
+        let mut values = vec![Value::Text(expression.clone())];
+        values.extend(plan.params[1..].iter().cloned().map(Value::Text));
+        values.extend(plan.params[1..].iter().cloned().map(Value::Text));
+        let mut outer_filter = String::from("1=1");
+        append_relevance_start_after(&mut outer_filter, &mut values, start_after);
+        values.push(Value::Integer(limit as i64));
+        let sql = format!(
+            "WITH matched(rid, score) AS MATERIALIZED (SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ?), \
+             picked AS ( \
+                 SELECT rid, score, day, path, idx FROM ( \
+                     SELECT matched.rid AS rid, matched.score AS score, \
+                            chunks.day AS day, chunks.path AS path, chunks.idx AS idx \
+                     FROM matched JOIN chunks ON chunks.rowid = matched.rid \
+                     WHERE ({base_where}) AND NOT {COLLAPSED_RELEVANCE_PATH_SQL} \
+                     UNION ALL \
+                     SELECT rid, score, day, path, idx FROM ( \
+                         SELECT matched.rid AS rid, matched.score AS score, \
+                                chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
+                                ROW_NUMBER() OVER (PARTITION BY chunks.path ORDER BY matched.score ASC, chunks.idx DESC, matched.rid DESC) AS rn \
+                         FROM matched JOIN chunks ON chunks.rowid = matched.rid \
+                         WHERE ({base_where}) AND {COLLAPSED_RELEVANCE_PATH_SQL} \
+                     ) WHERE rn = 1 \
+                 ) \
+                 WHERE {outer_filter} \
+                 ORDER BY score ASC, COALESCE(day, '') DESC, path DESC, idx DESC, rid DESC \
+                 LIMIT ? \
+             ) \
+             SELECT chunks.content, chunks.path, chunks.day, chunks.facet, chunks.agent, \
+                    chunks.stream, chunks.idx, picked.score, chunks.rowid, {extra_columns} \
+             FROM picked JOIN chunks ON chunks.rowid = picked.rid{joins} \
+             ORDER BY picked.score ASC, COALESCE(chunks.day, '') DESC, chunks.path DESC, chunks.idx DESC, picked.rid DESC"
+        );
+        self.hit_rows(&sql, &values)
     }
 
     /// The connection's recency order, picked from the path lookup's keys so

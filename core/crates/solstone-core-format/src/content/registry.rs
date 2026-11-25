@@ -80,6 +80,7 @@ impl OfferedTo {
     pub const DASHBOARD_AGENT: Self = Self(6);
     pub const AGENT: Self = Self(4);
     pub const AGENT_TALENTS: Self = Self(12);
+    pub const SEARCH_AGENT_TALENTS: Self = Self(13);
     pub const SEARCH_DASHBOARD: Self = Self(3);
     pub const SEARCH_DASHBOARD_TALENTS: Self = Self(11);
     pub const SEARCH_DASHBOARD_AGENT: Self = Self(7);
@@ -705,7 +706,7 @@ mod tests {
         assert!(resolve_spec("config/talents/example.md").is_some());
         assert_eq!(
             classify("config/a/b/audio.jsonl"),
-            ContentResolution::Unindexed(RawPerceptFamily::Audio)
+            ContentResolution::Indexed(Family::Audio)
         );
         assert_eq!(
             classify("chronicle/20260107/default/120000_60/audio.jsonl"),

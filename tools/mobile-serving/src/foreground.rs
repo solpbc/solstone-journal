@@ -554,6 +554,11 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
                     }
                     if last_index_check.elapsed() >= Duration::from_secs(30) {
                         last_index_check = tick;
+                        if let Err(error) =
+                            solstone_core_indexer_store::todo::queue_upgrade_if_needed(&journal)
+                        {
+                            log::warn!("foreground search index upgrade check: {error}");
+                        }
                         match solstone_core_indexer_store::todo::has_due(&journal, now_ms() as u64) {
                             Ok(true) if !queue.contains_reference("index-todo") => {
                                 let _ = queue.submit(ExecutionRequest::Bus(BusTaskRequest {
