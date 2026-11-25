@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - your agents can now read daily active calories from Oura and time in each sleep stage from Apple Health and Oura (keeping awake time separate from time asleep) when they ask for a body summary over a week or date range, along with daily resting heart rate and heart rate variability ranges from Apple Health and daily heart rate ranges with peak and low times from both, each with its reading count. this applies when you've given them access to transcripts, summaries and body across your whole journal.
 - each day's searchable body summary now includes reading values and ranges, daily totals for steps, distance and flights climbed (separately for each source and named app or device, where entries of the same kind don't overlap), and Apple Health sleep-stage durations. for Oura's daily readiness, sleep, activity and other daily entries, the searchable summary lists them by name only, without their scores or values.
+- connected agents also receive updated instructions for reading daily body summaries across a week or date range, including that each night is filed on the morning it ended and that a split night can have more than one entry.
 - the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
