@@ -1,6 +1,6 @@
 {
 
-  "description": "General web browsing, news, shopping, or reference pages without a dominant social feed or media viewer",
+  "description": "General web browsing, search, news front pages, shopping, or listings without a dominant article, social feed or media viewer",
   "output": "markdown",
   "extraction": "Extract when visiting distinctly different websites or search results",
   "max_output_tokens": 3072

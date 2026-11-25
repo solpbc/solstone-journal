@@ -1,6 +1,6 @@
 {
 
-  "description": "Documents, articles, PDFs, documentation",
+  "description": "Articles, documentation pages, PDFs and ebooks being read, in a browser or a reader app",
   "output": "markdown",
   "extraction": "Extract when viewing a different document, article, or PDF",
   "importance": "high",

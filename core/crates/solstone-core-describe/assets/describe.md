@@ -25,7 +25,7 @@ $categories
 Tie-break rules:
 - If a photo, video, image gallery, or visual media fills most of the screen, choose media even when it is inside a browser.
 - If the dominant surface is a feed, thread, profile, posts, comments, or timeline, choose social rather than browsing.
-- Choose browsing for ordinary web pages, search, news, shopping, or documentation when no social feed or media viewer dominates.
+- Choose browsing for ordinary web pages, search, news front pages, shopping, or listings when no article, document, social feed or media viewer dominates.
 - Choose calendar for calendar grids, agenda views, event detail/edit forms, availability pickers, booking pages, and scheduling assistants, even when they appear inside a browser or productivity suite.
 - Choose meeting only for an active live call/conference UI; a calendar event for a meeting is calendar, not meeting.
 - Choose messaging for a conversation with an AI assistant or AI coding agent (ChatGPT, Claude, Gemini and similar chat apps), even inside a browser.
