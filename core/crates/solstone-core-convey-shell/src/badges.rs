@@ -139,7 +139,8 @@ mod tests {
     #[tokio::test]
     async fn shell_badges_returns_calm_zeroes_on_fresh_established_journal_and_counts_review_work()
     {
-        let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+        let dir = tempfile::TempDir::new_in(parent).expect("journal root");
         fs::create_dir_all(dir.path().join("config")).expect("config dir");
         let now = jiff::Timestamp::now();
         fs::write(
