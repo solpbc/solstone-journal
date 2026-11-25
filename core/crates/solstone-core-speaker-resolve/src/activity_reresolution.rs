@@ -295,11 +295,17 @@ impl SpeakerMap {
             for (sentence_id, speaker) in
                 transcript_speakers(&segment.join(format!("{source}.jsonl")))
             {
-                let Some(person) = labels
-                    .get(&sentence_id)
-                    .and_then(|label| label.get("speaker"))
+                let Some(label) = labels.get(&sentence_id) else {
+                    continue;
+                };
+                let method = label
+                    .get("method")
                     .and_then(Value::as_str)
-                else {
+                    .unwrap_or_default();
+                if !is_trusted_non_principal_method(method) {
+                    continue;
+                }
+                let Some(person) = label.get("speaker").and_then(Value::as_str) else {
                     continue;
                 };
                 if people.names.contains_key(person) && people.principal.as_deref() != Some(person)
@@ -333,6 +339,12 @@ impl SpeakerMap {
             .all(|other| other == person)
             .then_some(person.as_str())
     }
+}
+
+/// Non-principal speaker-label methods trusted by `VoiceNames::name_for`:
+/// owner assignments (`user_*`) and acoustic voiceprint matches.
+fn is_trusted_non_principal_method(method: &str) -> bool {
+    method.starts_with("user_") || matches!(method, "acoustic" | "acoustic_cluster")
 }
 
 /// Parse a "Speaker N" or "speaker N" name into its number.
@@ -649,5 +661,74 @@ mod tests {
             .unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn speaker_map_enforces_trusted_methods_and_gates_structural_labels() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        person(root.path(), "owner", "Avery", true);
+        person(root.path(), "bob", "Bob", false);
+        person(root.path(), "cara", "Cara", false);
+        person(root.path(), "dana", "Dana", false);
+        person(root.path(), "eli", "Eli", false);
+        write(
+            root.path(),
+            &format!("facets/work/activities/{DAY}.jsonl"),
+            json!({"id":"a1","activity":"meeting","stream":"mic","segments":["120000_300"],
+                "participation":[
+                    {"name":"Speaker 1","role":"attendee","source":"voice","entity_id":null},
+                    {"name":"Speaker 2","role":"attendee","source":"voice","entity_id":null},
+                    {"name":"Speaker 3","role":"attendee","source":"voice","entity_id":null},
+                    {"name":"Speaker 4","role":"attendee","source":"voice","entity_id":null},
+                    {"name":"Speaker 5","role":"attendee","source":"voice","entity_id":null},
+                    {"name":"Speaker 6","role":"attendee","source":"voice","entity_id":null}
+                ]
+            })
+            .to_string()
+                + "\n",
+        );
+        let base = format!("chronicle/{DAY}/mic/120000_300");
+        let mut transcript = json!({"raw":"fixture"}).to_string() + "\n";
+        for idx in 1..=6_i64 {
+            transcript += &(json!({"start":"00:00:01","speaker":idx,"sentence_id":idx,"text":"words"}).to_string() + "\n");
+        }
+        write(root.path(), &format!("{base}/audio.jsonl"), transcript);
+        write(root.path(), &format!("{base}/audio.npz"), String::new());
+        write(
+            root.path(),
+            &format!("{base}/talents/speaker_labels.json"),
+            json!({"labels": [
+                {"sentence_id":1,"speaker":"bob","confidence":"high","method":"structural_single_speaker"},
+                {"sentence_id":2,"speaker":"bob","confidence":"high","method":"structural_setting"},
+                {"sentence_id":3,"speaker":"bob","confidence":"high"},
+                {"sentence_id":4,"speaker":"cara","confidence":"high","method":"user_confirmed"},
+                {"sentence_id":5,"speaker":"dana","confidence":"medium","method":"acoustic"},
+                {"sentence_id":6,"speaker":"eli","confidence":"medium","method":"acoustic_cluster"}
+            ]})
+            .to_string(),
+        );
+        let changed = vec![ChangedSegment {
+            day: DAY.to_owned(),
+            stream: "mic".to_owned(),
+            segment_key: "120000_300".to_owned(),
+        }];
+        let resolved = reresolve_changed_segments(root.path(), &changed, &[]).unwrap();
+        assert_eq!(resolved, 3);
+        let people = record(root.path())["participation"].clone();
+        // Structural and methodless labels stay gated.
+        assert_eq!(people[0]["name"], "Speaker 1");
+        assert!(people[0]["entity_id"].is_null());
+        assert_eq!(people[1]["name"], "Speaker 2");
+        assert!(people[1]["entity_id"].is_null());
+        assert_eq!(people[2]["name"], "Speaker 3");
+        assert!(people[2]["entity_id"].is_null());
+        // Trusted user_*, acoustic, and acoustic_cluster labels resolve.
+        assert_eq!(people[3]["name"], "Cara");
+        assert_eq!(people[3]["entity_id"], "cara");
+        assert_eq!(people[4]["name"], "Dana");
+        assert_eq!(people[4]["entity_id"], "dana");
+        assert_eq!(people[5]["name"], "Eli");
+        assert_eq!(people[5]["entity_id"], "eli");
     }
 }
