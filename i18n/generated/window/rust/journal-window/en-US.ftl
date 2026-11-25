@@ -3031,6 +3031,36 @@ m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e7
    *[other] { $name }: intervals { $count }, { $start } to { $end } ({ $recorder })
 }
 
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e742e76616c75652e706c61696e2e6174 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } interval, { $start }
+   *[other] { $name }: { $value }, { $count } intervals, { $start }
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e742e76616c75652e706c61696e2e636f756e74 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } interval
+   *[other] { $name }: { $value }, { $count } intervals
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e742e76616c75652e706c61696e2e72616e6765 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } interval, { $start } to { $end }
+   *[other] { $name }: { $value }, { $count } intervals, { $start } to { $end }
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e742e76616c75652e7265636f726465722e6174 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } interval, { $start } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } intervals, { $start } ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e742e76616c75652e7265636f726465722e636f756e74 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } interval ({ $recorder })
+   *[other] { $name }: { $value }, { $count } intervals ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e636f756e742e76616c75652e7265636f726465722e72616e6765 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } interval, { $start } to { $end } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } intervals, { $start } to { $end } ({ $recorder })
+}
+
 m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e6c6f676765642e6f776e65722e6174 = { $i18nCategory ->
     [one] { $name }: { $count } entry, { $start } (entered by the owner)
    *[other] { $name }: entries { $count }, { $start } (entered by the owner)
@@ -3121,6 +3151,36 @@ m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e726561646
    *[other] { $name }: readings { $count }, { $start } to { $end } ({ $recorder })
 }
 
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e72656164696e672e76616c75652e706c61696e2e6174 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } reading, { $start }
+   *[other] { $name }: { $value }, { $count } readings, { $start }
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e72656164696e672e76616c75652e706c61696e2e636f756e74 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } reading
+   *[other] { $name }: { $value }, { $count } readings
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e72656164696e672e76616c75652e706c61696e2e72616e6765 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } reading, { $start } to { $end }
+   *[other] { $name }: { $value }, { $count } readings, { $start } to { $end }
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e72656164696e672e76616c75652e7265636f726465722e6174 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } reading, { $start } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } readings, { $start } ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e72656164696e672e76616c75652e7265636f726465722e636f756e74 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } reading ({ $recorder })
+   *[other] { $name }: { $value }, { $count } readings ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e72656164696e672e76616c75652e7265636f726465722e72616e6765 = { $i18nCategory ->
+    [one] { $name }: { $value }, { $count } reading, { $start } to { $end } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } readings, { $start } to { $end } ({ $recorder })
+}
+
 m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e706c61696e2e6174 = { $i18nCategory ->
     [one] sleep stage { $name }: { $count } interval, { $start }
    *[other] sleep stage { $name }: intervals { $count }, { $start }
@@ -3149,6 +3209,36 @@ m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e737461676
 m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e7265636f726465722e72616e6765 = { $i18nCategory ->
     [one] sleep stage { $name }: { $count } interval, { $start } to { $end } ({ $recorder })
    *[other] sleep stage { $name }: intervals { $count }, { $start } to { $end } ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e76616c75652e706c61696e2e6174 = { $i18nCategory ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start }
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start }
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e76616c75652e706c61696e2e636f756e74 = { $i18nCategory ->
+    [one] sleep stage { $name }: { $value }, { $count } interval
+   *[other] sleep stage { $name }: { $value }, { $count } intervals
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e76616c75652e706c61696e2e72616e6765 = { $i18nCategory ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start } to { $end }
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start } to { $end }
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e76616c75652e7265636f726465722e6174 = { $i18nCategory ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start } ({ $recorder })
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start } ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e76616c75652e7265636f726465722e636f756e74 = { $i18nCategory ->
+    [one] sleep stage { $name }: { $value }, { $count } interval ({ $recorder })
+   *[other] sleep stage { $name }: { $value }, { $count } intervals ({ $recorder })
+}
+
+m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e74616c6c792e73746167652e76616c75652e7265636f726465722e72616e6765 = { $i18nCategory ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start } to { $end } ({ $recorder })
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start } to { $end } ({ $recorder })
 }
 
 m6a6f75726e616c2e77696e646f772e626f64792e646f63756d656e742e776f7264732e6f776e6572 = in the owner's words: { $words }

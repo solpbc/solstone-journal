@@ -1846,8 +1846,15 @@ fn an_agent_finds_an_oura_workout_and_its_day_and_pages_its_heart_rate() {
             "{query}: {day}"
         );
     }
-    // Never a heart rate value or a field nobody chose to restate.
-    for query in ["7003", "7001", "intensity", "confirmed"] {
+    // Held reading bounds appear in body.md, while interior samples and raw vendor fields stay out.
+    for query in ["7001", "7005"] {
+        let found = call(root, "search", json!({"query": query, "day": DAY}));
+        assert!(
+            !found["results"].as_array().unwrap().is_empty(),
+            "{query}: {found}"
+        );
+    }
+    for query in ["7003", "intensity", "confirmed"] {
         let found = call(root, "search", json!({"query": query, "day": DAY}));
         assert!(
             found["results"].as_array().unwrap().is_empty(),
@@ -3090,4 +3097,615 @@ fn an_old_strava_line_needs_body_by_every_tool() {
     assert!(listed.get("body_note").is_none(), "{listed}");
     let (any, found) = kestrel(root);
     assert!(any, "{found}");
+}
+
+fn contains_forbidden_summary_key(value: &Value) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                let lower = key.to_ascii_lowercase();
+                if matches!(
+                    lower.as_str(),
+                    "avg"
+                        | "average"
+                        | "mean"
+                        | "median"
+                        | "baseline"
+                        | "delta"
+                        | "trend"
+                        | "score"
+                        | "readiness_score"
+                        | "sleep_score"
+                ) || lower.contains("average")
+                    || lower.contains("median")
+                    || lower.contains("baseline")
+                    || lower.contains("trend")
+                {
+                    return Some(key.clone());
+                }
+                if let Some(found) = contains_forbidden_summary_key(child) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(contains_forbidden_summary_key),
+        _ => None,
+    }
+}
+
+#[test]
+fn get_week_body_surfaces_five_held_measures_across_sources_and_keeps_awake_separate() {
+    let journal = oura_journal();
+    let root = journal.path();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"UTC"}"#,
+    )
+    .unwrap();
+    grant_kinds(
+        root,
+        &["transcripts", "facets", "body"],
+        ReadScope::WholeJournal,
+    );
+
+    // Day 1 (2025-05-04, Sunday): rich Apple Health day (Watch + Phone) + Oura equivalents +
+    // non-bounded readings (blood glucose, oxygen saturation) that stay out of get_week.
+    let mut night_ah = BodyRow::new(
+        RowKind::Experience,
+        "sleep-ah-1".into(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "night".into(),
+    );
+    night_ah.experience = Some("sleep".into());
+    night_ah.by = Some("Watch".into());
+    night_ah.start = Some("2025-05-03T21:40:00+00:00".into());
+    night_ah.end = Some("2025-05-04T06:45:00+00:00".into());
+
+    let mk_stage = |id: &str, record_type: &str, label: &str, start: &str, end: &str| {
+        let mut row = BodyRow::new(
+            RowKind::Stage,
+            id.into(),
+            "apple_health",
+            record_type,
+            label.into(),
+        );
+        row.by = Some("Watch".into());
+        row.of = Some("sleep-ah-1".into());
+        row.start = Some(start.into());
+        row.end = Some(end.into());
+        row
+    };
+    let st_deep = mk_stage(
+        "st-deep",
+        "HKCategoryValueSleepAnalysisAsleepDeep",
+        "asleep deep",
+        "2025-05-03T21:40:00+00:00",
+        "2025-05-03T23:18:00+00:00",
+    );
+    let st_core = mk_stage(
+        "st-core",
+        "HKCategoryValueSleepAnalysisAsleepCore",
+        "asleep core",
+        "2025-05-03T23:18:00+00:00",
+        "2025-05-04T04:25:00+00:00",
+    );
+    let st_rem = mk_stage(
+        "st-rem",
+        "HKCategoryValueSleepAnalysisAsleepREM",
+        "asleep rem",
+        "2025-05-04T04:25:00+00:00",
+        "2025-05-04T06:25:00+00:00",
+    );
+    let st_awake = mk_stage(
+        "st-awake",
+        "HKCategoryValueSleepAnalysisAwake",
+        "awake",
+        "2025-05-04T06:25:00+00:00",
+        "2025-05-04T06:45:00+00:00",
+    );
+
+    let mut watch_energy = BodyRow::new(
+        RowKind::Count,
+        "energy-1".into(),
+        "apple_health",
+        "HKQuantityTypeIdentifierActiveEnergyBurned",
+        "active energy burned".into(),
+    );
+    watch_energy.by = Some("Watch".into());
+    watch_energy.start = Some("2025-05-04T00:00:00+00:00".into());
+    watch_energy.end = Some("2025-05-05T00:00:00+00:00".into());
+    watch_energy.unit = Some("kcal".into());
+    watch_energy.value = Some("158".into());
+
+    let mut phone_steps = BodyRow::new(
+        RowKind::Count,
+        "steps-phone".into(),
+        "apple_health",
+        "HKQuantityTypeIdentifierStepCount",
+        "step count".into(),
+    );
+    phone_steps.by = Some("Phone".into());
+    phone_steps.start = Some("2025-05-04T07:00:00+00:00".into());
+    phone_steps.end = Some("2025-05-04T08:00:00+00:00".into());
+    phone_steps.unit = Some("count".into());
+    phone_steps.value = Some("900".into());
+
+    let mk_reading = |id: &str, rtype: &str, label: &str, at: &str, val: &str, unit: &str| {
+        let mut row = BodyRow::new(
+            RowKind::Reading,
+            id.into(),
+            "apple_health",
+            rtype,
+            label.into(),
+        );
+        row.by = Some("Watch".into());
+        row.at = Some(at.into());
+        row.value = Some(val.into());
+        row.unit = Some(unit.into());
+        row
+    };
+    let rhr_1 = mk_reading(
+        "rhr-1",
+        "HKQuantityTypeIdentifierRestingHeartRate",
+        "resting heart rate",
+        "2025-05-04T06:45:00+00:00",
+        "76",
+        "count/min",
+    );
+    let rhr_2 = mk_reading(
+        "rhr-2",
+        "HKQuantityTypeIdentifierRestingHeartRate",
+        "resting heart rate",
+        "2025-05-04T18:45:00+00:00",
+        "72",
+        "count/min",
+    );
+    let hrv_1 = mk_reading(
+        "hrv-1",
+        "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        "heart rate variability sdnn",
+        "2025-05-04T06:45:00+00:00",
+        "57",
+        "ms",
+    );
+    let hrv_2 = mk_reading(
+        "hrv-2",
+        "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+        "heart rate variability sdnn",
+        "2025-05-04T12:15:00+00:00",
+        "63.5",
+        "ms",
+    );
+    let hr_1 = mk_reading(
+        "hr-1",
+        "HKQuantityTypeIdentifierHeartRate",
+        "heart rate",
+        "2025-05-04T01:00:00+00:00",
+        "71",
+        "count/min",
+    );
+    let hr_2 = mk_reading(
+        "hr-2",
+        "HKQuantityTypeIdentifierHeartRate",
+        "heart rate",
+        "2025-05-04T09:30:00+00:00",
+        "88",
+        "count/min",
+    );
+    let hr_3 = mk_reading(
+        "hr-3",
+        "HKQuantityTypeIdentifierHeartRate",
+        "heart rate",
+        "2025-05-04T14:00:00+00:00",
+        "71",
+        "count/min",
+    );
+    // Non-bounded reading stays out of get_week while appearing in body.md.
+    let glucose = mk_reading(
+        "bg-1",
+        "HKQuantityTypeIdentifierBloodGlucose",
+        "blood glucose",
+        "2025-05-04T08:00:00+00:00",
+        "94",
+        "mg/dL",
+    );
+
+    window(
+        root,
+        "20250503",
+        "210000_3600",
+        &[night_ah, st_deep, st_core],
+        None,
+    );
+    window(
+        root,
+        "20250504",
+        "060000_300",
+        &[
+            st_rem,
+            st_awake,
+            watch_energy,
+            phone_steps,
+            rhr_1,
+            rhr_2,
+            hrv_1,
+            hrv_2,
+            hr_1,
+            hr_2,
+            hr_3,
+            glucose,
+        ],
+        None,
+    );
+
+    // Oura equivalents on the same day: active_calories, sleep stage fields, heartrate readings.
+    let mut oura_activity = oura_row(
+        RowKind::Dated,
+        "oura-act-1",
+        "daily_activity",
+        "daily activity",
+        json!({"id": "oura-act-1", "day": "2025-05-04", "steps": 6200, "active_calories": 412, "score": 88}),
+    );
+    oura_activity.date = Some("2025-05-04".into());
+    let mut oura_sleep = oura_row(
+        RowKind::Experience,
+        "oura-sleep-1",
+        "sleep",
+        "night",
+        json!({
+            "id": "oura-sleep-1",
+            "day": "2025-05-04",
+            "total_sleep_duration": 26340,
+            "deep_sleep_duration": 5460,
+            "light_sleep_duration": 14400,
+            "rem_sleep_duration": 6480,
+            "awake_time": 1920,
+            "lowest_heart_rate": 47,
+            "average_hrv": 62
+        }),
+    );
+    oura_sleep.experience = Some("sleep".into());
+    oura_sleep.start = Some("2025-05-03T22:41:00-06:00".into());
+    oura_sleep.end = Some("2025-05-04T06:32:00-06:00".into());
+    window_in(root, OURA, "20250503", "220000_3600", &[oura_sleep], None);
+    window_in(
+        root,
+        OURA,
+        "20250504",
+        "000000_86400",
+        &[oura_activity],
+        None,
+    );
+    window_in(
+        root,
+        OURA,
+        "20250504",
+        "080000_3600",
+        &[
+            oura_heart_rate("ohr-1", "2025-05-04T14:05:00Z", "58", "rest"),
+            oura_heart_rate("ohr-2", "2025-05-04T14:25:00Z", "92", "awake"),
+        ],
+        None,
+    );
+
+    // Day 2 (2025-05-05): sparse day with steps-only, a bare sleep without stages,
+    // and an awake-only sleep to prove awake never produces asleep_seconds = 0.
+    let mut sparse_steps = BodyRow::new(
+        RowKind::Count,
+        "steps-day2".into(),
+        "apple_health",
+        "HKQuantityTypeIdentifierStepCount",
+        "step count".into(),
+    );
+    sparse_steps.by = Some("Phone".into());
+    sparse_steps.start = Some("2025-05-05T10:00:00+00:00".into());
+    sparse_steps.end = Some("2025-05-05T11:00:00+00:00".into());
+    sparse_steps.unit = Some("count".into());
+    sparse_steps.value = Some("1200".into());
+    let mut bare_nap = BodyRow::new(
+        RowKind::Experience,
+        "nap-bare".into(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "nap".into(),
+    );
+    bare_nap.experience = Some("sleep".into());
+    bare_nap.start = Some("2025-05-05T13:00:00+00:00".into());
+    bare_nap.end = Some("2025-05-05T13:30:00+00:00".into());
+    let mut awake_only_night = BodyRow::new(
+        RowKind::Experience,
+        "night-awake-only".into(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "night".into(),
+    );
+    awake_only_night.experience = Some("sleep".into());
+    awake_only_night.start = Some("2025-05-05T04:00:00+00:00".into());
+    awake_only_night.end = Some("2025-05-05T04:30:00+00:00".into());
+    let mut awake_only_stage = BodyRow::new(
+        RowKind::Stage,
+        "st-awake-only".into(),
+        "apple_health",
+        "HKCategoryValueSleepAnalysisAwake",
+        "awake".into(),
+    );
+    awake_only_stage.of = Some("night-awake-only".into());
+    awake_only_stage.start = Some("2025-05-05T04:00:00+00:00".into());
+    awake_only_stage.end = Some("2025-05-05T04:30:00+00:00".into());
+    window(
+        root,
+        "20250505",
+        "040000_3600",
+        &[sparse_steps, bare_nap, awake_only_night, awake_only_stage],
+        None,
+    );
+
+    let week = call(
+        root,
+        "get_week",
+        json!({"week": "20250504", "include": ["body"]}),
+    );
+    let range = call(
+        root,
+        "get_week",
+        json!({"day_from": "20250504", "day_to": "20250505", "include": ["body"]}),
+    );
+    assert_eq!(contains_forbidden_summary_key(&week), None, "{week}");
+    assert_eq!(contains_forbidden_summary_key(&range), None, "{range}");
+
+    // Single-week and range mode return identical body summaries for both days.
+    let d1_week = &week["days"][0]["summary"]["body"];
+    let d1_range = &range["days"][0]["summary"]["body"];
+    assert_eq!(d1_week, d1_range);
+    let d2_week = &week["days"][1]["summary"]["body"];
+    let d2_range = &range["days"][1]["summary"]["body"];
+    assert_eq!(d2_week, d2_range);
+
+    // Day 1 movement: Phone steps (no active_energy_kcal), Watch active_energy_kcal, Oura steps + active_energy_kcal.
+    let mov = d1_range["movement"].as_array().unwrap();
+    assert_eq!(mov.len(), 3, "{mov:?}");
+    let phone = mov.iter().find(|m| m["recorded_by"] == "Phone").unwrap();
+    assert_eq!(phone["steps"], 900.0);
+    assert!(phone.get("active_energy_kcal").is_none(), "{phone}");
+    let watch = mov.iter().find(|m| m["recorded_by"] == "Watch").unwrap();
+    assert_eq!(watch["active_energy_kcal"], 158.0);
+    let oura_m = mov.iter().find(|m| m["source"] == OURA_LABEL).unwrap();
+    assert_eq!(oura_m["steps"], 6200.0);
+    assert_eq!(oura_m["active_energy_kcal"], 412.0);
+
+    // Day 1 nights: Apple Health awake stays out of asleep_seconds (31500, not 32700);
+    // Oura maps deep/light/rem/awake without relabeling light as core.
+    let nights = d1_range["nights"].as_array().unwrap();
+    assert_eq!(nights.len(), 2, "{nights:?}");
+    let ah_night = nights.iter().find(|n| n["source"] == LABEL).unwrap();
+    assert_eq!(ah_night["asleep_seconds"], 31_500);
+    assert_eq!(
+        ah_night["stages_seconds"],
+        json!({"awake": 1200, "core": 18420, "deep": 5880, "rem": 7200})
+    );
+    let oura_night = nights.iter().find(|n| n["source"] == OURA_LABEL).unwrap();
+    assert_eq!(oura_night["asleep_seconds"], 26_340);
+    assert_eq!(
+        oura_night["stages_seconds"],
+        json!({"awake": 1920, "deep": 5460, "light": 14400, "rem": 6480})
+    );
+
+    // Day 1 readings: Apple Watch has RHR, HRV, HR (with earliest min_at tie-break);
+    // Oura has HR only (no RHR/HRV from sleep lowest_heart_rate / average_hrv);
+    // blood glucose stays excluded.
+    let readings = d1_range["readings"].as_array().unwrap();
+    assert_eq!(readings.len(), 2, "{readings:?}");
+    let ah_r = readings.iter().find(|r| r["source"] == LABEL).unwrap();
+    assert_eq!(
+        ah_r["resting_heart_rate_bpm"],
+        json!({"min": 72.0, "max": 76.0, "count": 2})
+    );
+    assert_eq!(
+        ah_r["hrv_sdnn_ms"],
+        json!({"min": 57.0, "max": 63.5, "count": 2})
+    );
+    assert_eq!(
+        ah_r["heart_rate_bpm"],
+        json!({
+            "min": 71.0,
+            "max": 88.0,
+            "count": 3,
+            "min_at": "2025-05-04T01:00:00+00:00",
+            "max_at": "2025-05-04T09:30:00+00:00",
+        })
+    );
+    let oura_r = readings.iter().find(|r| r["source"] == OURA_LABEL).unwrap();
+    assert!(oura_r.get("resting_heart_rate_bpm").is_none(), "{oura_r}");
+    assert!(oura_r.get("hrv_sdnn_ms").is_none(), "{oura_r}");
+    assert_eq!(
+        oura_r["heart_rate_bpm"],
+        json!({
+            "min": 58.0,
+            "max": 92.0,
+            "count": 2,
+            "min_at": "2025-05-04T14:05:00Z",
+            "max_at": "2025-05-04T14:25:00Z",
+        })
+    );
+    assert!(!d1_range.to_string().contains("glucose"), "{d1_range}");
+
+    // Day 2 sparse day: steps-only, no readings, bare nap omits stages_seconds,
+    // awake-only night keeps asleep_seconds = null while reporting stages_seconds.awake = 1800.
+    assert!(d2_range.get("readings").is_none(), "{d2_range}");
+    let d2_nights = d2_range["nights"].as_array().unwrap();
+    let nap = d2_nights
+        .iter()
+        .find(|n| n["to_bed"] == "2025-05-05T13:00:00+00:00")
+        .unwrap();
+    assert!(nap.get("stages_seconds").is_none(), "{nap}");
+    let awake_only = d2_nights
+        .iter()
+        .find(|n| n["to_bed"] == "2025-05-05T04:00:00+00:00")
+        .unwrap();
+    assert!(awake_only["asleep_seconds"].is_null(), "{awake_only}");
+    assert_eq!(awake_only["stages_seconds"], json!({"awake": 1800}));
+
+    // BODY-denied connection sees zero body data on get_week(include=["body"]).
+    grant_kinds(root, &["transcripts", "facets"], ReadScope::WholeJournal);
+    let denied = call(
+        root,
+        "get_week",
+        json!({"day_from": "20250504", "day_to": "20250505", "include": ["body"]}),
+    );
+    let denied_body = &denied["days"][0]["summary"]["body"];
+    assert!(denied_body.get("movement").is_none(), "{denied}");
+    assert!(denied_body.get("nights").is_none(), "{denied}");
+    assert!(denied_body.get("readings").is_none(), "{denied}");
+    assert!(denied_body["note"].is_string(), "{denied}");
+
+    // B2 search + fetch: body.md holds values/bounds/durations while Oura score stays absent.
+    grant_kinds(
+        root,
+        &["transcripts", "facets", "body"],
+        ReadScope::WholeJournal,
+    );
+    solstone_core_location::body_day::BodyDays::default().reconcile(root);
+    index(root);
+    let found = call(
+        root,
+        "search",
+        json!({"kind": ["body"], "day": "20250504", "query": "158"}),
+    );
+    let hit = found["results"]
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("body.md search hit for held active energy");
+    let fetched = call(root, "fetch", json!({"reference": hit["reference"]}));
+    let fetched_text = fetched.to_string();
+    assert!(fetched_text.contains("158 kcal"), "{fetched_text}");
+    assert!(fetched_text.contains("72–76 bpm"), "{fetched_text}");
+    assert!(fetched_text.contains("57–63.5 ms"), "{fetched_text}");
+    assert!(fetched_text.contains("71–88 bpm"), "{fetched_text}");
+    assert!(fetched_text.contains("94 mg/dL"), "{fetched_text}");
+    assert!(fetched_text.contains("2 h"), "{fetched_text}");
+    assert!(fetched_text.contains("20 min"), "{fetched_text}");
+    assert!(!fetched_text.contains("score"), "{fetched_text}");
+}
+
+#[test]
+fn get_week_body_range_paginates_cleanly_under_byte_limit_and_tools_list_stays_invariant() {
+    let journal = journal();
+    let root = journal.path();
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"UTC"}"#,
+    )
+    .unwrap();
+    grant_kinds(
+        root,
+        &[
+            "transcripts",
+            "facets",
+            "body",
+            "places",
+            "photos",
+            "notes",
+            "entities",
+        ],
+        ReadScope::WholeJournal,
+    );
+
+    // Populate 6 days with full 5-measure body rows and force byte-budget pagination.
+    for day_num in 1..=6 {
+        let day = format!("2025050{day_num}");
+        let mut energy = BodyRow::new(
+            RowKind::Count,
+            format!("e-{day}"),
+            "apple_health",
+            "HKQuantityTypeIdentifierActiveEnergyBurned",
+            "active energy burned".into(),
+        );
+        energy.by = Some("Watch".into());
+        energy.start = Some(format!("2025-05-0{day_num}T00:00:00+00:00"));
+        energy.end = Some(format!("2025-05-0{}T00:00:00+00:00", day_num + 1));
+        energy.unit = Some("kcal".into());
+        energy.value = Some((200 + day_num * 10).to_string());
+        let mut hr = BodyRow::new(
+            RowKind::Reading,
+            format!("hr-{day}"),
+            "apple_health",
+            "HKQuantityTypeIdentifierHeartRate",
+            "heart rate".into(),
+        );
+        hr.by = Some("Watch".into());
+        hr.at = Some(format!("2025-05-0{day_num}T12:00:00+00:00"));
+        hr.unit = Some("count/min".into());
+        hr.value = Some((70 + day_num).to_string());
+        window(root, &day, "120000_300", &[energy, hr], None);
+    }
+
+    let decision = crate::permissions::evaluate_connection_read(root, CONNECTION);
+    let crate::permissions::PermissionDecision::Snapshot(snapshot) = decision else {
+        panic!("expected snapshot");
+    };
+    let principal = crate::dispatch::DispatchPrincipal {
+        connection: CONNECTION,
+        agent_identity: CONNECTION,
+    };
+    let include = [solstone_core_indexer_query::AdmittedCategory::Body]
+        .into_iter()
+        .collect();
+
+    let mut seen_days = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut pages = 0_usize;
+    loop {
+        let page = crate::tools::week::project_range_with_limits(
+            root,
+            "20250501",
+            "20250506",
+            cursor.as_deref(),
+            principal,
+            &snapshot,
+            &include,
+            100,
+            600,
+        )
+        .unwrap();
+        pages += 1;
+        for row in page.value["days"].as_array().unwrap() {
+            seen_days.push(row["day"].as_str().unwrap().to_owned());
+            assert!(row["summary"]["body"]["movement"][0]["active_energy_kcal"].is_number());
+            assert!(row["summary"]["body"]["readings"][0]["heart_rate_bpm"]["min"].is_number());
+        }
+        cursor = page.value["next_cursor"].as_str().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert!(
+        pages > 1,
+        "expected multi-page split under tight byte budget"
+    );
+    assert_eq!(
+        seen_days,
+        vec![
+            "20250501", "20250502", "20250503", "20250504", "20250505", "20250506"
+        ]
+    );
+
+    // tools/list invariance: plain object root schemas (zero top-level combinators) and unchanged tool names.
+    let tools = crate::registry::advertised_tools_list(
+        root,
+        &crate::permissions::PermissionDecision::Snapshot(snapshot),
+    );
+    let listed = tools["tools"].as_array().unwrap();
+    let names: Vec<&str> = listed.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"get_week"), "{names:?}");
+    for tool in listed {
+        let schema = &tool["inputSchema"];
+        assert_eq!(schema["type"], "object", "{tool}");
+        for combinator in ["oneOf", "anyOf", "allOf"] {
+            assert!(schema.get(combinator).is_none(), "{tool}");
+        }
+    }
 }

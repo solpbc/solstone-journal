@@ -2209,13 +2209,14 @@ fn nothing_oura_scores_or_judges_reaches_the_days_document_or_search() {
             }
         }
     }
-    // The instrument reads what it should: the walk, its distance and the day's
-    // documents by name.
+    // The instrument reads what it should: the walk, its distance, the day's
+    // documents by name, and held heart rate bounds.
     let all: String = texts.iter().map(|(_, text)| text.as_str()).collect();
-    for expected in ["walking", "2412.9 m", "daily readiness"] {
+    for expected in ["walking", "2412.9 m", "daily readiness", "63–112 bpm"] {
         assert!(all.contains(expected), "{expected}: {all}");
     }
-    // The fixture's scores, levels and measures, and the words Oura judges with.
+    // The fixture's scores, levels, assessments, interior heart rate sample, and
+    // the words Oura judges with stay out.
     let judged = [
         "82",
         "85",
@@ -2226,7 +2227,7 @@ fn nothing_oura_scores_or_judges_reaches_the_days_document_or_search() {
         "96.4",
         "41.2",
         "5400",
-        "112",
+        "64",
         "stressful",
         "limited",
         "good",

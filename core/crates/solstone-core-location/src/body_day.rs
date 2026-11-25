@@ -3,19 +3,23 @@
 
 //! The day's body document: `chronicle/<day>/body.md`, for search.
 //!
-//! It says what was recorded that day and by what, never a reading's value, so
-//! search finds the day by what a person would type. It sits here because it
-//! shares location's whole lifecycle: rebuilt deterministically from the segments
-//! that survive, in the same maintenance pass and under the same owned-frame I/O.
-//! `chronicle/<day>/health/body.json` records which state it was built from.
+//! It says what was recorded that day and by what, including held numeric
+//! values or bounds for readings, non-overlapping totals for counts and
+//! covered durations for sleep stages, so search finds the day by what a
+//! person would type. Dated documents without values (such as Oura's daily
+//! assessments) remain named only, and nothing is averaged, trended or judged.
+//! It sits here because it shares location's whole lifecycle: rebuilt
+//! deterministically from the segments that survive, in the same maintenance
+//! pass and under the same owned-frame I/O. `chronicle/<day>/health/body.json`
+//! records which state it was built from.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use jiff::ZonedDateTime;
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
+use jiff::{Timestamp, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_hidden_days::{HiddenDays, RowDays, read_hidden_days};
 use solstone_core_format::content::body_records::{
@@ -34,7 +38,7 @@ pub const BODY_DOCUMENT: &str = "body.md";
 const BUILD_RECORD: &str = "body.json";
 const RECORD_VERSION: u32 = 1;
 /// Bumped whenever the document's wording changes, so each day is rewritten once.
-const DOCUMENT_VERSION: u32 = 1;
+const DOCUMENT_VERSION: u32 = 2;
 
 fn document_path(journal: &Path, day: &str) -> PathBuf {
     journal.join("chronicle").join(day).join(BODY_DOCUMENT)
@@ -194,11 +198,293 @@ fn span_times(row: &BodyRow, day: &str, zone: Option<&TimeZone>) -> (String, Str
     (word(row.start.as_deref()), word(row.end.as_deref()))
 }
 
+const FRACTION_PERCENT_FRAGMENTS: [&str; 6] = [
+    "OxygenSaturation",
+    "AppleWalkingSteadiness",
+    "WalkingAsymmetryPercentage",
+    "WalkingDoubleSupportPercentage",
+    "BodyFatPercentage",
+    "AtrialFibrillationBurden",
+];
+
+fn friendly_unit_label(record_type: &str, unit: Option<&str>) -> Option<String> {
+    let unit = unit?;
+    if unit == "count/min" {
+        if record_type.contains("RespiratoryRate") {
+            return Some("breaths/min".to_owned());
+        }
+        if record_type.contains("HeartRate") || record_type == "heartrate" {
+            return Some("bpm".to_owned());
+        }
+    }
+    match unit {
+        "dBASPL" => Some("dB".to_owned()),
+        "mi/hr" => Some("mph".to_owned()),
+        "km/hr" => Some("km/h".to_owned()),
+        "degC" => Some("°C".to_owned()),
+        "count" | "score" => Some(String::new()),
+        other => Some(other.to_owned()),
+    }
+}
+
+fn scale_percent(record_type: &str, value: f64, unit: Option<&str>) -> f64 {
+    if unit == Some("%")
+        && FRACTION_PERCENT_FRAGMENTS
+            .iter()
+            .any(|fragment| record_type.contains(fragment))
+    {
+        value * 100.0
+    } else {
+        value
+    }
+}
+
+fn format_number(value: f64) -> String {
+    let rounded = if (value * 1_000_000.0).is_finite() {
+        (value * 1_000_000.0).round() / 1_000_000.0
+    } else {
+        value
+    };
+    let normalized = if rounded == 0.0 { 0.0 } else { rounded };
+    let rendered = format!("{normalized:.6}");
+    rendered
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
+}
+
+fn attach_unit(record_type: &str, number: String, unit: Option<&str>) -> String {
+    match friendly_unit_label(record_type, unit).as_deref() {
+        None | Some("") => number,
+        Some("%") => format!("{number}%"),
+        Some(label) => format!("{number} {label}"),
+    }
+}
+
+fn format_duration(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let rem = seconds % 60;
+    let mut parts = Vec::with_capacity(3);
+    if hours > 0 {
+        parts.push(format!("{hours} h"));
+    }
+    if minutes > 0 {
+        parts.push(format!("{minutes} min"));
+    }
+    if rem > 0 || parts.is_empty() {
+        parts.push(format!("{rem} s"));
+    }
+    parts.join(" ")
+}
+
+fn observed_interval(row: &BodyRow) -> Option<(Timestamp, Timestamp)> {
+    let start = time_of(row.start.as_deref())?.timestamp();
+    let end = time_of(row.end.as_deref())?.timestamp();
+    (end >= start).then_some((start, end))
+}
+
+#[derive(Default)]
+struct ReadingValue {
+    invalid: bool,
+    record_type: Option<String>,
+    unit: Option<Option<String>>,
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+impl ReadingValue {
+    fn add(&mut self, row: &BodyRow) {
+        if self.invalid {
+            return;
+        }
+        let Some(value) = row
+            .value
+            .as_deref()
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
+        else {
+            self.invalid = true;
+            return;
+        };
+        match &self.unit {
+            None => {
+                self.unit = Some(row.unit.clone());
+                self.record_type = Some(row.record_type.clone());
+            }
+            Some(existing) if existing != &row.unit => {
+                self.invalid = true;
+                return;
+            }
+            Some(_) => {}
+        }
+        self.min = Some(self.min.map_or(value, |current| current.min(value)));
+        self.max = Some(self.max.map_or(value, |current| current.max(value)));
+    }
+
+    fn format(&self) -> Option<String> {
+        if self.invalid {
+            return None;
+        }
+        let (Some(min), Some(max)) = (self.min, self.max) else {
+            return None;
+        };
+        let record_type = self.record_type.as_deref().unwrap_or_default();
+        let unit = self.unit.as_ref().and_then(|unit| unit.as_deref());
+        let lo = format_number(scale_percent(record_type, min, unit));
+        let hi = format_number(scale_percent(record_type, max, unit));
+        let span = if lo == hi { lo } else { format!("{lo}–{hi}") };
+        Some(attach_unit(record_type, span, unit))
+    }
+}
+
+struct CountObservation {
+    value: f64,
+    unit: Option<String>,
+    interval: Option<(Timestamp, Timestamp)>,
+}
+
+#[derive(Default)]
+struct CountValue {
+    invalid: bool,
+    record_type: Option<String>,
+    observations: Vec<CountObservation>,
+}
+
+impl CountValue {
+    fn add(&mut self, row: &BodyRow) {
+        if self.invalid {
+            return;
+        }
+        let Some(value) = row
+            .value
+            .as_deref()
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value >= 0.0)
+        else {
+            self.invalid = true;
+            return;
+        };
+        let interval = observed_interval(row);
+        if interval.is_none() && (row.start.is_some() || row.end.is_some()) {
+            self.invalid = true;
+            return;
+        }
+        if self.record_type.is_none() {
+            self.record_type = Some(row.record_type.clone());
+        }
+        self.observations.push(CountObservation {
+            value,
+            unit: row.unit.clone(),
+            interval,
+        });
+    }
+
+    fn format(&self) -> Option<String> {
+        if self.invalid || self.observations.is_empty() {
+            return None;
+        }
+        let mut intervals: Vec<Option<(Timestamp, Timestamp)>> =
+            self.observations.iter().map(|obs| obs.interval).collect();
+        intervals.sort_unstable();
+        if intervals.windows(2).any(|pair| match (pair[0], pair[1]) {
+            (Some((previous_start, end)), Some((start, _))) => {
+                start < end || (previous_start == end && start == end)
+            }
+            _ => true,
+        }) {
+            return None;
+        }
+        let first_unit = self.observations[0].unit.as_deref();
+        let same_unit = self
+            .observations
+            .iter()
+            .all(|obs| obs.unit.as_deref() == first_unit);
+        let (total, unit) = if same_unit {
+            let sum: f64 = self.observations.iter().map(|obs| obs.value).sum();
+            (sum, first_unit)
+        } else if let Some(meters) = self
+            .observations
+            .iter()
+            .map(|obs| match obs.unit.as_deref() {
+                Some("m") => Some(obs.value),
+                Some("km") => Some(obs.value * 1000.0),
+                Some("mi") => Some(obs.value * 1609.344),
+                _ => None,
+            })
+            .try_fold(0.0, |acc, next| next.map(|v| acc + v))
+        {
+            (meters, Some("m"))
+        } else {
+            let kcal = self
+                .observations
+                .iter()
+                .map(|obs| match obs.unit.as_deref() {
+                    Some("kcal" | "Cal") => Some(obs.value),
+                    Some("cal") => Some(obs.value * 0.001),
+                    Some("kJ") => Some(obs.value / 4.184),
+                    _ => None,
+                })
+                .try_fold(0.0, |acc, next| next.map(|v| acc + v))?;
+            (kcal, Some("kcal"))
+        };
+        if !total.is_finite() {
+            return None;
+        }
+        let record_type = self.record_type.as_deref().unwrap_or_default();
+        Some(attach_unit(record_type, format_number(total), unit))
+    }
+}
+
+#[derive(Default)]
+struct StageValue {
+    invalid: bool,
+    spans: Vec<(i64, i64)>,
+}
+
+impl StageValue {
+    fn add(&mut self, row: &BodyRow) {
+        if self.invalid {
+            return;
+        }
+        let Some((start, end)) = observed_interval(row) else {
+            self.invalid = true;
+            return;
+        };
+        let (start, end) = (start.as_second(), end.as_second());
+        if end <= start {
+            self.invalid = true;
+            return;
+        }
+        self.spans.push((start, end));
+    }
+
+    fn format(&self) -> Option<String> {
+        if self.invalid || self.spans.is_empty() {
+            return None;
+        }
+        let mut spans = self.spans.clone();
+        spans.sort_unstable();
+        let mut end = i64::MIN;
+        let mut seconds = 0_u64;
+        for (start, stop) in spans {
+            if stop > end {
+                seconds += (stop - start.max(end)).unsigned_abs();
+                end = stop;
+            }
+        }
+        (seconds > 0).then(|| format_duration(seconds))
+    }
+}
+
 #[derive(Default)]
 struct Tally {
     count: u64,
     first: Option<ZonedDateTime>,
     last: Option<ZonedDateTime>,
+    reading: ReadingValue,
+    sum: CountValue,
+    stage: StageValue,
 }
 
 impl Tally {
@@ -212,6 +498,12 @@ impl Tally {
             );
             self.last = Some(self.last.take().map_or(time.clone(), |last| last.max(time)));
         }
+        match row.kind {
+            RowKind::Reading => self.reading.add(row),
+            RowKind::Count => self.sum.add(row),
+            RowKind::Stage => self.stage.add(row),
+            _ => {}
+        }
     }
 
     fn times(&self, zone: Option<&TimeZone>) -> (Option<String>, Option<String>) {
@@ -222,6 +514,15 @@ impl Tally {
             .filter(|time| Some(*time) != self.first.as_ref())
             .map(|time| clock(time, zone));
         (start, end)
+    }
+
+    fn value(&self, section: TallyKind) -> Option<String> {
+        match section {
+            TallyKind::Reading => self.reading.format(),
+            TallyKind::Count => self.sum.format(),
+            TallyKind::Stage => self.stage.format(),
+            TallyKind::Logged => None,
+        }
     }
 }
 
@@ -376,6 +677,7 @@ fn render_source(
                 section,
                 count: tally.count,
                 name: name.clone(),
+                value: tally.value(section),
                 start,
                 end,
                 recorder: (!by.is_empty()).then(|| by.clone()),
@@ -666,7 +968,7 @@ mod tests {
     }
 
     #[test]
-    fn the_document_says_what_was_recorded_and_no_reading_value() {
+    fn the_document_says_what_was_recorded_with_held_values_and_no_logged_numbers() {
         let journal = tempfile::tempdir().unwrap();
         let root = journal.path();
         window(
@@ -693,11 +995,12 @@ mod tests {
         days.reconcile(root);
         let text = document(root, "20261010").unwrap();
         assert!(text.contains("Apple Health · imported"), "{text}");
-        assert!(text.contains("heart rate"));
-        assert!(text.contains("Synthetic Watch"));
+        assert!(
+            text.contains("- heart rate: 4817 bpm, 1 reading, 06:31 (Synthetic Watch)"),
+            "{text}"
+        );
         assert!(text.contains("Oatmeal"));
         assert!(text.contains("sleep: night, 22:40 to 2026-10-11 06:10"));
-        assert!(!text.contains("4817"));
         assert!(!text.contains("312"));
         assert!(record_path(root, "20261010").is_file());
     }
@@ -752,7 +1055,10 @@ mod tests {
         let mut days = BodyDays::default();
         days.reconcile(root);
         let built = document(root, "20261010").unwrap();
-        assert!(built.contains("readings 2, 06:31 to 12:01"), "{built}");
+        assert!(
+            built.contains("heart rate: 70–71 bpm, 2 readings, 06:31 to 12:01"),
+            "{built}"
+        );
 
         // A fresh reconciler over the same state writes the same bytes.
         fs::remove_file(document_path(root, "20261010")).unwrap();
@@ -765,7 +1071,7 @@ mod tests {
         assert!(
             document(root, "20261010")
                 .unwrap()
-                .contains("1 reading, 12:01")
+                .contains("71 bpm, 1 reading, 12:01")
         );
 
         fs::remove_dir_all(&second).unwrap();
@@ -1147,5 +1453,161 @@ mod tests {
         BodyDays::default().reconcile(root);
         assert!(document(root, "20261010").is_none());
         assert!(!record_path(root, "20261010").exists());
+    }
+
+    #[test]
+    fn counts_stages_and_readings_render_held_values_and_version_bump_rewrites_v1() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+
+        let mut deep = BodyRow::new(
+            RowKind::Stage,
+            "st-deep".into(),
+            "apple_health",
+            "HKCategoryValueSleepAnalysisAsleepDeep",
+            "asleep deep".into(),
+        );
+        deep.start = Some("2026-10-09T21:40:00+00:00".into());
+        deep.end = Some("2026-10-09T23:18:00+00:00".into());
+
+        let mut awake = BodyRow::new(
+            RowKind::Stage,
+            "st-awake".into(),
+            "apple_health",
+            "HKCategoryValueSleepAnalysisAwake",
+            "awake".into(),
+        );
+        awake.start = Some("2026-10-10T06:25:00+00:00".into());
+        awake.end = Some("2026-10-10T06:45:00+00:00".into());
+
+        let mut steps_a = BodyRow::new(
+            RowKind::Count,
+            "steps-a".into(),
+            "apple_health",
+            "HKQuantityTypeIdentifierStepCount",
+            "step count".into(),
+        );
+        steps_a.start = Some("2026-10-10T07:00:00+00:00".into());
+        steps_a.end = Some("2026-10-10T08:00:00+00:00".into());
+        steps_a.unit = Some("count".into());
+        steps_a.value = Some("400".into());
+
+        let mut steps_b = steps_a.clone();
+        steps_b.id = "steps-b".into();
+        steps_b.start = Some("2026-10-10T08:00:00+00:00".into());
+        steps_b.end = Some("2026-10-10T09:00:00+00:00".into());
+        steps_b.value = Some("500".into());
+
+        let mut overlap_a = BodyRow::new(
+            RowKind::Count,
+            "dist-a".into(),
+            "apple_health",
+            "HKQuantityTypeIdentifierDistanceWalkingRunning",
+            "distance walking running".into(),
+        );
+        overlap_a.start = Some("2026-10-10T07:00:00+00:00".into());
+        overlap_a.end = Some("2026-10-10T08:30:00+00:00".into());
+        overlap_a.unit = Some("km".into());
+        overlap_a.value = Some("1.5".into());
+        let mut overlap_b = overlap_a.clone();
+        overlap_b.id = "dist-b".into();
+        overlap_b.start = Some("2026-10-10T08:00:00+00:00".into());
+        overlap_b.end = Some("2026-10-10T09:00:00+00:00".into());
+        overlap_b.value = Some("1.0".into());
+
+        let mut energy = BodyRow::new(
+            RowKind::Count,
+            "energy".into(),
+            "apple_health",
+            "HKQuantityTypeIdentifierActiveEnergyBurned",
+            "active energy burned".into(),
+        );
+        energy.start = Some("2026-10-10T00:00:00+00:00".into());
+        energy.end = Some("2026-10-11T00:00:00+00:00".into());
+        energy.unit = Some("kcal".into());
+        energy.value = Some("158".into());
+
+        let mut hrv = BodyRow::new(
+            RowKind::Reading,
+            "hrv".into(),
+            "apple_health",
+            "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+            "heart rate variability sdnn".into(),
+        );
+        hrv.at = Some("2026-10-10T06:45:00+00:00".into());
+        hrv.unit = Some("ms".into());
+        hrv.value = Some("57".into());
+
+        let mut spo2 = BodyRow::new(
+            RowKind::Reading,
+            "spo2".into(),
+            "apple_health",
+            "HKQuantityTypeIdentifierOxygenSaturation",
+            "oxygen saturation".into(),
+        );
+        spo2.at = Some("2026-10-10T06:46:00+00:00".into());
+        spo2.unit = Some("%".into());
+        spo2.value = Some("0.98".into());
+
+        window(
+            root,
+            "20261010",
+            "060000_300",
+            &[
+                deep, awake, steps_a, steps_b, overlap_a, overlap_b, energy, hrv, spo2,
+            ],
+        );
+
+        // Simulate a v1 build record and stale v1 body.md on disk; reconcile must bump to v2.
+        let token = build_token(root, "20261010", &BTreeSet::new());
+        let rec_path = record_path(root, "20261010");
+        fs::create_dir_all(rec_path.parent().unwrap()).unwrap();
+        fs::write(
+            &rec_path,
+            serde_json::to_vec_pretty(&BuildRecord {
+                version: RECORD_VERSION,
+                source: token,
+                document: 1,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(document_path(root, "20261010"), "# stale v1\n").unwrap();
+
+        BodyDays::default().reconcile(root);
+        let built: BuildRecord = serde_json::from_slice(&fs::read(&rec_path).unwrap()).unwrap();
+        assert_eq!(built.document, 2);
+
+        let text = document(root, "20261010").unwrap();
+        assert!(
+            text.contains("- sleep stage asleep deep: 1 h 38 min, 1 interval, 21:40"),
+            "{text}"
+        );
+        assert!(
+            text.contains("- sleep stage awake: 20 min, 1 interval, 06:25"),
+            "{text}"
+        );
+        assert!(
+            text.contains("- step count: 900, 2 intervals, 07:00 to 08:00"),
+            "{text}"
+        );
+        assert!(
+            text.contains("- active energy burned: 158 kcal, 1 interval, 00:00"),
+            "{text}"
+        );
+        assert!(
+            text.contains("- heart rate variability sdnn: 57 ms, 1 reading, 06:45"),
+            "{text}"
+        );
+        assert!(
+            text.contains("- oxygen saturation: 98%, 1 reading, 06:46"),
+            "{text}"
+        );
+        // Overlapping counts fall back cleanly to the valueless count tally without double-counting.
+        assert!(
+            text.contains("- distance walking running: intervals 2, 07:00 to 08:00"),
+            "{text}"
+        );
+        assert!(!text.contains("2.5"), "{text}");
     }
 }

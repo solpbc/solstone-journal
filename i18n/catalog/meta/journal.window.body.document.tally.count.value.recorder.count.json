@@ -1,0 +1,42 @@
+{
+  "description": "Tally of count intervals with held total. Report the held value and observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of count intervals with held total. Report the held value and observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "recorder",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2729f058b724345e621a68d10280d45c3b02a381c381052208fee86db11ac6c0",
+  "max_length": 615,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

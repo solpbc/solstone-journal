@@ -1,0 +1,42 @@
+{
+  "description": "Tally of sleep stages with held covered duration. Report the held duration and observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of sleep stages with held covered duration. Report the held duration and observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "recorder",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "ed6f35dc1592813be397fc2708dd7ad8c82285aeaefbb07be9969efe71a74162",
+  "max_length": 615,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

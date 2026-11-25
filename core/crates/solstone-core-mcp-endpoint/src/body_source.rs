@@ -387,8 +387,8 @@ fn windows_in_scope(
     Ok(windows)
 }
 
-/// Daily movement totals and sleep from the same windows the transcript reader
-/// can serve. Keep totals from different recorders separate.
+/// Daily movement totals, sleep and bounded reading measures from the same
+/// windows the transcript reader can serve. Keep different recorders separate.
 pub(crate) fn week_totals(
     journal: &Path,
     snapshot: &ConnectionReadSnapshot,
@@ -400,10 +400,11 @@ pub(crate) fn week_totals(
     let labels = source_labels(journal);
     for stream in BODY_RECORD_STREAMS {
         let mut nights = BTreeMap::new();
-        let mut stages = BTreeMap::<String, Vec<(i64, i64)>>::new();
+        let mut stages = BTreeMap::<String, NightStages>::new();
         let mut seen = BTreeSet::new();
         for day in days {
             let mut movement = BTreeMap::<Option<String>, Movement>::new();
+            let mut readings = BTreeMap::<Option<String>, DayReadings>::new();
             let mut windows = readable_windows(journal, snapshot, &hides, day, stream)?;
             windows.sort_by_key(|window| {
                 (
@@ -438,30 +439,68 @@ pub(crate) fn week_totals(
                         RowKind::Count
                             if matches!(
                                 row.label.as_str(),
-                                "step count" | "distance walking running"
+                                "step count" | "distance walking running" | "active energy burned"
                             ) =>
                         {
                             movement.entry(row.by.clone()).or_default().add_count(&row);
                         }
+                        RowKind::Reading
+                            if matches!(
+                                row.label.as_str(),
+                                "resting heart rate" | "heart rate variability sdnn" | "heart rate"
+                            ) =>
+                        {
+                            readings
+                                .entry(row.by.clone())
+                                .or_default()
+                                .add_reading(&row);
+                        }
                         RowKind::Dated if row.record_type == "daily_activity" => {
-                            if let Some(steps) = row.fields.get("steps") {
+                            let mut matched = false;
+                            if let Some(steps) =
+                                row.fields.get("steps").filter(|value| !value.is_null())
+                            {
                                 let counts = &mut movement.entry(row.by.clone()).or_default().steps;
                                 if let Some(steps) = steps.as_f64() {
                                     counts.add(steps, None);
                                 } else {
                                     counts.note = Some("a stored step count could not be read");
                                 }
+                                matched = true;
+                            }
+                            if let Some(kcal) = row
+                                .fields
+                                .get("active_calories")
+                                .filter(|value| !value.is_null())
+                            {
+                                let counts = &mut movement
+                                    .entry(row.by.clone())
+                                    .or_default()
+                                    .active_energy_kcal;
+                                if let Some(kcal) = kcal.as_f64() {
+                                    counts.add(kcal, None);
+                                } else {
+                                    counts.note =
+                                        Some("a stored active energy count could not be read");
+                                }
+                                matched = true;
+                            }
+                            if !matched {
+                                continue;
                             }
                         }
                         RowKind::Experience if row.experience.as_deref() == Some("sleep") => {
                             nights.insert(row.id.clone(), row);
                         }
                         RowKind::Stage
-                            if row.label.starts_with("asleep")
-                                && let (Some(parent), Some(interval)) =
-                                    (&row.of, row_interval(&row)) =>
+                            if let (Some(stage), Some(parent), Some(interval)) =
+                                (sleep_stage_key(&row.label), &row.of, row_interval(&row)) =>
                         {
-                            stages.entry(parent.clone()).or_default().push(interval);
+                            let entry = stages.entry(parent.clone()).or_default();
+                            if stage.counts_as_asleep {
+                                entry.asleep.push(interval);
+                            }
+                            entry.by_stage.entry(stage.key).or_default().push(interval);
                         }
                         _ => continue,
                     }
@@ -474,7 +513,8 @@ pub(crate) fn week_totals(
             for (recorder, movement) in movement {
                 let steps = movement.steps.total();
                 let distance_m = movement.distance_m.total();
-                if steps != Ok(None) || distance_m != Ok(None) {
+                let active_energy_kcal = movement.active_energy_kcal.total();
+                if steps != Ok(None) || distance_m != Ok(None) || active_energy_kcal != Ok(None) {
                     let mut record = json!({
                         "source": source_label(&labels, stream), "recorded_by": recorder,
                         "steps": steps.ok().flatten(), "distance_m": distance_m.ok().flatten(),
@@ -485,6 +525,11 @@ pub(crate) fn week_totals(
                     if let Err(note) = distance_m {
                         record["distance_note"] = json!(note);
                     }
+                    match active_energy_kcal {
+                        Ok(Some(kcal)) => record["active_energy_kcal"] = json!(kcal),
+                        Ok(None) => {}
+                        Err(note) => record["active_energy_note"] = json!(note),
+                    }
                     let entry = summaries.entry(day.clone()).or_insert_with(|| json!({}));
                     let list = entry
                         .as_object_mut()
@@ -492,6 +537,19 @@ pub(crate) fn week_totals(
                         .entry("movement")
                         .or_insert_with(|| json!([]));
                     list.as_array_mut().expect("movement array").push(record);
+                }
+            }
+            for (recorder, day_readings) in readings {
+                if let Some(record) =
+                    day_readings.into_json(source_label(&labels, stream), recorder)
+                {
+                    let entry = summaries.entry(day.clone()).or_insert_with(|| json!({}));
+                    let list = entry
+                        .as_object_mut()
+                        .expect("body summary object")
+                        .entry("readings")
+                        .or_insert_with(|| json!([]));
+                    list.as_array_mut().expect("readings array").push(record);
                 }
             }
         }
@@ -506,30 +564,103 @@ pub(crate) fn week_totals(
             if !days.contains(&day) || hides.day_hidden(&day) {
                 continue;
             }
-            let asleep_seconds = stages.remove(&id).map(covered_seconds).or_else(|| {
-                row.fields
-                    .get("total_sleep_duration")
-                    .and_then(Value::as_u64)
+            let night_stages = stages.remove(&id);
+            let asleep_seconds = night_stages
+                .as_ref()
+                .filter(|stage| !stage.asleep.is_empty())
+                .map(|stage| covered_seconds(stage.asleep.clone()))
+                .or_else(|| {
+                    row.fields
+                        .get("total_sleep_duration")
+                        .and_then(Value::as_u64)
+                });
+            let mut stages_seconds = serde_json::Map::new();
+            if let Some(night_stages) = night_stages {
+                for (stage_name, spans) in night_stages.by_stage {
+                    let seconds = covered_seconds(spans);
+                    if seconds > 0 {
+                        stages_seconds.insert(stage_name.to_owned(), json!(seconds));
+                    }
+                }
+            } else {
+                for (field, key) in [
+                    ("awake_time", "awake"),
+                    ("deep_sleep_duration", "deep"),
+                    ("light_sleep_duration", "light"),
+                    ("rem_sleep_duration", "rem"),
+                ] {
+                    if let Some(seconds) = row.fields.get(field).and_then(Value::as_u64)
+                        && seconds > 0
+                    {
+                        stages_seconds.insert(key.to_owned(), json!(seconds));
+                    }
+                }
+            }
+            let mut night = json!({
+                "source": source_label(&labels, stream), "recorded_by": row.by,
+                "to_bed": row.start, "waking": row.end, "asleep_seconds": asleep_seconds,
             });
+            if !stages_seconds.is_empty() {
+                night["stages_seconds"] = Value::Object(stages_seconds);
+            }
             let entry = summaries.entry(day).or_insert_with(|| json!({}));
             let list = entry
                 .as_object_mut()
                 .expect("body summary object")
                 .entry("nights")
                 .or_insert_with(|| json!([]));
-            list.as_array_mut().expect("nights array").push(json!({
-                "source": source_label(&labels, stream), "recorded_by": row.by,
-                "to_bed": row.start, "waking": row.end, "asleep_seconds": asleep_seconds,
-            }));
+            list.as_array_mut().expect("nights array").push(night);
         }
     }
     Ok((summaries, targets))
 }
 
 #[derive(Default)]
+struct NightStages {
+    asleep: Vec<(i64, i64)>,
+    by_stage: BTreeMap<&'static str, Vec<(i64, i64)>>,
+}
+
+struct SleepStage {
+    key: &'static str,
+    counts_as_asleep: bool,
+}
+
+fn sleep_stage_key(label: &str) -> Option<SleepStage> {
+    match label {
+        "asleep deep" => Some(SleepStage {
+            key: "deep",
+            counts_as_asleep: true,
+        }),
+        "asleep core" => Some(SleepStage {
+            key: "core",
+            counts_as_asleep: true,
+        }),
+        "asleep rem" => Some(SleepStage {
+            key: "rem",
+            counts_as_asleep: true,
+        }),
+        "asleep" | "asleep unspecified" => Some(SleepStage {
+            key: "unspecified",
+            counts_as_asleep: true,
+        }),
+        "awake" => Some(SleepStage {
+            key: "awake",
+            counts_as_asleep: false,
+        }),
+        _ if label.starts_with("asleep") => Some(SleepStage {
+            key: "unspecified",
+            counts_as_asleep: true,
+        }),
+        _ => None,
+    }
+}
+
+#[derive(Default)]
 struct Movement {
     steps: Counts,
     distance_m: Counts,
+    active_energy_kcal: Counts,
 }
 
 impl Movement {
@@ -539,12 +670,20 @@ impl Movement {
             ("distance walking running", Some("km")) => (&mut self.distance_m, 1000.0),
             ("distance walking running", Some("m")) => (&mut self.distance_m, 1.0),
             ("distance walking running", Some("mi")) => (&mut self.distance_m, 1609.344),
+            ("active energy burned", Some("kcal" | "Cal")) => (&mut self.active_energy_kcal, 1.0),
+            ("active energy burned", Some("cal")) => (&mut self.active_energy_kcal, 0.001),
+            ("active energy burned", Some("kJ")) => (&mut self.active_energy_kcal, 1.0 / 4.184),
             ("step count", _) => {
                 self.steps.note = Some("a stored step count uses an unrecognized unit");
                 return;
             }
             ("distance walking running", _) => {
                 self.distance_m.note = Some("a stored distance uses an unrecognized unit");
+                return;
+            }
+            ("active energy burned", _) => {
+                self.active_energy_kcal.note =
+                    Some("a stored active energy count uses an unrecognized unit");
                 return;
             }
             _ => return,
@@ -563,6 +702,224 @@ impl Movement {
             return;
         }
         counts.add(value * scale, interval);
+    }
+}
+
+#[derive(Default)]
+struct DayReadings {
+    resting_heart_rate_bpm: ReadingBounds,
+    hrv_sdnn_ms: ReadingBounds,
+    heart_rate_bpm: ReadingBounds,
+}
+
+impl DayReadings {
+    fn add_reading(&mut self, row: &BodyRow) {
+        let (bounds, scale, bad_value_note) = match (row.label.as_str(), row.unit.as_deref()) {
+            ("resting heart rate", Some("count/min" | "bpm")) => (
+                &mut self.resting_heart_rate_bpm,
+                1.0,
+                "a stored resting heart rate could not be read",
+            ),
+            ("resting heart rate", _) => {
+                self.resting_heart_rate_bpm.note =
+                    Some("a stored resting heart rate uses an unrecognized unit");
+                return;
+            }
+            ("heart rate variability sdnn", Some("ms")) => (
+                &mut self.hrv_sdnn_ms,
+                1.0,
+                "a stored HRV reading could not be read",
+            ),
+            ("heart rate variability sdnn", Some("s")) => (
+                &mut self.hrv_sdnn_ms,
+                1000.0,
+                "a stored HRV reading could not be read",
+            ),
+            ("heart rate variability sdnn", _) => {
+                self.hrv_sdnn_ms.note = Some("a stored HRV reading uses an unrecognized unit");
+                return;
+            }
+            ("heart rate", Some("count/min" | "bpm")) => (
+                &mut self.heart_rate_bpm,
+                1.0,
+                "a stored heart rate could not be read",
+            ),
+            ("heart rate", _) => {
+                self.heart_rate_bpm.note = Some("a stored heart rate uses an unrecognized unit");
+                return;
+            }
+            _ => return,
+        };
+        let Some(value) = row
+            .value
+            .as_deref()
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|value| value * scale)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+        else {
+            bounds.note = Some(bad_value_note);
+            return;
+        };
+        bounds.add(value, row);
+    }
+
+    fn into_json(self, source: String, recorded_by: Option<String>) -> Option<Value> {
+        let rhr = self.resting_heart_rate_bpm.finish();
+        let hrv = self.hrv_sdnn_ms.finish();
+        let hr = self.heart_rate_bpm.finish();
+        if rhr.is_empty() && hrv.is_empty() && hr.is_empty() {
+            return None;
+        }
+        let mut record = json!({
+            "source": source,
+            "recorded_by": recorded_by,
+        });
+        match rhr {
+            ReadingSummary::Empty => {}
+            ReadingSummary::Bounds {
+                min, max, count, ..
+            } => {
+                record["resting_heart_rate_bpm"] = json!({
+                    "min": min,
+                    "max": max,
+                    "count": count,
+                });
+            }
+            ReadingSummary::Note(note) => {
+                record["resting_heart_rate_note"] = json!(note);
+            }
+        }
+        match hrv {
+            ReadingSummary::Empty => {}
+            ReadingSummary::Bounds {
+                min, max, count, ..
+            } => {
+                record["hrv_sdnn_ms"] = json!({
+                    "min": min,
+                    "max": max,
+                    "count": count,
+                });
+            }
+            ReadingSummary::Note(note) => {
+                record["hrv_sdnn_note"] = json!(note);
+            }
+        }
+        match hr {
+            ReadingSummary::Empty => {}
+            ReadingSummary::Bounds {
+                min,
+                max,
+                count,
+                min_at,
+                max_at,
+            } => {
+                let mut value = json!({
+                    "min": min,
+                    "max": max,
+                    "count": count,
+                });
+                if let Some(at) = min_at {
+                    value["min_at"] = json!(at);
+                }
+                if let Some(at) = max_at {
+                    value["max_at"] = json!(at);
+                }
+                record["heart_rate_bpm"] = value;
+            }
+            ReadingSummary::Note(note) => {
+                record["heart_rate_note"] = json!(note);
+            }
+        }
+        Some(record)
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct ReadingKey {
+    missing_time: bool,
+    timestamp_nanos: i128,
+    at: String,
+    id: String,
+}
+
+impl ReadingKey {
+    fn from_row(row: &BodyRow) -> Self {
+        let at = row.begins().unwrap_or_default().to_owned();
+        let parsed = row.begins().and_then(parse_source_time);
+        Self {
+            missing_time: parsed.is_none(),
+            timestamp_nanos: parsed.map_or(0, |time| time.timestamp().as_nanosecond()),
+            at,
+            id: row.id.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct ReadingBounds {
+    count: u64,
+    min: Option<(f64, ReadingKey, Option<String>)>,
+    max: Option<(f64, ReadingKey, Option<String>)>,
+    note: Option<&'static str>,
+}
+
+enum ReadingSummary {
+    Empty,
+    Bounds {
+        min: f64,
+        max: f64,
+        count: u64,
+        min_at: Option<String>,
+        max_at: Option<String>,
+    },
+    Note(&'static str),
+}
+
+impl ReadingSummary {
+    fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
+    }
+}
+
+impl ReadingBounds {
+    fn add(&mut self, value: f64, row: &BodyRow) {
+        self.count += 1;
+        let key = ReadingKey::from_row(row);
+        let at = row.begins().map(str::to_owned);
+        let replace_min = match &self.min {
+            None => true,
+            Some((current, current_key, _)) => {
+                value < *current || (value == *current && key < *current_key)
+            }
+        };
+        if replace_min {
+            self.min = Some((value, key.clone(), at.clone()));
+        }
+        let replace_max = match &self.max {
+            None => true,
+            Some((current, current_key, _)) => {
+                value > *current || (value == *current && key < *current_key)
+            }
+        };
+        if replace_max {
+            self.max = Some((value, key, at));
+        }
+    }
+
+    fn finish(self) -> ReadingSummary {
+        if let Some(note) = self.note {
+            return ReadingSummary::Note(note);
+        }
+        match (self.min, self.max) {
+            (Some((min, _, min_at)), Some((max, _, max_at))) => ReadingSummary::Bounds {
+                min,
+                max,
+                count: self.count,
+                min_at,
+                max_at,
+            },
+            _ => ReadingSummary::Empty,
+        }
     }
 }
 
@@ -1691,6 +2048,95 @@ mod tests {
         distance.unit = Some("ft".to_owned());
         movement.add_count(&distance);
         assert!(movement.distance_m.total().is_err());
+    }
+
+    #[test]
+    fn active_energy_and_reading_bounds_handle_units_ties_and_corrupt_values() {
+        let mut movement = Movement::default();
+        let mut kj = BodyRow::new(
+            RowKind::Count,
+            "e1".to_owned(),
+            "apple_health",
+            "HKQuantityTypeIdentifierActiveEnergyBurned",
+            "active energy burned".to_owned(),
+        );
+        kj.value = Some("418.4".to_owned());
+        kj.unit = Some("kJ".to_owned());
+        kj.start = Some("2026-03-08T08:00:00Z".to_owned());
+        kj.end = Some("2026-03-08T09:00:00Z".to_owned());
+        movement.add_count(&kj);
+        let mut kcal = kj.clone();
+        kcal.id = "e2".to_owned();
+        kcal.value = Some("58".to_owned());
+        kcal.unit = Some("kcal".to_owned());
+        kcal.start = Some("2026-03-08T09:00:00Z".to_owned());
+        kcal.end = Some("2026-03-08T10:00:00Z".to_owned());
+        movement.add_count(&kcal);
+        let total = movement.active_energy_kcal.total().unwrap().unwrap();
+        assert!((total - 158.0).abs() < 1e-9, "{total}");
+
+        let mut bad_energy = Movement::default();
+        let mut watts = kj.clone();
+        watts.unit = Some("W".to_owned());
+        bad_energy.add_count(&watts);
+        assert!(bad_energy.active_energy_kcal.total().is_err());
+
+        // ReadingBounds tie-breaks min_at/max_at deterministically by earliest instant.
+        let mut readings = DayReadings::default();
+        for (id, at, val) in [
+            ("hr-late-tie", "2026-03-08T15:00:00Z", "120"),
+            ("hr-early-max", "2026-03-08T10:00:00Z", "120"),
+            ("hr-late-min", "2026-03-08T08:00:00Z", "55"),
+            ("hr-early-min", "2026-03-08T06:00:00Z", "55"),
+        ] {
+            let mut row = BodyRow::new(
+                RowKind::Reading,
+                id.to_owned(),
+                "apple_health",
+                "HKQuantityTypeIdentifierHeartRate",
+                "heart rate".to_owned(),
+            );
+            row.at = Some(at.to_owned());
+            row.unit = Some("count/min".to_owned());
+            row.value = Some(val.to_owned());
+            readings.add_reading(&row);
+        }
+        let mut hrv_s = BodyRow::new(
+            RowKind::Reading,
+            "hrv-s".to_owned(),
+            "apple_health",
+            "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+            "heart rate variability sdnn".to_owned(),
+        );
+        hrv_s.at = Some("2026-03-08T06:45:00Z".to_owned());
+        hrv_s.unit = Some("s".to_owned());
+        hrv_s.value = Some("0.057".to_owned());
+        readings.add_reading(&hrv_s);
+        let mut bad_rhr = BodyRow::new(
+            RowKind::Reading,
+            "rhr-neg".to_owned(),
+            "apple_health",
+            "HKQuantityTypeIdentifierRestingHeartRate",
+            "resting heart rate".to_owned(),
+        );
+        bad_rhr.unit = Some("count/min".to_owned());
+        bad_rhr.value = Some("-5".to_owned());
+        readings.add_reading(&bad_rhr);
+
+        let rendered = readings
+            .into_json(
+                "Apple Health · imported".to_owned(),
+                Some("Watch".to_owned()),
+            )
+            .unwrap();
+        assert_eq!(rendered["heart_rate_bpm"]["min"], 55.0);
+        assert_eq!(rendered["heart_rate_bpm"]["max"], 120.0);
+        assert_eq!(rendered["heart_rate_bpm"]["count"], 4);
+        assert_eq!(rendered["heart_rate_bpm"]["min_at"], "2026-03-08T06:00:00Z");
+        assert_eq!(rendered["heart_rate_bpm"]["max_at"], "2026-03-08T10:00:00Z");
+        assert!((rendered["hrv_sdnn_ms"]["min"].as_f64().unwrap() - 57.0).abs() < 1e-9);
+        assert!(rendered.get("resting_heart_rate_bpm").is_none());
+        assert!(rendered["resting_heart_rate_note"].is_string());
     }
 
     #[test]

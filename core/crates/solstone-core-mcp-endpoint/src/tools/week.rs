@@ -1312,7 +1312,7 @@ fn summarize_day_activities(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn project_range_with_limits(
+pub(crate) fn project_range_with_limits(
     journal: &Path,
     day_from: &str,
     day_to: &str,

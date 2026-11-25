@@ -1,0 +1,38 @@
+{
+  "description": "Tally of readings with held value or min\u2013max bounds. Report the held value and observed count, with source times and attribution where available.",
+  "context": "Searchable body day Markdown. Tally of readings with held value or min\u2013max bounds. Report the held value and observed count, with source times and attribution where available.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "788486a130057f820016ad51fd6e8294dd7212ab7c7366a6e509c6cb70ad96de",
+  "max_length": 615,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "type": "cardinal",
+    "name": "quantity"
+  }
+}

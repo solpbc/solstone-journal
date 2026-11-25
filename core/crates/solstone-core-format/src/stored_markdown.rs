@@ -1887,4 +1887,71 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn body_day_value_tally_receipt_projects_and_deserializes_legacy_v1_tallies() {
+        use body_day::{Copy, TallyKind};
+
+        let root = tempfile::tempdir().unwrap();
+        let body_path = root.path().join("chronicle/20261010/body.md");
+        std::fs::create_dir_all(body_path.parent().unwrap()).unwrap();
+        let mut doc = Document::default();
+        doc.push_str("- ");
+        doc.push_message(Message::BodyDay {
+            copy: Copy::Tally {
+                section: TallyKind::Reading,
+                count: 2,
+                name: "heart rate".into(),
+                value: Some("71–88 bpm".into()),
+                start: Some("00:00".into()),
+                end: Some("23:30".into()),
+                recorder: Some("Synthetic Watch".into()),
+                entered: false,
+            },
+        });
+        doc.push_str("\n");
+        assert_eq!(
+            &*doc,
+            "- heart rate: 71–88 bpm, 2 readings, 00:00 to 23:30 (Synthetic Watch)\n"
+        );
+        std::fs::write(&body_path, doc.as_bytes()).unwrap();
+        doc.save_display_receipt(&body_path).unwrap();
+
+        let locale = solstone_core_window_catalog::packaged_locale(Some("en-XA"));
+        if locale != ENGLISH {
+            let projected = project_file(root.path(), &body_path, doc.trim(), locale, None)
+                .expect("verified body day value tally projects");
+            assert!(projected.contains("71–88 bpm"), "{projected}");
+            assert!(projected.contains("Synthetic Watch"), "{projected}");
+        }
+
+        // Legacy v1 receipt without `value` key still deserializes cleanly.
+        let legacy: Copy = serde_json::from_value(serde_json::json!({
+            "kind": "tally",
+            "section": "reading",
+            "count": 1,
+            "name": "heart rate",
+            "start": "06:31",
+            "end": null,
+            "recorder": null,
+            "entered": false,
+        }))
+        .unwrap();
+        assert_eq!(legacy.render(ENGLISH), "heart rate: 1 reading, 06:31");
+
+        // Logged tally with a value is rejected by map_text.
+        let invalid_logged: Message = Message::BodyDay {
+            copy: Copy::Tally {
+                section: TallyKind::Logged,
+                count: 1,
+                name: "caffeine".into(),
+                value: Some("100 mg".into()),
+                start: Some("09:00".into()),
+                end: None,
+                recorder: None,
+                entered: true,
+            },
+        };
+        assert!(invalid_logged.map_text(|s| Some(s.clone())).is_none());
+    }
 }

@@ -20843,6 +20843,36 @@ journal.window.body.document.tally.count.recorder.range = { $quantity ->
    *[other] { $name }: intervals { $count }, { $start } to { $end } ({ $recorder })
 }
 
+journal.window.body.document.tally.count.value.plain.at = { $quantity ->
+    [one] { $name }: { $value }, { $count } interval, { $start }
+   *[other] { $name }: { $value }, { $count } intervals, { $start }
+}
+
+journal.window.body.document.tally.count.value.plain.count = { $quantity ->
+    [one] { $name }: { $value }, { $count } interval
+   *[other] { $name }: { $value }, { $count } intervals
+}
+
+journal.window.body.document.tally.count.value.plain.range = { $quantity ->
+    [one] { $name }: { $value }, { $count } interval, { $start } to { $end }
+   *[other] { $name }: { $value }, { $count } intervals, { $start } to { $end }
+}
+
+journal.window.body.document.tally.count.value.recorder.at = { $quantity ->
+    [one] { $name }: { $value }, { $count } interval, { $start } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } intervals, { $start } ({ $recorder })
+}
+
+journal.window.body.document.tally.count.value.recorder.count = { $quantity ->
+    [one] { $name }: { $value }, { $count } interval ({ $recorder })
+   *[other] { $name }: { $value }, { $count } intervals ({ $recorder })
+}
+
+journal.window.body.document.tally.count.value.recorder.range = { $quantity ->
+    [one] { $name }: { $value }, { $count } interval, { $start } to { $end } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } intervals, { $start } to { $end } ({ $recorder })
+}
+
 journal.window.body.document.tally.logged.owner.at = { $quantity ->
     [one] { $name }: { $count } entry, { $start } (entered by the owner)
    *[other] { $name }: entries { $count }, { $start } (entered by the owner)
@@ -20933,6 +20963,36 @@ journal.window.body.document.tally.reading.recorder.range = { $quantity ->
    *[other] { $name }: readings { $count }, { $start } to { $end } ({ $recorder })
 }
 
+journal.window.body.document.tally.reading.value.plain.at = { $quantity ->
+    [one] { $name }: { $value }, { $count } reading, { $start }
+   *[other] { $name }: { $value }, { $count } readings, { $start }
+}
+
+journal.window.body.document.tally.reading.value.plain.count = { $quantity ->
+    [one] { $name }: { $value }, { $count } reading
+   *[other] { $name }: { $value }, { $count } readings
+}
+
+journal.window.body.document.tally.reading.value.plain.range = { $quantity ->
+    [one] { $name }: { $value }, { $count } reading, { $start } to { $end }
+   *[other] { $name }: { $value }, { $count } readings, { $start } to { $end }
+}
+
+journal.window.body.document.tally.reading.value.recorder.at = { $quantity ->
+    [one] { $name }: { $value }, { $count } reading, { $start } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } readings, { $start } ({ $recorder })
+}
+
+journal.window.body.document.tally.reading.value.recorder.count = { $quantity ->
+    [one] { $name }: { $value }, { $count } reading ({ $recorder })
+   *[other] { $name }: { $value }, { $count } readings ({ $recorder })
+}
+
+journal.window.body.document.tally.reading.value.recorder.range = { $quantity ->
+    [one] { $name }: { $value }, { $count } reading, { $start } to { $end } ({ $recorder })
+   *[other] { $name }: { $value }, { $count } readings, { $start } to { $end } ({ $recorder })
+}
+
 journal.window.body.document.tally.stage.plain.at = { $quantity ->
     [one] sleep stage { $name }: { $count } interval, { $start }
    *[other] sleep stage { $name }: intervals { $count }, { $start }
@@ -20961,6 +21021,36 @@ journal.window.body.document.tally.stage.recorder.count = { $quantity ->
 journal.window.body.document.tally.stage.recorder.range = { $quantity ->
     [one] sleep stage { $name }: { $count } interval, { $start } to { $end } ({ $recorder })
    *[other] sleep stage { $name }: intervals { $count }, { $start } to { $end } ({ $recorder })
+}
+
+journal.window.body.document.tally.stage.value.plain.at = { $quantity ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start }
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start }
+}
+
+journal.window.body.document.tally.stage.value.plain.count = { $quantity ->
+    [one] sleep stage { $name }: { $value }, { $count } interval
+   *[other] sleep stage { $name }: { $value }, { $count } intervals
+}
+
+journal.window.body.document.tally.stage.value.plain.range = { $quantity ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start } to { $end }
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start } to { $end }
+}
+
+journal.window.body.document.tally.stage.value.recorder.at = { $quantity ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start } ({ $recorder })
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start } ({ $recorder })
+}
+
+journal.window.body.document.tally.stage.value.recorder.count = { $quantity ->
+    [one] sleep stage { $name }: { $value }, { $count } interval ({ $recorder })
+   *[other] sleep stage { $name }: { $value }, { $count } intervals ({ $recorder })
+}
+
+journal.window.body.document.tally.stage.value.recorder.range = { $quantity ->
+    [one] sleep stage { $name }: { $value }, { $count } interval, { $start } to { $end } ({ $recorder })
+   *[other] sleep stage { $name }: { $value }, { $count } intervals, { $start } to { $end } ({ $recorder })
 }
 
 journal.window.body.document.words.owner = in the owner's words: { $words }

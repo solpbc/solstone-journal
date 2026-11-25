@@ -18,6 +18,10 @@ pub enum TallyKind {
     Logged,
 }
 
+fn default_none<T>() -> Option<T> {
+    None
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Copy<T = String> {
@@ -53,6 +57,8 @@ pub enum Copy<T = String> {
         section: TallyKind,
         count: u64,
         name: T,
+        #[serde(default = "default_none", skip_serializing_if = "Option::is_none")]
+        value: Option<T>,
         start: Option<T>,
         end: Option<T>,
         recorder: Option<T>,
@@ -77,6 +83,7 @@ impl<T> Copy<T> {
             Self::Tally {
                 section,
                 count,
+                value,
                 start,
                 end,
                 entered,
@@ -84,7 +91,8 @@ impl<T> Copy<T> {
             } if *count == 0
                 || i32::try_from(*count).is_err()
                 || (end.is_some() && (start.is_none() || *count == 1))
-                || (*entered && *section != TallyKind::Logged) =>
+                || (*entered && *section != TallyKind::Logged)
+                || (value.is_some() && *section == TallyKind::Logged) =>
             {
                 return None;
             }
@@ -146,6 +154,7 @@ impl<T> Copy<T> {
                 section,
                 count,
                 name,
+                value,
                 start,
                 end,
                 recorder,
@@ -154,6 +163,7 @@ impl<T> Copy<T> {
                 section: *section,
                 count: *count,
                 name: f(name)?,
+                value: slot(value, &mut f)?,
                 start: slot(start, &mut f)?,
                 end: slot(end, &mut f)?,
                 recorder: slot(recorder, &mut f)?,
@@ -187,54 +197,89 @@ fn experience_id(continuing: bool, named: bool, recorder: bool, words: bool) -> 
 }
 
 // Each group provides the complete line with no time, one time or a range.
-fn tally_ids(section: TallyKind, recorder: bool, entered: bool) -> [&'static str; 3] {
-    match (section, recorder, entered) {
-        (TallyKind::Stage, false, _) => [
+fn tally_ids(
+    section: TallyKind,
+    has_value: bool,
+    recorder: bool,
+    entered: bool,
+) -> [&'static str; 3] {
+    match (section, has_value, recorder, entered) {
+        (TallyKind::Stage, false, false, _) => [
             "journal.window.body.document.tally.stage.plain.count",
             "journal.window.body.document.tally.stage.plain.at",
             "journal.window.body.document.tally.stage.plain.range",
         ],
-        (TallyKind::Stage, true, _) => [
+        (TallyKind::Stage, false, true, _) => [
             "journal.window.body.document.tally.stage.recorder.count",
             "journal.window.body.document.tally.stage.recorder.at",
             "journal.window.body.document.tally.stage.recorder.range",
         ],
-        (TallyKind::Reading, false, _) => [
+        (TallyKind::Stage, true, false, _) => [
+            "journal.window.body.document.tally.stage.value.plain.count",
+            "journal.window.body.document.tally.stage.value.plain.at",
+            "journal.window.body.document.tally.stage.value.plain.range",
+        ],
+        (TallyKind::Stage, true, true, _) => [
+            "journal.window.body.document.tally.stage.value.recorder.count",
+            "journal.window.body.document.tally.stage.value.recorder.at",
+            "journal.window.body.document.tally.stage.value.recorder.range",
+        ],
+        (TallyKind::Reading, false, false, _) => [
             "journal.window.body.document.tally.reading.plain.count",
             "journal.window.body.document.tally.reading.plain.at",
             "journal.window.body.document.tally.reading.plain.range",
         ],
-        (TallyKind::Reading, true, _) => [
+        (TallyKind::Reading, false, true, _) => [
             "journal.window.body.document.tally.reading.recorder.count",
             "journal.window.body.document.tally.reading.recorder.at",
             "journal.window.body.document.tally.reading.recorder.range",
         ],
-        (TallyKind::Count, false, _) => [
+        (TallyKind::Reading, true, false, _) => [
+            "journal.window.body.document.tally.reading.value.plain.count",
+            "journal.window.body.document.tally.reading.value.plain.at",
+            "journal.window.body.document.tally.reading.value.plain.range",
+        ],
+        (TallyKind::Reading, true, true, _) => [
+            "journal.window.body.document.tally.reading.value.recorder.count",
+            "journal.window.body.document.tally.reading.value.recorder.at",
+            "journal.window.body.document.tally.reading.value.recorder.range",
+        ],
+        (TallyKind::Count, false, false, _) => [
             "journal.window.body.document.tally.count.plain.count",
             "journal.window.body.document.tally.count.plain.at",
             "journal.window.body.document.tally.count.plain.range",
         ],
-        (TallyKind::Count, true, _) => [
+        (TallyKind::Count, false, true, _) => [
             "journal.window.body.document.tally.count.recorder.count",
             "journal.window.body.document.tally.count.recorder.at",
             "journal.window.body.document.tally.count.recorder.range",
         ],
-        (TallyKind::Logged, false, false) => [
+        (TallyKind::Count, true, false, _) => [
+            "journal.window.body.document.tally.count.value.plain.count",
+            "journal.window.body.document.tally.count.value.plain.at",
+            "journal.window.body.document.tally.count.value.plain.range",
+        ],
+        (TallyKind::Count, true, true, _) => [
+            "journal.window.body.document.tally.count.value.recorder.count",
+            "journal.window.body.document.tally.count.value.recorder.at",
+            "journal.window.body.document.tally.count.value.recorder.range",
+        ],
+        (TallyKind::Logged, _, false, false) => [
             "journal.window.body.document.tally.logged.plain.count",
             "journal.window.body.document.tally.logged.plain.at",
             "journal.window.body.document.tally.logged.plain.range",
         ],
-        (TallyKind::Logged, false, true) => [
+        (TallyKind::Logged, _, false, true) => [
             "journal.window.body.document.tally.logged.owner.count",
             "journal.window.body.document.tally.logged.owner.at",
             "journal.window.body.document.tally.logged.owner.range",
         ],
-        (TallyKind::Logged, true, false) => [
+        (TallyKind::Logged, _, true, false) => [
             "journal.window.body.document.tally.logged.recorder.count",
             "journal.window.body.document.tally.logged.recorder.at",
             "journal.window.body.document.tally.logged.recorder.range",
         ],
-        (TallyKind::Logged, true, true) => [
+        (TallyKind::Logged, _, true, true) => [
             "journal.window.body.document.tally.logged.owner.recorder.count",
             "journal.window.body.document.tally.logged.owner.recorder.at",
             "journal.window.body.document.tally.logged.owner.recorder.range",
@@ -339,18 +384,22 @@ impl Copy {
                 section,
                 count,
                 name,
+                value,
                 start,
                 end,
                 recorder,
                 entered,
             } => {
-                let ids = tally_ids(*section, recorder.is_some(), *entered);
+                let ids = tally_ids(*section, value.is_some(), recorder.is_some(), *entered);
                 let count_text = count.to_string();
                 let mut args = vec![
                     ("quantity", Value::Cardinal(*count as i64)),
                     ("count", Value::String(&count_text)),
                     ("name", Value::String(name)),
                 ];
+                if let Some(value) = value {
+                    args.push(("value", Value::String(value)));
+                }
                 if let Some(recorder) = recorder {
                     args.push(("recorder", Value::String(recorder)));
                 }
