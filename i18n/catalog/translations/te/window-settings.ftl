@@ -380,7 +380,7 @@ journal.window.network.local.network.this.pc = మీ నెట్‌వర్�
 
 journal.window.network.local.network.this.pc.note = ఈ కంప్యూటర్‌లోని solstone యాప్ ఇంకా "పరికరాన్ని పెయిరింగ్ చేయండి" నుంచి పెయిరింగ్ చేయగలదు, మీ ప్రైవేట్ నెట్‌వర్క్ ఆన్‌లో ఉన్న తర్వాత మరో పరికరం కూడా పెయిరింగ్ చేయగలదు. మీ స్వంత నెట్‌వర్క్ ద్వారా ఫోన్ లేదా మరో కంప్యూటర్‌ను పెయిరింగ్ చేయడానికి మీ జర్నల్‌ను దానికి తెరవండి.
 
-journal.window.network.local.network.windows.asks.note = windows ఆ తర్వాత journal నెట్‌వర్క్‌ను ఉపయోగించవచ్చా అని అడగవచ్చు, సాధారణ అకౌంట్‌లో అడ్మినిస్ట్రేటర్ దాన్ని అనుమతించాలి.
+journal.window.network.local.network.windows.asks.note = windows ఆ తర్వాత journal నెట్‌వర్క్‌ను ఉపయోగించవచ్చా అని అడగవచ్చు, సాధారణ ఖాతాలో అడ్మినిస్ట్రేటర్ దాన్ని అనుమతించాలి.
 
 journal.window.network.modal.title = ఒక పరికరాన్ని పెయిరింగ్ చేయండి
 
@@ -1601,7 +1601,7 @@ journal.window.settings.http.missing.required.field.a.required.field.is.missing 
 
 journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.owner.can = దీన్ని ఆన్ చేయగలిగేది మీరు మాత్రమే.
 
-journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices = సెట్టింగ్‌లు, ట్రాన్స్‌క్రిప్షన్‌లో "ఇతర గొంతులను మినహాయించండి" ఆన్ చేయండి; అది నిర్ధారణ అడుగుతుంది.
+journal.window.settings.http.owner.voice.consent.required.turn.on.leave.out.other.voices = సెట్టింగ్‌లు, ట్రాన్స్క్రిప్ట్‌లో "ఇతర గొంతులను మినహాయించండి" ఆన్ చేయండి; అది నిర్ధారణ అడుగుతుంది.
 
 journal.window.settings.http.retired.facet.names.unreadable.run.solstone.journal.facet.doctor.fix = మీ జర్నల్ ఉన్న కంప్యూటర్‌లో `{ $slot1 }` నడపండి, ఆపై మళ్ళీ ప్రయత్నించండి
 
@@ -2923,7 +2923,7 @@ journal.window.settings.settings.copy.heading.couldn.t.load.storage.settings = �
 
 journal.window.settings.settings.copy.heading.couldn.t.load.sync.settings = సింక్ సెట్టింగ్‌లను లోడ్ చేయలేకపోయింది
 
-journal.window.settings.settings.copy.heading.couldn.t.load.transcription.settings = ట్రాన్స్‌క్రిప్షన్ సెట్టింగ్‌లను లోడ్ చేయలేకపోయింది
+journal.window.settings.settings.copy.heading.couldn.t.load.transcription.settings = ట్రాన్స్క్రిప్ట్ సెట్టింగ్‌లను లోడ్ చేయలేకపోయింది
 
 journal.window.settings.settings.copy.heading.couldn.t.load.vision.settings = విజన్ సెట్టింగ్‌లను లోడ్ చేయలేకపోయింది
 
