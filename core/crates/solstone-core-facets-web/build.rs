@@ -10,6 +10,10 @@ fn main() {
             "/app/activities/workspace",
             "assets/activities/workspace.html",
         )
+        .file(
+            "/app/experiences/workspace",
+            "assets/experiences/workspace.html",
+        )
         .file("/app/curation/workspace", "assets/curation/workspace.html")
         .tree(
             "/app/curation/static",

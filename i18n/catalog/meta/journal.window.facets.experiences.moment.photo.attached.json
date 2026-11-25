@@ -1,0 +1,16 @@
+{
+  "description": "Selected state label on a moment photo toggle button.",
+  "context": "Journal window. Selected state label on a moment photo toggle button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0addfc2ad46f1d2cbf7f5f036a86dd2557b7eaebdc2776f280cdd09fd4ed31b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Footer label counting hidden experiences.",
+  "context": "Journal window. Footer label counting hidden experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "be5653ab303e1242ccf5683048dfeb4d190d38310360a708c7d3acec97ed07bc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

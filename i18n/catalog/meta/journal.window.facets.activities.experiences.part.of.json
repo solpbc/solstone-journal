@@ -1,0 +1,21 @@
+{
+  "description": "Back-pointer label on an activity detail panel naming the experience it belongs to.",
+  "context": "Journal window. Back-pointer label on an activity detail panel naming the experience it belongs to.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "experience_title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a11e0f64d02f20c009c9c8a6e5a21a724c674897b9d9a71429619cef5a0ae871",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

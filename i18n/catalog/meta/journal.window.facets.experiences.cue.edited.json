@@ -1,0 +1,16 @@
+{
+  "description": "Indicator badge shown when an experience has owner edits.",
+  "context": "Journal window. Indicator badge shown when an experience has owner edits.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3ee5fd0463a6716d0ddd24056ad74a811d657e4c10d6afd56a723261ce232e8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

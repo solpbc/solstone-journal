@@ -1,0 +1,16 @@
+{
+  "description": "Layer label and plural unit label for experiences on the Year page.",
+  "context": "Journal window. Layer label and plural unit label for experiences on the Year page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f6c7573d1baa265c245a661be52d687892d4deeb6dc7b42b354b9a759c4c408",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

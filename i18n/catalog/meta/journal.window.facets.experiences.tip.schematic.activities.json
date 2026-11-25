@@ -1,0 +1,16 @@
+{
+  "description": "Left box heading in the Experiences orientation tip schematic.",
+  "context": "Journal window. Left box heading in the Experiences orientation tip schematic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d59066a647e1d1a1ffef39b833af3ce369703fa1e89caedd394e8aac6167a6d9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

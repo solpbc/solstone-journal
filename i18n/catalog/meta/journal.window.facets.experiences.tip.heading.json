@@ -1,0 +1,16 @@
+{
+  "description": "Dismissible orientation tip heading on Experiences.",
+  "context": "Journal window. Dismissible orientation tip heading on Experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16074b1f896b86ed267f3e0309d66e603069631b729c110225f0b2792e693bf0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

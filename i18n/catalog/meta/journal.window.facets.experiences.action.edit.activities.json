@@ -1,0 +1,16 @@
+{
+  "description": "Button opening the Level 2 structural activity editor.",
+  "context": "Journal window. Button opening the Level 2 structural activity editor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec1c297b4d9226ac000929c77b2d8d7829c805d76602da03965315d9fd0f1d00",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

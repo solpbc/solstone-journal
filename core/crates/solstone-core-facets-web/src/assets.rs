@@ -14,6 +14,7 @@ const CURATION_EVIDENCE_JS: &[u8] = include_bytes!("../assets/curation/curation_
 const CURATION_AGENT_SUGGESTIONS_JS: &[u8] =
     include_bytes!("../assets/curation/agent_suggestions.js");
 const ACTIVITIES_WORKSPACE: &[u8] = include_bytes!("../assets/activities/workspace.html");
+const EXPERIENCES_WORKSPACE: &[u8] = include_bytes!("../assets/experiences/workspace.html");
 
 pub fn shell() -> axum::response::Response {
     asset(SHELL, "text/html; charset=utf-8")
@@ -21,6 +22,10 @@ pub fn shell() -> axum::response::Response {
 
 pub fn activities_workspace() -> axum::response::Response {
     asset(ACTIVITIES_WORKSPACE, "text/html; charset=utf-8")
+}
+
+pub fn experiences_workspace() -> axum::response::Response {
+    asset(EXPERIENCES_WORKSPACE, "text/html; charset=utf-8")
 }
 
 pub fn curation_workspace() -> axum::response::Response {

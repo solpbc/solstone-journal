@@ -1,0 +1,21 @@
+{
+  "description": "Empty state heading when the selected facet has no experiences.",
+  "context": "Journal window. Empty state heading when the selected facet has no experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0cabeb8954d7d4ffc1008d83500f83da3c7a90de104a229eb9c8a4c6f2cfc9ed",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Primary action on a quiet day with activities to start an experience manually.",
+  "context": "Journal window. Primary action on a quiet day with activities to start an experience manually.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49dc5c640e09429918fb26d1df6f16891e921328a0b71793bb45bc4ba153c7bb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

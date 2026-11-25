@@ -298,6 +298,32 @@ const rendered = renderYesterdaySideHtml(
   { phase: 'morning', exists: true, analysis_day: '20260905', meta: null, sections: { yesterday: itemText } },
   { briefing_analysis_day: '20260905' },
 );
+assert(rendered.includes('marker'), rendered);
+assert.strictEqual(rendered.includes('data-yesterday-experiences'), false, 'zero yesterday experiences omits section');
+
+const withExperiences = renderYesterdaySideHtml(
+  {
+    phase: 'morning',
+    exists: true,
+    analysis_day: '20260905',
+    meta: null,
+    sections: { yesterday: itemText },
+    experiences: [{
+      id: 'exp-1',
+      primary_facet: 'household',
+      anchor_day: '20260905',
+      title: 'Dinner with neighbors',
+      summary: 'Two hours over stew.',
+      started_at: '2026-09-05T19:15:00',
+      ended_at: '2026-09-05T21:45:00',
+      href: '/app/experiences/20260905#household/exp-1',
+    }],
+  },
+  { briefing_analysis_day: '20260905', facets: { household: { title: 'Household', color: '#e8913a' } } },
+);
+assert(withExperiences.includes('data-yesterday-experiences'), withExperiences);
+assert(withExperiences.includes('/app/experiences/20260905#household/exp-1'), withExperiences);
+assert(withExperiences.indexOf('data-yesterday-experiences') < withExperiences.indexOf('pulse-briefing-body'), 'experiences lead yesterday');
 assert(markdownCalls.includes(itemText), 'renderMarkdown called with the yesterday section');
 assert(rendered.includes(`<span class="marker">${itemText}</span>`), rendered);
 

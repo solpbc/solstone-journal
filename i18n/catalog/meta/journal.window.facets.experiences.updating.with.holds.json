@@ -1,0 +1,16 @@
+{
+  "description": "Inline status shown while re-composing unedited fields after activity edits.",
+  "context": "Journal window. Inline status shown while re-composing unedited fields after activity edits.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "27e3e75c1c579c2941bbd85d4215cef2654c7f5085f961e6628ec0529abc39ae",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

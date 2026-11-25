@@ -914,6 +914,127 @@
     margin: -0.5rem auto 0.5rem;
   }
 }
+
+/* Orientation tip & Experiences cross-links */
+.act-tip {
+  margin: 0.75rem 1.5rem 0;
+  padding: 0.9rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.act-tip-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.act-tip-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.act-tip-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.act-tip-body {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  max-width: 72ch;
+}
+.act-tip-dismiss {
+  flex: none;
+  white-space: nowrap;
+}
+.act-tip-schematic {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+}
+.act-tip-box {
+  padding: 0.55rem 0.7rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-s, 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.act-tip-box--accent {
+  border-color: color-mix(in srgb, var(--orange-ink) 45%, var(--hairline));
+  background: var(--orange-wash);
+}
+.act-tip-box-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.act-tip-box-sub {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+.act-tip-arrow {
+  font-size: 0.9rem;
+  color: var(--ink-faint);
+  text-align: center;
+  user-select: none;
+}
+@media (max-width: 720px) {
+  .act-tip {
+    margin: 0.75rem 1rem 0;
+  }
+  .act-tip-schematic {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+  .act-tip-arrow {
+    transform: rotate(90deg);
+  }
+}
+
+.act-panel-experiences {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--orange-wash);
+  border: 1px solid color-mix(in srgb, var(--orange-ink) 35%, var(--hairline));
+  border-radius: var(--radius-m, 6px);
+}
+.act-panel-exp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem 0.75rem;
+  font-size: 0.84rem;
+  color: var(--ink);
+}
+.act-panel-exp-link,
+.act-panel-exp-start-link {
+  color: var(--orange-text-aa);
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min, 44px);
+  font-size: 0.85rem;
+}
+.act-panel-exp-link:hover,
+.act-panel-exp-start-link:hover {
+  text-decoration: underline;
+}
 </style>
 
 <div class="act-shell" data-activities-root>
@@ -931,6 +1052,31 @@
     <h1 class="act-heading" data-date-nav-heading></h1>
     <div class="act-day-note" data-day-note></div>
   </div>
+  <section class="act-tip" data-activities-tip hidden aria-label="{{journal.window.facets.activities.tip.heading}}">
+    <div class="act-tip-head">
+      <div class="act-tip-copy">
+        <h2 class="act-tip-title">{{journal.window.facets.activities.tip.heading}}</h2>
+        <p class="act-tip-body">{{journal.window.facets.activities.tip.body}}</p>
+      </div>
+      <button type="button" class="act-btn act-tip-dismiss" data-activities-tip-dismiss>{{journal.window.facets.activities.tip.dismiss}}</button>
+    </div>
+    <div class="act-tip-schematic" aria-hidden="true">
+      <div class="act-tip-box">
+        <span class="act-tip-box-label">{{journal.window.facets.activities.tip.schematic.segments}}</span>
+        <span class="act-tip-box-sub">{{journal.window.facets.activities.tip.schematic.segments.sub}}</span>
+      </div>
+      <span class="act-tip-arrow">→</span>
+      <div class="act-tip-box">
+        <span class="act-tip-box-label">{{journal.window.facets.activities.tip.schematic.activity}}</span>
+        <span class="act-tip-box-sub">{{journal.window.facets.activities.tip.schematic.activity.sub}}</span>
+      </div>
+      <span class="act-tip-arrow">→</span>
+      <div class="act-tip-box act-tip-box--accent">
+        <span class="act-tip-box-label">{{journal.window.facets.activities.tip.schematic.experience}}</span>
+        <span class="act-tip-box-sub">{{journal.window.facets.activities.tip.schematic.experience.sub}}</span>
+      </div>
+    </div>
+  </section>
   <div id="act-state-area" data-state-area></div>
   <div class="act-content" id="act-content-area" data-content-area hidden>
     <div class="act-main">
@@ -1126,7 +1272,9 @@
     'history-removed': window.JournalI18n.render('journal.window.facets.activities.copy.history.removed'),
     'remove-stale': window.JournalI18n.render('journal.window.facets.activities.window.explanation.that.changed.since.it.was.shown'),
     'remove-failure': window.JournalI18n.render('journal.window.facets.activities.window.explanation.couldn.t.remove.that.try.again'),
-    'home-today-link': window.JournalI18n.render('journal.window.facets.activities.copy.home.today.link')
+    'home-today-link': window.JournalI18n.render('journal.window.facets.activities.copy.home.today.link'),
+    'open-experience': window.JournalI18n.render('journal.window.facets.activities.experiences.open'),
+    'start-experience': window.JournalI18n.render('journal.window.facets.activities.experiences.start')
   };
   // --- end owner-facing strings ---
 
@@ -1705,7 +1853,10 @@
         ? (window.ConveyFacetMark ? window.ConveyFacetMark.html(facetObj, 'sm') : (facetColor ? `<span class="act-block-dot" style="background-color: ${esc(facetColor)}"></span>` : ''))
         : '';
       const pencil = item.edited_by_owner && window.ConveyIcons ? `<span class="act-block-icon">${window.ConveyIcons.svg('pencil')}</span>` : '';
-      const line1 = `<div class="act-block-line1">${dot}<span class="act-block-time">${esc(timeRange)}</span>${pencil}</div>`;
+      const expCue = Array.isArray(item.experiences) && item.experiences.length && window.ConveyIcons
+        ? `<span class="act-block-icon" title="${esc(item.experiences[0].title || '')}">${window.ConveyIcons.svg('book-open')}</span>`
+        : '';
+      const line1 = `<div class="act-block-line1">${dot}<span class="act-block-time">${esc(timeRange)}</span>${expCue}${pencil}</div>`;
 
       // Line 2
       const sourceSpan = streamWords ? `<span class="act-block-source" title="${esc(item.stream)}">${esc(streamWords)}</span>` : '';
@@ -1849,6 +2000,18 @@
       for (const reasonKey of hiddenReasons(item)) {
         phtml += `<div class="act-panel-hidden-reason" data-copy-key="${reasonKey}">${STRINGS[reasonKey] || STRINGS['reason-other']}</div>`;
       }
+    }
+
+    // Experiences back-pointers (part of: <experience> · open experience)
+    if (Array.isArray(item.experiences) && item.experiences.length) {
+      phtml += '<div class="act-panel-experiences" data-activity-experiences>';
+      for (const exp of item.experiences) {
+        const expDay = exp.anchor_day || state.day || '';
+        const expHref = `/app/experiences/${encodeURIComponent(expDay)}#${encodeURIComponent(exp.primary_facet || item.facet)}/${encodeURIComponent(exp.id)}`;
+        const partOf = activityText('experiences.part.of', [['experience_title', String(exp.title || '')]]);
+        phtml += `<div class="act-panel-exp-row"><span data-copy-key="experience-part-of">${esc(partOf)}</span><a class="act-panel-exp-link" href="${esc(expHref)}" data-copy-key="open-experience">${esc(STRINGS['open-experience'])}</a></div>`;
+      }
+      phtml += '</div>';
     }
 
     // What the calendar had scheduled then, and where a device was, beside the activity
@@ -2031,6 +2194,18 @@
         ahtml += `<li class="act-panel-history-item" data-account="${i}"><span>${who}</span>${stateHtml}${sep}</li>`;
       });
       phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-accounts">${esc(STRINGS['heading-accounts'])}</h3><ul class="act-panel-history-list">${ahtml}</ul></div>`;
+    }
+
+    // Start an experience from this activity (when visible and not already part of one)
+    if (!item.hidden && !(Array.isArray(item.experiences) && item.experiences.length)) {
+      const startParams = new URLSearchParams();
+      startParams.set('create_from', `${item.facet}/${item.id}`);
+      const recStream = typeof item.record_stream === 'string'
+        ? item.record_stream
+        : ((item.stream === 'default' || item.stream === '_default' || !item.stream) ? '' : item.stream);
+      if (recStream) startParams.set('stream', recStream);
+      const startHref = `/app/experiences/${encodeURIComponent(state.day)}?${startParams.toString()}`;
+      phtml += `<div class="act-panel-section"><a class="act-panel-exp-start-link" href="${esc(startHref)}" data-copy-key="start-experience">${esc(STRINGS['start-experience'])}</a></div>`;
     }
 
     // Actions
@@ -2972,6 +3147,24 @@
         return;
       }
     });
+
+    // Orientation tip
+    const TIP_STORAGE_KEY = 'convey.activities.tip_dismissed';
+    const tipEl = document.querySelector('[data-activities-tip]');
+    if (tipEl) {
+      let dismissed = false;
+      try {
+        dismissed = window.localStorage?.getItem(TIP_STORAGE_KEY) === '1';
+      } catch (_) {}
+      tipEl.hidden = dismissed;
+      const dismissBtn = tipEl.querySelector('[data-activities-tip-dismiss]');
+      if (dismissBtn) {
+        ctx.on(dismissBtn, 'click', () => {
+          tipEl.hidden = true;
+          try { window.localStorage?.setItem(TIP_STORAGE_KEY, '1'); } catch (_) {}
+        });
+      }
+    }
 
     // Toggle hidden
     const hiddenToggle = document.querySelector('[data-toggle-hidden]');

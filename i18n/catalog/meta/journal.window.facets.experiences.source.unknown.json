@@ -1,0 +1,16 @@
+{
+  "description": "Fallback source label when a stream has no friendly display name.",
+  "context": "Journal window. Fallback source label when a stream has no friendly display name.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ff2f3c1b25cd9d5f9835ed873a7078601d1f427034fa0971092a731d20be3fc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

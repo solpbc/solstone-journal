@@ -1,0 +1,16 @@
+{
+  "description": "Error heading when Experiences fail to load.",
+  "context": "Journal window. Error heading when Experiences fail to load.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b350e79ea53964e086e3ae87a4aa4353b7851e5713c9e209ccb008cf7287d141",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

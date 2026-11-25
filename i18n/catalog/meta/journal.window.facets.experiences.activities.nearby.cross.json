@@ -1,0 +1,16 @@
+{
+  "description": "Subheading for nearby candidate activities when cross-facet opt-in is enabled.",
+  "context": "Journal window. Subheading for nearby candidate activities when cross-facet opt-in is enabled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "19e4032e21c229fd0816ea486770c06697aea272e675fb569f6117a5ae3f1691",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

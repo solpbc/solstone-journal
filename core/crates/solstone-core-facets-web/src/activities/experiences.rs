@@ -3,6 +3,7 @@
 
 //! Headless Convey JSON HTTP API routes for Experiences under `/app/activities/api/...`.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use axum::{
@@ -13,13 +14,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use solstone_core_facets::{
     ActivityRef, ExperienceActivitiesMutation, ExperienceDirectPatch, ExperienceMoment,
     ExperienceStoreError, ShareDetailPolicy, create_owner_experience, get_experience,
-    hydrate_experience, list_declared_facet_names, list_experiences_in_range,
-    load_experiences_overlapping_day, mutate_experience_activities, project_experience_for_share,
-    set_experience_hidden, update_experience_direct,
+    hydrate_experience, list_declared_facet_names, list_experience_day_stems,
+    list_experiences_in_range, load_activity_records, load_experiences,
+    load_experiences_overlapping_day, mutate_experience_activities, observe_facet_declaration,
+    project_experience_for_share, set_experience_hidden, update_experience_direct,
 };
 use solstone_core_time::{Precision, utc_z};
 
@@ -93,6 +95,180 @@ fn parse_share_tier(raw: Option<&str>) -> Result<ShareDetailPolicy, Box<Response
     }
 }
 
+fn unmuted_facets(root: &Path) -> Vec<String> {
+    list_declared_facet_names(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|facet| {
+            observe_facet_declaration(root, facet)
+                .ok()
+                .flatten()
+                .is_none_or(|d| d.muted != Some(true))
+        })
+        .collect()
+}
+
+fn facet_summary_json(root: &Path, facet_name: &str, count: usize) -> Value {
+    match observe_facet_declaration(root, facet_name) {
+        Ok(Some(d)) => {
+            let title = if d.title.trim().is_empty() {
+                facet_name.to_owned()
+            } else {
+                d.title
+            };
+            let icon = d.icon.as_deref().unwrap_or("");
+            json!({
+                "name": facet_name,
+                "count": count,
+                "title": title,
+                "color": d.color,
+                "emoji": d.emoji,
+                "icon": icon,
+                "icon_svg": solstone_core_convey_http::icons::svg(d.icon.as_deref()),
+                "muted": d.muted.unwrap_or(false),
+            })
+        }
+        _ => json!({
+            "name": facet_name,
+            "count": count,
+            "title": facet_name,
+            "color": "",
+            "emoji": "",
+            "icon": "",
+            "icon_svg": Value::Null,
+            "muted": false,
+        }),
+    }
+}
+
+/// Non-hidden Experiences per anchor day across non-muted facets.
+pub(super) fn experience_day_counts(root: &Path) -> BTreeMap<String, usize> {
+    experience_day_counts_between(root, "00000000", "99999999")
+}
+
+/// Non-hidden Experiences per anchor day across non-muted facets within `[from, to]`.
+///
+/// Accepts lexical `YYYYMMDD` bounds including year sentinels such as `20260000..=20269999`
+/// used by `/app/year/api/view`.
+pub(super) fn experience_day_counts_between(
+    root: &Path,
+    from: &str,
+    to: &str,
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for facet in unmuted_facets(root) {
+        let Ok(stems) = list_experience_day_stems(root, &facet) else {
+            continue;
+        };
+        for day in stems {
+            if day.as_str() < from || day.as_str() > to {
+                continue;
+            }
+            if let Ok(rows) = load_experiences(root, &facet, &day, false) {
+                let visible = rows.into_iter().filter(|row| !row.hidden).count();
+                if visible > 0 {
+                    *counts.entry(day).or_insert(0) += visible;
+                }
+            }
+        }
+    }
+    counts
+}
+
+/// Years on or before `through` that hold at least one non-hidden Experience.
+pub(super) fn experience_years(root: &Path, through: &str) -> BTreeSet<String> {
+    let facets = unmuted_facets(root);
+    let mut by_year: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for facet in &facets {
+        if let Ok(stems) = list_experience_day_stems(root, facet) {
+            for day in stems {
+                if day.as_str() <= through
+                    && let Some(year) = day.get(..4)
+                {
+                    by_year
+                        .entry(year.to_owned())
+                        .or_default()
+                        .push((facet.clone(), day));
+                }
+            }
+        }
+    }
+    by_year
+        .into_iter()
+        .filter(|(_, entries)| {
+            entries.iter().any(|(facet, day)| {
+                load_experiences(root, facet, day, false)
+                    .map(|rows| !rows.is_empty())
+                    .unwrap_or(false)
+            })
+        })
+        .map(|(year, _)| year)
+        .collect()
+}
+
+/// `GET /app/experiences/api/index?facet={slug}`
+pub(super) async fn index(
+    State((root, clock)): State<(PathBuf, Clock)>,
+    RawQuery(query): RawQuery,
+) -> Response {
+    let declared = match list_declared_facet_names(&root) {
+        Ok(names) => names,
+        Err(error) => return internal(error.to_string()),
+    };
+    let filter_facet = query_value(query.as_deref(), "facet").filter(|s| !s.is_empty());
+    let mut counts = BTreeMap::new();
+    let mut per_facet_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut hidden_count = 0_usize;
+    for slug in &declared {
+        let is_muted = observe_facet_declaration(&root, slug)
+            .ok()
+            .flatten()
+            .is_some_and(|d| d.muted == Some(true));
+        let in_scope = match &filter_facet {
+            Some(f) => f == slug,
+            None => !is_muted,
+        };
+        let rows = match list_experiences_in_range(&root, slug, "00010101", "99991231", true) {
+            Ok(rows) => rows,
+            Err(error) => return map_store_error(error),
+        };
+        let mut visible_in_facet = 0_usize;
+        for row in rows {
+            if row.hidden {
+                if in_scope {
+                    hidden_count += 1;
+                }
+            } else {
+                visible_in_facet += 1;
+                if in_scope {
+                    *counts.entry(row.anchor_day).or_insert(0) += 1;
+                }
+            }
+        }
+        per_facet_counts.insert(slug.clone(), visible_in_facet);
+    }
+    let coverage = match (counts.keys().next(), counts.keys().next_back()) {
+        (Some(start), Some(end)) => json!({ "start": start, "end": end }),
+        _ => Value::Null,
+    };
+    let facets: Vec<Value> = declared
+        .iter()
+        .map(|slug| {
+            let c = per_facet_counts.get(slug).copied().unwrap_or(0);
+            facet_summary_json(&root, slug, c)
+        })
+        .collect();
+    let today = solstone_core_time::day_key(clock.now().date());
+    Json(json!({
+        "today": today,
+        "coverage": coverage,
+        "counts": counts,
+        "hidden_count": hidden_count,
+        "facets": facets,
+    }))
+    .into_response()
+}
+
 /// `GET /app/activities/api/experiences?facet={slug}&before={day}&limit={n}&from={YYYYMMDD}&to={YYYYMMDD}&include_hidden=0|1&order=desc|asc`
 pub(super) async fn list_range(
     State((root, _)): State<(PathBuf, Clock)>,
@@ -132,28 +308,60 @@ pub(super) async fn list_range(
     let facet = query_value(query.as_deref(), "facet").filter(|s| !s.is_empty());
     let include_hidden = query_value(query.as_deref(), "include_hidden").as_deref() == Some("1");
     let ascending = query_value(query.as_deref(), "order").as_deref() == Some("asc");
-    let facets = match facet {
+    let declared = match list_declared_facet_names(&root) {
+        Ok(names) => names,
+        Err(error) => return internal(error.to_string()),
+    };
+    let facets_scope = match facet {
         Some(ref f) => vec![f.clone()],
-        None => match list_declared_facet_names(&root) {
-            Ok(names) => names,
-            Err(error) => return internal(error.to_string()),
-        },
+        None => declared
+            .iter()
+            .filter(|slug| {
+                observe_facet_declaration(&root, slug)
+                    .ok()
+                    .flatten()
+                    .is_none_or(|d| d.muted != Some(true))
+            })
+            .cloned()
+            .collect(),
     };
     let mut all = Vec::new();
-    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
-    for slug in &facets {
-        match list_experiences_in_range(&root, slug, from_bound, to_bound, include_hidden) {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut per_facet_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut hidden_count = 0_usize;
+    for slug in &declared {
+        let in_scope = facets_scope.iter().any(|s| s == slug);
+        match list_experiences_in_range(&root, slug, from_bound, to_bound, true) {
             Ok(rows) => {
+                let mut visible_in_facet = 0_usize;
                 for row in rows {
-                    if !row.hidden {
-                        *counts.entry(row.anchor_day.clone()).or_insert(0) += 1;
+                    if row.hidden {
+                        if in_scope {
+                            hidden_count += 1;
+                            if include_hidden {
+                                all.push(row);
+                            }
+                        }
+                    } else {
+                        visible_in_facet += 1;
+                        if in_scope {
+                            *counts.entry(row.anchor_day.clone()).or_insert(0) += 1;
+                            all.push(row);
+                        }
                     }
-                    all.push(row);
                 }
+                per_facet_counts.insert(slug.clone(), visible_in_facet);
             }
             Err(error) => return map_store_error(error),
         }
     }
+    let facet_summaries: Vec<Value> = declared
+        .iter()
+        .map(|slug| {
+            let c = per_facet_counts.get(slug).copied().unwrap_or(0);
+            facet_summary_json(&root, slug, c)
+        })
+        .collect();
     if let Some(ref before_day) = before {
         all.retain(|row| row.anchor_day.as_str() < before_day.as_str());
     }
@@ -201,7 +409,9 @@ pub(super) async fn list_range(
         "next_before": next_before,
         "facet": facet,
         "include_hidden": include_hidden,
+        "hidden_count": hidden_count,
         "counts": counts,
+        "facets": facet_summaries,
         "experiences": hydrated,
     }))
     .into_response()
@@ -355,10 +565,38 @@ pub(super) async fn create(
     let now_iso = utc_z(clock.now().timestamp(), Precision::Secs);
     let initial_locations = payload.locations;
     let initial_note = payload.note;
+    let normalized_activities: Vec<ActivityRef> = payload
+        .activities
+        .into_iter()
+        .map(|mut act_ref| {
+            let eff_facet = act_ref.effective_facet(primary_facet).to_owned();
+            if (act_ref.stream == "default" || act_ref.stream == "_default")
+                && let Ok(rows) = load_activity_records(&root, &eff_facet, &act_ref.day, true)
+            {
+                let has_exact = rows.iter().any(|row| {
+                    row.get("id").and_then(Value::as_str) == Some(act_ref.id.as_str())
+                        && row.get("stream").and_then(Value::as_str).unwrap_or("")
+                            == act_ref.stream.as_str()
+                });
+                let has_empty = rows.iter().any(|row| {
+                    row.get("id").and_then(Value::as_str) == Some(act_ref.id.as_str())
+                        && row
+                            .get("stream")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .is_empty()
+                });
+                if !has_exact && has_empty {
+                    act_ref.stream.clear();
+                }
+            }
+            act_ref
+        })
+        .collect();
     match create_owner_experience(
         &root,
         primary_facet,
-        payload.activities,
+        normalized_activities,
         payload.title,
         payload.summary,
         &actor,
@@ -1042,5 +1280,9 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(unmuted["experience"]["hidden"], false);
+
+        // Year sentinel bounds ("20260000".."20269999") used by /app/year/api/view must count 20260304.
+        let year_counts = experience_day_counts_between(dir.path(), "20260000", "20269999");
+        assert_eq!(year_counts.get("20260304"), Some(&1));
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Error when manual experience creation fails.",
+  "context": "Journal window. Error when manual experience creation fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ba9248543b0829098bae3a037a61cca8c9e37f18f8f161da836f72bf0f94c77",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

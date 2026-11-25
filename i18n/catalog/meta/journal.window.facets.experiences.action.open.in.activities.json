@@ -1,0 +1,16 @@
+{
+  "description": "Link opening an underlying constituent activity in Activities.",
+  "context": "Journal window. Link opening an underlying constituent activity in Activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4d404b9ea5b79b2b42ecc393c6d3c40e5ea221d9ed0ae51bbea37857609bdbd0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

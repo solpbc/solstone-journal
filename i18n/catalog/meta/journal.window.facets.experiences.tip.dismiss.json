@@ -1,0 +1,16 @@
+{
+  "description": "Dismiss button on the Experiences orientation tip.",
+  "context": "Journal window. Dismiss button on the Experiences orientation tip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe99f44ac9f71825f4db874d3a19e584dc7e1b9ad346b319bbaf995d52c22cbf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

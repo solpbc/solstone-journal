@@ -1,0 +1,16 @@
+{
+  "description": "Label for a moment's start time input.",
+  "context": "Journal window. Label for a moment's start time input.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "11bdaf3e3af0aeb62d1ce4dbaf7ced59d8ff8847f040753f6986364a74e23238",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

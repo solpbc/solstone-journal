@@ -1,0 +1,16 @@
+{
+  "description": "Button appending a new editable moment row.",
+  "context": "Journal window. Button appending a new editable moment row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6de98b02fd948329519521e03cc21d5a66f4ee9305653036d9e00fc77799f497",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

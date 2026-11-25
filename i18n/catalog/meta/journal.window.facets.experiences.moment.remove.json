@@ -1,0 +1,16 @@
+{
+  "description": "Accessible button label removing a moment row.",
+  "context": "Journal window. Accessible button label removing a moment row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e0b2824cbb564ddb60b46c7f1dd989d625f3a4687021f37c8825e48f95d55da",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

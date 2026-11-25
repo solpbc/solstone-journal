@@ -1,0 +1,16 @@
+{
+  "description": "Schematic step 3 subtitle on Activities tip.",
+  "context": "Journal window. Schematic step 3 subtitle on Activities tip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "728cca50221b00497ceebbf8c1651a6e6a2485a35906769b412d5c326dd8e2d9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -885,6 +885,7 @@ mod tests {
             "needs_you_items",
             "briefing_sections",
             "briefing_body",
+            "briefing_experiences",
             "briefing_meta",
             "briefing_phase",
             "briefing_saved_lane",
@@ -916,6 +917,7 @@ mod tests {
             "meta",
             "sections",
             "body",
+            "experiences",
         ]
         .into_iter()
         .map(str::to_owned)

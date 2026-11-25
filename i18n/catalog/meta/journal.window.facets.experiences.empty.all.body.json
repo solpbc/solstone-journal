@@ -1,0 +1,16 @@
+{
+  "description": "Empty state body when the journal has no visible experiences.",
+  "context": "Journal window. Empty state body when the journal has no visible experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b89ee5eca9b99c13bd29603591b6a1dd23052dd1affe961fecd4963213c5727",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

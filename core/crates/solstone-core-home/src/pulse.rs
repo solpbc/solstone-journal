@@ -186,8 +186,10 @@ fn build_pulse_context(
     let reflection_state = latest_weekly_reflection
         .get("state")
         .and_then(Value::as_str);
-    // A journal holding body data isn't empty, even on a day with no lines.
+    // A journal holding body data or yesterday experiences isn't empty, even on a day with no lines.
+    let briefing_experiences = collect_day_experiences(context.journal_root(), &yesterday);
     let show_welcome = !body_data
+        && briefing_experiences.is_empty()
         && narrative_content.is_none()
         && activities.is_empty()
         && !briefing_exists
@@ -344,6 +346,10 @@ fn build_pulse_context(
     )
     .unwrap_or_default();
     fields.insert("briefing_body".to_owned(), Value::Array(briefing_body));
+    fields.insert(
+        "briefing_experiences".to_owned(),
+        Value::Array(briefing_experiences),
+    );
     fields.insert("briefing_meta".to_owned(), briefing_meta);
     fields.insert("briefing_phase".to_owned(), briefing_phase.into());
     let briefing_saved_lane = match briefing_not_yet {
@@ -388,7 +394,7 @@ fn build_pulse_context(
             Value::Null
         },
     );
-    debug_assert_eq!(fields.len(), 35);
+    debug_assert_eq!(fields.len(), 36);
     PulseContext {
         fields,
         now: account_context.now_local(),
@@ -419,7 +425,78 @@ fn collect_pin_candidates(
     if let Some(kind) = speakers_pin_candidate_kind(journal, owner_voice_candidate_ready) {
         candidates.push(json!({"view": "speakers", "kind": kind}));
     }
+    if has_any_experience(journal) {
+        candidates.push(json!({"view": "experiences", "kind": "experiences"}));
+    }
     candidates
+}
+
+fn unmuted_declared_facets(journal: &std::path::Path) -> Vec<String> {
+    solstone_core_facets::list_declared_facet_names(journal)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|facet| {
+            solstone_core_facets::observe_facet_declaration(journal, facet)
+                .ok()
+                .flatten()
+                .is_none_or(|d| d.muted != Some(true))
+        })
+        .collect()
+}
+
+fn has_any_experience(journal: &std::path::Path) -> bool {
+    for facet in unmuted_declared_facets(journal) {
+        let Ok(stems) = solstone_core_facets::list_experience_day_stems(journal, &facet) else {
+            continue;
+        };
+        for day in stems.iter().rev() {
+            if solstone_core_facets::load_experiences(journal, &facet, day, false)
+                .is_ok_and(|rows| !rows.is_empty())
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn collect_day_experiences(journal: &std::path::Path, day: &str) -> Vec<Value> {
+    let mut rows = Vec::new();
+    for facet in unmuted_declared_facets(journal) {
+        let Ok(exps) =
+            solstone_core_facets::load_experiences_overlapping_day(journal, &facet, day, false)
+        else {
+            continue;
+        };
+        for exp in exps {
+            if exp.hidden {
+                continue;
+            }
+            let href = format!(
+                "/app/experiences/{}#{}/{}",
+                exp.anchor_day, exp.primary_facet, exp.id
+            );
+            rows.push((
+                exp.started_at.clone(),
+                exp.id.clone(),
+                json!({
+                    "id": exp.id,
+                    "primary_facet": exp.primary_facet,
+                    "anchor_day": exp.anchor_day,
+                    "title": exp.title,
+                    "summary": exp.summary,
+                    "started_at": exp.started_at,
+                    "ended_at": exp.ended_at,
+                    "locations": exp.locations,
+                    "activity_count": exp.activities.len(),
+                    "moment_count": exp.moments.len(),
+                    "href": href,
+                }),
+            ));
+        }
+    }
+    rows.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    rows.into_iter().map(|(_, _, value)| value).collect()
 }
 
 fn map_pin_candidate_kind(journal: &std::path::Path) -> Option<&'static str> {
@@ -600,6 +677,7 @@ pub fn briefing_payload_at(context: &HomeContext, account_time: Option<jiff::Tim
         "meta": field("briefing_meta"),
         "sections": field("briefing_sections"),
         "body": field("briefing_body"),
+        "experiences": field("briefing_experiences"),
     })
 }
 
@@ -1028,7 +1106,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 34);
+        assert_eq!(payload.as_object().unwrap().len(), 35);
         assert_eq!(
             payload
                 .as_object()
@@ -1058,6 +1136,7 @@ mod tests {
                 "needs_you_items",
                 "briefing_sections",
                 "briefing_body",
+                "briefing_experiences",
                 "briefing_meta",
                 "briefing_phase",
                 "briefing_saved_lane",
@@ -2039,6 +2118,7 @@ mod tests {
         }
         let analysis_day = pulse["briefing_analysis_day"].clone();
         pulse.insert("briefing_body".to_owned(), json!([]));
+        pulse.insert("briefing_experiences".to_owned(), json!([]));
         // The duplicate count and pin candidates came later; neither reference
         // journal holds suggestions, body data, location, or speaker voiceprints.
         pulse.insert("possible_duplicates_count".to_owned(), json!(0));
@@ -2065,8 +2145,9 @@ mod tests {
             briefing.remove(key);
         }
         briefing.insert("analysis_day".to_owned(), analysis_day);
-        // Body lines came later, and neither reference journal holds body data.
+        // Body lines and experiences came later, and neither reference journal holds them.
         briefing.insert("body".to_owned(), json!([]));
+        briefing.insert("experiences".to_owned(), json!([]));
         if let Some(sections) = briefing.get_mut("sections").and_then(Value::as_object_mut) {
             sections.remove("needs_attention");
         }

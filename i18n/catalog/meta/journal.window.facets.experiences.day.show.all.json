@@ -1,0 +1,16 @@
+{
+  "description": "Link clearing the single-day scope pill on Experiences.",
+  "context": "Journal window. Link clearing the single-day scope pill on Experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dd200304b39b3ce634c7df371d0b1bb6d7938a2fac8c0cfd3db28bfd2eb97c1e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -47,6 +47,30 @@ pub fn activity_years(
 ) -> std::collections::BTreeSet<String> {
     activities::activity_years(journal_root, through)
 }
+
+/// Non-hidden Experiences per anchor day across non-muted facets.
+pub fn experience_day_counts(
+    journal_root: &std::path::Path,
+) -> std::collections::BTreeMap<String, usize> {
+    activities::experience_day_counts(journal_root)
+}
+
+/// [`experience_day_counts`] restricted to anchor days from `from` to `to`.
+pub fn experience_day_counts_between(
+    journal_root: &std::path::Path,
+    from: &str,
+    to: &str,
+) -> std::collections::BTreeMap<String, usize> {
+    activities::experience_day_counts_between(journal_root, from, to)
+}
+
+/// Years on or before `through` that hold at least one non-hidden Experience.
+pub fn experience_years(
+    journal_root: &std::path::Path,
+    through: &str,
+) -> std::collections::BTreeSet<String> {
+    activities::experience_years(journal_root, through)
+}
 pub use facet_name::valid_facet;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {

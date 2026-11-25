@@ -1,0 +1,16 @@
+{
+  "description": "Action link releasing an owner hold so the journal can rewrite the field.",
+  "context": "Journal window. Action link releasing an owner hold so the journal can rewrite the field.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75d507ef62b2592f01c1d692150381b7a8d0a1593c5fecc9e7d3f9bd8010f5f6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -27,7 +27,7 @@
     // The page's sections in the order they stand. A live refresh that brings a
     // section back inserts it after whichever of these is already there.
     const SURFACE_ORDER = ['vitals', 'ready-to-shape', 'getting-started', 'account', 'pair', 'welcome'];
-    const ACCOUNT_SIDES = ['yesterday', 'today'];
+    const ACCOUNT_SIDES = ['today', 'yesterday'];
 
     const SERVICE_NAMES = {
       supervisor: window.JournalI18n.render('journal.window.health.service.names.supervisor.system.manager'),
@@ -48,6 +48,7 @@
       location: 'journal.window.pin.offer.map.location.text',
       unnamed: 'journal.window.pin.offer.speakers.text',
       named: 'journal.window.pin.offer.speakers.named.text',
+      experiences: 'journal.window.pin.offer.experiences.text',
     };
 
     let homeInitialized = false;
@@ -92,6 +93,10 @@
     let isFirstPage = false;
     const ACTIVITY_PREVIEW = 6;
     let todayActivitiesExpanded = false;
+    let yesterdayActivitiesDay = null;
+    let yesterdayActivitiesData = null;
+    let yesterdayActivitiesExpanded = false;
+    let yesterdayActivitiesRequest = null;
 
     let firstMinutesPayload = null;
     let firstMinutesClosed = false;
@@ -476,6 +481,7 @@
       syncHomePinOffer(data);
       syncHomeLiveBadge(data);
       placeAccountZoneNote();
+      if (selectedSide === 'yesterday') syncYesterdayActivities();
       refreshBriefing();
       reportHomeReady('content');
     }
@@ -1805,10 +1811,16 @@
       const day = accountTime && pulse.now?.slice(0, 16) === accountTime ? pulse.today : '';
       const allActivities = '<a class="pulse-today-link" href="/app/activities/' + esc(day)
         + `" data-copy-key="home-today-link">${window.JournalI18n.renderHtml('journal.window.home.action.all.of.todays.activities')}</a>`;
+      const todayExpNote = '<div class="pulse-today-exp-note">'
+        + '<span>' + window.JournalI18n.renderHtml('journal.window.home.today.experiences.note') + '</span>'
+        + '<a class="pulse-today-exp-link" href="/app/experiences/">'
+        + window.JournalI18n.renderHtml('journal.window.home.action.open.experiences')
+        + '</a></div>';
       if (!activities.length) {
         return '<div class="pulse-today" id="pulse-today">'
           + `<div class="pulse-narrative-empty">${window.JournalI18n.renderHtml('journal.window.home.visible.text.no.recent.activity.yet.today')}</div>`
           + allActivities
+          + todayExpNote
           + '</div>';
       }
       let html = '<div class="pulse-today" id="pulse-today">';
@@ -1875,6 +1887,7 @@
         html += '</div>';
       }
       html += allActivities;
+      html += todayExpNote;
       html += '</div>';
       return html;
     }
@@ -1941,8 +1954,8 @@
         + `<div class="pulse-account-tabs" role="tablist" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.which.day')}">` + ACCOUNT_SIDES.map(tab).join('') + '</div>'
         + '<span class="pulse-account-day" data-account-day><span data-account-day-text>' + esc(accountDayText(selectedSide, pulse)) + '</span></span>'
         + '</div>'
-        + panel('yesterday', renderYesterdaySideHtml(briefingData, pulse))
         + panel('today', renderTodaySideHtml(pulse))
+        + panel('yesterday', renderYesterdaySideHtml(briefingData, pulse))
         + '</section>';
     }
 
@@ -1959,6 +1972,7 @@
         else panel.setAttribute('hidden', '');
       });
       updateAccountDay();
+      if (side === 'yesterday') syncYesterdayActivities();
       if (moveFocus) document.getElementById('pulse-account-tab-' + side)?.focus();
     }
 
@@ -2189,7 +2203,8 @@
         analysis_day: pulse.briefing_analysis_day,
         meta: pulse.briefing_meta,
         sections: pulse.briefing_sections,
-        body: pulse.briefing_body
+        body: pulse.briefing_body,
+        experiences: pulse.briefing_experiences
       });
     }
 
@@ -2201,7 +2216,8 @@
         analysis_day: typeof data.analysis_day === 'string' ? data.analysis_day : null,
         meta: isPlainObject(data.meta) ? data.meta : null,
         sections: isPlainObject(data.sections) ? data.sections : {},
-        body: Array.isArray(data.body) ? data.body.filter(isPlainObject) : []
+        body: Array.isArray(data.body) ? data.body.filter(isPlainObject) : [],
+        experiences: Array.isArray(data.experiences) ? data.experiences.filter(isPlainObject) : []
       };
     }
 
@@ -2245,7 +2261,7 @@
       // Nothing the owner did yesterday, so no briefing is coming. The body
       // lines stand alone; with none, say only that.
       if (data.phase === 'none_owed') {
-        if (Array.isArray(data.body) && data.body.length) return '';
+        if ((Array.isArray(data.body) && data.body.length) || (Array.isArray(data.experiences) && data.experiences.length)) return '';
         return `<div class="pulse-briefing-placeholder">${window.JournalI18n.renderHtml('journal.window.home.visible.text.nothing.from.yesterday.to.write.up')}</div>`;
       }
       const run = esc(briefingRunHref(data, pulseContext));
@@ -2323,15 +2339,133 @@
         + '</ul></div>';
     }
 
+    function formatExperienceTimeRange(startedAt, endedAt) {
+      const start = writtenAtTime(startedAt);
+      const end = writtenAtTime(endedAt);
+      if (start && end && start !== end) return start + ' - ' + end;
+      return start || end || '';
+    }
+
+    function renderYesterdayExperiencesHtml(data, pulseContext) {
+      const experiences = Array.isArray(data?.experiences) ? data.experiences.filter(isPlainObject) : [];
+      if (!experiences.length) return '';
+      const facetMarks = isPlainObject(pulseContext?.facets) ? pulseContext.facets : {};
+      const day = data?.analysis_day || pulseContext?.briefing_analysis_day || '';
+      const openHref = day ? '/app/experiences/' + encodeURIComponent(day) : '/app/experiences/';
+      const cards = experiences.map(function (exp) {
+        const facet = typeof exp.primary_facet === 'string' ? exp.primary_facet : '';
+        const meta = isPlainObject(facetMarks[facet]) ? facetMarks[facet] : null;
+        const facetTitle = meta && meta.title ? meta.title : facet;
+        const mark = window.ConveyFacetMark && meta ? window.ConveyFacetMark.html(meta, 'sm') : '';
+        const timeRange = formatExperienceTimeRange(exp.started_at, exp.ended_at);
+        const metaParts = [facetTitle, timeRange].filter(Boolean);
+        const href = typeof exp.href === 'string' && exp.href.startsWith('/') ? exp.href : openHref;
+        const title = typeof exp.title === 'string' && exp.title.trim() ? exp.title.trim() : facetTitle;
+        const summary = typeof exp.summary === 'string' ? exp.summary.trim() : '';
+        return '<a class="pulse-exp-card" href="' + esc(href) + '">'
+          + '<div class="pulse-exp-card-meta">' + mark + '<span>' + esc(metaParts.join(' · ')) + '</span></div>'
+          + '<div class="pulse-exp-card-title">' + esc(title) + '</div>'
+          + (summary ? '<div class="pulse-exp-card-summary">' + esc(summary) + '</div>' : '')
+          + '</a>';
+      }).join('');
+      return '<div class="pulse-yesterday-experiences" data-yesterday-experiences>'
+        + '<div class="pulse-yesterday-section-head">'
+        + '<h3 class="pulse-yesterday-subhead">' + window.JournalI18n.renderHtml('journal.window.home.yesterday.experiences.heading') + '</h3>'
+        + '<a class="pulse-yesterday-more" href="' + esc(openHref) + '">' + window.JournalI18n.renderHtml('journal.window.home.action.open.experiences') + '</a>'
+        + '</div>'
+        + '<div class="pulse-exp-list">' + cards + '</div>'
+        + '</div>';
+    }
+
+    function renderYesterdayActivitiesHtml(day, view, pulseContext) {
+      const items = Array.isArray(view?.items)
+        ? view.items.filter(function (it) { return isPlainObject(it) && !it.hidden; })
+        : [];
+      if (!items.length) return '';
+      const facetMarks = isPlainObject(pulseContext?.facets) ? pulseContext.facets : {};
+      const enabledFacets = Object.keys(facetMarks).filter(function (name) {
+        const f = facetMarks[name];
+        return isPlainObject(f) && !f.muted;
+      }).length;
+      const showRowMarks = enabledFacets > 1;
+      const shown = yesterdayActivitiesExpanded ? items : items.slice(0, ACTIVITY_PREVIEW);
+      const showAll = shown.length === items.length
+        ? ''
+        : `<button type="button" class="pulse-activities-more" data-yesterday-activities-show-all>${window.JournalI18n.renderHtml('journal.window.home.button.label.show.all')}</button>`;
+      const rows = shown.map(function (it) {
+        const facet = typeof it.facet === 'string' ? it.facet : '';
+        const id = typeof it.id === 'string' ? it.id : '';
+        const href = '/app/activities/' + esc(day)
+          + '?facet=' + esc(encodeURIComponent(facet))
+          + '#' + esc(encodeURIComponent(facet)) + '/' + esc(encodeURIComponent(id));
+        const mark = showRowMarks && window.ConveyFacetMark && isPlainObject(facetMarks[facet])
+          ? window.ConveyFacetMark.html(facetMarks[facet], 'sm')
+          : '';
+        const time = it.start ? clockLabel(it.start) || it.start : '';
+        const label = it.title || it.description || '';
+        return '<a class="pulse-activity" href="' + href + '">'
+          + '<span class="pulse-activity-time">' + esc(time) + '</span>'
+          + mark
+          + '<span class="pulse-activity-text">' + esc(label) + '</span>'
+          + '</a>';
+      }).join('');
+      return '<div class="pulse-yesterday-section-head">'
+        + '<h3 class="pulse-yesterday-subhead">' + window.JournalI18n.renderHtml('journal.window.home.yesterday.activities.heading') + '</h3>'
+        + showAll
+        + '</div>'
+        + '<div class="pulse-activities">' + rows + '</div>'
+        + '<a class="pulse-today-link" href="/app/activities/' + esc(day) + '">'
+        + window.JournalI18n.renderHtml('journal.window.home.action.all.of.yesterdays.activities')
+        + '</a>';
+    }
+
+    function paintYesterdayActivitiesHost() {
+      const host = surface?.querySelector?.('[data-yesterday-activities-host]');
+      if (!host) return;
+      const day = briefingData?.analysis_day || lastPulse?.briefing_analysis_day || '';
+      if (!day || yesterdayActivitiesDay !== day || !yesterdayActivitiesData) {
+        host.innerHTML = '';
+        host.hidden = true;
+        return;
+      }
+      const html = renderYesterdayActivitiesHtml(day, yesterdayActivitiesData, lastPulse);
+      host.innerHTML = html;
+      host.hidden = !html;
+    }
+
+    function syncYesterdayActivities() {
+      const day = briefingData?.analysis_day || lastPulse?.briefing_analysis_day || '';
+      if (!/^\d{8}$/.test(day) || typeof ctx?.read !== 'function') return;
+      if (yesterdayActivitiesDay === day && yesterdayActivitiesData) {
+        paintYesterdayActivitiesHost();
+        return;
+      }
+      if (yesterdayActivitiesRequest && yesterdayActivitiesRequest.day === day) return;
+      const req = { day };
+      yesterdayActivitiesRequest = req;
+      ctx.read('/app/activities/api/day/' + day + '/view', { noAuthRedirect: true })
+        .then(function (data) {
+          if (yesterdayActivitiesRequest !== req) return;
+          yesterdayActivitiesDay = day;
+          yesterdayActivitiesData = isPlainObject(data) ? data : null;
+          paintYesterdayActivitiesHost();
+        })
+        .catch(function () {
+          if (yesterdayActivitiesRequest === req) {
+            yesterdayActivitiesRequest = null;
+          }
+        });
+    }
+
     function renderYesterdaySideHtml(data, pulseContext) {
       if (!data) return '';
-      let body;
+      let body = renderYesterdayExperiencesHtml(data, pulseContext);
       if (data.exists) {
         const raw = typeof data.sections.yesterday === 'string' ? data.sections.yesterday : '';
         // An empty section carries no time: "written at" beside "nothing was
         // written up" would contradict it.
         const time = raw ? writtenAtTime(data.meta?.generated) : '';
-        body = (raw
+        body += (raw
           ? '<div class="pulse-briefing-body" id="pulse-briefing-body">' + markdown(raw) + '</div>'
           : `<div class="pulse-briefing-placeholder">${window.JournalI18n.renderHtml('journal.window.home.visible.text.nothing.from.yesterday.was.written.up')}</div>`)
           + '<div class="pulse-account-meta">'
@@ -2339,9 +2473,10 @@
           + '<a class="pulse-tell-more" href="' + esc(briefingRunHref(data, pulseContext)) + `">${window.JournalI18n.renderHtml('journal.window.home.action.how.this.was.written')}</a>`
           + '</div>';
       } else {
-        body = briefingPlaceholderHtml(data, pulseContext);
+        body += briefingPlaceholderHtml(data, pulseContext);
       }
       body += bodyLinesHtml(data.body);
+      body += '<div class="pulse-yesterday-activities" data-yesterday-activities-host hidden></div>';
       return '<div class="pulse-briefing" id="pulse-briefing" data-phase="' + esc(data.phase) + '">' + body + '</div>';
     }
 
@@ -2355,7 +2490,12 @@
       validateBriefing(data);
       briefingData = normalizeBriefing(data);
       replaceAccountContent(yesterdayPanel(), renderYesterdaySideHtml(briefingData, pulseContext));
-      if (selectedSide === 'yesterday') updateAccountDay();
+      if (selectedSide === 'yesterday') {
+        updateAccountDay();
+        syncYesterdayActivities();
+      } else {
+        paintYesterdayActivitiesHost();
+      }
       if (lastPulse) renderVitals(lastPulse);
     }
 
@@ -2523,6 +2663,13 @@
         event.preventDefault();
         todayActivitiesExpanded = true;
         if (lastPulse) renderToday(lastPulse);
+        return;
+      }
+      const showAllYesterday = closest(target, '[data-yesterday-activities-show-all]');
+      if (showAllYesterday) {
+        event.preventDefault();
+        yesterdayActivitiesExpanded = true;
+        paintYesterdayActivitiesHost();
         return;
       }
       const speechRetry = closest(target, '[data-speech-retry]');

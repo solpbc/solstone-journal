@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the chronological moments section inside an experience.",
+  "context": "Journal window. Heading for the chronological moments section inside an experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aba8fe05e204eaccd08b72f204e66b12801988cb611021413af05acfb250f154",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

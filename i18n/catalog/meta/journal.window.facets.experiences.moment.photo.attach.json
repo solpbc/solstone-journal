@@ -1,0 +1,16 @@
+{
+  "description": "Unselected state label on a moment photo toggle button.",
+  "context": "Journal window. Unselected state label on a moment photo toggle button.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c5a3152a8ac0086ad4874afa28f40febd96e787bf539769fcacb3f970965328",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

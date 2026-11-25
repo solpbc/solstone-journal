@@ -1,0 +1,16 @@
+{
+  "description": "Label for the activity checklist when starting a new experience.",
+  "context": "Journal window. Label for the activity checklist when starting a new experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83b8086da0a55b205500a708b1712d18597d74f2dcbf016ee29372926f5167d8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

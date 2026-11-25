@@ -16,6 +16,7 @@
     switchLabel: global.JournalI18n.render('journal.window.year.copy.switch.label.how.to.see.this.year'),
     stepLabel: global.JournalI18n.render('journal.window.year.copy.step.label.other.years'),
     daysLede: global.JournalI18n.render('journal.window.year.copy.days.lede.each.square.is.a.day.colored'),
+    daysLedeExperiences: global.JournalI18n.render('journal.window.year.copy.days.lede.experiences'),
     layerLabel: global.JournalI18n.render('journal.window.year.copy.layer.label.what.to.count'),
     threadsLede: global.JournalI18n.render('journal.window.year.copy.threads.lede.each.row.is.a.place.or'),
     find: global.JournalI18n.render('journal.window.year.copy.find.find.a.place.or.a.name'),
@@ -39,7 +40,9 @@
 
   // What a day cell can count. Each is a count its own app already shows,
   // with that app's nouns; a day opens on that app's page for it.
+  const DEFAULT_LAYER = 'activities';
   const LAYERS = [
+    { key: 'experiences', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.experiences'), path: '/app/experiences', unit: { countMessage: 'journal.window.view.experiences.date.count', one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.experience'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.experiences'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.experiences') } },
     { key: 'activities', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), path: '/app/activities', unit: { countMessage: 'journal.window.view.activities.date.count', one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activity'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.activities'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.activities') } },
     { key: 'location', label: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.location'), path: '/app/map', unit: { countMessage: 'journal.window.view.map.date.count', one: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.record'), other: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.records'), none: global.JournalI18n.render('journal.window.year.source.or.date.unit.label.no.location') } },
   ];
@@ -127,7 +130,7 @@
     return {
       year: isYear(year) ? year : null,
       view: params.get('view') === 'threads' ? 'threads' : 'days',
-      layer: LAYERS.some((item) => item.key === layer) ? layer : LAYERS[0].key,
+      layer: LAYERS.some((item) => item.key === layer) ? layer : DEFAULT_LAYER,
     };
   }
 
@@ -135,7 +138,7 @@
     const params = new URLSearchParams();
     if (state.year) params.set('year', state.year);
     if (state.view === 'threads') params.set('view', 'threads');
-    if (state.layer && state.layer !== LAYERS[0].key) params.set('layer', state.layer);
+    if (state.layer && state.layer !== DEFAULT_LAYER) params.set('layer', state.layer);
     const query = params.toString();
     return query ? `${PATH}?${query}` : PATH;
   }
@@ -253,20 +256,20 @@
 
   function drawDays(doc, root, payload, state, opts) {
     const section = el(doc, 'section', 'year-days');
-    section.appendChild(el(doc, 'p', 'year-lede', COPY.daysLede));
+    const layer = LAYERS.find((item) => item.key === state.layer) || LAYERS.find((item) => item.key === DEFAULT_LAYER) || LAYERS[0];
+    section.appendChild(el(doc, 'p', 'year-lede', layer.key === 'experiences' ? COPY.daysLedeExperiences : COPY.daysLede));
 
     const chips = el(doc, 'div', 'year-chips');
     chips.setAttribute('role', 'group');
     chips.setAttribute('aria-label', COPY.layerLabel);
-    LAYERS.forEach((layer) => {
-      const chip = link(doc, 'year-chip', layer.label, urlFor({ year: state.year, view: 'days', layer: layer.key }), opts.go, `layer:${layer.key}`);
-      chip.setAttribute('data-layer', layer.key);
-      if (state.layer === layer.key) chip.setAttribute('aria-current', 'true');
+    LAYERS.forEach((item) => {
+      const chip = link(doc, 'year-chip', item.label, urlFor({ year: state.year, view: 'days', layer: item.key }), opts.go, `layer:${item.key}`);
+      chip.setAttribute('data-layer', item.key);
+      if (state.layer === item.key) chip.setAttribute('aria-current', 'true');
       chips.appendChild(chip);
     });
     section.appendChild(chips);
 
-    const layer = LAYERS.find((item) => item.key === state.layer) || LAYERS[0];
     const data = gridData(payload, layer.key);
     if (Object.keys(data.days).length === 0) {
       section.appendChild(el(doc, 'p', 'year-none', global.JournalI18n.render('journal.window.year.days.empty', [['year', String(payload.year)]])));

@@ -1,0 +1,16 @@
+{
+  "description": "Empty state heading when the journal has no visible experiences.",
+  "context": "Journal window. Empty state heading when the journal has no visible experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6cb9d2279af7c52879b64c17c85c2ee3676dc2e5f2e9437361f5a818c67af7f0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

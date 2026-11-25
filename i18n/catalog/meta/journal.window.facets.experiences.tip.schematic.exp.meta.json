@@ -1,0 +1,16 @@
+{
+  "description": "Static example experience summary counts in the Experiences orientation tip schematic.",
+  "context": "Journal window. Static example experience summary counts in the Experiences orientation tip schematic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d29fed1b7d2cdc5b2d90add938fefa2aa4789fc13d7113da99284a56610240c8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

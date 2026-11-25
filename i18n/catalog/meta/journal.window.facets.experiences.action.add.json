@@ -1,0 +1,16 @@
+{
+  "description": "Button adding a nearby candidate activity to the experience.",
+  "context": "Journal window. Button adding a nearby candidate activity to the experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "719486b47950597897ae38e2be369ba7411603aad3e9197652e2873c81ba65e6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

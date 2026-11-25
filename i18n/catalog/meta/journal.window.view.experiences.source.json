@@ -1,0 +1,16 @@
+{
+  "description": "Source description for Experiences in More.",
+  "context": "Journal window. Source description for Experiences in More.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d0602365995600f17b1389ab10202ef5d6f94c1719928490450bb834506a3db",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

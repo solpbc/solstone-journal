@@ -49,6 +49,27 @@ pub(crate) fn activity_years(
     view::day_count_years(root, None, through)
 }
 
+pub(crate) fn experience_day_counts(
+    root: &std::path::Path,
+) -> std::collections::BTreeMap<String, usize> {
+    experiences::experience_day_counts(root)
+}
+
+pub(crate) fn experience_day_counts_between(
+    root: &std::path::Path,
+    from: &str,
+    to: &str,
+) -> std::collections::BTreeMap<String, usize> {
+    experiences::experience_day_counts_between(root, from, to)
+}
+
+pub(crate) fn experience_years(
+    root: &std::path::Path,
+    through: &str,
+) -> std::collections::BTreeSet<String> {
+    experiences::experience_years(root, through)
+}
+
 pub(crate) const ACTOR_HEADER: &str = "x-solstone-actor";
 pub(crate) const ACTOR_OWNER: &str = "owner";
 
@@ -57,6 +78,13 @@ pub fn routes(root: PathBuf, clock: Clock) -> Router {
         .route("/app/activities/workspace", get(activities_workspace_route))
         .route("/app/activities/", get(activities_today_redirect))
         .route("/app/activities/{day}", get(activities_day_shell))
+        .route(
+            "/app/experiences/workspace",
+            get(experiences_workspace_route),
+        )
+        .route("/app/experiences/", get(experiences_shell_route))
+        .route("/app/experiences/{day}", get(experiences_day_shell))
+        .route("/app/experiences/api/index", get(experiences::index))
         .route("/app/activities/api/day/{day}/view", get(day_view))
         .route("/app/activities/api/index", get(activities_index))
         .route("/app/activities/api/stats/{month}", get(activities_stats))
@@ -137,6 +165,22 @@ pub fn routes(root: PathBuf, clock: Clock) -> Router {
 
 async fn activities_workspace_route() -> Response {
     crate::assets::activities_workspace()
+}
+
+async fn experiences_workspace_route() -> Response {
+    crate::assets::experiences_workspace()
+}
+
+async fn experiences_shell_route() -> Response {
+    crate::assets::shell()
+}
+
+async fn experiences_day_shell(RoutePath(day): RoutePath<String>) -> Response {
+    if crate::segments::is_day(&day) {
+        crate::assets::shell()
+    } else {
+        invalid_day_not_found()
+    }
 }
 
 fn today(clock: &Clock) -> String {

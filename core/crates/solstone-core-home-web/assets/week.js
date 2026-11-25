@@ -66,6 +66,98 @@
     return null;
   }
 
+  function clockLabel(hhmm) {
+    const match = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ''));
+    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return '';
+    return new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
+      .toLocaleString(window.JournalI18n.formatLocale, { hour: 'numeric', minute: '2-digit' })
+      .toLowerCase();
+  }
+
+  function isoTimeRange(startedAt, endedAt) {
+    const startMatch = /T(\d{2}:\d{2})/.exec(String(startedAt || ''));
+    const endMatch = /T(\d{2}:\d{2})/.exec(String(endedAt || ''));
+    const start = startMatch ? clockLabel(startMatch[1]) : '';
+    const end = endMatch ? clockLabel(endMatch[1]) : '';
+    if (start && end && start !== end) return start + ' - ' + end;
+    return start || end || '';
+  }
+
+  function renderWeekDaysHtml(weekDays) {
+    if (!Array.isArray(weekDays) || !weekDays.length) return '';
+    const populated = weekDays.filter(function (day) {
+      return (Array.isArray(day.experiences) && day.experiences.length)
+        || (Array.isArray(day.activities) && day.activities.length);
+    });
+    if (!populated.length) return '';
+    let html = '<section class="week-days-section" data-week-days>';
+    html += `<h2 class="week-days-heading">${window.JournalI18n.renderHtml('journal.window.home.week.days.heading')}</h2>`;
+    populated.forEach(function (day) {
+      const exps = Array.isArray(day.experiences) ? day.experiences : [];
+      const acts = Array.isArray(day.activities) ? day.activities : [];
+      html += '<div class="week-day-block" data-week-day-entry="' + esc(day.day) + '">';
+      html += '<div class="week-day-head">';
+      html += '<h3 class="week-day-label">' + esc(day.day_label) + '</h3>';
+      if (day.activities_href) {
+        html += '<a class="week-day-open" href="' + esc(day.activities_href) + '">'
+          + window.JournalI18n.renderHtml('journal.window.home.week.day.open.activities')
+          + '</a>';
+      }
+      html += '</div>';
+      if (exps.length) {
+        html += '<div class="week-day-experiences">';
+        exps.forEach(function (exp) {
+          const timeRange = isoTimeRange(exp.started_at, exp.ended_at);
+          const dot = exp.facet_color
+            ? '<span class="week-facet-dot" style="background:' + esc(exp.facet_color) + '" aria-hidden="true"></span>'
+            : '';
+          const metaParts = [exp.facet_title || exp.primary_facet || '', timeRange].filter(Boolean);
+          html += '<a class="week-day-exp" href="' + esc(exp.href || ('/app/experiences/' + day.day)) + '">';
+          html += '<div class="week-day-exp-meta">' + dot + '<span>' + esc(metaParts.join(' · ')) + '</span></div>';
+          html += '<div class="week-day-exp-title">' + esc(exp.title || '') + '</div>';
+          if (exp.summary) {
+            html += '<p class="week-day-exp-summary">' + esc(exp.summary) + '</p>';
+          }
+          html += '</a>';
+        });
+        html += '</div>';
+      }
+      if (acts.length) {
+        const summaryText = window.JournalI18n.render('journal.window.home.week.day.activities.summary', [
+          ['quantity', window.JournalI18n.cardinalQuantity(acts.length)],
+          ['count', String(acts.length)],
+        ]);
+        html += '<details class="week-day-activities">';
+        html += '<summary class="week-day-activities-summary">' + esc(summaryText) + '</summary>';
+        html += '<ul class="week-day-activities-list">';
+        acts.forEach(function (act) {
+          const time = act.time ? (clockLabel(act.time) || act.time) : '';
+          const dot = act.facet_color
+            ? '<span class="week-facet-dot" style="background:' + esc(act.facet_color) + '" aria-hidden="true"></span>'
+            : '';
+          html += '<li class="week-day-activity-row">';
+          html += '<a class="week-day-activity-link" href="' + esc(act.href || day.activities_href || '/app/activities/') + '">';
+          if (time) html += '<span class="week-day-activity-time">' + esc(time) + '</span>';
+          html += dot;
+          html += '<span class="week-day-activity-title">' + esc(act.title || '') + '</span>';
+          if (act.facet_title) html += '<span class="week-day-activity-facet">' + esc(act.facet_title) + '</span>';
+          html += '</a>';
+          html += '</li>';
+        });
+        html += '</ul>';
+        if (day.activities_href) {
+          html += '<a class="week-day-activities-open" href="' + esc(day.activities_href) + '">'
+            + window.JournalI18n.renderHtml('journal.window.home.week.day.open.activities')
+            + '</a>';
+        }
+        html += '</details>';
+      }
+      html += '</div>';
+    });
+    html += '</section>';
+    return html;
+  }
+
   function renderSaidHtml(said) {
     if (!said) return '';
     if (said.unreadable) {
@@ -198,6 +290,8 @@
       }
     });
     html += '</div>'; // week-rows
+
+    html += renderWeekDaysHtml(model.week_days);
 
     html += renderSaidHtml(model.said);
 

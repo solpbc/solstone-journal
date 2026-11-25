@@ -1,0 +1,16 @@
+{
+  "description": "Banner shown inside a hidden experience's detail view.",
+  "context": "Journal window. Banner shown inside a hidden experience's detail view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2e3d4d6822b6fa9c7ca05c2efb01df41edba57cc55cd64a8164261b738fdb96b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

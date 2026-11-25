@@ -1,0 +1,16 @@
+{
+  "description": "Link opening a moment or segment photo.",
+  "context": "Journal window. Link opening a moment or segment photo.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf9ad2f1d9723727231f48a0dc6c6512d23de6ff380adeb22f735683e2b9b98f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

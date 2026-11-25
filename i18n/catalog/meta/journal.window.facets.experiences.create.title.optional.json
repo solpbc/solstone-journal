@@ -1,0 +1,16 @@
+{
+  "description": "Label for optional title input in manual experience creation.",
+  "context": "Journal window. Label for optional title input in manual experience creation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c8982fec4970299ca17e14c6e4362165794c0dcf2a606b51efcc8dace134f5a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

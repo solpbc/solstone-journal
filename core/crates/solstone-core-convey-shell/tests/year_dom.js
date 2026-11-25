@@ -90,6 +90,7 @@ const PAYLOAD = {
   years: ['2024', '2025'],
   today: '20261117',
   layers: {
+    experiences: { 20250105: 2 },
     activities: { 20250105: 3, 20250106: 1 },
     location: { 20250105: 40 },
   },
@@ -229,6 +230,11 @@ test('days mounts the grid for one year, on the chosen count and its app', () =>
   assert.deepStrictEqual(second.grids[0].data.days, PAYLOAD.layers.location);
   assert.strictEqual(second.grids[0].appPath, '/app/map');
   assert.notDeepStrictEqual(second.grids[0].unit, first.grids[0].unit);
+
+  const third = draw(ok(), '?layer=experiences');
+  assert.deepStrictEqual(third.grids[0].data.days, PAYLOAD.layers.experiences);
+  assert.strictEqual(third.grids[0].appPath, '/app/experiences');
+  assert.notDeepStrictEqual(third.grids[0].unit, first.grids[0].unit);
 
   // The current year's grid stops at today.
   const current = draw(ok({ year: '2026', years: ['2026'], layers: { activities: { 20260105: 1 }, location: {} } }), '');

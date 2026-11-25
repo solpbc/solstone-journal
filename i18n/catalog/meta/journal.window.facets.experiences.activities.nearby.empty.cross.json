@@ -1,0 +1,16 @@
+{
+  "description": "Empty candidate note when cross-facet opt-in is enabled.",
+  "context": "Journal window. Empty candidate note when cross-facet opt-in is enabled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eff7c9d826db5c25780a52cb702725b43f92ff08afa20208b113eab8012813db",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

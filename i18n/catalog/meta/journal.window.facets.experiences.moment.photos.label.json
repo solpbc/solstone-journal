@@ -1,0 +1,16 @@
+{
+  "description": "Label for the multi-select photo picker inside a moment editor.",
+  "context": "Journal window. Label for the multi-select photo picker inside a moment editor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf221b77978ffa99d48a5ce4797dfce1075bf3ecaf3a4acff6b2a9cf24c2476a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

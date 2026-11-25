@@ -1,0 +1,16 @@
+{
+  "description": "Link jumping from an experience provenance row to the transcript segment.",
+  "context": "Journal window. Link jumping from an experience provenance row to the transcript segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c8c18e0cabfd79fd7946f0e5757428930748c9c96ca0b9a5b2f1fd4ab4d40c9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

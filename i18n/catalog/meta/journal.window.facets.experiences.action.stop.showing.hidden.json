@@ -1,0 +1,16 @@
+{
+  "description": "Toggle button hiding hidden experiences from the stream again.",
+  "context": "Journal window. Toggle button hiding hidden experiences from the stream again.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86d7ff4bc54279d8eee039a45e21a28cc4d0e34ce28583a50410b7d22564699c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

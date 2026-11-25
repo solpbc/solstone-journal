@@ -80973,6 +80973,27 @@
       ]
     },
     {
+      "id": "journal.window.facets.activities.experiences.open",
+      "source": "5e9b61e83f2a427910240a592c36ddecdf15ea0ea87f46f3108c6b46550072dc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.experiences.part.of",
+      "source": "a11e0f64d02f20c009c9c8a6e5a21a724c674897b9d9a71429619cef5a0ae871",
+      "contract": "95c11185b57b69ada14421554073813b2b84466ad407988591d024cf197aa599",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.experiences.start",
+      "source": "13c33e075c28627c82027fa58dcaa7d47d1bbb127499749683964e2487e49a3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.facets.activities.hidden.footer.count",
       "source": "ffdd053d1b9419fdfc457971899af92c8dc09edd68a7009b1d8e1b67f387ae10",
       "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
@@ -83147,6 +83168,69 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.facets.activities.tip.body",
+      "source": "fde28be2b86ec519c1f55143548e2e9717d5d4531a7e5e637365da8ce94e5358",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.dismiss",
+      "source": "fe99f44ac9f71825f4db874d3a19e584dc7e1b9ad346b319bbaf995d52c22cbf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.heading",
+      "source": "6b22cc3d6724e5bc9265e0a0305430ebeb749152ecf831662748fb26388db98b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.schematic.activity",
+      "source": "56887a17a32e7da7505de9e63eb868752df82558962aaa5ce9785d4113f89c60",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.schematic.activity.sub",
+      "source": "d003e2fe2faa0c179fd8f88672a55a9c963ab7fd9cb05e36c6f384a4af8dd999",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.schematic.experience",
+      "source": "845a772370fcb512cbc78053289867090388d60f5aea88db31c99ce0b6795ab1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.schematic.experience.sub",
+      "source": "728cca50221b00497ceebbf8c1651a6e6a2485a35906769b412d5c326dd8e2d9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.schematic.segments",
+      "source": "ae73fe4bd5e7081e7fae2bb4ceb5cea9efb9acbb19c4761db3000ad03847dfbb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.activities.tip.schematic.segments.sub",
+      "source": "f517a95a3ae1861d1469f50094924cd09873f87166ffabbe20adad351bb68ed7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.facets.activities.window.explanation.a.line.shows.the.wrong.person",
@@ -92203,6 +92287,741 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.facets.experiences.action.add",
+      "source": "719486b47950597897ae38e2be369ba7411603aad3e9197652e2873c81ba65e6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.back.to.list",
+      "source": "5a0b9d590b1cd2586ec53182122c5ec11eedf520869f08e1747e9625f3fa4a6a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.cancel",
+      "source": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.done",
+      "source": "d73e995d8e06641547f0fc9d9da8046932e0d18d65854c93bcd7370fed8f7485",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.edit",
+      "source": "8f6645999c23c363730cca5152c7f448207478b08cadc6239da9a3628f627c52",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.edit.activities",
+      "source": "ec1c297b4d9226ac000929c77b2d8d7829c805d76602da03965315d9fd0f1d00",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.hide",
+      "source": "acd7eaf3910c936fed0227fd1090c71a1f9b1eb0f61249ddc1a895b03f209924",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.load.more",
+      "source": "e1096c868a97b7dcb5ed9911f609cf147393101678170f647902de5b24c346ef",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.new",
+      "source": "0d71cdd1bba12fd79bc2f1ff24f606f57137d0c0fa91ca6f3372ac3eeb08d355",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.open.in.activities",
+      "source": "4d404b9ea5b79b2b42ecc393c6d3c40e5ea221d9ed0ae51bbea37857609bdbd0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.open.photo",
+      "source": "cf9ad2f1d9723727231f48a0dc6c6512d23de6ff380adeb22f735683e2b9b98f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.open.transcripts",
+      "source": "3c8c18e0cabfd79fd7946f0e5757428930748c9c96ca0b9a5b2f1fd4ab4d40c9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.remove",
+      "source": "d257dacfdc4ab27815b38826a31678bbb77e1a516b0c365afa7277a9515652a1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.save.changes",
+      "source": "a71194b6c3d7ccaa3e98306da062f083e64d8e3e1e4d848faaa9f029fc3bb450",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.show.hidden",
+      "source": "efc5819d042bb2486f4704da98f56eedfec14c532c501ddb5e2d5bfedd184ffb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.stop.showing.hidden",
+      "source": "86d7ff4bc54279d8eee039a45e21a28cc4d0e34ce28583a50410b7d22564699c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.undo",
+      "source": "829a4e7b03223e7e2566f24f0aab0ae8f7e99578a696d9b42f9a6bceb43e827c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.action.unhide",
+      "source": "82fb4a6ec73c71e1e76018481079038eab7f82c9dbccaa2b2bd8e9ed8de00ca9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.cross.helper",
+      "source": "8f0e91ff2d158468c83acd28de60f3cd659d7d11f63228b9f1bc799e32bc1559",
+      "contract": "03f050b8b96eb75e31c3213e51292afa71ae701d078e5bc42ac04cc952d87b79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.cross.toggle",
+      "source": "c8078bed3ce561bdae83f8344b89f757ee92f4bcc188067ee777fe76f73039b8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.heading",
+      "source": "e0a05d69b1a4b9572e7e76134a29e0e9a8d0d4f1ab84aa6f93c6b7d9bd3d6178",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.included",
+      "source": "b26a7d30850fc1e95cf00554a9706d656221f3f5e18d521d8c243ae985508186",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.nearby.cross",
+      "source": "19e4032e21c229fd0816ea486770c06697aea272e675fb569f6117a5ae3f1691",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.nearby.empty.cross",
+      "source": "eff7c9d826db5c25780a52cb702725b43f92ff08afa20208b113eab8012813db",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.nearby.empty.facet",
+      "source": "2688c9d8323af4cfc6177944d4d5d6f1f10ab7467b5a9929dc00b96f8912a2f9",
+      "contract": "03f050b8b96eb75e31c3213e51292afa71ae701d078e5bc42ac04cc952d87b79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.nearby.facet",
+      "source": "9169e6b2a07afbb5853d64a922c50939050078fe94fef904854b12286e47c6e8",
+      "contract": "03f050b8b96eb75e31c3213e51292afa71ae701d078e5bc42ac04cc952d87b79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.remove.note",
+      "source": "d880f96fd26e2b3f0da60e08015b9b8c8c56a9ccddaf4d2ec89b8b8d02284ad0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.activities.update.error",
+      "source": "ce0f0f6a2137f82c9aae7715a075715049ce8ea370f824baf2afd725289197ba",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.day",
+      "source": "4e8b6fb45ffc09724eb4fd8db91d111e778f7145e9844145b7b31030a14bed05",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.error",
+      "source": "0ba9248543b0829098bae3a037a61cca8c9e37f18f8f161da836f72bf0f94c77",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.facet",
+      "source": "df2fdfd3f1cea336a347c2f905eb83bc1420e88fedfb3fd9723b6fafcda8a990",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.heading",
+      "source": "0d71cdd1bba12fd79bc2f1ff24f606f57137d0c0fa91ca6f3372ac3eeb08d355",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.no.activities",
+      "source": "1d7aeee21ffe373d5d91f4fdbcd0535f29c5a2e7d0b2260c961d1064282aefd1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.optional.placeholder",
+      "source": "d35107a305b0aefa09d0fbabf4f117e29c80a3456c691cb935125c6bc590b06d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.pick.activities",
+      "source": "83b8086da0a55b205500a708b1712d18597d74f2dcbf016ee29372926f5167d8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.submit",
+      "source": "aa285dfdc7251afddc2d413fb00eaccf1b00c2931655a16d9f3dd15861dd532a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.summary.optional",
+      "source": "04729c75281f508ad5bab8e9f2517485ab645fbcb92ae25630bde695346a35bb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.title.optional",
+      "source": "8c8982fec4970299ca17e14c6e4362165794c0dcf2a606b51efcc8dace134f5a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.create.validation.pick",
+      "source": "cbf3a6526895d51c33847ea22e6304849df041a2fe21c7a6ddbc20dffd9e1c88",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.cue.edited",
+      "source": "e3ee5fd0463a6716d0ddd24056ad74a811d657e4c10d6afd56a723261ce232e8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.cue.hidden",
+      "source": "380114a3390a5c2f9e62a18a490de394578e23e3024ed70ff2cd135f3a5036c7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.day.show.all",
+      "source": "dd200304b39b3ce634c7df371d0b1bb6d7938a2fac8c0cfd3db28bfd2eb97c1e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.detail.placeholder",
+      "source": "a1956af0b00707efc1e1d63d1601dccae47e7c0b6cd84c103c9ef18917f9320a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.edit.helper",
+      "source": "adeaa54ff80abbefd93ec4f7dfc8dfd04796f061a8dbab031bc0767930adb0c8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.edit.save.error",
+      "source": "a85d2ffea35386de06fdd8c5a8c9348db49c476a166dfe38639e6a09eec3bc13",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.all.body",
+      "source": "7b89ee5eca9b99c13bd29603591b6a1dd23052dd1affe961fecd4963213c5727",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.all.heading",
+      "source": "6cb9d2279af7c52879b64c17c85c2ee3676dc2e5f2e9437361f5a818c67af7f0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.day.create",
+      "source": "49dc5c640e09429918fb26d1df6f16891e921328a0b71793bb45bc4ba153c7bb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.day.heading",
+      "source": "416d39343fee51d02f6ccf692c173f8bfdd4560cc7309fdb980c4cbf9265b18d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.day.none.body",
+      "source": "5296e1b28ffa5e49d5fbc1cba80ed9f8d6431a458a4402ff8139fd3a91223aa7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.day.none.heading",
+      "source": "005bcfa817a2a49f6a8ac84cb11fbab90f8d209f202ae16b9e23642973387f5b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.day.view.activities",
+      "source": "cbbe4d33aa2374416284568e9ea5a1e91bfa787dda5474aa58503c244d097270",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.day.with.activities",
+      "source": "0b334ac5f5f8ab43adf738d271a74adb6ae0ebf643e84c722ee78a1381896cc4",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.facet.body",
+      "source": "0a232a93f23bd5208ffea1b1687c35d3f26b26f3f789ae61d069aa969946d660",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.facet.heading",
+      "source": "0cabeb8954d7d4ffc1008d83500f83da3c7a90de104a229eb9c8a4c6f2cfc9ed",
+      "contract": "03f050b8b96eb75e31c3213e51292afa71ae701d078e5bc42ac04cc952d87b79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.empty.facet.show.all",
+      "source": "c766636c5d88611a30ada642bc618fc20611f0d5fe3f3f1f6b5dc5f2cfc5cfe6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.field.moments",
+      "source": "aba8fe05e204eaccd08b72f204e66b12801988cb611021413af05acfb250f154",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.field.summary",
+      "source": "1fa1e8e51d6fe54296ef8076b386fcdd41668e75406870c32b22d955b9f30f55",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.field.time",
+      "source": "11bdaf3e3af0aeb62d1ce4dbaf7ced59d8ff8847f040753f6986364a74e23238",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.field.time.end",
+      "source": "c6fc074415d73b60fe75d94a760cd0531af3a412a4d02988fbba8b8a2cedb370",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.field.title",
+      "source": "2bfb0e1790e740cd996938766e6498497decab05a992f9b46f0b45c5285fb4ee",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.field.what.happened",
+      "source": "6bc7e4389ba7bc03c5f06081715197c68f029a0cd68e255019bbfefbec32333f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.heading",
+      "source": "0f6c7573d1baa265c245a661be52d687892d4deeb6dc7b42b354b9a759c4c408",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.heading.moments",
+      "source": "aba8fe05e204eaccd08b72f204e66b12801988cb611021413af05acfb250f154",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hidden.banner",
+      "source": "2e3d4d6822b6fa9c7ca05c2efb01df41edba57cc55cd64a8164261b738fdb96b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hidden.footer.count",
+      "source": "be5653ab303e1242ccf5683048dfeb4d190d38310360a708c7d3acec97ed07bc",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hidden.showing.count",
+      "source": "50474216f161f6376acf65a88862feb89ef9e16952d1c29aab885eb3d811fee0",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hide.error",
+      "source": "70ba270a1ffce7796d749fc8fcdecd16800e0b5d0105c9a021843abed98b649a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hide.receipt",
+      "source": "6169874d8452ce303d2e01aaec02ed991a3781ac518004eff794d54373b6b062",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hold.kept",
+      "source": "bad82a0c14c0045074477e6458924a90a407d75a070220ade508caa3306ce078",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.hold.release",
+      "source": "75d507ef62b2592f01c1d692150381b7a8d0a1593c5fecc9e7d3f9bd8010f5f6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.load.error",
+      "source": "b350e79ea53964e086e3ae87a4aa4353b7851e5713c9e209ccb008cf7287d141",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.loading",
+      "source": "52a94921918415027191d0bfcfd6a6c0aca1359011ecbf90952aa3b0ecd4f282",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.loading.more",
+      "source": "642fb0278877df1937918b0b42687e5f9b4a28fbfce6a47435246c83b25f5002",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.media.photo.alt",
+      "source": "69ca5b8bc6f908fe177658a8530cece203e2c50d930dfd5ef989bfa4344175f1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.meta.moments.count",
+      "source": "5aa3b460dd2c1de723659ad4e637f9900ba19d10e3f68778d2de89b4d6e888dd",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.meta.photos.count",
+      "source": "ed13e9d796b6649088b529013ab45fae7065eee603154ee6aab2a90b53d791df",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.meta.with",
+      "source": "d2354cfbfa2b7eb8bc0ca92ee863a54e2241c9b1152de685b3d49e7f32d8172c",
+      "contract": "c99a9e2a496e811edea3eb55921566d154f5b490dd7716d5eb65d3d75b21125b",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.add",
+      "source": "6de98b02fd948329519521e03cc21d5a66f4ee9305653036d9e00fc77799f497",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.move.down",
+      "source": "959ce5a61fa09a4aae776b34280134c93114c9d2ed14d91eaef7d346fb8b900d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.move.up",
+      "source": "b3d361e4939583be30cfb325dcf91b1a030bdf2ae5599dbd4ccc4801f2063561",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.photo.attach",
+      "source": "0c5a3152a8ac0086ad4874afa28f40febd96e787bf539769fcacb3f970965328",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.photo.attached",
+      "source": "e0addfc2ad46f1d2cbf7f5f036a86dd2557b7eaebdc2776f280cdd09fd4ed31b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.photos.empty",
+      "source": "c8c5af7df363241caabf0324ad0e9d2f753a8f871486a96abdbeb37c14f5787b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.photos.label",
+      "source": "bf221b77978ffa99d48a5ce4797dfce1075bf3ecaf3a4acff6b2a9cf24c2476a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.moment.remove",
+      "source": "6e0b2824cbb564ddb60b46c7f1dd989d625f3a4687021f37c8825e48f95d55da",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.provenance.helper",
+      "source": "ba781db6301ae4be084bc5b52b1803621f1388a67f736d80323c35887c665dbf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.provenance.summary",
+      "source": "6733db7e99eeed4f67864162fe0a919918d4a2ce6394988ca9643e7d2dd852eb",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.scope.all",
+      "source": "7fa18cde8eacb4ae7b7059ce2706abcf5c71dbd965cd3a4fff71b6062983d910",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.scope.facet",
+      "source": "e8f9546819d5abb2ec70e962341e651ff98bdb61dd1a3667986ab9fa4b7ad725",
+      "contract": "03f050b8b96eb75e31c3213e51292afa71ae701d078e5bc42ac04cc952d87b79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.source.unknown",
+      "source": "9ff2f3c1b25cd9d5f9835ed873a7078601d1f427034fa0971092a731d20be3fc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.body",
+      "source": "195022545dcc9683d3fa96c1e1dd2e1e3fdacd0753615fe746c4033514b21dcb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.dismiss",
+      "source": "fe99f44ac9f71825f4db874d3a19e584dc7e1b9ad346b319bbaf995d52c22cbf",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.heading",
+      "source": "16074b1f896b86ed267f3e0309d66e603069631b729c110225f0b2792e693bf0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.activities",
+      "source": "d59066a647e1d1a1ffef39b833af3ce369703fa1e89caedd394e8aac6167a6d9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.ex1",
+      "source": "9599b240145a72340b14f5aeed85e0fba85d60cf3d4f6eaf908f201546ca03d7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.ex2",
+      "source": "f3d4bcbc2a9b6be7ab52268b2f22eb32adb1d4112717ea256bcc98cb13594d95",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.ex3",
+      "source": "ad8903c99f1dcc2b985f01179d4dbeb2ff578a3c7347178566dccc7864a4609b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.exp.meta",
+      "source": "d29fed1b7d2cdc5b2d90add938fefa2aa4789fc13d7113da99284a56610240c8",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.exp.title",
+      "source": "37b2240155167edfa1e4b6fda1ab3bfc61d150ef7a66b29c3bf8a0694f8f13b7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.tip.schematic.experience",
+      "source": "845a772370fcb512cbc78053289867090388d60f5aea88db31c99ce0b6795ab1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.unhide.error",
+      "source": "b46f302c80b15db7da6368ec5c5bd2f67d66cea87905bdc2ec6ef97719e3de8a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.updating.create",
+      "source": "a6a99680688a9220e1b5892cfe48ce33002e7c3cbb06c5fb89c1939e3a9d205f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.updating.plain",
+      "source": "b8bf74d7e31eb4c7e3703ef01a5d316d48bdad6ca77da9ed04e08bf655b365c2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.facets.experiences.updating.with.holds",
+      "source": "27e3e75c1c579c2941bbd85d4215cef2654c7f5085f961e6628ec0529abc39ae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.handoff.sme.already.enabled.detail",
@@ -109180,6 +109999,13 @@
       ]
     },
     {
+      "id": "journal.window.home.action.all.of.yesterdays.activities",
+      "source": "184ce6f9b6d4bc1cbbcaeaf2f222b3a4f2fbb2a39e6985d5ef281ca0f67c9a4e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.home.action.check.status",
       "source": "93ca28e21a0254a24cc187ffe9e26e2336e7ce9ade68933caa4534031fac08db",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -109274,6 +110100,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.home.action.open.experiences",
+      "source": "589f089d12c9678382fd289a35ff2dbf1935d95d51f7e333628df92374ff0d48",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.home.action.open.it",
@@ -117950,6 +118783,13 @@
       ]
     },
     {
+      "id": "journal.window.home.today.experiences.note",
+      "source": "6ea8e619ac0c3212eeee0dbd66894852dc49ea20daccb8fd536bb21b09828785",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.home.today.facets.measured.count",
       "source": "7369b1ae0654e286745a5621b5a608dc77c77509b79f3c98f8305f0f79294e2c",
       "contract": "629b45735adb78120b18a1cbd1f74340a4256ac5aa101bcc21bc1859b32a0a21",
@@ -120414,6 +121254,13 @@
       ]
     },
     {
+      "id": "journal.window.home.week.day.activities.summary",
+      "source": "9cfe8105b47e3e070fd3dd4f8e5c7c6698e7accd4fe5cb904da687f04f62c774",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.home.week.day.long.friday",
       "source": "718f73fd9cb9f65f23bf092b55d087a7b6649407022c157c04acc5a65ab08eec",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -120636,6 +121483,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.home.week.day.open.activities",
+      "source": "4d404b9ea5b79b2b42ecc393c6d3c40e5ea221d9ed0ae51bbea37857609bdbd0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.home.week.day.short.fri",
@@ -120956,6 +121810,13 @@
           "protected": "98c54c4bf11b4826a41f1cb2562e8d7b1ab8216daa067bde968b38c7562b6aee"
         }
       ]
+    },
+    {
+      "id": "journal.window.home.week.days.heading",
+      "source": "f3481385b83dd1b01918ba65019bb72585afe92c4cbb29b026051aa2f3494ae6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.home.week.days.unreadable",
@@ -122876,6 +123737,20 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.home.yesterday.activities.heading",
+      "source": "2dd85e09659b602514a962de9135f812d83e7792f378840ab9e324a5d070d7bb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.yesterday.experiences.heading",
+      "source": "0f6c7573d1baa265c245a661be52d687892d4deeb6dc7b42b354b9a759c4c408",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.host.disk.back.title",
@@ -175741,6 +176616,13 @@
     {
       "id": "journal.window.pin.offer.body.text",
       "source": "1aeb8c911cad47dde5c269c42d8bcb568397689fd5ea5c0adc29ff2cd353c9ae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.pin.offer.experiences.text",
+      "source": "ba24ef106ecd2bfc4e19a5319cc2fb428af399d791a5f84eb1e7ed9823988dcf",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
       "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
       "locales": []
@@ -293533,6 +294415,34 @@
       ]
     },
     {
+      "id": "journal.window.view.experiences.date.count",
+      "source": "c30285134b41bc4a06ae7b7c67301534c0f96c7b59d0f37c3ab4cb88e13396ad",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.view.experiences.description",
+      "source": "fbe21f428b4d1e144513022d107935f732e4a6df43f47dd276dc62cf210708c0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.view.experiences.label",
+      "source": "0f6c7573d1baa265c245a661be52d687892d4deeb6dc7b42b354b9a759c4c408",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.view.experiences.source",
+      "source": "5d0602365995600f17b1389ab10202ef5d6f94c1719928490450bb834506a3db",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.view.health.description",
       "source": "18a07344f21b439bbb0d963ef8fea2e3a8e7c0ea2d69d0960df2894c6f8b21a3",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -295300,6 +296210,13 @@
       ]
     },
     {
+      "id": "journal.window.year.copy.days.lede.experiences",
+      "source": "d186149cc55447155dd73bf20a3aabe6f09118d6e1f69e0c3794e7b116a66831",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.year.copy.empty.action.see.your.sources",
       "source": "3f4914aae4deba96f84bfbba42091b440e948b6f89bf9f59efa53de11bfaec4a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -296388,6 +297305,20 @@
       ]
     },
     {
+      "id": "journal.window.year.source.or.date.unit.label.experience",
+      "source": "845a772370fcb512cbc78053289867090388d60f5aea88db31c99ce0b6795ab1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.year.source.or.date.unit.label.experiences",
+      "source": "0f6c7573d1baa265c245a661be52d687892d4deeb6dc7b42b354b9a759c4c408",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.year.source.or.date.unit.label.location",
       "source": "25cf10f2c3e02071b3b420b2eb1f8cdfad716c2b2ca1ec3e18d82d9124992374",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -296450,6 +297381,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.year.source.or.date.unit.label.no.experiences",
+      "source": "2a268b8642ae2716ddc9ddebc0d9919852b0154176dd4e350371d651d60d48b0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.year.source.or.date.unit.label.no.location",

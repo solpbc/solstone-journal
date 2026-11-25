@@ -1,0 +1,16 @@
+{
+  "description": "Back button closing the detail pane on tablet and phone viewports.",
+  "context": "Journal window. Back button closing the detail pane on tablet and phone viewports.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a0b9d590b1cd2586ec53182122c5ec11eedf520869f08e1747e9625f3fa4a6a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

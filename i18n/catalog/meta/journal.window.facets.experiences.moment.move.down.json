@@ -1,0 +1,16 @@
+{
+  "description": "Accessible button label moving a moment later in the list.",
+  "context": "Journal window. Accessible button label moving a moment later in the list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "959ce5a61fa09a4aae776b34280134c93114c9d2ed14d91eaef7d346fb8b900d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

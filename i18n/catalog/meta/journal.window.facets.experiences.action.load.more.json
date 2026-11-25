@@ -1,0 +1,16 @@
+{
+  "description": "Pagination button to load older experiences.",
+  "context": "Journal window. Pagination button to load older experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1096c868a97b7dcb5ed9911f609cf147393101678170f647902de5b24c346ef",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

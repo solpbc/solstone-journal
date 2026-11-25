@@ -1,0 +1,16 @@
+{
+  "description": "Quiet timing note on Home today tab explaining when experiences appear.",
+  "context": "Journal window. Quiet timing note on Home today tab explaining when experiences appear.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ea8e619ac0c3212eeee0dbd66894852dc49ea20daccb8fd536bb21b09828785",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

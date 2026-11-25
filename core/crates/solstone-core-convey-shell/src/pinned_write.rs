@@ -710,6 +710,7 @@ mod tests {
             names,
             std::collections::BTreeSet::from([
                 "activities",
+                "experiences",
                 "transcripts",
                 "map",
                 "body",

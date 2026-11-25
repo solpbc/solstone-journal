@@ -1,0 +1,21 @@
+{
+  "description": "Empty candidate note for the primary facet.",
+  "context": "Journal window. Empty candidate note for the primary facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2688c9d8323af4cfc6177944d4d5d6f1f10ab7467b5a9929dc00b96f8912a2f9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

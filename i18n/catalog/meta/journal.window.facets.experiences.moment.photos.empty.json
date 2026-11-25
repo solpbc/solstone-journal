@@ -1,0 +1,16 @@
+{
+  "description": "Empty note in the moment photo picker when no live photos exist.",
+  "context": "Journal window. Empty note in the moment photo picker when no live photos exist.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8c5af7df363241caabf0324ad0e9d2f753a8f871486a96abdbeb37c14f5787b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

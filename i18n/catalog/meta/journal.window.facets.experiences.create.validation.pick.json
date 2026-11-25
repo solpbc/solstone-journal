@@ -1,0 +1,16 @@
+{
+  "description": "Validation error when submitting manual creation with zero activities.",
+  "context": "Journal window. Validation error when submitting manual creation with zero activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbf3a6526895d51c33847ea22e6304849df041a2fe21c7a6ddbc20dffd9e1c88",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

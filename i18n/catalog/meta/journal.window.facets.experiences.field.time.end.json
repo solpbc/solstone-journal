@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label for a moment's end time input.",
+  "context": "Journal window. Accessible label for a moment's end time input.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c6fc074415d73b60fe75d94a760cd0531af3a412a4d02988fbba8b8a2cedb370",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

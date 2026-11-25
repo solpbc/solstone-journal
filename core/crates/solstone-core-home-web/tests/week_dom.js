@@ -1385,6 +1385,48 @@ async function runTests() {
     assert.ok(surface.innerHTML.includes('Reviewed bridge drawings'));
   }
 
+  // Chronological week_days renders per-day experiences and expandable activities disclosure.
+  {
+    caseCount++;
+    const model = Object.assign({}, quoteTwin(null), {
+      week_days: [
+        {
+          day: '20260308',
+          day_label: 'sun 8',
+          activities_href: '/app/activities/20260308',
+          experiences: [{
+            id: 'exp-sun',
+            primary_facet: 'household',
+            facet_title: 'Household',
+            facet_color: '#e8913a',
+            anchor_day: '20260308',
+            title: 'Sunday dinner',
+            summary: 'Friends stopped by.',
+            started_at: '2026-03-08T18:00:00',
+            ended_at: '2026-03-08T20:30:00',
+            href: '/app/experiences/20260308#household/exp-sun'
+          }],
+          activities: [{
+            id: 'act-1',
+            facet: 'household',
+            facet_title: 'Household',
+            facet_color: '#e8913a',
+            title: 'Grocery run',
+            time: '16:15',
+            href: '/app/activities/20260308?facet=household#household/act-1'
+          }]
+        }
+      ]
+    });
+    const { surface } = render(model);
+    const expLink = surface.querySelector('.week-day-exp');
+    assert.ok(expLink, 'week day experience card rendered');
+    assert.strictEqual(expLink.getAttribute('href'), '/app/experiences/20260308#household/exp-sun');
+    const actDetails = surface.querySelector('.week-day-activities');
+    assert.ok(actDetails, 'week day activities disclosure rendered');
+    assert.strictEqual(actDetails.querySelector('.week-day-activity-link').getAttribute('href'), '/app/activities/20260308?facet=household#household/act-1');
+  }
+
   console.log(`DOM CASES: ${caseCount} passed`);
 }
 

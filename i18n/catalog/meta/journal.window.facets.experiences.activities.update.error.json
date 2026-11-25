@@ -1,0 +1,16 @@
+{
+  "description": "Error shown when adding or removing activities fails.",
+  "context": "Journal window. Error shown when adding or removing activities fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ce0f0f6a2137f82c9aae7715a075715049ce8ea370f824baf2afd725289197ba",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

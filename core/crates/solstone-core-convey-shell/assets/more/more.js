@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 const MORE_STATE_FIELDS = [
+  {"view":"experiences","url":"/app/experiences/api/index","path":["coverage"]},
   {"view":"activities","url":"/app/activities/api/index","path":["coverage"]},
   {"view":"transcripts","url":"/app/transcripts/api/index","path":["coverage"]},
   {"view":"map","url":"/app/map/api/index","path":["coverage"]},
@@ -30,7 +31,7 @@ const MORE_STATE_FIELDS = [
     ['shape', window.JournalI18n.render('journal.window.more.group.shape'), window.JournalI18n.render('journal.window.more.window.explanation.fix.and.tidy.what.it.keeps')],
     ['runs', window.JournalI18n.render('journal.window.more.group.runs'), window.JournalI18n.render('journal.window.more.window.explanation.set.it.up.and.keep.it')]
   ];
-  const COVERAGE_VIEWS = ['activities', 'transcripts', 'map', 'body', 'speakers'];
+  const COVERAGE_VIEWS = ['experiences', 'activities', 'transcripts', 'map', 'body', 'speakers'];
   // lucide `pin`, inlined so the page doesn't fetch the whole icon catalogue for it.
   const PIN_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
 

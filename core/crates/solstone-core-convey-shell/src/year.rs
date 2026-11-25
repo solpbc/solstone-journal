@@ -119,6 +119,7 @@ pub(crate) fn year_view_in(root: &Path, today: &str, year: Option<&str>, locale:
     // The years with a day a layer counts or a name is found on. A place's
     // days are days its stays hold location, so the location layer has them.
     let mut years = solstone_core_facets_web::activity_years(root, today);
+    years.extend(solstone_core_facets_web::experience_years(root, today));
     years.extend(solstone_core_location::location_years(root, today));
     for name in &names {
         years.extend(
@@ -140,6 +141,12 @@ pub(crate) fn year_view_in(root: &Path, today: &str, year: Option<&str>, locale:
 
     let activities: BTreeMap<String, u64> =
         solstone_core_facets_web::activity_day_counts_between(root, &from, &to)
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(day, count)| (day, count as u64))
+            .collect();
+    let experiences: BTreeMap<String, u64> =
+        solstone_core_facets_web::experience_day_counts_between(root, &from, &to)
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .map(|(day, count)| (day, count as u64))
@@ -190,6 +197,7 @@ pub(crate) fn year_view_in(root: &Path, today: &str, year: Option<&str>, locale:
         "years": years,
         "today": today,
         "layers": {
+            "experiences": experiences,
             "activities": activities,
             "location": location,
         },
@@ -273,6 +281,12 @@ mod tests {
             .filter(|(day, count)| held(day) && *count > 0)
             .map(|(day, count)| (day, count as u64))
             .collect();
+        let experiences: BTreeMap<String, u64> =
+            solstone_core_facets_web::experience_day_counts(root)
+                .into_iter()
+                .filter(|(day, count)| held(day) && *count > 0)
+                .map(|(day, count)| (day, count as u64))
+                .collect();
         let location: BTreeMap<String, u64> = solstone_core_location::list_location_days(root)
             .into_iter()
             .filter(|(day, _)| held(day))
@@ -334,6 +348,7 @@ mod tests {
             }
         };
         activities.keys().for_each(|day| note(day));
+        experiences.keys().for_each(|day| note(day));
         location.keys().for_each(|day| note(day));
         for (_, _, days) in &places {
             days.iter().for_each(|day| note(day));
@@ -373,6 +388,7 @@ mod tests {
             "years": years,
             "today": today,
             "layers": {
+                "experiences": layer(experiences),
                 "activities": layer(activities),
                 "location": layer(location),
             },

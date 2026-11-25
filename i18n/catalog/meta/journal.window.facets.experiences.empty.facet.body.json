@@ -1,0 +1,16 @@
+{
+  "description": "Empty state body when the selected facet has no experiences.",
+  "context": "Journal window. Empty state body when the selected facet has no experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a232a93f23bd5208ffea1b1687c35d3f26b26f3f789ae61d069aa969946d660",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

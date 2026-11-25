@@ -1,0 +1,16 @@
+{
+  "description": "Empty note in the create form when the chosen day has no activities.",
+  "context": "Journal window. Empty note in the create form when the chosen day has no activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1d7aeee21ffe373d5d91f4fdbcd0535f29c5a2e7d0b2260c961d1064282aefd1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1516,12 +1516,16 @@ async function runTests() {
   assert.strictEqual(getSides().selectedSide, 'today', "the owner's choice survives refreshes");
   assert.strictEqual(tabFor('today').getAttribute('aria-selected'), 'true');
 
-  // Arrow keys move the selection and focus with it.
+  // Tab list order puts today first, yesterday second; arrow keys move selection and focus.
+  const tabOrder = surface.querySelectorAll('[data-account-tab]').map(t => t.getAttribute('data-account-tab'));
+  assert.deepStrictEqual(tabOrder, ['today', 'yesterday'], 'today tab precedes yesterday tab');
   handleDashboardKeydown({ key: 'ArrowRight', target: tabFor('today'), preventDefault() {} });
-  assert.strictEqual(getSides().selectedSide, 'yesterday', 'ArrowRight wraps to yesterday');
+  assert.strictEqual(getSides().selectedSide, 'yesterday', 'ArrowRight moves from today to yesterday');
   assert.strictEqual(doc.activeElement, tabFor('yesterday'), 'focus follows the selection');
-  handleDashboardKeydown({ key: 'End', target: tabFor('yesterday'), preventDefault() {} });
-  assert.strictEqual(getSides().selectedSide, 'today');
+  handleDashboardKeydown({ key: 'Home', target: tabFor('yesterday'), preventDefault() {} });
+  assert.strictEqual(getSides().selectedSide, 'today', 'Home moves to today');
+  handleDashboardKeydown({ key: 'End', target: tabFor('today'), preventDefault() {} });
+  assert.strictEqual(getSides().selectedSide, 'yesterday', 'End moves to yesterday');
 
   // Focus inside the side a refresh re-renders comes back to the same link.
   selectAccountSide('yesterday', false);

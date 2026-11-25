@@ -1,0 +1,16 @@
+{
+  "description": "One-time Home pin offer prompt shown once the journal has at least one experience.",
+  "context": "Journal window. One-time Home pin offer prompt shown once the journal has at least one experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba24ef106ecd2bfc4e19a5319cc2fb428af399d791a5f84eb1e7ed9823988dcf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Label for the experience summary field.",
+  "context": "Journal window. Label for the experience summary field.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fa1e8e51d6fe54296ef8076b386fcdd41668e75406870c32b22d955b9f30f55",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

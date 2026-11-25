@@ -1,0 +1,16 @@
+{
+  "description": "Singular unit label for experiences on the Year page.",
+  "context": "Journal window. Singular unit label for experiences on the Year page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "845a772370fcb512cbc78053289867090388d60f5aea88db31c99ce0b6795ab1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

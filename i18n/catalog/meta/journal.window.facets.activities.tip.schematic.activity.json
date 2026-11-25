@@ -1,0 +1,16 @@
+{
+  "description": "Schematic step 2 label on Activities tip.",
+  "context": "Journal window. Schematic step 2 label on Activities tip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "56887a17a32e7da7505de9e63eb868752df82558962aaa5ce9785d4113f89c60",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

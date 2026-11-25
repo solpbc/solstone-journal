@@ -1,0 +1,16 @@
+{
+  "description": "Action button hiding an experience non-destructively.",
+  "context": "Journal window. Action button hiding an experience non-destructively.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acd7eaf3910c936fed0227fd1090c71a1f9b1eb0f61249ddc1a895b03f209924",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

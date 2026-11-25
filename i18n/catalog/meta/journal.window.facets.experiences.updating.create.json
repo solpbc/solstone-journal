@@ -1,0 +1,16 @@
+{
+  "description": "Inline status shown while composing a newly created experience.",
+  "context": "Journal window. Inline status shown while composing a newly created experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6a99680688a9220e1b5892cfe48ce33002e7c3cbb06c5fb89c1939e3a9d205f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

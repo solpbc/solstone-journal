@@ -1,0 +1,16 @@
+{
+  "description": "Quiet-day heading when a day has neither experiences nor activities.",
+  "context": "Journal window. Quiet-day heading when a day has neither experiences nor activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "005bcfa817a2a49f6a8ac84cb11fbab90f8d209f202ae16b9e23642973387f5b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

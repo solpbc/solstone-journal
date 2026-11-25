@@ -1,0 +1,16 @@
+{
+  "description": "Secondary action on a quiet day linking to that day in Activities.",
+  "context": "Journal window. Secondary action on a quiet day linking to that day in Activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbbe4d33aa2374416284568e9ea5a1e91bfa787dda5474aa58503c244d097270",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

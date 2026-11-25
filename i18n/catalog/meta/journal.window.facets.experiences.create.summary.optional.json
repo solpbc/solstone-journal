@@ -1,0 +1,16 @@
+{
+  "description": "Label for optional summary textarea in manual experience creation.",
+  "context": "Journal window. Label for optional summary textarea in manual experience creation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04729c75281f508ad5bab8e9f2517485ab645fbcb92ae25630bde695346a35bb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

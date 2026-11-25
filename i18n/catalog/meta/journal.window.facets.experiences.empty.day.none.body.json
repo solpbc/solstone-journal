@@ -1,0 +1,16 @@
+{
+  "description": "Quiet-day body when a day has neither experiences nor activities.",
+  "context": "Journal window. Quiet-day body when a day has neither experiences nor activities.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5296e1b28ffa5e49d5fbc1cba80ed9f8d6431a458a4402ff8139fd3a91223aa7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

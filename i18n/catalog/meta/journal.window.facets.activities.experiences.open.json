@@ -1,0 +1,16 @@
+{
+  "description": "Link opening an experience from an activity detail panel.",
+  "context": "Journal window. Link opening an experience from an activity detail panel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5e9b61e83f2a427910240a592c36ddecdf15ea0ea87f46f3108c6b46550072dc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1358,6 +1358,8 @@ pub fn page_model_in(
         (Value::Null, Value::Null)
     };
 
+    let week_days = collect_week_days(journal, start_date, locale);
+
     Ok(json!({
         "title": title,
         "day": day,
@@ -1366,6 +1368,7 @@ pub fn page_model_in(
         "legend": legend,
         "from_line": from_line,
         "rows": rows,
+        "week_days": week_days,
         "said": said_model,
         "left_out_notice": left_out_notice,
         "prev_label": prev_label,
@@ -1374,6 +1377,163 @@ pub fn page_model_in(
         "next_href": next_href,
         "end_line": text(locale, "journal.window.home.week.end"),
     }))
+}
+
+fn collect_week_days(journal: &Path, start_date: Date, locale: &str) -> Vec<Value> {
+    if !journal.is_dir() {
+        return Vec::new();
+    }
+    let enabled_facets = solstone_core_facets::observe_declared_facet_inventory(journal)
+        .map(|inv| inv.enabled)
+        .unwrap_or_default();
+    if enabled_facets.is_empty() {
+        return Vec::new();
+    }
+    let facet_meta: std::collections::BTreeMap<String, (String, String)> = enabled_facets
+        .iter()
+        .map(|slug| {
+            let decl = solstone_core_facets::observe_facet_declaration(journal, slug)
+                .ok()
+                .flatten();
+            let title = decl
+                .as_ref()
+                .map(|d| d.title.trim())
+                .filter(|t| !t.is_empty())
+                .unwrap_or(slug)
+                .to_owned();
+            let color = decl.map(|d| d.color).unwrap_or_default();
+            (slug.clone(), (title, color))
+        })
+        .collect();
+    let hidden_body = solstone_core_format::content::body_hidden_days::read_hidden_days(journal);
+    let mut days_out = Vec::new();
+
+    for offset in 0..7_i64 {
+        let Ok(date) = start_date.checked_add(jiff::Span::new().days(offset)) else {
+            continue;
+        };
+        let d = solstone_core_time::day_key(date);
+        let body_hidden = hidden_body.hides(&d) != Some(false);
+
+        let mut day_experiences = Vec::new();
+        for facet in &enabled_facets {
+            if let Ok(exps) = solstone_core_facets::load_experiences(journal, facet, &d, false) {
+                let (facet_title, facet_color) = facet_meta
+                    .get(facet)
+                    .cloned()
+                    .unwrap_or_else(|| (facet.clone(), String::new()));
+                for exp in exps {
+                    if exp.hidden {
+                        continue;
+                    }
+                    let href = format!(
+                        "/app/experiences/{}#{}/{}",
+                        exp.anchor_day, exp.primary_facet, exp.id
+                    );
+                    day_experiences.push((
+                        exp.started_at.clone(),
+                        exp.id.clone(),
+                        json!({
+                            "id": exp.id,
+                            "primary_facet": exp.primary_facet,
+                            "facet_title": facet_title,
+                            "facet_color": facet_color,
+                            "anchor_day": exp.anchor_day,
+                            "title": exp.title,
+                            "summary": exp.summary,
+                            "started_at": exp.started_at,
+                            "ended_at": exp.ended_at,
+                            "activity_count": exp.activities.len(),
+                            "moment_count": exp.moments.len(),
+                            "href": href,
+                        }),
+                    ));
+                }
+            }
+        }
+        day_experiences.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        let experiences: Vec<Value> = day_experiences.into_iter().map(|(_, _, v)| v).collect();
+
+        let mut day_activities = Vec::new();
+        let mut seen_ids = BTreeSet::new();
+        for facet in &enabled_facets {
+            let Ok(facet_rows) =
+                solstone_core_facets::load_activity_records_readable(journal, facet, &d, false)
+            else {
+                continue;
+            };
+            let (facet_title, facet_color) = facet_meta
+                .get(facet)
+                .cloned()
+                .unwrap_or_else(|| (facet.clone(), String::new()));
+            for row in facet_rows {
+                if body_hidden && solstone_core_format::content::is_strava_reading(&row) {
+                    continue;
+                }
+                if !factual_activity_has_live_source(journal, &d, &row) {
+                    continue;
+                }
+                let id = record_string(&row, "id");
+                if id.is_empty() || !seen_ids.insert((facet.clone(), id.clone())) {
+                    continue;
+                }
+                let title = {
+                    let t = record_string(&row, "title");
+                    let desc = record_string(&row, "description");
+                    if !t.trim().is_empty() {
+                        t
+                    } else if !desc.trim().is_empty() {
+                        desc
+                    } else {
+                        record_string(&row, "activity")
+                    }
+                };
+                if title.trim().is_empty() {
+                    continue;
+                }
+                let start_seg = row
+                    .get("segments")
+                    .and_then(Value::as_array)
+                    .and_then(|arr| arr.iter().filter_map(Value::as_str).min())
+                    .unwrap_or_default()
+                    .to_owned();
+                let time_hm = if start_seg.len() >= 4
+                    && start_seg.as_bytes()[..4].iter().all(|b| b.is_ascii_digit())
+                {
+                    format!("{}:{}", &start_seg[..2], &start_seg[2..4])
+                } else {
+                    String::new()
+                };
+                day_activities.push((
+                    start_seg,
+                    id.clone(),
+                    json!({
+                        "id": id,
+                        "facet": facet,
+                        "facet_title": facet_title,
+                        "facet_color": facet_color,
+                        "title": title,
+                        "time": time_hm,
+                        "href": activity_href(facet, &d, &id, false),
+                    }),
+                ));
+            }
+        }
+        day_activities.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        let activities: Vec<Value> = day_activities.into_iter().map(|(_, _, v)| v).collect();
+
+        if experiences.is_empty() && activities.is_empty() {
+            continue;
+        }
+        days_out.push(json!({
+            "day": d,
+            "day_label": short_day_label(date, locale),
+            "activities_href": format!("/app/activities/{d}"),
+            "experiences": experiences,
+            "activities": activities,
+        }));
+    }
+    days_out
 }
 
 /// Whether the Sunday-to-Saturday week starting at `sunday` (`YYYYMMDD`) holds
@@ -1400,6 +1560,11 @@ pub fn has_factual_week_data(journal: &Path, sunday: &str) -> bool {
         let d = solstone_core_time::day_key(date);
         let body_hidden = hidden_body.hides(&d) != Some(false);
         for facet in &enabled_facets {
+            if solstone_core_facets::load_experiences(journal, facet, &d, false)
+                .is_ok_and(|exps| !exps.is_empty())
+            {
+                return true;
+            }
             if let Ok(rows) =
                 solstone_core_facets::load_activity_records_readable(journal, facet, &d, false)
                 && rows.iter().any(|row| {
@@ -1566,7 +1731,8 @@ fn factual_page_model_in(
         }));
     }
 
-    if rows.is_empty() {
+    let week_days = collect_week_days(journal, start_date, locale);
+    if rows.is_empty() && week_days.is_empty() {
         return Err(WeekJudgment::Absent);
     }
 
@@ -1591,6 +1757,7 @@ fn factual_page_model_in(
         "legend": [],
         "from_line": from_line,
         "rows": rows,
+        "week_days": week_days,
         "said": Value::Null,
         "left_out_notice": Value::Null,
         "prev_label": Value::Null,

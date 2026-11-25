@@ -1,0 +1,16 @@
+{
+  "description": "Subheading listing activities currently inside the experience.",
+  "context": "Journal window. Subheading listing activities currently inside the experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b26a7d30850fc1e95cf00554a9706d656221f3f5e18d521d8c243ae985508186",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

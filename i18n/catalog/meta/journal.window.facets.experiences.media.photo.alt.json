@@ -1,0 +1,16 @@
+{
+  "description": "Fallback alt text for a moment photo without a caption.",
+  "context": "Journal window. Fallback alt text for a moment photo without a caption.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69ca5b8bc6f908fe177658a8530cece203e2c50d930dfd5ef989bfa4344175f1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error message when hiding an experience fails.",
+  "context": "Journal window. Error message when hiding an experience fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "70ba270a1ffce7796d749fc8fcdecd16800e0b5d0105c9a021843abed98b649a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

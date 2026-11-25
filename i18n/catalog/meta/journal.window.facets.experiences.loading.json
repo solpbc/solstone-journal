@@ -1,0 +1,16 @@
+{
+  "description": "Loading status message on Experiences.",
+  "context": "Journal window. Loading status message on Experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52a94921918415027191d0bfcfd6a6c0aca1359011ecbf90952aa3b0ecd4f282",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

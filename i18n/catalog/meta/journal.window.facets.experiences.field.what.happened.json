@@ -1,0 +1,16 @@
+{
+  "description": "Label for a moment's narrative summary textarea.",
+  "context": "Journal window. Label for a moment's narrative summary textarea.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6bc7e4389ba7bc03c5f06081715197c68f029a0cd68e255019bbfefbec32333f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

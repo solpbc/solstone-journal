@@ -1,0 +1,16 @@
+{
+  "description": "Short description of the Experiences workspace in More.",
+  "context": "Journal window. Short description of the Experiences workspace in More.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fbe21f428b4d1e144513022d107935f732e4a6df43f47dd276dc62cf210708c0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

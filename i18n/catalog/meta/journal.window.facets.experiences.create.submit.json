@@ -1,0 +1,16 @@
+{
+  "description": "Submit button in the manual experience creation form.",
+  "context": "Journal window. Submit button in the manual experience creation form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa285dfdc7251afddc2d413fb00eaccf1b00c2931655a16d9f3dd15861dd532a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

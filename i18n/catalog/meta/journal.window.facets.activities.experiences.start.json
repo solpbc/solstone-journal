@@ -1,0 +1,16 @@
+{
+  "description": "Link starting a new manual experience pre-selected with this activity.",
+  "context": "Journal window. Link starting a new manual experience pre-selected with this activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "13c33e075c28627c82027fa58dcaa7d47d1bbb127499749683964e2487e49a3f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

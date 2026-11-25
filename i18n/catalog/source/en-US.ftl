@@ -23912,3 +23912,295 @@ journal.window.backup.status.schedule.configuration = { $state ->
     [off] no automatic backups are scheduled.
    *[unknown] the automatic backup schedule isn't known.
     }
+
+journal.window.facets.activities.experiences.open = open experience
+
+journal.window.facets.activities.experiences.part.of = part of: { $experience_title }
+
+journal.window.facets.activities.experiences.start = start an experience from this activity
+
+journal.window.facets.activities.tip.body = activities are individual stretches of time from your recordings, screens, notes, and photos, each in one facet. when one or more belong to a larger story, your journal also groups them under experiences.
+
+journal.window.facets.activities.tip.dismiss = got it
+
+journal.window.facets.activities.tip.heading = what activities are
+
+journal.window.facets.activities.tip.schematic.activity = one activity
+
+journal.window.facets.activities.tip.schematic.activity.sub = focused time block in one facet
+
+journal.window.facets.activities.tip.schematic.experience = experience
+
+journal.window.facets.activities.tip.schematic.experience.sub = grouped here when notable
+
+journal.window.facets.activities.tip.schematic.segments = segments
+
+journal.window.facets.activities.tip.schematic.segments.sub = recordings, screens, photos
+
+journal.window.facets.experiences.action.add = add
+
+journal.window.facets.experiences.action.back.to.list = back to list
+
+journal.window.facets.experiences.action.cancel = cancel
+
+journal.window.facets.experiences.action.done = done
+
+journal.window.facets.experiences.action.edit = edit
+
+journal.window.facets.experiences.action.edit.activities = add or remove activities
+
+journal.window.facets.experiences.action.hide = hide
+
+journal.window.facets.experiences.action.load.more = load earlier experiences
+
+journal.window.facets.experiences.action.new = new experience
+
+journal.window.facets.experiences.action.open.in.activities = open in activities
+
+journal.window.facets.experiences.action.open.photo = open photo
+
+journal.window.facets.experiences.action.open.transcripts = open in transcripts
+
+journal.window.facets.experiences.action.remove = remove
+
+journal.window.facets.experiences.action.save.changes = save changes
+
+journal.window.facets.experiences.action.show.hidden = show hidden
+
+journal.window.facets.experiences.action.stop.showing.hidden = stop showing hidden
+
+journal.window.facets.experiences.action.undo = undo
+
+journal.window.facets.experiences.action.unhide = unhide
+
+journal.window.facets.experiences.activities.cross.helper = shows nearby activities from other facets. this experience still stays in { $facet_name }.
+
+journal.window.facets.experiences.activities.cross.toggle = include activities from other facets
+
+journal.window.facets.experiences.activities.heading = activities in this experience
+
+journal.window.facets.experiences.activities.included = included
+
+journal.window.facets.experiences.activities.nearby.cross = nearby activities across your facets
+
+journal.window.facets.experiences.activities.nearby.empty.cross = no other nearby activities across your facets.
+
+journal.window.facets.experiences.activities.nearby.empty.facet = no other nearby activities in { $facet_name }.
+
+journal.window.facets.experiences.activities.nearby.facet = nearby activities in { $facet_name }
+
+journal.window.facets.experiences.activities.remove.note = removing an activity keeps your journal from adding it back automatically.
+
+journal.window.facets.experiences.activities.update.error = couldn't update activities. nothing changed.
+
+journal.window.facets.experiences.create.day = day
+
+journal.window.facets.experiences.create.error = couldn't create this experience. nothing changed.
+
+journal.window.facets.experiences.create.facet = facet
+
+journal.window.facets.experiences.create.heading = new experience
+
+journal.window.facets.experiences.create.no.activities = no activities found on this day.
+
+journal.window.facets.experiences.create.optional.placeholder = leave blank to let your journal write one
+
+journal.window.facets.experiences.create.pick.activities = pick activities to group
+
+journal.window.facets.experiences.create.submit = create experience
+
+journal.window.facets.experiences.create.summary.optional = summary (optional)
+
+journal.window.facets.experiences.create.title.optional = title (optional)
+
+journal.window.facets.experiences.create.validation.pick = pick at least one activity to start an experience.
+
+journal.window.facets.experiences.cue.edited = edited by you
+
+journal.window.facets.experiences.cue.hidden = hidden
+
+journal.window.facets.experiences.day.show.all = show all days
+
+journal.window.facets.experiences.detail.placeholder = pick an experience to read its moments and underlying activities.
+
+journal.window.facets.experiences.edit.helper = fields you edit stay as you wrote them as long as their activities stay in this experience.
+
+journal.window.facets.experiences.edit.save.error = couldn't save your changes. nothing changed.
+
+journal.window.facets.experiences.empty.all.body = your journal groups notable episodes after a day wraps up, or you can group any of your activities into an experience yourself.
+
+journal.window.facets.experiences.empty.all.heading = no experiences yet
+
+journal.window.facets.experiences.empty.day.create = create one from this day's activities
+
+journal.window.facets.experiences.empty.day.heading = no experiences from this day
+
+journal.window.facets.experiences.empty.day.none.body = when activities arrive for this day, any notable episodes will appear here.
+
+journal.window.facets.experiences.empty.day.none.heading = no experiences or activities on this day
+
+journal.window.facets.experiences.empty.day.view.activities = view activities
+
+journal.window.facets.experiences.empty.day.with.activities = { $quantity ->
+        [one] 1 activity stayed in activities. your journal only turns notable episodes into experiences, or you can start one yourself.
+       *[other] { $count } activities stayed in activities. your journal only turns notable episodes into experiences, or you can start one yourself.
+    }
+
+journal.window.facets.experiences.empty.facet.body = other facets have experiences you can browse.
+
+journal.window.facets.experiences.empty.facet.heading = no experiences in { $facet_name }
+
+journal.window.facets.experiences.empty.facet.show.all = show all facets
+
+journal.window.facets.experiences.field.moments = moments
+
+journal.window.facets.experiences.field.summary = summary
+
+journal.window.facets.experiences.field.time = time
+
+journal.window.facets.experiences.field.time.end = end time
+
+journal.window.facets.experiences.field.title = title
+
+journal.window.facets.experiences.field.what.happened = what happened
+
+journal.window.facets.experiences.heading = experiences
+
+journal.window.facets.experiences.heading.moments = moments
+
+journal.window.facets.experiences.hidden.banner = you hid this experience. it stays out of search and connected agents until you unhide it.
+
+journal.window.facets.experiences.hidden.footer.count = { $quantity ->
+        [one] 1 hidden
+       *[other] { $count } hidden
+    }
+
+journal.window.facets.experiences.hidden.showing.count = { $quantity ->
+        [one] showing 1 hidden
+       *[other] showing { $count } hidden
+    }
+
+journal.window.facets.experiences.hide.error = couldn't hide this experience. nothing changed.
+
+journal.window.facets.experiences.hide.receipt = hidden from your views, search, and connected agents. your underlying activities stay as they are, and you can unhide this experience anytime.
+
+journal.window.facets.experiences.hold.kept = kept as you wrote it
+
+journal.window.facets.experiences.hold.release = let your journal rewrite
+
+journal.window.facets.experiences.load.error = couldn't load experiences. reload to try again.
+
+journal.window.facets.experiences.loading = loading experiences...
+
+journal.window.facets.experiences.loading.more = loading earlier experiences...
+
+journal.window.facets.experiences.media.photo.alt = photo from this moment
+
+journal.window.facets.experiences.meta.moments.count = { $quantity ->
+        [one] 1 moment
+       *[other] { $count } moments
+    }
+
+journal.window.facets.experiences.meta.photos.count = { $quantity ->
+        [one] 1 photo
+       *[other] { $count } photos
+    }
+
+journal.window.facets.experiences.meta.with = with { $people }
+
+journal.window.facets.experiences.moment.add = add a moment
+
+journal.window.facets.experiences.moment.move.down = move moment down
+
+journal.window.facets.experiences.moment.move.up = move moment up
+
+journal.window.facets.experiences.moment.photo.attach = attach
+
+journal.window.facets.experiences.moment.photo.attached = attached
+
+journal.window.facets.experiences.moment.photos.empty = no photos attached to this experience's activities.
+
+journal.window.facets.experiences.moment.photos.label = photos in this moment
+
+journal.window.facets.experiences.moment.remove = remove moment
+
+journal.window.facets.experiences.provenance.helper = open an activity to view its full details, or jump straight to a transcript segment.
+
+journal.window.facets.experiences.provenance.summary = { $quantity ->
+        [one] based on 1 activity
+       *[other] based on { $count } activities
+    }
+
+journal.window.facets.experiences.scope.all = all facets
+
+journal.window.facets.experiences.scope.facet = showing { $facet_name }
+
+journal.window.facets.experiences.source.unknown = an unknown source
+
+journal.window.facets.experiences.tip.body = an experience brings together one or more activities from a notable conversation, outing, or stretch of work. other activities stay in activities, or you can group any of them into an experience yourself.
+
+journal.window.facets.experiences.tip.dismiss = got it
+
+journal.window.facets.experiences.tip.heading = what experiences are
+
+journal.window.facets.experiences.tip.schematic.activities = activities (individual stretches in one facet)
+
+journal.window.facets.experiences.tip.schematic.ex1 = 5:40 pm · grocery run
+
+journal.window.facets.experiences.tip.schematic.ex2 = 7:15 pm · dinner chat
+
+journal.window.facets.experiences.tip.schematic.ex3 = 7:20 pm · table photo
+
+journal.window.facets.experiences.tip.schematic.exp.meta = 2 moments · 1 photo
+
+journal.window.facets.experiences.tip.schematic.exp.title = dinner with neighbors
+
+journal.window.facets.experiences.tip.schematic.experience = experience
+
+journal.window.facets.experiences.unhide.error = couldn't unhide this experience. nothing changed.
+
+journal.window.facets.experiences.updating.create = writing a first draft from the activities you picked.
+
+journal.window.facets.experiences.updating.plain = updating this experience from its activities.
+
+journal.window.facets.experiences.updating.with.holds = updating unedited parts from its activities. your edits stay as long as their activities remain.
+
+journal.window.home.action.all.of.yesterdays.activities = all activities from yesterday
+
+journal.window.home.action.open.experiences = open experiences
+
+journal.window.home.today.experiences.note = experiences from today are grouped after the day wraps up.
+
+journal.window.home.week.day.activities.summary = { $quantity ->
+        [one] activities on this day (1)
+       *[other] activities on this day ({ $count })
+    }
+
+journal.window.home.week.day.open.activities = open in activities
+
+journal.window.home.week.days.heading = day by day
+
+journal.window.home.yesterday.activities.heading = activities
+
+journal.window.home.yesterday.experiences.heading = experiences
+
+journal.window.pin.offer.experiences.text = your journal now has experiences.
+
+journal.window.view.experiences.date.count = { $quantity ->
+        [one] 1 experience
+       *[other] { $count } experiences
+    }
+
+journal.window.view.experiences.description = notable episodes and moments grouped from your activities
+
+journal.window.view.experiences.label = experiences
+
+journal.window.view.experiences.source = grouped by your journal from your activities, or started by you
+
+journal.window.year.copy.days.lede.experiences = each square is a day, colored by how many experiences it has. choose a day to open it in experiences.
+
+journal.window.year.source.or.date.unit.label.experience = experience
+
+journal.window.year.source.or.date.unit.label.experiences = experiences
+
+journal.window.year.source.or.date.unit.label.no.experiences = no experiences

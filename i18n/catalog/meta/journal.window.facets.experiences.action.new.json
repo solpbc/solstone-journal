@@ -1,0 +1,16 @@
+{
+  "description": "Header button opening the manual experience creation form.",
+  "context": "Journal window. Header button opening the manual experience creation form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d71cdd1bba12fd79bc2f1ff24f606f57137d0c0fa91ca6f3372ac3eeb08d355",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

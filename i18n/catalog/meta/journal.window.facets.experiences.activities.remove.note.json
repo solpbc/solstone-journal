@@ -1,0 +1,16 @@
+{
+  "description": "Note explaining owner exclusion behavior when removing an activity.",
+  "context": "Journal window. Note explaining owner exclusion behavior when removing an activity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d880f96fd26e2b3f0da60e08015b9b8c8c56a9ccddaf4d2ec89b8b8d02284ad0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

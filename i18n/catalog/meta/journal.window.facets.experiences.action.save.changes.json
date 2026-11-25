@@ -1,0 +1,16 @@
+{
+  "description": "Primary submit button in the Level 1 experience editor.",
+  "context": "Journal window. Primary submit button in the Level 1 experience editor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a71194b6c3d7ccaa3e98306da062f083e64d8e3e1e4d848faaa9f029fc3bb450",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

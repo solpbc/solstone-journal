@@ -1,0 +1,21 @@
+{
+  "description": "People attribution line on an experience card or detail header.",
+  "context": "Journal window. People attribution line on an experience card or detail header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "people",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d2354cfbfa2b7eb8bc0ca92ee863a54e2241c9b1152de685b3d49e7f32d8172c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

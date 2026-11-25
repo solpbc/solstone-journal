@@ -1,0 +1,16 @@
+{
+  "description": "Year days-grid hint when the experiences layer is selected.",
+  "context": "Journal window. Year days-grid hint when the experiences layer is selected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d186149cc55447155dd73bf20a3aabe6f09118d6e1f69e0c3794e7b116a66831",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

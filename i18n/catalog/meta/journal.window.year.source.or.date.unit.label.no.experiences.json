@@ -1,0 +1,16 @@
+{
+  "description": "Zero-count unit label for experiences on the Year page.",
+  "context": "Journal window. Zero-count unit label for experiences on the Year page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a268b8642ae2716ddc9ddebc0d9919852b0154176dd4e350371d651d60d48b0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

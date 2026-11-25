@@ -1,0 +1,16 @@
+{
+  "description": "Button label while paginating earlier experiences.",
+  "context": "Journal window. Button label while paginating earlier experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "642fb0278877df1937918b0b42687e5f9b4a28fbfce6a47435246c83b25f5002",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

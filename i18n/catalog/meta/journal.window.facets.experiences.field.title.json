@@ -1,0 +1,16 @@
+{
+  "description": "Label for the experience title field.",
+  "context": "Journal window. Label for the experience title field.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2bfb0e1790e740cd996938766e6498497decab05a992f9b46f0b45c5285fb4ee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

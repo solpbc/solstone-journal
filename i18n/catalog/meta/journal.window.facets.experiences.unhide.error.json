@@ -1,0 +1,16 @@
+{
+  "description": "Error message when unhiding an experience fails.",
+  "context": "Journal window. Error message when unhiding an experience fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b46f302c80b15db7da6368ec5c5bd2f67d66cea87905bdc2ec6ef97719e3de8a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Inline error when saving Level 1 edits fails.",
+  "context": "Journal window. Inline error when saving Level 1 edits fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a85d2ffea35386de06fdd8c5a8c9348db49c476a166dfe38639e6a09eec3bc13",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

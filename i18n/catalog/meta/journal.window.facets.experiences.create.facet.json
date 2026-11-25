@@ -1,0 +1,16 @@
+{
+  "description": "Label for the primary facet selector when starting a new experience.",
+  "context": "Journal window. Label for the primary facet selector when starting a new experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df2fdfd3f1cea336a347c2f905eb83bc1420e88fedfb3fd9723b6fafcda8a990",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

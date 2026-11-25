@@ -1,0 +1,16 @@
+{
+  "description": "Link label opening the Experiences workspace from Home.",
+  "context": "Journal window. Link label opening the Experiences workspace from Home.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "589f089d12c9678382fd289a35ff2dbf1935d95d51f7e333628df92374ff0d48",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

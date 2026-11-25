@@ -1,0 +1,16 @@
+{
+  "description": "Default facet filter option on Experiences.",
+  "context": "Journal window. Default facet filter option on Experiences.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fa18cde8eacb4ae7b7059ce2706abcf5c71dbd965cd3a4fff71b6062983d910",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

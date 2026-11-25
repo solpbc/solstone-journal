@@ -1,0 +1,16 @@
+{
+  "description": "Inline confirmation receipt shown after hiding an experience.",
+  "context": "Journal window. Inline confirmation receipt shown after hiding an experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6169874d8452ce303d2e01aaec02ed991a3781ac518004eff794d54373b6b062",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

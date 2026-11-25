@@ -18,6 +18,7 @@ CONVEY_ICON_NAMES: tuple[str, ...] = (
     "audio-lines",
     "bell",
     "bell-off",
+    "book-open",
     "bot",
     "brain",
     "calendar",

@@ -1,0 +1,30 @@
+{
+  "description": "Quiet-day body when a day has activities that were not grouped into an experience.",
+  "context": "Journal window. Quiet-day body when a day has activities that were not grouped into an experience.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0b334ac5f5f8ab43adf738d271a74adb6ae0ebf643e84c722ee78a1381896cc4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -462,6 +462,7 @@ pub fn build_view_in(
                 item.insert("corrected".to_owned(), Value::Bool(true));
             }
             let stream = string_field(row, "stream");
+            item.insert("record_stream".to_owned(), Value::String(stream.clone()));
             let mut backrefs = experience_backrefs
                 .get(&(facet.clone(), stream.clone(), id.clone()))
                 .cloned()

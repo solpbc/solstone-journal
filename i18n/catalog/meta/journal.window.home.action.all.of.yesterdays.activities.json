@@ -1,0 +1,16 @@
+{
+  "description": "Link label opening yesterday's full Activities day view from Home.",
+  "context": "Journal window. Link label opening yesterday's full Activities day view from Home.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "184ce6f9b6d4bc1cbbcaeaf2f222b3a4f2fbb2a39e6985d5ef281ca0f67c9a4e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

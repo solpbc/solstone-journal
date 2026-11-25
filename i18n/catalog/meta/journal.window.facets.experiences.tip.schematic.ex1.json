@@ -1,0 +1,16 @@
+{
+  "description": "First static example activity in the Experiences orientation tip schematic.",
+  "context": "Journal window. First static example activity in the Experiences orientation tip schematic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9599b240145a72340b14f5aeed85e0fba85d60cf3d4f6eaf908f201546ca03d7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

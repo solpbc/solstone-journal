@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the Level 2 structural activity editor.",
+  "context": "Journal window. Heading for the Level 2 structural activity editor.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0a05d69b1a4b9572e7e76134a29e0e9a8d0d4f1ab84aa6f93c6b7d9bd3d6178",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

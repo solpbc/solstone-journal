@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder for optional title and summary fields in manual experience creation.",
+  "context": "Journal window. Placeholder for optional title and summary fields in manual experience creation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d35107a305b0aefa09d0fbabf4f117e29c80a3456c691cb935125c6bc590b06d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

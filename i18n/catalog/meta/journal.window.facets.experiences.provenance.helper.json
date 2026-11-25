@@ -1,0 +1,16 @@
+{
+  "description": "Helper line inside the grounded provenance disclosure.",
+  "context": "Journal window. Helper line inside the grounded provenance disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba781db6301ae4be084bc5b52b1803621f1388a67f736d80323c35887c665dbf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

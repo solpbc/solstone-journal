@@ -1,0 +1,16 @@
+{
+  "description": "Inline status shown while re-composing an experience with no owner holds.",
+  "context": "Journal window. Inline status shown while re-composing an experience with no owner holds.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8bf74d7e31eb4c7e3703ef01a5d316d48bdad6ca77da9ed04e08bf655b365c2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,2979 @@
+<!-- first-read: /app/experiences/ -> /app/activities/api/experiences?limit=30 -->
+<!-- first-read: /app/experiences/{day} -> /app/activities/api/experiences?from={day}&to={day}&limit=30 -->
+<!-- view-contract -->
+<style>
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Copyright (c) 2026 sol pbc */
+
+.exp-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--cream-bright);
+  color: var(--ink);
+  font-family: inherit;
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+.exp-shell *,
+.exp-shell *::before,
+.exp-shell *::after {
+  box-sizing: border-box;
+}
+
+.exp-shell [hidden] {
+  display: none !important;
+}
+
+.exp-shell a:focus-visible,
+.exp-shell button:focus-visible,
+.exp-shell input:focus-visible,
+.exp-shell textarea:focus-visible,
+.exp-shell select:focus-visible,
+.exp-shell summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Header */
+.exp-header {
+  padding: 1rem 1.5rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+.exp-header-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.exp-header-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  min-width: 0;
+}
+
+.exp-heading {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.exp-day-pill {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m, 8px);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.exp-day-pill-date {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-day-pill-clear {
+  color: var(--orange-text-aa);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.exp-day-pill-clear:hover {
+  text-decoration: underline;
+}
+
+/* Scope dropdown */
+.exp-scope-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.exp-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--touch-min, 44px);
+  padding: 0.45rem 0.8rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-m, 8px);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.exp-scope-btn:hover {
+  background: var(--panel);
+}
+
+.exp-scope-listbox {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-m, 8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  padding: 0.25rem 0;
+  list-style: none;
+  margin: 0;
+}
+
+.exp-scope-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-height: var(--touch-min, 44px);
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.exp-scope-option > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.exp-scope-option:hover,
+.exp-scope-option[aria-selected="true"],
+.exp-scope-option--active {
+  background: var(--orange-wash);
+}
+
+.exp-scope-count {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Buttons */
+.exp-btn {
+  min-height: var(--touch-min, 44px);
+  padding: 0.45rem 0.95rem;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-m, 8px);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.exp-btn:hover:not(:disabled) {
+  background: var(--panel);
+  border-color: var(--ink-faint);
+}
+
+.exp-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.exp-btn--primary {
+  background: var(--orange);
+  color: var(--ink-on-brand);
+  border-color: var(--orange);
+  font-weight: 600;
+}
+
+.exp-btn--primary:hover:not(:disabled) {
+  background: var(--orange-ink);
+  border-color: var(--orange-ink);
+  color: var(--ink-on-brand);
+}
+
+.exp-btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--orange-text-aa);
+  padding: 0.3rem 0.5rem;
+}
+
+.exp-btn--quiet:hover:not(:disabled) {
+  background: var(--orange-wash);
+  border-color: transparent;
+  text-decoration: underline;
+}
+
+.exp-btn--sm {
+  min-height: 36px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.exp-btn--icon {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0.25rem;
+}
+
+/* Orientation tip */
+.exp-tip {
+  margin: 0.9rem 1.5rem 0;
+  padding: 0.95rem 1.15rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.exp-tip-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.exp-tip-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.exp-tip-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-tip-body {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: 72ch;
+}
+
+.exp-tip-dismiss {
+  flex: none;
+  white-space: nowrap;
+}
+
+.exp-tip-schematic {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.65rem;
+}
+
+.exp-tip-box {
+  padding: 0.65rem 0.8rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.exp-tip-box--accent {
+  border-color: color-mix(in srgb, var(--orange-ink) 45%, var(--hairline));
+  background: var(--orange-wash);
+}
+
+.exp-tip-box-head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.exp-tip-ex-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.exp-tip-ex-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-tip-ex-sub {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.exp-tip-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+/* Inline hide receipt */
+.exp-receipt {
+  margin: 0.85rem 1.5rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
+  border-left: 3px solid var(--orange-ink);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+
+/* Main two-pane workspace */
+.exp-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 470px);
+  flex: 1;
+  min-height: 0;
+  align-items: start;
+}
+
+.exp-stream-pane {
+  padding: 1.1rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.exp-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.exp-day-heading {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--hairline);
+  letter-spacing: 0.02em;
+}
+
+.exp-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.exp-card {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 0.9rem 1.05rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.exp-card:hover {
+  border-color: var(--orange-ink);
+  background: var(--orange-wash);
+}
+
+.exp-card--selected {
+  border: 2px solid var(--orange-ink);
+  background: var(--orange-wash);
+}
+
+.exp-card--hidden {
+  border-style: dashed;
+  opacity: 0.78;
+}
+
+.exp-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.exp-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.exp-card-summary {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.48;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.exp-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin-top: 0.1rem;
+}
+
+.exp-cue {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--orange-wash);
+  border: 1px solid color-mix(in srgb, var(--orange-ink) 35%, var(--hairline));
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-cue--muted {
+  background: var(--panel);
+  border-color: var(--hairline-2);
+  color: var(--ink-soft);
+}
+
+.exp-facet-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Empty & quiet-day cards */
+.exp-empty-card {
+  padding: 1.5rem 1.35rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 60ch;
+}
+
+.exp-empty-heading {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-empty-body {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.exp-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.exp-stream-footer {
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* Sticky detail pane */
+.exp-detail-pane {
+  position: sticky;
+  top: 0;
+  height: calc(100vh - var(--exp-detail-top, 0px));
+  overflow-y: auto;
+  border-left: 1px solid var(--hairline);
+  background: var(--paper);
+  padding: 1.25rem 1.4rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-width: 0;
+}
+
+.exp-detail-placeholder {
+  margin: auto 0;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--ink-faint);
+  padding: 2rem 1rem;
+}
+
+.exp-back-btn {
+  display: none;
+  align-self: flex-start;
+}
+
+.exp-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.exp-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.exp-detail-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.28;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.exp-detail-context {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.exp-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+.exp-status-banner {
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-2);
+  background: var(--panel);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--ink);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.exp-status-banner--updating {
+  border-left: 3px solid var(--orange-ink);
+  background: var(--orange-wash);
+}
+
+.exp-status-banner--hidden {
+  border-left: 3px solid var(--ink-faint);
+}
+
+.exp-summary {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.58;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.exp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.exp-section-heading {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+/* Moments */
+.exp-moments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.exp-moment {
+  padding: 0.75rem 0.85rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.exp-moment-time {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.exp-moment-text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.48;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.exp-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+.exp-media-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.exp-media-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--panel);
+  display: block;
+}
+
+.exp-media-caption {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.exp-media-link {
+  font-size: 0.76rem;
+  color: var(--orange-text-aa);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.exp-media-link:hover {
+  text-decoration: underline;
+}
+
+/* Provenance disclosure */
+.exp-provenance {
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.75rem;
+}
+
+.exp-provenance-summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-min, 44px);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-provenance-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.exp-helper {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.exp-prov-card {
+  padding: 0.75rem 0.85rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.exp-prov-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.exp-prov-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.exp-prov-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.42;
+  color: var(--ink-soft);
+}
+
+.exp-ev-list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.exp-ev-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.65rem;
+  font-size: 0.79rem;
+  color: var(--ink-soft);
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.exp-ev-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.exp-inline-link {
+  color: var(--orange-text-aa);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.exp-inline-link:hover {
+  text-decoration: underline;
+}
+
+/* Forms (Level 1 edit, Level 2 activities, Manual Create) */
+.exp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.exp-field-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.65rem;
+}
+
+.exp-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.exp-hold-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+}
+
+.exp-hold-release {
+  background: none;
+  border: 0;
+  padding: 0.2rem 0;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.exp-input,
+.exp-textarea,
+.exp-select {
+  width: 100%;
+  min-height: var(--touch-min, 44px);
+  padding: 0.5rem 0.7rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-m, 8px);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.exp-textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.48;
+}
+
+.exp-moment-edit {
+  padding: 0.8rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.exp-moment-edit-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.65rem;
+}
+
+.exp-moment-time-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.exp-moment-time-input {
+  width: auto;
+  min-width: 108px;
+  min-height: 38px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.84rem;
+}
+
+.exp-moment-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Moment photo multi-select picker */
+.exp-photo-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.exp-photo-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 0.45rem;
+}
+
+.exp-photo-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exp-photo-toggle[aria-pressed="true"] {
+  border: 2px solid var(--orange-ink);
+  background: var(--orange-wash);
+}
+
+.exp-photo-toggle-state {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--orange-text-aa);
+}
+
+/* Structural activity editor & create checklist */
+.exp-act-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.exp-act-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.exp-act-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.exp-act-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+}
+
+.exp-act-row-title {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.exp-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: var(--touch-min, 44px);
+}
+
+.exp-check-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.exp-cross-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.exp-cross-toggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.exp-cross-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.exp-cross-toggle-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exp-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.exp-error {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  background: var(--danger-wash);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--hairline));
+  color: var(--danger);
+  font-size: 0.84rem;
+}
+
+/* Responsive: tablet & mobile stack */
+@media (max-width: 960px) {
+  .exp-header {
+    padding: 0.85rem 1rem;
+  }
+
+  .exp-tip,
+  .exp-receipt {
+    margin: 0.75rem 1rem 0;
+  }
+
+  .exp-body {
+    grid-template-columns: 1fr;
+  }
+
+  .exp-stream-pane {
+    padding: 1rem 1rem 4rem;
+  }
+
+  .exp-detail-pane {
+    position: static;
+    height: auto;
+    border-left: none;
+    border-top: 1px solid var(--hairline);
+    padding: 1rem 1rem 4rem;
+    display: none;
+  }
+
+  .exp-shell--detail-open .exp-stream-pane,
+  .exp-shell--detail-open .exp-tip {
+    display: none;
+  }
+
+  .exp-shell--detail-open .exp-detail-pane {
+    display: flex;
+  }
+
+  .exp-shell--detail-open .exp-back-btn {
+    display: inline-flex;
+  }
+
+  .exp-inline-link,
+  .exp-hold-release,
+  .exp-media-link {
+    min-height: var(--touch-min, 44px);
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .exp-tip-schematic {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .exp-tip-arrow {
+    transform: rotate(90deg);
+  }
+}
+</style>
+
+<div class="exp-shell" data-experiences-root>
+  <header class="exp-header">
+    <div class="exp-header-bar">
+      <div class="exp-header-left">
+        <h1 class="exp-heading">{{journal.window.facets.experiences.heading}}</h1>
+        <div class="exp-scope-wrap">
+          <button type="button" class="exp-scope-btn" aria-haspopup="listbox" aria-expanded="false" data-exp-scope-btn>
+            <span data-exp-scope-label>{{journal.window.facets.experiences.scope.all}}</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          <ul class="exp-scope-listbox" role="listbox" tabindex="-1" hidden data-exp-scope-listbox></ul>
+        </div>
+      </div>
+      <button type="button" class="exp-btn exp-btn--primary" data-exp-new>{{journal.window.facets.experiences.action.new}}</button>
+    </div>
+    <div class="exp-day-pill" data-exp-day-pill hidden>
+      <span class="exp-day-pill-date" data-exp-day-label></span>
+      <a class="exp-day-pill-clear" href="/app/experiences/" data-exp-day-clear>{{journal.window.facets.experiences.day.show.all}}</a>
+    </div>
+  </header>
+
+  <section class="exp-tip" data-experiences-tip hidden aria-label="{{journal.window.facets.experiences.tip.heading}}">
+    <div class="exp-tip-head">
+      <div class="exp-tip-copy">
+        <h2 class="exp-tip-title">{{journal.window.facets.experiences.tip.heading}}</h2>
+        <p class="exp-tip-body">{{journal.window.facets.experiences.tip.body}}</p>
+      </div>
+      <button type="button" class="exp-btn exp-tip-dismiss" data-experiences-tip-dismiss>{{journal.window.facets.experiences.tip.dismiss}}</button>
+    </div>
+    <div class="exp-tip-schematic" aria-hidden="true">
+      <div class="exp-tip-box">
+        <span class="exp-tip-box-head">{{journal.window.facets.experiences.tip.schematic.activities}}</span>
+        <div class="exp-tip-ex-list">
+          <span>{{journal.window.facets.experiences.tip.schematic.ex1}}</span>
+          <span>{{journal.window.facets.experiences.tip.schematic.ex2}}</span>
+          <span>{{journal.window.facets.experiences.tip.schematic.ex3}}</span>
+        </div>
+      </div>
+      <span class="exp-tip-arrow">→</span>
+      <div class="exp-tip-box exp-tip-box--accent">
+        <span class="exp-tip-box-head">{{journal.window.facets.experiences.tip.schematic.experience}}</span>
+        <span class="exp-tip-ex-title">{{journal.window.facets.experiences.tip.schematic.exp.title}}</span>
+        <span class="exp-tip-ex-sub">{{journal.window.facets.experiences.tip.schematic.exp.meta}}</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="exp-receipt" role="status" data-exp-receipt hidden></div>
+  <div id="exp-state-area" data-exp-state-area></div>
+
+  <div class="exp-body" data-exp-body hidden>
+    <main class="exp-stream-pane" data-exp-stream></main>
+    <aside class="exp-detail-pane" data-exp-detail tabindex="-1"></aside>
+  </div>
+</div>
+
+<script>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+(() => {
+  const TIP_STORAGE_KEY = 'convey.experiences.tip_dismissed';
+  const ACTOR_HEADER = 'x-solstone-actor';
+  const ACTOR_OWNER = 'owner';
+  const PAGE_LIMIT = 30;
+  const POLL_MS = 4000;
+  const MAX_POLLS = 12;
+
+  let ctx = null;
+  let mountGen = 0;
+  let routeEpoch = 0;
+  let routeScope = null;
+  let pollTimer = null;
+
+  const esc = (s) => (window.AppServices?.escapeHtml
+    ? window.AppServices.escapeHtml(s)
+    : String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+
+  function t(suffix, args) {
+    return window.JournalI18n.render(`journal.window.facets.experiences.${suffix}`, args);
+  }
+
+  function countArgs(n) {
+    return [['quantity', window.JournalI18n.cardinalQuantity(Number(n))], ['count', String(n)]];
+  }
+
+  const state = {
+    day: null,
+    facet: null,
+    includeHidden: false,
+    facets: [],
+    experiences: [],
+    hasMore: false,
+    nextBefore: null,
+    hiddenCount: 0,
+    loadingMore: false,
+    loadedOnce: false,
+    quietDayActivities: null,
+    selectedFacet: null,
+    selectedId: null,
+    selectedDay: null,
+    detail: null,
+    detailLoading: false,
+    detailError: null,
+    mode: 'read', // 'read' | 'edit' | 'activities' | 'create'
+    includeCrossFacet: false,
+    updatingKey: null,
+    updatingKind: null, // 'create' | 'holds' | 'plain'
+    updatingBaseline: null,
+    updatingPolls: 0,
+    receipt: null, // { facet, anchor_day, id, title }
+    editDraft: null,
+    editError: null,
+    savingEdit: false,
+    activitiesError: null,
+    savingActivities: false,
+    createDraft: null,
+    createActivities: [],
+    createActivitiesLoading: false,
+    createError: null,
+    savingCreate: false,
+    listboxOpen: false,
+    listSeq: 0,
+    detailSeq: 0,
+  };
+
+  function live() {
+    return !!(ctx && !ctx.disposed);
+  }
+
+  function cutOff() {
+    return window.SolStore.never();
+  }
+
+  function readJson(url, opts) {
+    if (!live()) return cutOff();
+    const gen = mountGen;
+    const epoch = routeEpoch;
+    const signal = window.SolStore.eitherSignal(ctx.signal, routeScope && routeScope.signal);
+    return ctx.read(url, Object.assign({ signal }, opts || {})).then(
+      (v) => (gen === mountGen && epoch === routeEpoch && live() ? v : cutOff()),
+      (e) => (gen === mountGen && epoch === routeEpoch && live() ? Promise.reject(e) : cutOff()),
+    );
+  }
+
+  function ownerPost(url, body) {
+    const opts = {
+      method: 'POST',
+      headers: { [ACTOR_HEADER]: ACTOR_OWNER, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    };
+    if (window.apiJson) return window.apiJson(url, opts);
+    return fetch(url, opts).then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    });
+  }
+
+  function historyReplace(url) {
+    if (ctx && ctx.history) ctx.history.replace(url);
+    else window.history.replaceState(window.history.state, '', url);
+  }
+
+  function stopPoll() {
+    if (pollTimer) {
+      if (ctx) ctx.clearTimeout(pollTimer);
+      else clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function pathDay() {
+    const m = (window.location.pathname || '').match(/\/app\/experiences\/(\d{8})/);
+    return m ? m[1] : null;
+  }
+
+  function todayKey() {
+    if (window.JournalClock && typeof window.JournalClock.today === 'function') {
+      const d = window.JournalClock.today();
+      if (/^\d{8}$/.test(d)) return d;
+    }
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+  }
+
+  function dayToInputDate(day) {
+    if (!/^\d{8}$/.test(String(day || ''))) return '';
+    return `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`;
+  }
+
+  function inputDateToDay(val) {
+    const clean = String(val || '').replace(/-/g, '');
+    return /^\d{8}$/.test(clean) ? clean : '';
+  }
+
+  function clockLabel(hhmm) {
+    const m = /^(\d{2}):(\d{2})/.exec(String(hhmm || ''));
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return '';
+    return new Date(2000, 0, 1, Number(m[1]), Number(m[2]))
+      .toLocaleString(window.JournalI18n.formatLocale, { hour: 'numeric', minute: '2-digit' })
+      .toLowerCase();
+  }
+
+  function extractHHMM(ts) {
+    const m = /[T ](\d{2}:\d{2})/.exec(String(ts || ''));
+    return m ? m[1] : (/^\d{2}:\d{2}$/.test(String(ts || '')) ? String(ts) : '');
+  }
+
+  function formatTimeRange(startedAt, endedAt) {
+    const s = clockLabel(extractHHMM(startedAt));
+    const e = clockLabel(extractHHMM(endedAt));
+    if (s && e && s !== e) return `${s} - ${e}`;
+    return s || e || '';
+  }
+
+  function formatDayHeading(day) {
+    if (!day) return '';
+    if (window.JournalFormat && typeof window.JournalFormat.dayFull === 'function') {
+      return window.JournalFormat.dayFull(day);
+    }
+    return dayToInputDate(day) || day;
+  }
+
+  function formatStream(stream) {
+    if (stream && stream !== '_default' && window.JournalFormat?.hasStreamLabel?.(stream)) {
+      return window.JournalFormat.stream(stream);
+    }
+    return t('source.unknown');
+  }
+
+  function formatSegmentTime(stem) {
+    const m = /^(\d{2})(\d{2})/.exec(String(stem || ''));
+    if (!m) return String(stem || '');
+    return clockLabel(`${m[1]}:${m[2]}`) || `${m[1]}:${m[2]}`;
+  }
+
+  function facetInfo(slug) {
+    return (state.facets || []).find((f) => f.name === slug) || null;
+  }
+
+  function facetTitle(slug) {
+    const f = facetInfo(slug);
+    return (f && f.title) ? f.title : (slug || '');
+  }
+
+  function facetMarkHtml(slug) {
+    const f = facetInfo(slug);
+    if (window.ConveyFacetMark && f) return window.ConveyFacetMark.html(f, 'sm');
+    if (f && f.color) return `<span class="exp-facet-dot" style="background:${esc(f.color)}" aria-hidden="true"></span>`;
+    return '';
+  }
+
+  function expKey(exp) {
+    if (!exp) return '';
+    return `${exp.anchor_day}/${exp.primary_facet}/${exp.id}`;
+  }
+
+  function hasAnyHold(exp) {
+    const h = exp?.owner_holds;
+    if (!h) return false;
+    return Boolean(h.title || h.summary || h.activities || (Array.isArray(h.moment_ids) && h.moment_ids.length));
+  }
+
+  function refKey(ref, primaryFacet) {
+    const f = (ref.facet && ref.facet.trim()) ? ref.facet : primaryFacet;
+    return `${ref.day}|${f}|${ref.stream}|${ref.id}`;
+  }
+
+  function buildListUrl(before) {
+    const params = new URLSearchParams();
+    if (state.day) {
+      params.set('from', state.day);
+      params.set('to', state.day);
+    }
+    if (state.facet) params.set('facet', state.facet);
+    if (state.includeHidden) params.set('include_hidden', '1');
+    if (before) params.set('before', before);
+    params.set('limit', String(PAGE_LIMIT));
+    return `/app/activities/api/experiences?${params.toString()}`;
+  }
+
+  function readUrlState() {
+    state.day = pathDay();
+    const params = new URLSearchParams(window.location.search || '');
+    state.facet = params.get('facet') || null;
+    const hash = (window.location.hash || '').replace(/^#/, '');
+    if (hash) {
+      const parts = hash.split('/').map((p) => {
+        try { return decodeURIComponent(p); } catch (_) { return p; }
+      });
+      if (parts.length >= 3 && /^\d{8}$/.test(parts[0])) {
+        state.selectedDay = parts[0];
+        state.selectedFacet = parts[1];
+        state.selectedId = parts.slice(2).join('/');
+      } else if (parts.length >= 2) {
+        state.selectedDay = state.day || null;
+        state.selectedFacet = parts[0];
+        state.selectedId = parts.slice(1).join('/');
+      } else {
+        state.selectedDay = state.day || null;
+        state.selectedFacet = null;
+        state.selectedId = parts[0];
+      }
+    } else {
+      state.selectedDay = null;
+      state.selectedFacet = null;
+      state.selectedId = null;
+    }
+    const createFrom = params.get('create_from');
+    const createStream = params.get('stream') || '_default';
+    return createFrom ? { createFrom, createStream } : null;
+  }
+
+  function syncUrlHash(exp) {
+    const u = new URL(window.location.href);
+    if (exp) {
+      u.hash = state.day
+        ? `${encodeURIComponent(exp.primary_facet)}/${encodeURIComponent(exp.id)}`
+        : `${encodeURIComponent(exp.anchor_day)}/${encodeURIComponent(exp.primary_facet)}/${encodeURIComponent(exp.id)}`;
+    } else {
+      u.hash = '';
+    }
+    historyReplace(u.pathname + u.search + u.hash);
+  }
+
+  function fitDetailPane() {
+    const pane = document.querySelector('[data-exp-detail]');
+    if (!pane || !pane.getBoundingClientRect) return;
+    const top = Math.max(0, Math.round(pane.getBoundingClientRect().top));
+    pane.style.setProperty('--exp-detail-top', `${top}px`);
+  }
+
+  function syncShellDetailClass() {
+    const root = document.querySelector('[data-experiences-root]');
+    if (!root) return;
+    const open = state.mode === 'create' || Boolean(state.selectedId);
+    root.classList.toggle('exp-shell--detail-open', open);
+  }
+
+  function renderHeader() {
+    const labelEl = document.querySelector('[data-exp-scope-label]');
+    const listboxEl = document.querySelector('[data-exp-scope-listbox]');
+    const facets = state.facets || [];
+    const selectedObj = state.facet ? facets.find((f) => f.name === state.facet) : null;
+    if (labelEl) {
+      labelEl.textContent = selectedObj
+        ? t('scope.facet', [['facet_name', selectedObj.title || selectedObj.name]])
+        : t('scope.all');
+    }
+    if (listboxEl) {
+      const total = facets.filter((f) => !f.muted).reduce((sum, f) => sum + (f.count || 0), 0);
+      let html = `<li class="exp-scope-option" role="option" data-facet="" aria-selected="${!state.facet}"><span>${esc(t('scope.all'))}</span><span class="exp-scope-count">${total}</span></li>`;
+      facets.forEach((f) => {
+        if (f.muted && f.name !== state.facet) return;
+        const mark = window.ConveyFacetMark ? window.ConveyFacetMark.html(f, 'sm') : (f.color ? `<span class="exp-facet-dot" style="background:${esc(f.color)}"></span>` : '');
+        const sel = state.facet === f.name;
+        html += `<li class="exp-scope-option" role="option" data-facet="${esc(f.name)}" aria-selected="${sel}"><span>${mark}<span>${esc(f.title || f.name)}</span></span><span class="exp-scope-count">${f.count || 0}</span></li>`;
+      });
+      listboxEl.innerHTML = html;
+    }
+
+    const dayPill = document.querySelector('[data-exp-day-pill]');
+    const dayLabel = document.querySelector('[data-exp-day-label]');
+    const dayClear = document.querySelector('[data-exp-day-clear]');
+    if (dayPill) {
+      if (state.day) {
+        dayPill.hidden = false;
+        if (dayLabel) dayLabel.textContent = formatDayHeading(state.day);
+        if (dayClear) {
+          dayClear.setAttribute('href', state.facet ? `/app/experiences/?facet=${encodeURIComponent(state.facet)}` : '/app/experiences/');
+        }
+      } else {
+        dayPill.hidden = true;
+      }
+    }
+  }
+
+  function renderReceipt() {
+    const el = document.querySelector('[data-exp-receipt]');
+    if (!el) return;
+    if (!state.receipt) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `<span>${esc(t('hide.receipt'))}</span>`
+      + `<button type="button" class="exp-btn exp-btn--sm" data-exp-receipt-undo>${esc(t('action.undo'))}</button>`;
+  }
+
+  function cardMetaSummary(exp) {
+    const parts = [];
+    const people = (exp.hydrated?.people || []).map((p) => p.name).filter(Boolean);
+    if (people.length) {
+      const shown = people.slice(0, 3).join(', ');
+      parts.push(t('meta.with', [['people', people.length > 3 ? `${shown} +${people.length - 3}` : shown]]));
+    }
+    const locs = Array.isArray(exp.locations) ? exp.locations.filter(Boolean) : [];
+    if (locs.length) parts.push(locs.slice(0, 2).join(' · '));
+    const momentsCount = Array.isArray(exp.moments) ? exp.moments.length : 0;
+    if (momentsCount > 0) parts.push(t('meta.moments.count', countArgs(momentsCount)));
+    const photoCount = (exp.available_media || []).filter((m) => m && m.live && m.image_url).length;
+    if (photoCount > 0) parts.push(t('meta.photos.count', countArgs(photoCount)));
+    return parts;
+  }
+
+  function renderStream() {
+    const container = document.querySelector('[data-exp-stream]');
+    if (!container) return;
+    const list = state.experiences || [];
+
+    if (!list.length) {
+      let html = '';
+      if (state.day) {
+        const dayActs = Array.isArray(state.quietDayActivities) ? state.quietDayActivities : null;
+        if (dayActs && dayActs.length > 0) {
+          html += `<section class="exp-empty-card" data-quiet-day="with-activities">`
+            + `<h2 class="exp-empty-heading">${esc(t('empty.day.heading'))}</h2>`
+            + `<p class="exp-empty-body">${esc(t('empty.day.with.activities', countArgs(dayActs.length)))}</p>`
+            + `<div class="exp-empty-actions">`
+            + `<button type="button" class="exp-btn exp-btn--primary" data-exp-create-for-day="${esc(state.day)}">${esc(t('empty.day.create'))}</button>`
+            + `<a class="exp-btn" href="/app/activities/${esc(state.day)}">${esc(t('empty.day.view.activities'))}</a>`
+            + `</div></section>`;
+        } else {
+          html += `<section class="exp-empty-card" data-quiet-day="empty">`
+            + `<h2 class="exp-empty-heading">${esc(t('empty.day.none.heading'))}</h2>`
+            + `<p class="exp-empty-body">${esc(t('empty.day.none.body'))}</p>`
+            + `</section>`;
+        }
+      } else if (state.facet && state.facets.some((f) => !f.muted && f.name !== state.facet && f.count > 0)) {
+        html += `<section class="exp-empty-card">`
+          + `<h2 class="exp-empty-heading">${esc(t('empty.facet.heading', [['facet_name', facetTitle(state.facet)]]))}</h2>`
+          + `<p class="exp-empty-body">${esc(t('empty.facet.body'))}</p>`
+          + `<div class="exp-empty-actions"><button type="button" class="exp-btn" data-exp-clear-facet>${esc(t('empty.facet.show.all'))}</button></div>`
+          + `</section>`;
+      } else {
+        html += `<section class="exp-empty-card">`
+          + `<h2 class="exp-empty-heading">${esc(t('empty.all.heading'))}</h2>`
+          + `<p class="exp-empty-body">${esc(t('empty.all.body'))}</p>`
+          + `<div class="exp-empty-actions"><button type="button" class="exp-btn exp-btn--primary" data-exp-new>${esc(t('action.new'))}</button></div>`
+          + `</section>`;
+      }
+      if (state.hiddenCount > 0) {
+        html += renderHiddenFooterHtml();
+      }
+      container.innerHTML = html;
+      return;
+    }
+
+    // Group reverse-chronologically by anchor_day
+    const groups = [];
+    const byDay = new Map();
+    list.forEach((exp) => {
+      const day = exp.anchor_day || '';
+      if (!byDay.has(day)) {
+        const g = { day, items: [] };
+        byDay.set(day, g);
+        groups.push(g);
+      }
+      byDay.get(day).items.push(exp);
+    });
+
+    let html = '';
+    groups.forEach((group) => {
+      html += `<section class="exp-day-group" data-exp-day-group="${esc(group.day)}">`
+        + `<h2 class="exp-day-heading">${esc(formatDayHeading(group.day))}</h2>`
+        + `<div class="exp-card-list">`;
+      group.items.forEach((exp) => {
+        const selected = state.mode !== 'create'
+          && state.selectedId === exp.id
+          && (!state.selectedFacet || state.selectedFacet === exp.primary_facet)
+          && (!state.selectedDay || state.selectedDay === exp.anchor_day);
+        const cls = ['exp-card'];
+        if (selected) cls.push('exp-card--selected');
+        if (exp.hidden) cls.push('exp-card--hidden');
+        const timeRange = formatTimeRange(exp.started_at, exp.ended_at);
+        const metaParts = [facetTitle(exp.primary_facet), timeRange].filter(Boolean);
+        const footParts = cardMetaSummary(exp);
+        html += `<button type="button" class="${cls.join(' ')}" data-exp-card-id="${esc(exp.id)}" data-exp-card-facet="${esc(exp.primary_facet)}" data-exp-card-day="${esc(exp.anchor_day)}" aria-pressed="${selected}">`
+          + `<div class="exp-card-top">${facetMarkHtml(exp.primary_facet)}<span>${esc(metaParts.join(' · '))}</span>`
+          + (hasAnyHold(exp) ? `<span class="exp-cue">${esc(t('cue.edited'))}</span>` : '')
+          + (exp.hidden ? `<span class="exp-cue exp-cue--muted">${esc(t('cue.hidden'))}</span>` : '')
+          + `</div>`
+          + `<h3 class="exp-card-title">${esc(exp.title || facetTitle(exp.primary_facet))}</h3>`
+          + (exp.summary ? `<p class="exp-card-summary">${esc(exp.summary)}</p>` : '')
+          + (footParts.length ? `<div class="exp-card-foot">${footParts.map((p) => `<span>${esc(p)}</span>`).join('<span>·</span>')}</div>` : '')
+          + `</button>`;
+      });
+      html += `</div></section>`;
+    });
+
+    if (state.hasMore && state.nextBefore) {
+      html += `<div><button type="button" class="exp-btn" data-exp-load-more${state.loadingMore ? ' disabled' : ''}>${esc(state.loadingMore ? t('loading.more') : t('action.load.more'))}</button></div>`;
+    }
+    if (state.hiddenCount > 0) {
+      html += renderHiddenFooterHtml();
+    }
+
+    container.innerHTML = html;
+  }
+
+  function renderHiddenFooterHtml() {
+    const label = state.includeHidden
+      ? t('hidden.showing.count', countArgs(state.hiddenCount))
+      : t('hidden.footer.count', countArgs(state.hiddenCount));
+    const btnText = state.includeHidden ? t('action.stop.showing.hidden') : t('action.show.hidden');
+    return `<div class="exp-stream-footer">`
+      + `<span>${esc(label)}</span>`
+      + `<button type="button" class="exp-btn exp-btn--sm" data-exp-toggle-hidden>${esc(btnText)}</button>`
+      + `</div>`;
+  }
+
+  function renderBackButtonHtml() {
+    return `<button type="button" class="exp-btn exp-btn--sm exp-back-btn" data-exp-back>← ${esc(t('action.back.to.list'))}</button>`;
+  }
+
+  function renderMomentMediaHtml(moment, mediaByRef) {
+    const refs = Array.isArray(moment.media_refs) ? moment.media_refs : [];
+    const items = refs
+      .map((r) => mediaByRef.get(r))
+      .filter((m) => m && m.live && (m.image_url || m.transcript_url));
+    if (!items.length) return '';
+    let html = '<div class="exp-media-grid">';
+    items.forEach((m) => {
+      html += '<div class="exp-media-card">';
+      if (m.image_url) {
+        html += `<img class="exp-media-thumb" src="${esc(m.image_url)}" alt="${esc(m.caption || t('media.photo.alt'))}" loading="lazy">`;
+      }
+      if (m.caption) {
+        html += `<span class="exp-media-caption">${esc(m.caption)}</span>`;
+      }
+      if (m.image_url) {
+        html += `<a class="exp-media-link" href="${esc(m.image_url)}" target="_blank" rel="noreferrer">${esc(t('action.open.photo'))}</a>`;
+      } else if (m.transcript_url) {
+        html += `<a class="exp-media-link" href="${esc(m.transcript_url)}">${esc(t('action.open.transcripts'))}</a>`;
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderDetailReadHtml(exp) {
+    const timeRange = formatTimeRange(exp.started_at, exp.ended_at);
+    const metaParts = [facetTitle(exp.primary_facet), formatDayHeading(exp.anchor_day), timeRange].filter(Boolean);
+    const people = (exp.hydrated?.people || []).map((p) => p.name).filter(Boolean);
+    const locs = Array.isArray(exp.locations) ? exp.locations.filter(Boolean) : [];
+    const mediaByRef = new Map();
+    (exp.hydrated?.media || []).forEach((m) => { if (m && m.media_ref) mediaByRef.set(m.media_ref, m); });
+    (exp.available_media || []).forEach((m) => { if (m && m.media_ref && !mediaByRef.has(m.media_ref)) mediaByRef.set(m.media_ref, m); });
+
+    let html = renderBackButtonHtml();
+    html += `<div class="exp-detail-head">`
+      + `<div class="exp-detail-meta">${facetMarkHtml(exp.primary_facet)}<span>${esc(metaParts.join(' · '))}</span>`
+      + (hasAnyHold(exp) ? `<span class="exp-cue">${esc(t('cue.edited'))}</span>` : '')
+      + `</div>`
+      + `<h2 class="exp-detail-title">${esc(exp.title || facetTitle(exp.primary_facet))}</h2>`;
+
+    if (locs.length || people.length) {
+      html += '<div class="exp-detail-context">';
+      if (locs.length) html += `<span>${esc(locs.join(' · '))}</span>`;
+      if (people.length) html += `<span>${esc(t('meta.with', [['people', people.join(', ')]]))}</span>`;
+      html += '</div>';
+    }
+
+    html += `<div class="exp-detail-actions">`
+      + `<button type="button" class="exp-btn exp-btn--sm" data-exp-edit>${esc(t('action.edit'))}</button>`
+      + (exp.hidden
+        ? `<button type="button" class="exp-btn exp-btn--sm" data-exp-unhide>${esc(t('action.unhide'))}</button>`
+        : `<button type="button" class="exp-btn exp-btn--sm" data-exp-hide>${esc(t('action.hide'))}</button>`)
+      + `</div>`
+      + `</div>`;
+
+    if (state.detailError) {
+      html += `<p class="exp-error" role="alert">${esc(state.detailError)}</p>`;
+    }
+
+    if (exp.hidden) {
+      html += `<div class="exp-status-banner exp-status-banner--hidden" role="status">`
+        + `<span>${esc(t('hidden.banner'))}</span>`
+        + `<button type="button" class="exp-btn exp-btn--sm" data-exp-unhide>${esc(t('action.unhide'))}</button>`
+        + `</div>`;
+    }
+
+    if (state.updatingKey === expKey(exp)) {
+      const msgKey = state.updatingKind === 'create'
+        ? 'updating.create'
+        : (state.updatingKind === 'holds' ? 'updating.with.holds' : 'updating.plain');
+      html += `<div class="exp-status-banner exp-status-banner--updating" role="status">${esc(t(msgKey))}</div>`;
+    }
+
+    if (exp.summary) {
+      html += `<p class="exp-summary">${esc(exp.summary)}</p>`;
+    }
+
+    // Moments
+    const moments = Array.isArray(exp.moments) ? exp.moments : [];
+    if (moments.length) {
+      html += `<section class="exp-section">`
+        + `<h3 class="exp-section-heading">${esc(t('heading.moments'))}</h3>`
+        + `<ol class="exp-moments-list">`;
+      moments.forEach((m) => {
+        const mTime = formatTimeRange(m.started_at, m.ended_at);
+        html += `<li class="exp-moment">`
+          + (mTime ? `<span class="exp-moment-time">${esc(mTime)}</span>` : '')
+          + `<p class="exp-moment-text">${esc(m.summary || '')}</p>`
+          + renderMomentMediaHtml(m, mediaByRef)
+          + `</li>`;
+      });
+      html += `</ol></section>`;
+    }
+
+    // Grounded Provenance
+    const hydratedActs = Array.isArray(exp.hydrated?.activities) ? exp.hydrated.activities : [];
+    const actCount = hydratedActs.length || (Array.isArray(exp.activities) ? exp.activities.length : 0);
+    html += `<details class="exp-provenance" data-exp-provenance>`
+      + `<summary class="exp-provenance-summary">${esc(t('provenance.summary', countArgs(actCount)))}</summary>`
+      + `<div class="exp-provenance-body">`
+      + `<p class="exp-helper">${esc(t('provenance.helper'))}</p>`;
+
+    hydratedActs.forEach((act) => {
+      const actFacet = act.facet || exp.primary_facet;
+      const actTime = formatTimeRange(act.started_at, act.ended_at);
+      const actStream = formatStream(act.stream || act.ref?.stream);
+      const actHref = `/app/activities/${encodeURIComponent(act.ref?.day || exp.anchor_day)}?facet=${encodeURIComponent(actFacet)}#${encodeURIComponent(actFacet)}/${encodeURIComponent(act.ref?.id || '')}`;
+      html += `<div class="exp-prov-card">`
+        + `<div class="exp-prov-top">${facetMarkHtml(actFacet)}<span>${esc([facetTitle(actFacet), actTime, actStream].filter(Boolean).join(' · '))}</span></div>`
+        + `<h4 class="exp-prov-title">${esc(act.title || act.description || act.activity || act.ref?.id || '')}</h4>`
+        + (act.description && act.description !== act.title ? `<p class="exp-prov-desc">${esc(act.description)}</p>` : '');
+      const evidence = Array.isArray(act.segment_evidence) ? act.segment_evidence : [];
+      if (evidence.length) {
+        html += '<ul class="exp-ev-list">';
+        evidence.forEach((ev) => {
+          const evLabel = [formatSegmentTime(ev.segment), formatStream(ev.stream)].filter(Boolean).join(' · ');
+          html += `<li class="exp-ev-row"><span>${esc(evLabel)}</span><span class="exp-ev-links">`
+            + (ev.transcript_url ? `<a class="exp-inline-link" href="${esc(ev.transcript_url)}">${esc(t('action.open.transcripts'))}</a>` : '')
+            + (ev.photo_url ? `<a class="exp-inline-link" href="${esc(ev.photo_url)}" target="_blank" rel="noreferrer">${esc(t('action.open.photo'))}</a>` : '')
+            + `</span></li>`;
+        });
+        html += '</ul>';
+      }
+      html += `<div><a class="exp-inline-link" href="${esc(actHref)}">${esc(t('action.open.in.activities'))}</a></div>`
+        + `</div>`;
+    });
+
+    html += `<div><button type="button" class="exp-btn exp-btn--sm" data-exp-open-activities>${esc(t('action.edit.activities'))}</button></div>`
+      + `</div></details>`;
+
+    return html;
+  }
+
+  function startEditDraft(exp) {
+    const baseDayIso = dayToInputDate(exp.anchor_day);
+    state.editDraft = {
+      title: exp.title || '',
+      summary: exp.summary || '',
+      moments: (Array.isArray(exp.moments) ? exp.moments : []).map((m, idx) => ({
+        id: m.id || `m${idx + 1}`,
+        dayIso: (/^(\d{4}-\d{2}-\d{2})/.exec(String(m.started_at || '')) || [])[1] || baseDayIso,
+        origStartedAt: m.started_at || '',
+        origEndedAt: m.ended_at || '',
+        origStartHm: extractHHMM(m.started_at),
+        origEndHm: extractHHMM(m.ended_at),
+        startHm: extractHHMM(m.started_at),
+        endHm: extractHHMM(m.ended_at),
+        summary: m.summary || '',
+        activity_refs: Array.isArray(m.activity_refs) ? m.activity_refs : [],
+        segment_refs: Array.isArray(m.segment_refs) ? m.segment_refs : [],
+        media_refs: Array.isArray(m.media_refs) ? m.media_refs.slice() : [],
+      })),
+    };
+    state.editError = null;
+    state.savingEdit = false;
+  }
+
+  function renderDetailEditHtml(exp) {
+    if (!state.editDraft) startEditDraft(exp);
+    const d = state.editDraft;
+    const holds = exp.owner_holds || {};
+    const heldMoments = new Set(Array.isArray(holds.moment_ids) ? holds.moment_ids : []);
+    const livePhotos = (exp.available_media || []).filter((m) => m && m.live && m.image_url);
+
+    let html = renderBackButtonHtml();
+    html += `<form class="exp-form" data-exp-edit-form>`
+      + `<p class="exp-helper">${esc(t('edit.helper'))}</p>`;
+
+    // Title
+    html += `<div class="exp-field"><div class="exp-field-head">`
+      + `<label class="exp-label" for="exp-edit-title">${esc(t('field.title'))}</label>`
+      + (holds.title
+        ? `<span class="exp-hold-row"><span>${esc(t('hold.kept'))}</span><button type="button" class="exp-hold-release" data-exp-release-hold="title">${esc(t('hold.release'))}</button></span>`
+        : '')
+      + `</div><input id="exp-edit-title" class="exp-input" type="text" name="title" value="${esc(d.title)}" required></div>`;
+
+    // Summary
+    html += `<div class="exp-field"><div class="exp-field-head">`
+      + `<label class="exp-label" for="exp-edit-summary">${esc(t('field.summary'))}</label>`
+      + (holds.summary
+        ? `<span class="exp-hold-row"><span>${esc(t('hold.kept'))}</span><button type="button" class="exp-hold-release" data-exp-release-hold="summary">${esc(t('hold.release'))}</button></span>`
+        : '')
+      + `</div><textarea id="exp-edit-summary" class="exp-textarea" name="summary">${esc(d.summary)}</textarea></div>`;
+
+    // Moments
+    html += `<div class="exp-field"><div class="exp-field-head"><span class="exp-label">${esc(t('field.moments'))}</span></div>`;
+    d.moments.forEach((m, idx) => {
+      const mHeld = heldMoments.has(m.id);
+      const selectedPhotos = new Set(m.media_refs || []);
+      html += `<div class="exp-moment-edit" data-moment-index="${idx}">`
+        + `<div class="exp-moment-edit-top">`
+        + `<div class="exp-moment-time-row">`
+        + `<label class="exp-label" for="exp-m-start-${idx}">${esc(t('field.time'))}</label>`
+        + `<input id="exp-m-start-${idx}" class="exp-input exp-moment-time-input" type="time" data-moment-start="${idx}" value="${esc(m.startHm)}">`
+        + `<span aria-hidden="true">-</span>`
+        + `<input class="exp-input exp-moment-time-input" type="time" aria-label="${esc(t('field.time.end'))}" data-moment-end="${idx}" value="${esc(m.endHm)}">`
+        + `</div>`
+        + `<div class="exp-moment-controls">`
+        + `<button type="button" class="exp-btn exp-btn--icon" data-moment-up="${idx}" aria-label="${esc(t('moment.move.up'))}"${idx === 0 ? ' disabled' : ''}>↑</button>`
+        + `<button type="button" class="exp-btn exp-btn--icon" data-moment-down="${idx}" aria-label="${esc(t('moment.move.down'))}"${idx === d.moments.length - 1 ? ' disabled' : ''}>↓</button>`
+        + `<button type="button" class="exp-btn exp-btn--icon" data-moment-remove="${idx}" aria-label="${esc(t('moment.remove'))}">×</button>`
+        + `</div></div>`;
+
+      if (mHeld) {
+        html += `<div class="exp-hold-row"><span>${esc(t('hold.kept'))}</span><button type="button" class="exp-hold-release" data-exp-release-hold="moment:${esc(m.id)}">${esc(t('hold.release'))}</button></div>`;
+      }
+
+      html += `<label class="exp-label" for="exp-m-text-${idx}">${esc(t('field.what.happened'))}</label>`
+        + `<textarea id="exp-m-text-${idx}" class="exp-textarea" data-moment-summary="${idx}">${esc(m.summary)}</textarea>`;
+
+      // Moment photo multi-select picker
+      html += `<div class="exp-photo-picker"><span class="exp-label">${esc(t('moment.photos.label'))}</span>`;
+      if (livePhotos.length) {
+        html += '<div class="exp-photo-picker-grid">';
+        livePhotos.forEach((photo) => {
+          const attached = selectedPhotos.has(photo.media_ref);
+          html += `<button type="button" class="exp-photo-toggle" data-moment-photo="${idx}" data-media-ref="${esc(photo.media_ref)}" aria-pressed="${attached}">`
+            + `<img class="exp-media-thumb" src="${esc(photo.image_url)}" alt="${esc(photo.caption || t('media.photo.alt'))}" loading="lazy">`
+            + (photo.caption ? `<span class="exp-media-caption">${esc(photo.caption)}</span>` : '')
+            + `<span class="exp-photo-toggle-state">${esc(attached ? t('moment.photo.attached') : t('moment.photo.attach'))}</span>`
+            + `</button>`;
+        });
+        html += '</div>';
+      } else {
+        html += `<p class="exp-helper">${esc(t('moment.photos.empty'))}</p>`;
+      }
+      html += `</div></div>`;
+    });
+    html += `<div><button type="button" class="exp-btn exp-btn--sm" data-moment-add>${esc(t('moment.add'))}</button></div></div>`;
+
+    if (state.editError) {
+      html += `<p class="exp-error" role="alert">${esc(state.editError)}</p>`;
+    }
+
+    html += `<div class="exp-form-actions">`
+      + `<button type="button" class="exp-btn" data-exp-edit-cancel${state.savingEdit ? ' disabled' : ''}>${esc(t('action.cancel'))}</button>`
+      + `<button type="submit" class="exp-btn exp-btn--primary"${state.savingEdit ? ' disabled' : ''}>${esc(t('action.save.changes'))}</button>`
+      + `</div></form>`;
+    return html;
+  }
+
+  function renderDetailActivitiesHtml(exp) {
+    const primaryTitle = facetTitle(exp.primary_facet);
+    const included = Array.isArray(exp.hydrated?.activities) ? exp.hydrated.activities : [];
+    const candidates = Array.isArray(exp.nearby_candidates) ? exp.nearby_candidates : [];
+    const canRemove = included.length > 1;
+    const otherFacets = (state.facets || [])
+      .filter((f) => !f.muted && f.name !== exp.primary_facet)
+      .map((f) => f.title || f.name);
+
+    let html = renderBackButtonHtml();
+    html += `<div class="exp-form">`
+      + `<h2 class="exp-detail-title">${esc(t('activities.heading'))}</h2>`;
+
+    if (state.activitiesError) {
+      html += `<p class="exp-error" role="alert">${esc(state.activitiesError)}</p>`;
+    }
+
+    // Included
+    html += `<section class="exp-section"><h3 class="exp-section-heading">${esc(t('activities.included'))}</h3><ul class="exp-act-list">`;
+    included.forEach((act, idx) => {
+      const f = act.facet || exp.primary_facet;
+      const meta = [facetTitle(f), formatTimeRange(act.started_at, act.ended_at)].filter(Boolean).join(' · ');
+      html += `<li class="exp-act-row">`
+        + `<div class="exp-act-row-main"><span class="exp-act-row-meta">${facetMarkHtml(f)}<span>${esc(meta)}</span></span>`
+        + `<span class="exp-act-row-title">${esc(act.title || act.description || act.activity || act.ref?.id || '')}</span></div>`
+        + `<button type="button" class="exp-btn exp-btn--sm" data-exp-remove-act="${idx}"${(!canRemove || state.savingActivities) ? ' disabled' : ''}>${esc(t('action.remove'))}</button>`
+        + `</li>`;
+    });
+    html += `</ul><p class="exp-helper">${esc(t('activities.remove.note'))}</p></section>`;
+
+    // Nearby candidates + explicit B1 cross-facet toggle
+    const candHeading = state.includeCrossFacet
+      ? t('activities.nearby.cross')
+      : t('activities.nearby.facet', [['facet_name', primaryTitle]]);
+    html += `<section class="exp-section"><h3 class="exp-section-heading">${esc(candHeading)}</h3>`;
+
+    if (otherFacets.length) {
+      html += `<label class="exp-cross-toggle">`
+        + `<input type="checkbox" data-exp-cross-facet${state.includeCrossFacet ? ' checked' : ''}>`
+        + `<span class="exp-cross-toggle-copy">`
+        + `<span class="exp-cross-toggle-label">${esc(t('activities.cross.toggle'))}</span>`
+        + `<span class="exp-helper">${esc(t('activities.cross.helper', [['facet_name', primaryTitle]]))}</span>`
+        + `</span></label>`;
+    }
+
+    if (candidates.length) {
+      html += '<ul class="exp-act-list">';
+      candidates.forEach((cand, idx) => {
+        const f = cand.facet || exp.primary_facet;
+        const meta = [facetTitle(f), formatTimeRange(cand.started_at, cand.ended_at)].filter(Boolean).join(' · ');
+        html += `<li class="exp-act-row">`
+          + `<div class="exp-act-row-main"><span class="exp-act-row-meta">${facetMarkHtml(f)}<span>${esc(meta)}</span></span>`
+          + `<span class="exp-act-row-title">${esc(cand.title || cand.description || cand.activity || cand.ref?.id || '')}</span></div>`
+          + `<button type="button" class="exp-btn exp-btn--sm" data-exp-add-cand="${idx}"${state.savingActivities ? ' disabled' : ''}>${esc(t('action.add'))}</button>`
+          + `</li>`;
+      });
+      html += '</ul>';
+    } else {
+      const emptyCand = state.includeCrossFacet
+        ? t('activities.nearby.empty.cross')
+        : t('activities.nearby.empty.facet', [['facet_name', primaryTitle]]);
+      html += `<p class="exp-helper">${esc(emptyCand)}</p>`;
+    }
+    html += `</section>`;
+
+    html += `<div class="exp-form-actions"><button type="button" class="exp-btn" data-exp-activities-done>${esc(t('action.done'))}</button></div></div>`;
+    return html;
+  }
+
+  function renderCreateHtml() {
+    const d = state.createDraft;
+    const unmuted = (state.facets || []).filter((f) => !f.muted);
+    let html = renderBackButtonHtml();
+    html += `<form class="exp-form" data-exp-create-form>`
+      + `<h2 class="exp-detail-title">${esc(t('create.heading'))}</h2>`;
+
+    // Date & primary facet
+    html += `<div class="exp-field">`
+      + `<label class="exp-label" for="exp-create-day">${esc(t('create.day'))}</label>`
+      + `<input id="exp-create-day" class="exp-input" type="date" data-create-day value="${esc(dayToInputDate(d.day))}">`
+      + `</div>`;
+
+    html += `<div class="exp-field">`
+      + `<label class="exp-label" for="exp-create-facet">${esc(t('create.facet'))}</label>`
+      + `<select id="exp-create-facet" class="exp-select" data-create-facet>`;
+    unmuted.forEach((f) => {
+      html += `<option value="${esc(f.name)}"${d.primaryFacet === f.name ? ' selected' : ''}>${esc(f.title || f.name)}</option>`;
+    });
+    html += `</select></div>`;
+
+    // Activity checklist
+    html += `<div class="exp-field"><span class="exp-label">${esc(t('create.pick.activities'))}</span>`;
+    if (state.createActivitiesLoading) {
+      html += `<p class="exp-helper" role="status">${esc(t('loading'))}</p>`;
+    } else if (!state.createActivities.length) {
+      html += `<p class="exp-helper">${esc(t('create.no.activities'))}</p>`;
+    } else {
+      html += '<div class="exp-act-list">';
+      state.createActivities.forEach((it, idx) => {
+        const key = `${it.facet}|${it.stream || '_default'}|${it.id}`;
+        const checked = d.selectedKeys.has(key);
+        const time = it.start ? (clockLabel(it.start) || it.start) : '';
+        const meta = [facetTitle(it.facet), time].filter(Boolean).join(' · ');
+        html += `<label class="exp-check-row">`
+          + `<input type="checkbox" data-create-act-idx="${idx}"${checked ? ' checked' : ''}>`
+          + `<span class="exp-act-row-main"><span class="exp-act-row-meta">${facetMarkHtml(it.facet)}<span>${esc(meta)}</span></span>`
+          + `<span class="exp-act-row-title">${esc(it.title || it.description || it.id)}</span></span>`
+          + `</label>`;
+      });
+      html += '</div>';
+    }
+    html += `</div>`;
+
+    // Optional title & summary
+    html += `<div class="exp-field">`
+      + `<label class="exp-label" for="exp-create-title">${esc(t('create.title.optional'))}</label>`
+      + `<input id="exp-create-title" class="exp-input" type="text" data-create-title value="${esc(d.title)}" placeholder="${esc(t('create.optional.placeholder'))}">`
+      + `</div>`;
+
+    html += `<div class="exp-field">`
+      + `<label class="exp-label" for="exp-create-summary">${esc(t('create.summary.optional'))}</label>`
+      + `<textarea id="exp-create-summary" class="exp-textarea" data-create-summary placeholder="${esc(t('create.optional.placeholder'))}">${esc(d.summary)}</textarea>`
+      + `</div>`;
+
+    if (state.createError) {
+      html += `<p class="exp-error" role="alert">${esc(state.createError)}</p>`;
+    }
+
+    html += `<div class="exp-form-actions">`
+      + `<button type="button" class="exp-btn" data-exp-create-cancel${state.savingCreate ? ' disabled' : ''}>${esc(t('action.cancel'))}</button>`
+      + `<button type="submit" class="exp-btn exp-btn--primary"${state.savingCreate ? ' disabled' : ''}>${esc(t('create.submit'))}</button>`
+      + `</div></form>`;
+    return html;
+  }
+
+  function renderDetail() {
+    fitDetailPane();
+    syncShellDetailClass();
+    const pane = document.querySelector('[data-exp-detail]');
+    if (!pane) return;
+
+    if (state.mode === 'create' && state.createDraft) {
+      pane.innerHTML = renderCreateHtml();
+      return;
+    }
+
+    if (!state.selectedId) {
+      if (!state.experiences.length) {
+        pane.innerHTML = '';
+        return;
+      }
+      pane.innerHTML = `<div class="exp-detail-placeholder">${esc(t('detail.placeholder'))}</div>`;
+      return;
+    }
+
+    if (state.detailLoading && !state.detail) {
+      pane.innerHTML = window.SurfaceState
+        ? window.SurfaceState.loading({ text: t('loading') })
+        : `<div class="exp-detail-placeholder">${esc(t('loading'))}</div>`;
+      return;
+    }
+
+    if (!state.detail) {
+      pane.innerHTML = renderBackButtonHtml()
+        + `<p class="exp-error" role="alert">${esc(state.detailError || t('load.error'))}</p>`;
+      return;
+    }
+
+    if (state.mode === 'edit') {
+      pane.innerHTML = renderDetailEditHtml(state.detail);
+    } else if (state.mode === 'activities') {
+      pane.innerHTML = renderDetailActivitiesHtml(state.detail);
+    } else {
+      pane.innerHTML = renderDetailReadHtml(state.detail);
+    }
+  }
+
+  function renderAll() {
+    renderHeader();
+    renderReceipt();
+    renderStream();
+    renderDetail();
+  }
+
+  async function loadQuietDayActivities(day) {
+    if (!day || !/^\d{8}$/.test(day)) return;
+    try {
+      const data = await readJson(`/app/activities/api/day/${day}/view`);
+      if (!live() || state.day !== day) return;
+      state.quietDayActivities = (data?.items || []).filter((it) => it && !it.hidden);
+      renderStream();
+    } catch (_) {
+      state.quietDayActivities = [];
+      renderStream();
+    }
+  }
+
+  async function loadDetail(anchorDay, facet, id, opts) {
+    if (!anchorDay || !id) return;
+    const seq = ++state.detailSeq;
+    const silent = Boolean(opts && opts.silent);
+    if (!silent) {
+      state.detailLoading = true;
+      state.detailError = null;
+      renderDetail();
+    }
+    const params = new URLSearchParams();
+    if (facet) params.set('facet', facet);
+    if (state.includeCrossFacet) params.set('include_cross_facet_candidates', '1');
+    const url = `/app/activities/api/day/${encodeURIComponent(anchorDay)}/experience/${encodeURIComponent(id)}?${params.toString()}`;
+    try {
+      const data = await readJson(url, silent ? { fresh: true } : undefined);
+      if (seq !== state.detailSeq || !live()) return;
+      const exp = data?.experience || null;
+      state.detail = exp;
+      state.detailLoading = false;
+      state.detailError = null;
+      if (exp) {
+        state.selectedDay = exp.anchor_day;
+        state.selectedFacet = exp.primary_facet;
+        state.selectedId = exp.id;
+        // Merge fresh hydrated record back into stream list
+        const idx = state.experiences.findIndex((e) => e.id === exp.id && e.primary_facet === exp.primary_facet && e.anchor_day === exp.anchor_day);
+        if (idx >= 0) state.experiences[idx] = exp;
+        // Check if background compose finished
+        if (state.updatingKey === expKey(exp)) {
+          const stamp = `${exp.composed_at || ''}|${exp.updated_at || ''}`;
+          if (state.updatingBaseline && stamp !== state.updatingBaseline) {
+            state.updatingKey = null;
+            stopPoll();
+          }
+        }
+      }
+      renderStream();
+      renderDetail();
+    } catch (err) {
+      if (seq !== state.detailSeq || !live()) return;
+      state.detailLoading = false;
+      if (!silent) {
+        state.detail = null;
+        state.detailError = t('load.error');
+        renderDetail();
+      }
+    }
+  }
+
+  function scheduleUpdatingPoll(exp, kind) {
+    stopPoll();
+    if (!exp || !live()) return;
+    state.updatingKey = expKey(exp);
+    state.updatingKind = kind;
+    state.updatingBaseline = `${exp.composed_at || ''}|${exp.updated_at || ''}`;
+    state.updatingPolls = 0;
+
+    const tick = () => {
+      pollTimer = null;
+      if (!live() || state.updatingKey !== expKey(exp)) return;
+      if (state.updatingPolls >= MAX_POLLS) {
+        state.updatingKey = null;
+        renderDetail();
+        return;
+      }
+      state.updatingPolls += 1;
+      if (state.mode === 'read' && !document.hidden) {
+        loadDetail(exp.anchor_day, exp.primary_facet, exp.id, { silent: true }).then(() => {
+          if (live() && state.updatingKey === expKey(exp)) {
+            pollTimer = ctx.setTimeout(tick, POLL_MS);
+          }
+        });
+      } else {
+        pollTimer = ctx.setTimeout(tick, POLL_MS);
+      }
+    };
+    pollTimer = ctx.setTimeout(tick, POLL_MS);
+  }
+
+  async function fetchList(opts) {
+    const append = Boolean(opts && opts.append);
+    const seq = ++state.listSeq;
+    const stateArea = document.querySelector('[data-exp-state-area]');
+    const bodyEl = document.querySelector('[data-exp-body]');
+
+    if (!append && !state.loadedOnce && stateArea && window.SurfaceState) {
+      stateArea.innerHTML = window.SurfaceState.loading({ text: t('loading') });
+      if (bodyEl) bodyEl.hidden = true;
+    }
+    if (append) {
+      state.loadingMore = true;
+      renderStream();
+    }
+
+    try {
+      const data = await readJson(buildListUrl(append ? state.nextBefore : null), { fresh: Boolean(opts && opts.fresh) });
+      if (seq !== state.listSeq || !live()) return;
+      state.loadedOnce = true;
+      state.loadingMore = false;
+      state.facets = Array.isArray(data.facets) ? data.facets : [];
+      state.hiddenCount = Number(data.hidden_count || 0);
+      state.hasMore = Boolean(data.has_more);
+      state.nextBefore = data.next_before || null;
+      const incoming = Array.isArray(data.experiences) ? data.experiences : [];
+      if (append) {
+        const seen = new Set(state.experiences.map(expKey));
+        incoming.forEach((e) => {
+          if (!seen.has(expKey(e))) state.experiences.push(e);
+        });
+      } else {
+        state.experiences = incoming;
+      }
+
+      if (stateArea) stateArea.innerHTML = '';
+      if (bodyEl) bodyEl.hidden = false;
+
+      if (!append && state.day && !state.experiences.length) {
+        state.quietDayActivities = null;
+        loadQuietDayActivities(state.day);
+      }
+
+      // Select from URL hash, or auto-select first on desktop when in read mode
+      if (!append && state.mode !== 'create') {
+        if (state.selectedId) {
+          const match = state.experiences.find((e) =>
+            e.id === state.selectedId
+            && (!state.selectedFacet || e.primary_facet === state.selectedFacet)
+            && (!state.selectedDay || e.anchor_day === state.selectedDay));
+          if (match) {
+            state.detail = match;
+            loadDetail(match.anchor_day, match.primary_facet, match.id, { silent: true });
+          } else if (state.selectedDay) {
+            loadDetail(state.selectedDay, state.selectedFacet, state.selectedId);
+          }
+        } else if (state.experiences.length && window.matchMedia && window.matchMedia('(min-width: 961px)').matches) {
+          const first = state.experiences[0];
+          state.selectedDay = first.anchor_day;
+          state.selectedFacet = first.primary_facet;
+          state.selectedId = first.id;
+          state.detail = first;
+          loadDetail(first.anchor_day, first.primary_facet, first.id, { silent: true });
+        }
+      }
+
+      renderAll();
+      ctx?.ready(state.experiences.length ? 'content' : 'empty');
+    } catch (err) {
+      if (seq !== state.listSeq || !live()) return;
+      state.loadingMore = false;
+      if (stateArea && window.SurfaceState) {
+        stateArea.innerHTML = window.SurfaceState.error({ heading: t('load.error'), retry: true, detail: err });
+        stateArea.querySelector('.surface-state-retry')?.addEventListener('click', () => fetchList({ fresh: true }));
+      }
+      ctx?.ready('error');
+    }
+  }
+
+  async function openCreateMode(preset) {
+    const day = (preset && preset.day) || state.day || todayKey();
+    const unmuted = (state.facets || []).filter((f) => !f.muted);
+    let primaryFacet = (preset && preset.facet) || state.facet || (unmuted[0] && unmuted[0].name) || '';
+    const selectedKeys = new Set();
+    if (preset && preset.preselectKey) selectedKeys.add(preset.preselectKey);
+
+    state.mode = 'create';
+    state.createDraft = {
+      day,
+      primaryFacet,
+      facetTouched: Boolean(preset && preset.facet),
+      selectedKeys,
+      title: '',
+      summary: '',
+    };
+    state.createActivities = [];
+    state.createActivitiesLoading = true;
+    state.createError = null;
+    state.savingCreate = false;
+    renderDetail();
+    await loadCreateDayActivities(day, preset && preset.preselectFacetId);
+  }
+
+  async function loadCreateDayActivities(day, preselectFacetId) {
+    if (!state.createDraft || !/^\d{8}$/.test(day)) {
+      state.createActivities = [];
+      state.createActivitiesLoading = false;
+      renderDetail();
+      return;
+    }
+    state.createActivitiesLoading = true;
+    renderDetail();
+    try {
+      const data = await readJson(`/app/activities/api/day/${day}/view`);
+      if (!live() || state.mode !== 'create' || !state.createDraft || state.createDraft.day !== day) return;
+      const items = (data?.items || []).filter((it) => it && !it.hidden);
+      state.createActivities = items;
+      if (!state.facets.length && Array.isArray(data?.facets)) {
+        state.facets = data.facets;
+      }
+      if (!state.createDraft.facetTouched && !state.facet && items.length && items[0].facet) {
+        state.createDraft.primaryFacet = items[0].facet;
+      } else if (!state.createDraft.primaryFacet) {
+        const firstUnmuted = (state.facets || []).find((f) => !f.muted);
+        if (firstUnmuted) state.createDraft.primaryFacet = firstUnmuted.name;
+      }
+      if (preselectFacetId) {
+        const match = items.find((it) => `${it.facet}/${it.id}` === preselectFacetId);
+        if (match) {
+          state.createDraft.selectedKeys.add(`${match.facet}|${match.stream || '_default'}|${match.id}`);
+          state.createDraft.primaryFacet = match.facet;
+        }
+      }
+      state.createActivitiesLoading = false;
+      renderHeader();
+      renderDetail();
+    } catch (_) {
+      if (!live() || state.mode !== 'create') return;
+      state.createActivities = [];
+      state.createActivitiesLoading = false;
+      renderDetail();
+    }
+  }
+
+  async function handleSaveEdit() {
+    const exp = state.detail;
+    const d = state.editDraft;
+    if (!exp || !d || state.savingEdit) return;
+    const title = d.title.trim();
+    if (!title) return;
+    state.savingEdit = true;
+    state.editError = null;
+    renderDetail();
+
+    const baseDayIso = dayToInputDate(exp.anchor_day);
+    const momentsPayload = d.moments
+      .filter((m) => m.summary.trim() || (m.media_refs && m.media_refs.length))
+      .map((m, idx) => {
+        const dayPrefix = m.dayIso || baseDayIso;
+        const start = (m.origStartedAt && m.startHm === m.origStartHm)
+          ? m.origStartedAt
+          : (m.startHm ? `${dayPrefix}T${m.startHm}:00` : exp.started_at);
+        const end = (m.origEndedAt && m.endHm === m.origEndHm)
+          ? m.origEndedAt
+          : (m.endHm ? `${dayPrefix}T${m.endHm}:00` : start);
+        return {
+          id: m.id || `m${idx + 1}`,
+          started_at: start,
+          ended_at: end,
+          summary: m.summary.trim(),
+          activity_refs: Array.isArray(m.activity_refs) ? m.activity_refs : [],
+          segment_refs: Array.isArray(m.segment_refs) ? m.segment_refs : [],
+          media_refs: Array.isArray(m.media_refs) ? m.media_refs : [],
+        };
+      });
+
+    const patch = {};
+    if (title !== String(exp.title || '').trim()) patch.title = title;
+    const summaryTrimmed = d.summary.trim();
+    if (summaryTrimmed !== String(exp.summary || '').trim()) patch.summary = summaryTrimmed;
+    const prevMoments = (Array.isArray(exp.moments) ? exp.moments : []).map((m, idx) => ({
+      id: m.id || `m${idx + 1}`,
+      started_at: m.started_at || '',
+      ended_at: m.ended_at || '',
+      summary: String(m.summary || '').trim(),
+      activity_refs: Array.isArray(m.activity_refs) ? m.activity_refs : [],
+      segment_refs: Array.isArray(m.segment_refs) ? m.segment_refs : [],
+      media_refs: Array.isArray(m.media_refs) ? m.media_refs : [],
+    }));
+    if (JSON.stringify(momentsPayload) !== JSON.stringify(prevMoments)) {
+      patch.moments = momentsPayload;
+    }
+
+    if (!Object.keys(patch).length) {
+      state.savingEdit = false;
+      state.editDraft = null;
+      state.mode = 'read';
+      renderDetail();
+      return;
+    }
+
+    const url = `/app/activities/api/day/${encodeURIComponent(exp.anchor_day)}/experience/${encodeURIComponent(exp.id)}/update?facet=${encodeURIComponent(exp.primary_facet)}`;
+    try {
+      const resp = await ownerPost(url, patch);
+      if (!live()) return;
+      state.savingEdit = false;
+      state.editDraft = null;
+      state.mode = 'read';
+      if (resp?.experience) {
+        state.detail = resp.experience;
+        const idx = state.experiences.findIndex((e) => expKey(e) === expKey(resp.experience));
+        if (idx >= 0) state.experiences[idx] = resp.experience;
+      }
+      renderAll();
+    } catch (_) {
+      if (!live()) return;
+      state.savingEdit = false;
+      state.editError = t('edit.save.error');
+      renderDetail();
+    }
+  }
+
+  async function handleReleaseHold(token) {
+    const exp = state.detail;
+    if (!exp || !token || state.savingEdit) return;
+    state.savingEdit = true;
+    state.editError = null;
+    renderDetail();
+    const url = `/app/activities/api/day/${encodeURIComponent(exp.anchor_day)}/experience/${encodeURIComponent(exp.id)}/update?facet=${encodeURIComponent(exp.primary_facet)}`;
+    try {
+      const resp = await ownerPost(url, { clear_holds: [token] });
+      if (!live()) return;
+      state.savingEdit = false;
+      if (resp?.experience) {
+        state.detail = resp.experience;
+        startEditDraft(resp.experience);
+        if (resp.asked) scheduleUpdatingPoll(resp.experience, hasAnyHold(resp.experience) ? 'holds' : 'plain');
+      }
+      renderAll();
+    } catch (_) {
+      if (!live()) return;
+      state.savingEdit = false;
+      state.editError = t('edit.save.error');
+      renderDetail();
+    }
+  }
+
+  async function handleMutateActivities(addRefs, removeRefs) {
+    const exp = state.detail;
+    if (!exp || state.savingActivities) return;
+    state.savingActivities = true;
+    state.activitiesError = null;
+    renderDetail();
+    const url = `/app/activities/api/day/${encodeURIComponent(exp.anchor_day)}/experience/${encodeURIComponent(exp.id)}/activities?facet=${encodeURIComponent(exp.primary_facet)}`;
+    try {
+      const resp = await ownerPost(url, { add: addRefs, remove: removeRefs });
+      if (!live()) return;
+      state.savingActivities = false;
+      if (resp?.experience) {
+        state.detail = resp.experience;
+        const idx = state.experiences.findIndex((e) => expKey(e) === expKey(resp.experience));
+        if (idx >= 0) state.experiences[idx] = resp.experience;
+        if (resp.asked) scheduleUpdatingPoll(resp.experience, hasAnyHold(resp.experience) ? 'holds' : 'plain');
+        if (state.includeCrossFacet) {
+          loadDetail(resp.experience.anchor_day, resp.experience.primary_facet, resp.experience.id, { silent: true });
+        }
+      }
+      renderAll();
+    } catch (_) {
+      if (!live()) return;
+      state.savingActivities = false;
+      state.activitiesError = t('activities.update.error');
+      renderDetail();
+    }
+  }
+
+  async function handleHideToggle(exp, hide) {
+    if (!exp) return;
+    const action = hide ? 'mute' : 'unmute';
+    const url = `/app/activities/api/day/${encodeURIComponent(exp.anchor_day)}/experience/${encodeURIComponent(exp.id)}/${action}?facet=${encodeURIComponent(exp.primary_facet)}`;
+    try {
+      const resp = await ownerPost(url, {});
+      if (!live()) return;
+      if (hide) {
+        state.receipt = {
+          anchor_day: exp.anchor_day,
+          primary_facet: exp.primary_facet,
+          id: exp.id,
+          title: exp.title || '',
+        };
+      } else if (state.receipt && state.receipt.id === exp.id && state.receipt.primary_facet === exp.primary_facet) {
+        state.receipt = null;
+      }
+      if (resp?.experience && state.detail && expKey(state.detail) === expKey(exp)) {
+        state.detail = resp.experience;
+      }
+      await fetchList({ fresh: true });
+    } catch (_) {
+      if (!live()) return;
+      state.detailError = hide ? t('hide.error') : t('unhide.error');
+      renderDetail();
+    }
+  }
+
+  async function handleCreateSubmit() {
+    const d = state.createDraft;
+    if (!d || state.savingCreate) return;
+    const picked = state.createActivities.filter((it) => d.selectedKeys.has(`${it.facet}|${it.stream || '_default'}|${it.id}`));
+    if (!picked.length) {
+      state.createError = t('create.validation.pick');
+      renderDetail();
+      return;
+    }
+    const primaryFacet = d.primaryFacet || picked[0].facet;
+    const activities = picked.map((it) => {
+      const recStream = typeof it.record_stream === 'string'
+        ? it.record_stream
+        : ((it.stream === 'default' || it.stream === '_default' || !it.stream) ? '' : it.stream);
+      const ref = { day: d.day, stream: recStream, id: it.id };
+      if (it.facet && it.facet !== primaryFacet) ref.facet = it.facet;
+      return ref;
+    });
+
+    state.savingCreate = true;
+    state.createError = null;
+    renderDetail();
+
+    try {
+      const body = { primary_facet: primaryFacet, activities };
+      if (d.title.trim()) body.title = d.title.trim();
+      if (d.summary.trim()) body.summary = d.summary.trim();
+      const resp = await ownerPost('/app/activities/api/experiences/create', body);
+      if (!live()) return;
+      state.savingCreate = false;
+      state.createDraft = null;
+      state.mode = 'read';
+      if (resp?.experience) {
+        const exp = resp.experience;
+        state.selectedDay = exp.anchor_day;
+        state.selectedFacet = exp.primary_facet;
+        state.selectedId = exp.id;
+        state.detail = exp;
+        syncUrlHash(exp);
+        if (resp.asked && !body.title && !body.summary) {
+          scheduleUpdatingPoll(exp, 'create');
+        }
+      }
+      await fetchList({ fresh: true });
+    } catch (_) {
+      if (!live()) return;
+      state.savingCreate = false;
+      state.createError = t('create.error');
+      renderDetail();
+    }
+  }
+
+  function toggleScopeListbox(open) {
+    state.listboxOpen = open;
+    const btn = document.querySelector('[data-exp-scope-btn]');
+    const box = document.querySelector('[data-exp-scope-listbox]');
+    if (btn) btn.setAttribute('aria-expanded', String(open));
+    if (box) box.hidden = !open;
+  }
+
+  function selectFacet(facet) {
+    state.facet = facet || null;
+    const u = new URL(window.location.href);
+    if (state.facet) u.searchParams.set('facet', state.facet);
+    else u.searchParams.delete('facet');
+    historyReplace(u.pathname + (u.search ? u.search : '') + u.hash);
+    toggleScopeListbox(false);
+    fetchList({ fresh: true });
+  }
+
+  function setupEvents() {
+    const root = document.querySelector('[data-experiences-root]');
+    if (!root) return;
+
+    // Orientation tip
+    const tipEl = document.querySelector('[data-experiences-tip]');
+    if (tipEl) {
+      let dismissed = false;
+      try { dismissed = window.localStorage?.getItem(TIP_STORAGE_KEY) === '1'; } catch (_) {}
+      tipEl.hidden = dismissed;
+    }
+
+    ctx.on(window, 'resize', fitDetailPane);
+
+    ctx.on(root, 'click', (e) => {
+      const target = e.target;
+
+      // Dismiss orientation tip
+      if (target.closest('[data-experiences-tip-dismiss]')) {
+        if (tipEl) tipEl.hidden = true;
+        try { window.localStorage?.setItem(TIP_STORAGE_KEY, '1'); } catch (_) {}
+        return;
+      }
+
+      // Scope dropdown
+      const scopeBtn = target.closest('[data-exp-scope-btn]');
+      if (scopeBtn) {
+        toggleScopeListbox(!state.listboxOpen);
+        return;
+      }
+      const scopeOpt = target.closest('.exp-scope-option');
+      if (scopeOpt) {
+        selectFacet(scopeOpt.getAttribute('data-facet') || null);
+        return;
+      }
+      if (state.listboxOpen && !target.closest('.exp-scope-wrap')) {
+        toggleScopeListbox(false);
+      }
+
+      // New experience button
+      if (target.closest('[data-exp-new]')) {
+        openCreateMode();
+        return;
+      }
+      const createForDay = target.closest('[data-exp-create-for-day]');
+      if (createForDay) {
+        openCreateMode({ day: createForDay.getAttribute('data-exp-create-for-day') });
+        return;
+      }
+
+      // Clear facet filter
+      if (target.closest('[data-exp-clear-facet]')) {
+        selectFacet(null);
+        return;
+      }
+
+      // Receipt undo
+      if (target.closest('[data-exp-receipt-undo]') && state.receipt) {
+        handleHideToggle(state.receipt, false);
+        return;
+      }
+
+      // Load earlier experiences
+      if (target.closest('[data-exp-load-more]')) {
+        fetchList({ append: true });
+        return;
+      }
+
+      // Toggle hidden
+      if (target.closest('[data-exp-toggle-hidden]')) {
+        state.includeHidden = !state.includeHidden;
+        fetchList({ fresh: true });
+        return;
+      }
+
+      // Select experience card
+      const card = target.closest('[data-exp-card-id]');
+      if (card) {
+        const id = card.getAttribute('data-exp-card-id');
+        const facet = card.getAttribute('data-exp-card-facet');
+        const day = card.getAttribute('data-exp-card-day');
+        state.mode = 'read';
+        state.editDraft = null;
+        state.includeCrossFacet = false;
+        state.selectedId = id;
+        state.selectedFacet = facet;
+        state.selectedDay = day;
+        const found = state.experiences.find((ex) => ex.id === id && ex.primary_facet === facet && ex.anchor_day === day);
+        state.detail = found || null;
+        if (found) syncUrlHash(found);
+        renderStream();
+        renderDetail();
+        loadDetail(day, facet, id, { silent: Boolean(found) });
+        return;
+      }
+
+      // Back to list (mobile/tablet)
+      if (target.closest('[data-exp-back]')) {
+        state.mode = 'read';
+        state.editDraft = null;
+        state.createDraft = null;
+        state.selectedId = null;
+        state.selectedFacet = null;
+        state.selectedDay = null;
+        syncUrlHash(null);
+        renderStream();
+        renderDetail();
+        return;
+      }
+
+      // Detail reading actions
+      if (target.closest('[data-exp-edit]') && state.detail) {
+        startEditDraft(state.detail);
+        state.mode = 'edit';
+        renderDetail();
+        return;
+      }
+      if (target.closest('[data-exp-hide]') && state.detail) {
+        handleHideToggle(state.detail, true);
+        return;
+      }
+      if (target.closest('[data-exp-unhide]') && state.detail) {
+        handleHideToggle(state.detail, false);
+        return;
+      }
+      if (target.closest('[data-exp-open-activities]') && state.detail) {
+        state.mode = 'activities';
+        state.activitiesError = null;
+        renderDetail();
+        return;
+      }
+
+      // Level 1 edit controls
+      if (target.closest('[data-exp-edit-cancel]')) {
+        state.mode = 'read';
+        state.editDraft = null;
+        renderDetail();
+        return;
+      }
+      const releaseBtn = target.closest('[data-exp-release-hold]');
+      if (releaseBtn) {
+        handleReleaseHold(releaseBtn.getAttribute('data-exp-release-hold'));
+        return;
+      }
+      const upBtn = target.closest('[data-moment-up]');
+      if (upBtn && state.editDraft) {
+        const idx = Number(upBtn.getAttribute('data-moment-up'));
+        if (idx > 0) {
+          const arr = state.editDraft.moments;
+          [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+          renderDetail();
+        }
+        return;
+      }
+      const downBtn = target.closest('[data-moment-down]');
+      if (downBtn && state.editDraft) {
+        const idx = Number(downBtn.getAttribute('data-moment-down'));
+        const arr = state.editDraft.moments;
+        if (idx >= 0 && idx < arr.length - 1) {
+          [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+          renderDetail();
+        }
+        return;
+      }
+      const removeMomentBtn = target.closest('[data-moment-remove]');
+      if (removeMomentBtn && state.editDraft) {
+        const idx = Number(removeMomentBtn.getAttribute('data-moment-remove'));
+        state.editDraft.moments.splice(idx, 1);
+        renderDetail();
+        return;
+      }
+      if (target.closest('[data-moment-add]') && state.editDraft && state.detail) {
+        const nextIdx = state.editDraft.moments.length + 1;
+        state.editDraft.moments.push({
+          id: `m${Date.now().toString(36)}_${nextIdx}`,
+          dayIso: dayToInputDate(state.detail.anchor_day),
+          startHm: extractHHMM(state.detail.started_at) || '12:00',
+          endHm: extractHHMM(state.detail.ended_at) || '12:30',
+          summary: '',
+          activity_refs: [],
+          segment_refs: [],
+          media_refs: [],
+        });
+        renderDetail();
+        return;
+      }
+      const photoToggle = target.closest('[data-moment-photo]');
+      if (photoToggle && state.editDraft) {
+        const idx = Number(photoToggle.getAttribute('data-moment-photo'));
+        const mediaRef = photoToggle.getAttribute('data-media-ref');
+        const m = state.editDraft.moments[idx];
+        if (m && mediaRef) {
+          const pos = m.media_refs.indexOf(mediaRef);
+          if (pos >= 0) m.media_refs.splice(pos, 1);
+          else m.media_refs.push(mediaRef);
+          renderDetail();
+        }
+        return;
+      }
+
+      // Level 2 structural edit controls
+      const removeActBtn = target.closest('[data-exp-remove-act]');
+      if (removeActBtn && state.detail) {
+        const idx = Number(removeActBtn.getAttribute('data-exp-remove-act'));
+        const act = (state.detail.hydrated?.activities || [])[idx];
+        if (act && act.ref) handleMutateActivities([], [act.ref]);
+        return;
+      }
+      const addCandBtn = target.closest('[data-exp-add-cand]');
+      if (addCandBtn && state.detail) {
+        const idx = Number(addCandBtn.getAttribute('data-exp-add-cand'));
+        const cand = (state.detail.nearby_candidates || [])[idx];
+        if (cand && cand.ref) handleMutateActivities([cand.ref], []);
+        return;
+      }
+      if (target.closest('[data-exp-activities-done]')) {
+        state.mode = 'read';
+        state.activitiesError = null;
+        renderDetail();
+        return;
+      }
+
+      // Create cancel
+      if (target.closest('[data-exp-create-cancel]')) {
+        state.mode = 'read';
+        state.createDraft = null;
+        state.createError = null;
+        renderDetail();
+        return;
+      }
+    });
+
+    ctx.on(root, 'input', (e) => {
+      const target = e.target;
+      if (state.editDraft) {
+        if (target.name === 'title') state.editDraft.title = target.value;
+        else if (target.name === 'summary') state.editDraft.summary = target.value;
+        else if (target.hasAttribute('data-moment-start')) {
+          const m = state.editDraft.moments[Number(target.getAttribute('data-moment-start'))];
+          if (m) m.startHm = target.value;
+        } else if (target.hasAttribute('data-moment-end')) {
+          const m = state.editDraft.moments[Number(target.getAttribute('data-moment-end'))];
+          if (m) m.endHm = target.value;
+        } else if (target.hasAttribute('data-moment-summary')) {
+          const m = state.editDraft.moments[Number(target.getAttribute('data-moment-summary'))];
+          if (m) m.summary = target.value;
+        }
+      }
+      if (state.createDraft) {
+        if (target.hasAttribute('data-create-title')) state.createDraft.title = target.value;
+        else if (target.hasAttribute('data-create-summary')) state.createDraft.summary = target.value;
+      }
+    });
+
+    ctx.on(root, 'change', (e) => {
+      const target = e.target;
+      if (target.hasAttribute('data-exp-cross-facet') && state.detail) {
+        state.includeCrossFacet = Boolean(target.checked);
+        loadDetail(state.detail.anchor_day, state.detail.primary_facet, state.detail.id, { silent: true });
+        return;
+      }
+      if (state.createDraft) {
+        if (target.hasAttribute('data-create-day')) {
+          const nextDay = inputDateToDay(target.value);
+          if (nextDay && nextDay !== state.createDraft.day) {
+            state.createDraft.day = nextDay;
+            state.createDraft.selectedKeys = new Set();
+            loadCreateDayActivities(nextDay);
+          }
+          return;
+        }
+        if (target.hasAttribute('data-create-facet')) {
+          state.createDraft.primaryFacet = target.value;
+          state.createDraft.facetTouched = true;
+          return;
+        }
+        if (target.hasAttribute('data-create-act-idx')) {
+          const idx = Number(target.getAttribute('data-create-act-idx'));
+          const it = state.createActivities[idx];
+          if (it) {
+            const key = `${it.facet}|${it.stream || '_default'}|${it.id}`;
+            if (target.checked) {
+              const wasEmpty = state.createDraft.selectedKeys.size === 0;
+              state.createDraft.selectedKeys.add(key);
+              if (wasEmpty && !state.createDraft.facetTouched && it.facet && state.createDraft.primaryFacet !== it.facet) {
+                state.createDraft.primaryFacet = it.facet;
+                const sel = document.querySelector('[data-create-facet]');
+                if (sel) sel.value = it.facet;
+              }
+            } else {
+              state.createDraft.selectedKeys.delete(key);
+            }
+            state.createError = null;
+          }
+          return;
+        }
+      }
+    });
+
+    ctx.on(root, 'submit', (e) => {
+      if (e.target.matches('[data-exp-edit-form]')) {
+        e.preventDefault();
+        handleSaveEdit();
+      } else if (e.target.matches('[data-exp-create-form]')) {
+        e.preventDefault();
+        handleCreateSubmit();
+      }
+    });
+
+    ctx.on(document, 'keydown', (e) => {
+      if (e.key === 'Escape' && state.listboxOpen) {
+        e.preventDefault();
+        toggleScopeListbox(false);
+        document.querySelector('[data-exp-scope-btn]')?.focus();
+      }
+    });
+  }
+
+  function resetState() {
+    stopPoll();
+    state.day = null;
+    state.facet = null;
+    state.includeHidden = false;
+    state.facets = [];
+    state.experiences = [];
+    state.hasMore = false;
+    state.nextBefore = null;
+    state.hiddenCount = 0;
+    state.loadingMore = false;
+    state.loadedOnce = false;
+    state.quietDayActivities = null;
+    state.selectedFacet = null;
+    state.selectedId = null;
+    state.selectedDay = null;
+    state.detail = null;
+    state.detailLoading = false;
+    state.detailError = null;
+    state.mode = 'read';
+    state.includeCrossFacet = false;
+    state.updatingKey = null;
+    state.updatingKind = null;
+    state.updatingBaseline = null;
+    state.updatingPolls = 0;
+    state.receipt = null;
+    state.editDraft = null;
+    state.editError = null;
+    state.savingEdit = false;
+    state.activitiesError = null;
+    state.savingActivities = false;
+    state.createDraft = null;
+    state.createActivities = [];
+    state.createActivitiesLoading = false;
+    state.createError = null;
+    state.savingCreate = false;
+    state.listboxOpen = false;
+  }
+
+  function loadCurrentRoute() {
+    routeEpoch += 1;
+    if (routeScope) routeScope.abort();
+    routeScope = window.SolStore.createAbort();
+    stopPoll();
+    state.mode = 'read';
+    state.editDraft = null;
+    state.createDraft = null;
+    state.includeCrossFacet = false;
+    state.detail = null;
+    state.quietDayActivities = null;
+    const createHint = readUrlState();
+    fetchList().then(() => {
+      if (live() && createHint && createHint.createFrom) {
+        const parts = createHint.createFrom.split('/');
+        openCreateMode({
+          day: state.day || todayKey(),
+          facet: parts[0] || null,
+          preselectFacetId: createHint.createFrom,
+        });
+      }
+    });
+  }
+
+  function mountExperiences(mountCtx) {
+    ctx = mountCtx;
+    mountGen += 1;
+    routeEpoch = 0;
+    resetState();
+    const mine = mountCtx;
+    mountCtx.onDispose(() => {
+      stopPoll();
+      if (routeScope) routeScope.abort();
+      routeScope = null;
+      if (ctx === mine) ctx = null;
+    });
+    setupEvents();
+    loadCurrentRoute();
+    return {
+      update() { loadCurrentRoute(); },
+    };
+  }
+
+  window.SolViews.register('experiences', { mount: mountExperiences });
+})();
+</script>

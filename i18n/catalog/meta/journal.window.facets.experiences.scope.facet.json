@@ -1,0 +1,21 @@
+{
+  "description": "Facet filter button label when scoped to one facet.",
+  "context": "Journal window. Facet filter button label when scoped to one facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e8f9546819d5abb2ec70e962341e651ff98bdb61dd1a3667986ab9fa4b7ad725",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

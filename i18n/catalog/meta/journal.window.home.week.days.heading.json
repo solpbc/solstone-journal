@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the chronological Sunday through Saturday days section on Week.",
+  "context": "Journal window. Heading for the chronological Sunday through Saturday days section on Week.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f3481385b83dd1b01918ba65019bb72585afe92c4cbb29b026051aa2f3494ae6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

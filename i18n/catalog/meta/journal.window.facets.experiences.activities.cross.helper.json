@@ -1,0 +1,21 @@
+{
+  "description": "Helper text under the cross-facet candidate checkbox.",
+  "context": "Journal window. Helper text under the cross-facet candidate checkbox.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8f0e91ff2d158468c83acd28de60f3cd659d7d11f63228b9f1bc799e32bc1559",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

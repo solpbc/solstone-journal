@@ -1,0 +1,21 @@
+{
+  "description": "Subheading for nearby candidate activities in the primary facet.",
+  "context": "Journal window. Subheading for nearby candidate activities in the primary facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9169e6b2a07afbb5853d64a922c50939050078fe94fef904854b12286e47c6e8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

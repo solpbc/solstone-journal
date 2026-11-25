@@ -1,0 +1,16 @@
+{
+  "description": "Indicator badge shown on a hidden experience when showing hidden items.",
+  "context": "Journal window. Indicator badge shown on a hidden experience when showing hidden items.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "380114a3390a5c2f9e62a18a490de394578e23e3024ed70ff2cd135f3a5036c7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

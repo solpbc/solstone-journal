@@ -1,0 +1,16 @@
+{
+  "description": "Per-field indicator showing an owner hold is active.",
+  "context": "Journal window. Per-field indicator showing an owner hold is active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bad82a0c14c0045074477e6458924a90a407d75a070220ade508caa3306ce078",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

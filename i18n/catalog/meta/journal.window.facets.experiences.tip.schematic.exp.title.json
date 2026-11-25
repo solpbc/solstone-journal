@@ -1,0 +1,16 @@
+{
+  "description": "Static example experience title in the Experiences orientation tip schematic.",
+  "context": "Journal window. Static example experience title in the Experiences orientation tip schematic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37b2240155167edfa1e4b6fda1ab3bfc61d150ef7a66b29c3bf8a0694f8f13b7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
