@@ -334,6 +334,9 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
         .iter()
         .filter_map(|category| AdmittedCategory::from_stored_word(category))
         .collect();
+    if !categories.contains(&AdmittedCategory::Transcripts) {
+        categories.remove(&AdmittedCategory::AudioMedia);
+    }
     if !categories.contains(&AdmittedCategory::ScreenText) {
         categories.remove(&AdmittedCategory::Screenshots);
     }
@@ -1125,5 +1128,43 @@ mod tests {
         };
         assert!(snap.categories.contains(&AdmittedCategory::Body));
         assert!(snap.categories.contains(&AdmittedCategory::WomensHealth));
+    }
+
+    #[test]
+    fn audio_media_is_opt_in_and_requires_transcripts() {
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
+        let store = PermissionStore::open(temp.path());
+
+        // Default whole-journal grant includes transcripts but never audio_media.
+        let defaults = ReadPermission::default_whole_journal();
+        assert!(defaults.categories.iter().any(|c| c == "transcripts"));
+        assert!(!defaults.categories.iter().any(|c| c == "audio_media"));
+
+        // Existing transcripts-only grant stays strict and does not admit AudioMedia.
+        for (connection, words, allowed) in [
+            ("bearer:tx-only", vec!["transcripts"], false),
+            ("bearer:am-only", vec!["body", "audio_media"], false),
+            ("bearer:tx-and-am", vec!["transcripts", "audio_media"], true),
+        ] {
+            store
+                .set_permission(
+                    connection,
+                    ReadPermission {
+                        categories: words.into_iter().map(str::to_owned).collect(),
+                        scope: ReadScope::WholeJournal,
+                    },
+                )
+                .unwrap();
+            let PermissionDecision::Snapshot(snap) =
+                evaluate_connection_read(temp.path(), connection)
+            else {
+                panic!("enforceable snapshot");
+            };
+            assert_eq!(
+                snap.categories.contains(&AdmittedCategory::AudioMedia),
+                allowed,
+                "{connection}"
+            );
+        }
     }
 }

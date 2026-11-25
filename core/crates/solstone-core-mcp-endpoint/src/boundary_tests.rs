@@ -22009,3 +22009,665 @@ fn people_tools_batched_get_entity_list_entities_dedup_photo_facet_and_in_photo(
         assert_eq!(tool["annotations"]["openWorldHint"], false);
     }
 }
+
+fn synthetic_wav_with_metadata(seconds: usize, tag: &[u8]) -> Vec<u8> {
+    let sample_rate = solstone_core_observe_audio::SAMPLE_RATE;
+    let total = seconds * (sample_rate as usize);
+    let samples: Vec<f32> = (0..total)
+        .map(|i| {
+            let phase = 2.0 * std::f32::consts::PI * 330.0 * (i as f32) / (sample_rate as f32);
+            0.25 * phase.sin()
+        })
+        .collect();
+    let mut wav = solstone_core_observe_audio::audio_to_wav_bytes(&samples, sample_rate).unwrap();
+    let mut info = Vec::new();
+    info.extend_from_slice(b"INFOINAM");
+    info.extend_from_slice(&(tag.len() as u32).to_le_bytes());
+    info.extend_from_slice(tag);
+    if !tag.len().is_multiple_of(2) {
+        info.push(0);
+    }
+    wav.extend_from_slice(b"LIST");
+    wav.extend_from_slice(&(info.len() as u32).to_le_bytes());
+    wav.extend_from_slice(&info);
+    let riff_size = (wav.len() - 8) as u32;
+    wav[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    wav
+}
+
+#[test]
+fn audio_media_opt_in_gates_clips_preserves_text_reads_and_handles_edge_cases() {
+    use base64::Engine as _;
+
+    let journal = fixture();
+    let root = journal.path();
+    let audio_seg = root.join("chronicle").join(DAY).join(STREAM).join(SEGMENT);
+    fs::write(
+        audio_seg.join("audio.jsonl"),
+        concat!(
+            r#"{"raw":"audio.wav"}"#,
+            "\n",
+            r#"{"start":"09:00:05","speaker":"owner","text":"recorded meeting transcript"}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    let secret_meta = b"OWNER_RECORDER_METADATA_SECRET";
+    let wav = synthetic_wav_with_metadata(5, secret_meta);
+    assert!(wav.windows(secret_meta.len()).any(|w| w == secret_meta));
+    fs::write(audio_seg.join("audio.wav"), &wav).unwrap();
+
+    // Sibling text-only segment whose audio recording is no longer kept.
+    let text_only_seg = root
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join("100000_120");
+    fs::create_dir_all(text_only_seg.join("talents")).unwrap();
+    fs::write(
+        text_only_seg.join("audio.jsonl"),
+        concat!(
+            r#"{"raw":"audio.wav"}"#,
+            "\n",
+            r#"{"start":"10:00:05","speaker":"owner","text":"kept words without kept audio"}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        text_only_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+
+    let grant = |words: &[&str]| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: words.iter().map(|w| (*w).to_owned()).collect(),
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+    };
+
+    // 1. Default transcripts-only grant: text works, has_audio is undisclosed, audio: true is refused.
+    grant(&["transcripts"]);
+    let listed = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
+    let rows = listed["transcripts"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert!(
+            row.get("has_audio").is_none(),
+            "transcripts-only connection must not see has_audio: {row}"
+        );
+    }
+    let audio_ref = rows[0]["reference"].as_str().unwrap().to_owned();
+    let plain = dispatch_output(&journal, "get_transcript", json!({"reference": audio_ref}));
+    assert!(plain.audio.is_empty());
+    assert!(plain.value.get("has_audio").is_none());
+    assert!(plain.value.get("audio").is_none());
+    assert!(
+        plain.value["entries"]
+            .as_array()
+            .is_some_and(|e| !e.is_empty())
+    );
+    let err = crate::dispatch::dispatch_authenticated_tool_call(
+        root,
+        DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        },
+        crate::jsonrpc::ToolName::GetTranscript,
+        Some(&json!({"reference": audio_ref, "audio": true})),
+        jiff::Timestamp::now(),
+    )
+    .err()
+    .expect("transcripts-only grant must refuse audio: true");
+    assert_eq!(
+        err,
+        crate::dispatch::DispatchError::KindDenied(AdmittedCategory::AudioMedia)
+    );
+    assert_eq!(
+        crate::dispatch::kind_refusal(AdmittedCategory::AudioMedia),
+        "this connection needs permission to include audio"
+    );
+
+    // Stray audio_media without transcripts also refuses.
+    grant(&["body", "audio_media"]);
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": audio_ref, "audio": true})
+        ),
+        Err(McpProbeError::PermissionDenied)
+    );
+
+    // 2. Opted-in [transcripts, audio_media] grant.
+    grant(&["transcripts", "audio_media"]);
+    let listed = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
+    let rows = listed["transcripts"].as_array().unwrap();
+    assert_eq!(rows[0]["has_audio"], true);
+    assert!(rows[1].get("has_audio").is_none());
+    let audio_ref = rows[0]["reference"].as_str().unwrap().to_owned();
+    let text_only_ref = rows[1]["reference"].as_str().unwrap().to_owned();
+    let span_ref = listed["span_reference"].as_str().unwrap().to_owned();
+
+    // Regular text reads (omitted audio or audio: false) stay untouched: zero audio blocks.
+    for args in [
+        json!({"reference": audio_ref}),
+        json!({"reference": audio_ref, "audio": false}),
+    ] {
+        let out = dispatch_output(&journal, "get_transcript", args);
+        assert!(out.audio.is_empty());
+        assert_eq!(out.value["has_audio"], true);
+        assert!(out.value.get("audio").is_none());
+        let wire = crate::jsonrpc::media_tool_result(
+            out.value.clone(),
+            out.empty_note.as_deref(),
+            &out.images,
+            &out.audio,
+        );
+        assert_eq!(wire["content"].as_array().unwrap().len(), 1);
+    }
+
+    // Invalid audio argument combinations are refused as InvalidInput.
+    for bad in [
+        json!({"reference": audio_ref, "audio_start_ms": 0}),
+        json!({"reference": audio_ref, "audio_encoding": "base64"}),
+        json!({"reference": audio_ref, "audio": false, "audio_duration_ms": 5_000}),
+        json!({"reference": audio_ref, "audio": true, "audio_encoding": "mp3"}),
+        json!({"reference": audio_ref, "audio": true, "cursor": "cur"}),
+        json!({"reference": audio_ref, "audio": true, "offset_ms": 0}),
+        json!({"reference": audio_ref, "audio": true, "audio_duration_ms": 500}),
+        json!({"reference": audio_ref, "audio": true, "audio_duration_ms": 60_001}),
+        json!({"references": [audio_ref], "audio": true}),
+        json!({"reference": span_ref, "audio": true}),
+    ] {
+        assert_eq!(
+            probe(&journal, "get_transcript", bad.clone()),
+            Err(McpProbeError::InvalidInput),
+            "{bad}"
+        );
+    }
+
+    // Explicit audio clip request serves canonical 16 kHz mono WAV with metadata stripped.
+    let first = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": audio_ref, "audio": true, "audio_duration_ms": 2_000}),
+    );
+    assert_eq!(first.value["audio"]["state"], "attached");
+    assert_eq!(first.value["audio"]["track"], "audio");
+    assert_eq!(
+        first.value["audio"]["filename"],
+        format!("{DAY}_090000_audio.wav")
+    );
+    assert_eq!(first.value["audio"]["audio_content_index"], 1);
+    assert!(first.value["audio"].get("data_base64").is_none());
+    assert_eq!(first.value["audio"]["mime_type"], "audio/wav");
+    assert_eq!(first.value["audio"]["sample_rate_hz"], 16_000);
+    assert_eq!(first.value["audio"]["channels"], 1);
+    assert_eq!(first.value["audio"]["start_ms"], 0);
+    assert_eq!(first.value["audio"]["duration_ms"], 2_000);
+    assert_eq!(first.value["audio"]["total_duration_ms"], 5_000);
+    assert_eq!(first.value["audio"]["has_more"], true);
+    assert_eq!(first.value["audio"]["next_start_ms"], 2_000);
+    assert_eq!(first.value["audio"]["bytes"], 44 + 2 * 16_000 * 2);
+    assert!(
+        first.value["entries"]
+            .as_array()
+            .is_some_and(|e| !e.is_empty()),
+        "transcript text entries stay intact alongside audio"
+    );
+    assert_eq!(first.audio.len(), 1);
+    assert_eq!(&first.audio[0][..4], b"RIFF");
+    assert_eq!(&first.audio[0][8..12], b"WAVE");
+    assert!(
+        !first.audio[0]
+            .windows(secret_meta.len())
+            .any(|w| w == secret_meta),
+        "audio WAV must strip container metadata"
+    );
+    let wire = crate::jsonrpc::media_tool_result(
+        first.value.clone(),
+        first.empty_note.as_deref(),
+        &first.images,
+        &first.audio,
+    );
+    assert_eq!(wire["content"][0]["type"], "text");
+    assert_eq!(wire["content"][1]["type"], "audio");
+    assert_eq!(wire["content"][1]["mimeType"], "audio/wav");
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(wire["content"][1]["data"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(decoded, first.audio[0]);
+
+    // Artifact-safe base64 delivery returns identical WAV bytes inline with zero audio content block.
+    let inline_b64 = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({
+            "reference": audio_ref,
+            "audio": true,
+            "audio_duration_ms": 2_000,
+            "audio_encoding": "base64"
+        }),
+    );
+    assert_eq!(inline_b64.value["audio"]["state"], "attached");
+    assert_eq!(
+        inline_b64.value["audio"]["filename"],
+        format!("{DAY}_090000_audio.wav")
+    );
+    assert!(
+        inline_b64.value["audio"]
+            .get("audio_content_index")
+            .is_none()
+    );
+    assert!(inline_b64.audio.is_empty());
+    let inline_bytes = base64::engine::general_purpose::STANDARD
+        .decode(inline_b64.value["audio"]["data_base64"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(inline_bytes, first.audio[0]);
+    let inline_wire = crate::jsonrpc::media_tool_result(
+        inline_b64.value.clone(),
+        inline_b64.empty_note.as_deref(),
+        &inline_b64.images,
+        &inline_b64.audio,
+    );
+    assert_eq!(inline_wire["content"].as_array().unwrap().len(), 1);
+    let parsed_text: Value =
+        serde_json::from_str(inline_wire["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        parsed_text["audio"]["data_base64"],
+        inline_b64.value["audio"]["data_base64"]
+    );
+
+    // Step forward with next_start_ms until EOF.
+    let second = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({
+            "reference": audio_ref,
+            "audio": true,
+            "audio_start_ms": first.value["audio"]["next_start_ms"],
+            "audio_duration_ms": 10_000
+        }),
+    );
+    assert_eq!(second.value["audio"]["state"], "attached");
+    assert_eq!(
+        second.value["audio"]["filename"],
+        format!("{DAY}_090000_audio_2000ms.wav")
+    );
+    assert_eq!(second.value["audio"]["start_ms"], 2_000);
+    assert_eq!(second.value["audio"]["duration_ms"], 3_000);
+    assert_eq!(second.value["audio"]["has_more"], false);
+    assert!(second.value["audio"].get("next_start_ms").is_none());
+    assert_eq!(second.audio[0].len(), 44 + 3 * 16_000 * 2);
+
+    // Out-of-range offset fails cleanly without breaking transcript text reads.
+    let past = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": audio_ref, "audio": true, "audio_start_ms": 20_000}),
+    );
+    assert_eq!(past.value["audio"]["state"], "out_of_range");
+    assert!(past.audio.is_empty());
+    assert!(
+        past.value["entries"]
+            .as_array()
+            .is_some_and(|e| !e.is_empty())
+    );
+
+    // 3. Missing-audio segment fails cleanly as not_kept while preserving text transcript.
+    let missing = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": text_only_ref, "audio": true}),
+    );
+    assert_eq!(missing.value["audio"]["state"], "not_kept");
+    assert!(missing.audio.is_empty());
+    assert!(
+        missing.value["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line
+                .as_str()
+                .unwrap()
+                .contains("kept words without kept audio"))
+    );
+
+    // 4. Multi-track selection, empty stub, and corrupt audio handling.
+    let multi_seg = root
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join("110000_60");
+    fs::create_dir_all(multi_seg.join("talents")).unwrap();
+    fs::write(
+        multi_seg.join("audio.jsonl"),
+        "{\"start\":\"11:00:01\",\"speaker\":\"owner\",\"text\":\"two track test\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        multi_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+    fs::write(
+        multi_seg.join("mic.wav"),
+        synthetic_wav_with_metadata(2, b"mic"),
+    )
+    .unwrap();
+    fs::write(multi_seg.join("system.wav"), []).unwrap();
+    let multi_ref = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap()
+        ["transcripts"][2]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let choose = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": multi_ref, "audio": true}),
+    );
+    assert_eq!(choose.value["audio"]["state"], "choose_track");
+    assert_eq!(choose.value["audio"]["tracks"], json!(["mic", "system"]));
+    assert!(choose.audio.is_empty());
+
+    let mic = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": multi_ref, "audio": true, "audio_track": "mic"}),
+    );
+    assert_eq!(mic.value["audio"]["state"], "attached");
+    assert_eq!(mic.value["audio"]["track"], "mic");
+    assert_eq!(mic.audio.len(), 1);
+
+    let empty = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": multi_ref, "audio": true, "audio_track": "system"}),
+    );
+    assert_eq!(empty.value["audio"]["state"], "empty");
+    assert!(empty.audio.is_empty());
+
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": multi_ref, "audio": true, "audio_track": "unknown"})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    // Corrupt audio returns unreadable without leaking paths.
+    fs::write(multi_seg.join("system.wav"), b"corrupt audio bytes").unwrap();
+    let broken = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": multi_ref, "audio": true, "audio_track": "system"}),
+    );
+    assert_eq!(broken.value["audio"]["state"], "unreadable");
+    assert!(broken.audio.is_empty());
+    assert!(
+        !broken
+            .value
+            .to_string()
+            .contains(&root.display().to_string())
+    );
+
+    // 5. Retained original sidecar clamps strictly to the segment window.
+    let import_id = "20260914_090000";
+    let orig_dir = root.join("imports").join(import_id).join("originals");
+    fs::create_dir_all(&orig_dir).unwrap();
+    fs::write(
+        orig_dir.join("long_recording.wav"),
+        synthetic_wav_with_metadata(10, b"RETAINED_SECRET"),
+    )
+    .unwrap();
+    let retained_seg = root
+        .join("chronicle")
+        .join(DAY)
+        .join("import.audio")
+        .join("120000_2");
+    fs::create_dir_all(retained_seg.join("talents")).unwrap();
+    fs::write(
+        retained_seg.join("imported_audio.jsonl"),
+        "{\"raw\":\"imported_audio.wav\"}\n{\"start\":\"12:00:00\",\"speaker\":\"owner\",\"text\":\"part two\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        retained_seg.join("imported_audio.original-audio.json"),
+        json!({
+            "import_id": import_id,
+            "relative": "long_recording.wav",
+            "offset_ms": 3_000
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        retained_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+    let retained_ref = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap()
+        ["transcripts"][3]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let clamped = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": retained_ref, "audio": true, "audio_duration_ms": 10_000}),
+    );
+    assert_eq!(clamped.value["audio"]["state"], "attached");
+    assert_eq!(clamped.value["audio"]["start_ms"], 0);
+    assert_eq!(clamped.value["audio"]["duration_ms"], 2_000);
+    assert_eq!(clamped.value["audio"]["total_duration_ms"], 2_000);
+    assert_eq!(clamped.value["audio"]["has_more"], false);
+    assert_eq!(clamped.audio[0].len(), 44 + 2 * 16_000 * 2);
+    assert!(!clamped.value.to_string().contains("long_recording.wav"));
+    assert!(!clamped.value.to_string().contains(import_id));
+    let past_seg_cap = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": retained_ref, "audio": true, "audio_start_ms": 2_000}),
+    );
+    assert_eq!(past_seg_cap.value["audio"]["state"], "out_of_range");
+    assert!(past_seg_cap.audio.is_empty());
+}
+
+#[test]
+fn audio_media_never_leaks_for_out_of_scope_hidden_trashed_or_symlinked_segments() {
+    let journal = fixture();
+    let root = journal.path();
+    let seg = root.join("chronicle").join(DAY).join(STREAM).join(SEGMENT);
+    fs::write(
+        seg.join("audio.wav"),
+        synthetic_wav_with_metadata(2, b"scope"),
+    )
+    .unwrap();
+
+    // Scoped to FACET_A only, with audio_media opted in.
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "audio_media".into()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.into()],
+                },
+            },
+        )
+        .unwrap();
+
+    let listed = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
+    let reference = listed["transcripts"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(listed["transcripts"][0]["has_audio"], true);
+
+    // 1. Out-of-scope facet reassignment blocks audio immediately even with an existing reference.
+    fs::write(seg.join("talents/facets.json"), r#"[{"facet":"beta"}]"#).unwrap();
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": reference, "audio": true})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+    let after_move = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
+    assert!(after_move["transcripts"].as_array().unwrap().is_empty());
+
+    // Restore facet scope and verify trashed/tombstoned segment refuses audio.
+    fs::write(seg.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    fs::write(seg.join("tombstone.json"), "{}").unwrap();
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": reference, "audio": true})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+    fs::remove_file(seg.join("tombstone.json")).unwrap();
+
+    // 2. Hidden day (body_hidden_days on a body+audio segment) blocks audio.
+    let hidden_day = "20260915";
+    let body_seg = root
+        .join("chronicle")
+        .join(hidden_day)
+        .join("import.apple_health")
+        .join("080000_300");
+    fs::create_dir_all(body_seg.join("talents")).unwrap();
+    fs::write(
+        body_seg.join("body.jsonl"),
+        "{\"type\":\"steps\",\"value\":100}\n",
+    )
+    .unwrap();
+    fs::write(
+        body_seg.join("audio.jsonl"),
+        "{\"start\":\"08:00:05\",\"speaker\":\"owner\",\"text\":\"hidden day speech\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        body_seg.join("audio.wav"),
+        synthetic_wav_with_metadata(2, b"hidden"),
+    )
+    .unwrap();
+    fs::write(
+        body_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+    let hidden_path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+    fs::create_dir_all(hidden_path.parent().unwrap()).unwrap();
+    fs::write(
+        &hidden_path,
+        solstone_core_format::content::body_hidden_days::hidden_days_bytes(
+            &[hidden_day.to_owned()].into(),
+        ),
+    )
+    .unwrap();
+    let hidden_list = probe(&journal, "list_transcripts", json!({"day": hidden_day})).unwrap();
+    assert!(hidden_list["transcripts"].as_array().unwrap().is_empty());
+    assert_eq!(
+        probe(
+            &journal,
+            "get_transcript",
+            json!({"reference": format!("{hidden_day}/import.apple_health/080000_300"), "audio": true})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    // 3. Symlinked audio files inside an admitted segment are never followed.
+    #[cfg(unix)]
+    {
+        let outside = tempfile::tempdir_in(crate::test_scratch()).unwrap();
+        let outside_wav = outside.path().join("outside.wav");
+        fs::write(&outside_wav, synthetic_wav_with_metadata(2, b"outside")).unwrap();
+        fs::remove_file(seg.join("audio.wav")).unwrap();
+        std::os::unix::fs::symlink(&outside_wav, seg.join("audio.wav")).unwrap();
+        let sym_out = dispatch_output(
+            &journal,
+            "get_transcript",
+            json!({"reference": reference, "audio": true}),
+        );
+        assert_eq!(sym_out.value["audio"]["state"], "not_kept");
+        assert!(sym_out.audio.is_empty());
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn audio_media_revoked_mid_read_releases_zero_audio_bytes() {
+    use crate::source_freeze_barrier::{FreezePoint, run_with_source_freeze_barrier};
+
+    let journal = fixture();
+    let root = journal.path().to_path_buf();
+    let seg = root.join("chronicle").join(DAY).join(STREAM).join(SEGMENT);
+    fs::write(
+        seg.join("audio.wav"),
+        synthetic_wav_with_metadata(2, b"revoked"),
+    )
+    .unwrap();
+    PermissionStore::open(&root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "audio_media".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let reference = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap()
+        ["transcripts"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let root_for_revoke = root.clone();
+    let (result, fired) = run_with_source_freeze_barrier(
+        FreezePoint::Before,
+        1,
+        move || {
+            PermissionStore::open(&root_for_revoke)
+                .set_permission(
+                    CONNECTION,
+                    ReadPermission {
+                        categories: vec!["transcripts".into()],
+                        scope: ReadScope::WholeJournal,
+                    },
+                )
+                .unwrap();
+        },
+        || {
+            crate::dispatch::dispatch_authenticated_tool_call(
+                &root,
+                DispatchPrincipal {
+                    connection: CONNECTION,
+                    agent_identity: CONNECTION,
+                },
+                crate::jsonrpc::ToolName::GetTranscript,
+                Some(&json!({"reference": reference, "audio": true})),
+                jiff::Timestamp::now(),
+            )
+        },
+    );
+    assert!(
+        fired,
+        "revocation must run while the audio read is in flight"
+    );
+    assert_eq!(
+        result.err(),
+        Some(crate::dispatch::DispatchError::PermissionDenied(
+            "no_permission"
+        ))
+    );
+}

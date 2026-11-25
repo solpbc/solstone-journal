@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for audio recordings under transcripts in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for including audio clips from transcript recordings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9a316b1322f42ae7186b10f0f741cc9f0ba44d7db9cc1a2acc049325e7affd1",
+  "max_length": 35,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

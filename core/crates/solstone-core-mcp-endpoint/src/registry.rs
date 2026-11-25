@@ -206,7 +206,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
         title: "list transcripts",
-        description: "list transcript segments this connection may read. use day or day_from and day_to. time_from and time_to narrow a single day. for one day without a facet or find filter, pass a source label as source. a body source also takes entry_kind to narrow its entries, for example sleep. a day's span_reference reads its segments together with get_transcript. gaps show times no readable timed segment covers. they say nothing about what happened. other_sources lists body sources. omitted_workouts counts Strava workouts left out of this list. use search to find them. body_note explains when body access is missing. the shared kind, person, place and activity filters list journal entries for fetch and take a date range or facet. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list transcript segments this connection may read. use day or day_from and day_to. time_from and time_to narrow a single day. for one day without a facet or find filter, pass a source label as source. a body source also takes entry_kind to narrow its entries, for example sleep. a day's span_reference reads its segments together with get_transcript. gaps show times no readable timed segment covers. they say nothing about what happened. other_sources lists body sources. omitted_workouts counts Strava workouts left out of this list. use search to find them. body_note explains when body access is missing. when include audio is allowed, segments that still have a recording carry has_audio: true. the shared kind, person, place and activity filters list journal entries for fetch and take a date range or facet. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_transcripts_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
@@ -215,7 +215,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. a span returns segments with times, sources, content_kinds and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
+        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. for one transcript segment, pass audio: true to request a 16 kHz mono WAV clip (up to 60 seconds; default 30000 ms from audio_start_ms 0) when include audio is allowed and a recording is kept. by default the clip arrives as an audio content block at audio.audio_content_index, with a suggested download name in audio.filename; pass audio_encoding \"base64\" to return the WAV bytes in audio.data_base64 instead (for interactive pages or clients that cannot read audio content blocks). pass audio.next_start_ms as audio_start_ms to continue, or a name from audio.tracks as audio_track when there is more than one recording. the journal makes no public link for audio. a span returns segments with times, sources, content_kinds and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
         input_schema: transcript_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -585,6 +585,30 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     if name == "search" && arguments.contains_key("category") && arguments.contains_key("kind") {
         return "search takes either `kind` or `category`.".to_owned();
     }
+    if name == "get_transcript" {
+        let has_audio_options = [
+            "audio_start_ms",
+            "audio_duration_ms",
+            "audio_track",
+            "audio_encoding",
+        ]
+        .iter()
+        .any(|key| arguments.contains_key(*key));
+        let audio_requested = arguments.get("audio").and_then(Value::as_bool) == Some(true);
+        if has_audio_options && !audio_requested {
+            return "get_transcript needs `audio: true` when using `audio_start_ms`, `audio_duration_ms`, `audio_track`, or `audio_encoding`."
+                .to_owned();
+        }
+        if audio_requested
+            && (arguments.contains_key("references")
+                || arguments.contains_key("cursor")
+                || arguments.contains_key("offset_ms")
+                || arguments.contains_key("display"))
+        {
+            return "get_transcript takes `audio` with a single segment `reference`, without `references`, `cursor`, `offset_ms`, or `display`."
+                .to_owned();
+        }
+    }
     for key in schema["required"]
         .as_array()
         .into_iter()
@@ -696,6 +720,12 @@ fn explain_value(key: &str, property: &Value, value: &Value) -> Option<String> {
                         format!("`{key}` must be at most {}.", maximum.unwrap_or_default())
                     }
                 });
+            }
+            None
+        }
+        Some("boolean") => {
+            if !value.is_boolean() {
+                return Some(format!("`{key}` must be true or false."));
             }
             None
         }
@@ -911,6 +941,11 @@ fn transcript_input_schema(_context: &SchemaContext<'_>) -> Value {
             "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
             "offset_ms": { "type": "integer", "minimum": 0, "maximum": u32::MAX, "description": "milliseconds from the start of a single screen segment" },
             "display": { "type": "string", "minLength": 1, "maxLength": 255 },
+            "audio": { "type": "boolean", "description": "request a bounded 16 kHz mono WAV clip from a single transcript segment. requires the include audio permission." },
+            "audio_start_ms": { "type": "integer", "minimum": 0, "maximum": crate::tools::transcripts::MAX_AUDIO_START_MS, "default": 0, "description": "start offset in milliseconds within the segment's audio recording (default 0). requires audio: true." },
+            "audio_duration_ms": { "type": "integer", "minimum": solstone_core_observe_audio::MIN_CLIP_DURATION_MS, "maximum": solstone_core_observe_audio::MAX_CLIP_DURATION_MS, "default": crate::tools::transcripts::DEFAULT_AUDIO_DURATION_MS, "description": "clip length in milliseconds, from 1000 to 60000 (default 30000). requires audio: true." },
+            "audio_track": { "type": "string", "minLength": 1, "maxLength": 255, "description": "track name from audio.tracks when a segment has more than one audio recording. requires audio: true." },
+            "audio_encoding": { "type": "string", "enum": ["content", "base64"], "default": "content", "description": "how to return the WAV bytes: content (default, as an MCP audio content block at content[audio.audio_content_index]) or base64 (inline in audio.data_base64 for pages or clients that cannot read MCP audio blocks). requires audio: true." },
             "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
         }
     });
@@ -1289,6 +1324,36 @@ mod tests {
                 ToolName::GetWeek,
                 json!({"day_from": "2025-01-01", "day_to": "tuesday"}),
                 "`day_to`",
+            ),
+            (
+                ToolName::GetTranscript,
+                json!({"reference": "ref-1", "audio": "yes"}),
+                "`audio`",
+            ),
+            (
+                ToolName::GetTranscript,
+                json!({"reference": "ref-1", "audio": true, "audio_duration_ms": 90_000}),
+                "`audio_duration_ms`",
+            ),
+            (
+                ToolName::GetTranscript,
+                json!({"reference": "ref-1", "audio_start_ms": 5_000}),
+                "`audio: true`",
+            ),
+            (
+                ToolName::GetTranscript,
+                json!({"reference": "ref-1", "audio": true, "cursor": "cur-1"}),
+                "`audio`",
+            ),
+            (
+                ToolName::GetTranscript,
+                json!({"reference": "ref-1", "audio": true, "audio_encoding": "mp3"}),
+                "`audio_encoding`",
+            ),
+            (
+                ToolName::GetTranscript,
+                json!({"reference": "ref-1", "audio_encoding": "base64"}),
+                "`audio: true`",
             ),
         ] {
             let message = explain(tool, arguments);

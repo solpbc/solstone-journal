@@ -3237,6 +3237,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.agents.activity.reason.read.audio.media",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e617564696f2e6d65646961",
+      "namespace": "journal.window.agents.activity.reason.read.audio",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.agents.activity.reason.read.body",
       "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e61637469766974792e726561736f6e2e726561642e626f6479",
       "namespace": "journal.window.agents.activity.reason.read",
@@ -7787,6 +7799,30 @@
           "value": " "
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.kind.audio.media.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e617564696f2e6d656469612e6465736372697074696f6e",
+      "namespace": "journal.window.agents.permission.kind.audio.media",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.kind.audio.media.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e617564696f2e6d656469612e6c6162656c",
+      "namespace": "journal.window.agents.permission.kind.audio.media",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
       "selector": null
     },
     {

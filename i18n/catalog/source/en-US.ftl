@@ -23891,3 +23891,10 @@ journal.window.import.transfer.error.no.space = not enough space for this { $tot
 journal.window.import.transfer.error.integrity = the file didn't arrive intact. try sending it again.
 
 journal.window.import.transfer.error.expired = this unfinished import is no longer open. try again to start over.
+
+journal.window.agents.permission.kind.audio.media.label = include audio
+
+journal.window.agents.permission.kind.audio.media.description = this agent can ask for audio clips from your transcripts, if your journal still has the recording. needs transcripts.
+
+journal.window.agents.activity.reason.read.audio.media = this connection needs permission to include audio
+

@@ -15,6 +15,7 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Transcripts,
+    AudioMedia,
     Messages,
     Transactions,
     Notes,
@@ -102,6 +103,17 @@ pub const KINDS: &[KindSpec] = &[
             "journal.window.agents.permission.kind.transcripts.description",
         )),
         checked_by_default: true,
+    },
+    KindSpec {
+        kind: Kind::AudioMedia,
+        stored_word: "audio_media",
+        permission: Some(AdmittedCategory::AudioMedia),
+        query_alias: None,
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.audio.media.label",
+            "journal.window.agents.permission.kind.audio.media.description",
+        )),
+        checked_by_default: false,
     },
     KindSpec {
         kind: Kind::Messages,
@@ -410,6 +422,7 @@ impl KindSpec {
     /// The kind this one is an option of, shown under it where an owner chooses.
     pub fn option_of(&self) -> Option<&'static str> {
         match self.kind {
+            Kind::AudioMedia => Some("transcripts"),
             Kind::ProfilePics => Some("entities"),
             Kind::Screenshots => Some("screen_text"),
             Kind::WomensHealth => Some("body"),
@@ -823,6 +836,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (Kind::Transcripts, Some("transcripts")),
+                (Kind::AudioMedia, Some("audio_media")),
                 (Kind::Messages, Some("messages")),
                 (Kind::Transactions, Some("transactions")),
                 (Kind::Entities, Some("entities")),

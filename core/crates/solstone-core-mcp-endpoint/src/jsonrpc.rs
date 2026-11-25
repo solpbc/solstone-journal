@@ -292,21 +292,39 @@ pub(crate) fn literal_tool_result(value: Value, empty_note: Option<&str>) -> Val
 
 /// Keep the structured entity and its text copy, with image content beside
 /// them. Structured-content clients retain image blocks independently of text.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn image_tool_result(
     value: Value,
     empty_note: Option<&str>,
     images: &[Vec<u8>],
 ) -> Value {
+    media_tool_result(value, empty_note, images, &[])
+}
+
+/// Keep the structured result and its text copy, with image and audio content
+/// beside them. Structured-content clients retain media blocks independently
+/// of text.
+pub(crate) fn media_tool_result(
+    value: Value,
+    empty_note: Option<&str>,
+    images: &[Vec<u8>],
+    audio: &[Vec<u8>],
+) -> Value {
     let mut result = literal_tool_result(value, empty_note);
+    let content = result["content"].as_array_mut().expect("content array");
     for jpeg in images {
         use base64::Engine;
-        result["content"]
-            .as_array_mut()
-            .expect("content array")
-            .push(json!({
-                "type": "image", "mimeType": "image/jpeg",
-                "data": base64::engine::general_purpose::STANDARD.encode(jpeg),
-            }));
+        content.push(json!({
+            "type": "image", "mimeType": "image/jpeg",
+            "data": base64::engine::general_purpose::STANDARD.encode(jpeg),
+        }));
+    }
+    for wav in audio {
+        use base64::Engine;
+        content.push(json!({
+            "type": "audio", "mimeType": "audio/wav",
+            "data": base64::engine::general_purpose::STANDARD.encode(wav),
+        }));
     }
     result
 }
@@ -533,6 +551,21 @@ mod image_tests {
         assert_eq!(
             mixed["content"][1],
             serde_json::json!({"type":"image","mimeType":"image/jpeg","data":"dGVzdA=="})
+        );
+    }
+
+    #[test]
+    fn media_results_keep_structured_content_and_attach_audio_wav_blocks() {
+        let value = serde_json::json!({"audio":{"state":"attached","mime_type":"audio/wav"}});
+        let text = super::media_tool_result(value.clone(), None, &[], &[]);
+        assert_eq!(text["structuredContent"], value);
+        assert_eq!(text["content"].as_array().unwrap().len(), 1);
+        let with_audio = super::media_tool_result(value, None, &[], &[b"RIFF".to_vec()]);
+        assert!(with_audio.get("structuredContent").is_some());
+        assert_eq!(with_audio["content"][0]["type"], "text");
+        assert_eq!(
+            with_audio["content"][1],
+            serde_json::json!({"type":"audio","mimeType":"audio/wav","data":"UklGRg=="})
         );
     }
 }

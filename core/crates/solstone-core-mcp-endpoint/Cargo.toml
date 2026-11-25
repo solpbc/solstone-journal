@@ -19,6 +19,8 @@ test-hooks = [
 
 [dependencies]
 solstone-core-grab.workspace = true
+solstone-core-observe-audio.workspace = true
+solstone-core-processing-record.workspace = true
 solstone-core-entities.workspace = true
 image.workspace = true
 solstone-core-journal-config.workspace = true

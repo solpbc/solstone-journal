@@ -21,7 +21,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::dispatch::{DispatchError, DispatchPrincipal, dispatch_authenticated_tool_call};
 use crate::http1::{Http1Connection, Http1Error, HttpMethod, HttpRequest, HttpResponse};
 use crate::jsonrpc::{
-    JsonRpcResponse, McpMethod, classify_method, image_tool_result, initialize_result,
+    JsonRpcResponse, McpMethod, classify_method, initialize_result, media_tool_result,
     parse_request, tool_arguments,
 };
 use crate::oauth::OAuthRuntime;
@@ -911,7 +911,12 @@ fn execute_tool_call(
     ) {
         Ok(output) => JsonRpcResponse::success(
             request.id.as_ref(),
-            image_tool_result(output.value, output.empty_note.as_deref(), &output.images),
+            media_tool_result(
+                output.value,
+                output.empty_note.as_deref(),
+                &output.images,
+                &output.audio,
+            ),
         ),
         Err(DispatchError::InvalidInput) => JsonRpcResponse::invalid_arguments(
             request.id.as_ref(),

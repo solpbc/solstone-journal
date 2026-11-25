@@ -528,6 +528,7 @@ const ENTRY = {
 
 const permissionKinds = [
   ['transcripts', 'transcripts', true],
+  ['audio_media', 'include audio', false, 'transcripts'],
   ['entities', 'entities', true],
   ['profile_pics', 'profile pics', true, 'entities'],
   ['facets', 'summaries', true],
@@ -1967,6 +1968,41 @@ module.exports = async function agentsContractCases(manifestDir) {
     await keyPress(p, p.q('[data-save-permission="oauth:g-body"]'));
     assert.ok(saved && Array.isArray(saved.categories), 'permission save ran');
     assert.ok(!saved.categories.includes('body') && !saved.categories.includes('womens_health'), `orphaned womens_health omitted: ${JSON.stringify(saved.categories)}`);
+  });
+
+  await test('transcripts -> audio_media sub-option stays unchecked by default and hides/disables when transcripts is unchecked', async () => {
+    let saved = null;
+    const withAudio = connection('oauth', 'g-audio', 'Listener', 'local', {
+      permission: { read: { categories: ['transcripts', 'audio_media', 'entities'], scope: { kind: 'whole_journal' } } },
+    });
+    const withoutAudio = connection('oauth', 'g-tx', 'Reader', 'local', {
+      permission: { read: { categories: ['transcripts'], scope: { kind: 'whole_journal' } } },
+    });
+    const { answers } = living({ local_door: DOOR_ON, connections: [withAudio, withoutAudio] }, {
+      'PUT /app/agents/api/connections/oauth/g-audio/permission': (_box, _u, opts) => { saved = JSON.parse(opts.body); return { ok: true }; },
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    // Transcripts-only connection shows audio_media enabled and unchecked.
+    await keyPress(p, p.q('[data-connection="oauth:g-tx"]'));
+    const txAudioRow = p.q('label[data-option-of="transcripts"]');
+    const txAudioBox = txAudioRow.querySelector('input[name="category"]');
+    assert.ok(!txAudioRow.classList.contains('hidden'), 'audio_media shows when transcripts is on');
+    assert.ok(!txAudioBox.disabled, 'audio_media is enabled when transcripts is on');
+    assert.ok(!txAudioBox.checked, 'audio_media stays unchecked for transcripts-only grants');
+
+    // Unchecking transcripts hides/disables audio_media and drops it from PUT payload.
+    await keyPress(p, p.q('[data-route="home"]'));
+    await keyPress(p, p.q('[data-connection="oauth:g-audio"]'));
+    const audioRow = p.q('label[data-option-of="transcripts"]');
+    const audioBox = audioRow.querySelector('input[name="category"]');
+    const txBox = p.q('input[name="category"][value="transcripts"]');
+    assert.ok(!audioRow.classList.contains('hidden') && !audioBox.disabled && audioBox.checked, 'audio_media shown and checked with transcripts');
+    txBox.checked = false;
+    p.doc.dispatch(txBox, { type: 'change' });
+    assert.ok(audioRow.classList.contains('hidden') && audioBox.disabled, 'unchecking transcripts hides and disables audio_media');
+    await keyPress(p, p.q('[data-save-permission="oauth:g-audio"]'));
+    assert.ok(saved && Array.isArray(saved.categories), 'permission save ran');
+    assert.ok(!saved.categories.includes('transcripts') && !saved.categories.includes('audio_media'), `orphaned audio_media omitted: ${JSON.stringify(saved.categories)}`);
   });
 
   return cases;

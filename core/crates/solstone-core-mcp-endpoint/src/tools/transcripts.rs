@@ -22,9 +22,37 @@ pub(crate) struct ValidatedListTranscripts {
     pub(crate) kind: Option<String>,
 }
 
+use solstone_core_observe_audio::{MAX_CLIP_DURATION_MS, MIN_CLIP_DURATION_MS};
+
+pub(crate) const DEFAULT_AUDIO_DURATION_MS: u64 = 30_000;
+pub(crate) const MAX_AUDIO_START_MS: u64 = 86_400_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AudioEncoding {
+    Content,
+    Base64,
+}
+
+impl AudioEncoding {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Content => "content",
+            Self::Base64 => "base64",
+        }
+    }
+}
+
+pub(crate) struct AudioClipRequest {
+    pub(crate) start_ms: u64,
+    pub(crate) duration_ms: u64,
+    pub(crate) track: Option<String>,
+    pub(crate) encoding: AudioEncoding,
+}
+
 pub(crate) struct ValidatedGetTranscript {
     pub(crate) offset_ms: Option<u32>,
     pub(crate) display: Option<String>,
+    pub(crate) audio: Option<AudioClipRequest>,
     pub(crate) reference: String,
     pub(crate) cursor: Option<String>,
 }
@@ -59,6 +87,16 @@ struct ListParams {
 struct GetParams {
     offset_ms: Option<u32>,
     display: Option<String>,
+    #[serde(default)]
+    audio: Option<bool>,
+    #[serde(default)]
+    audio_start_ms: Option<u64>,
+    #[serde(default)]
+    audio_duration_ms: Option<u64>,
+    #[serde(default)]
+    audio_track: Option<String>,
+    #[serde(default)]
+    audio_encoding: Option<String>,
     reference: String,
     #[serde(default)]
     cursor: Option<String>,
@@ -181,9 +219,55 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetTranscr
     {
         return Err(ToolError::InvalidInput);
     }
+    let audio_options_present = params.audio_start_ms.is_some()
+        || params.audio_duration_ms.is_some()
+        || params.audio_track.is_some()
+        || params.audio_encoding.is_some();
+    let audio = match params.audio {
+        Some(true) => {
+            if params.cursor.is_some() || params.offset_ms.is_some() || params.display.is_some() {
+                return Err(ToolError::InvalidInput);
+            }
+            let start_ms = params.audio_start_ms.unwrap_or(0);
+            if start_ms > MAX_AUDIO_START_MS {
+                return Err(ToolError::InvalidInput);
+            }
+            let duration_ms = params
+                .audio_duration_ms
+                .unwrap_or(DEFAULT_AUDIO_DURATION_MS);
+            if !(MIN_CLIP_DURATION_MS..=MAX_CLIP_DURATION_MS).contains(&duration_ms) {
+                return Err(ToolError::InvalidInput);
+            }
+            if params
+                .audio_track
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.len() > 255)
+            {
+                return Err(ToolError::InvalidInput);
+            }
+            let encoding = match params.audio_encoding.as_deref() {
+                None | Some("content") => AudioEncoding::Content,
+                Some("base64") => AudioEncoding::Base64,
+                Some(_) => return Err(ToolError::InvalidInput),
+            };
+            Some(AudioClipRequest {
+                start_ms,
+                duration_ms,
+                track: params.audio_track,
+                encoding,
+            })
+        }
+        Some(false) | None => {
+            if audio_options_present {
+                return Err(ToolError::InvalidInput);
+            }
+            None
+        }
+    };
     Ok(ValidatedGetTranscript {
         offset_ms: params.offset_ms,
         display: params.display,
+        audio,
         reference: params.reference,
         cursor: params.cursor,
     })

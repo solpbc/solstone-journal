@@ -237,6 +237,9 @@ pub struct ScreenTalentRawScreen {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AdmittedCategory {
     Transcripts,
+    /// Audio recordings backing admitted transcript segments. An opt-in
+    /// sub-option of `transcripts`, never standalone content.
+    AudioMedia,
     Messages,
     Transactions,
     Entities,

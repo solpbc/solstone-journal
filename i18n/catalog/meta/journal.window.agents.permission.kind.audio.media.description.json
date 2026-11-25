@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for audio recordings under transcripts in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for including audio clips from transcript recordings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b02e49e250d646c95f3a537a3b2d530af505aae982824efeb516eaf92f9cf7cd",
+  "max_length": 200,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

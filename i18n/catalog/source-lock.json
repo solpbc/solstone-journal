@@ -6594,6 +6594,13 @@
       ]
     },
     {
+      "id": "journal.window.agents.activity.reason.read.audio.media",
+      "source": "fa792e125b41a2bbcdc4255b6612328058b0a4d0e6cafbcefac1e76897421926",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.agents.activity.reason.read.body",
       "source": "de6d57f969f1dfc6e33ceefa01e2fc7763bd48f7ed931a0b575dce0fead6313a",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -14160,6 +14167,20 @@
           "protected": "e6cd09712159a5e024abf0d14d9434920ac2696ac6b48af516f18f4c80a23c43"
         }
       ]
+    },
+    {
+      "id": "journal.window.agents.permission.kind.audio.media.description",
+      "source": "b02e49e250d646c95f3a537a3b2d530af505aae982824efeb516eaf92f9cf7cd",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.agents.permission.kind.audio.media.label",
+      "source": "e9a316b1322f42ae7186b10f0f741cc9f0ba44d7db9cc1a2acc049325e7affd1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.agents.permission.kind.body.description",

@@ -38,6 +38,7 @@ pub(crate) enum Reason {
     DifferentBytes,
     ReservationPublication,
     ReadTranscripts,
+    ReadAudioMedia,
     ReadMessages,
     ReadTransactions,
     ReadEntities,
@@ -106,6 +107,7 @@ impl Reason {
                 "journal.window.agents.activity.reason.reservation.publication"
             }
             Self::ReadTranscripts => "journal.window.agents.activity.reason.read.transcripts",
+            Self::ReadAudioMedia => "journal.window.agents.activity.reason.read.audio.media",
             Self::ReadMessages => "journal.window.agents.activity.reason.read.messages",
             Self::ReadTransactions => "journal.window.agents.activity.reason.read.transactions",
             Self::ReadEntities => "journal.window.agents.activity.reason.read.entities",

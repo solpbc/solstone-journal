@@ -30,6 +30,7 @@ pub(crate) mod acme_lifecycle;
 mod activity;
 mod activity_admit;
 pub(crate) mod agent_state;
+mod audio_media;
 mod audit;
 pub(crate) mod body_source;
 #[cfg(all(test, feature = "full-tests"))]

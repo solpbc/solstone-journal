@@ -112,6 +112,7 @@ activity's sources. This is a complete answer, not an error: asking again return
 pub(crate) struct Prepared {
     value: Value,
     images: Vec<Vec<u8>>,
+    audio: Vec<Vec<u8>>,
     count: usize,
     targets: Vec<String>,
     empty_note: Option<String>,
@@ -123,6 +124,7 @@ impl Prepared {
         Self {
             value,
             images: Vec::new(),
+            audio: Vec::new(),
             count,
             targets,
             empty_note: None,
@@ -157,6 +159,7 @@ impl Prepared {
 /// valid zero says so in words beside the typed empty array.
 pub(crate) struct ToolOutput {
     pub(crate) images: Vec<Vec<u8>>,
+    pub(crate) audio: Vec<Vec<u8>>,
     pub(crate) value: Value,
     pub(crate) empty_note: Option<String>,
 }
@@ -329,7 +332,21 @@ pub(crate) fn dispatch_authenticated_tool_call(
     let shape = result_shape(
         prepared.count,
         prepared.targets,
-        if prepared.images.len() == 1 && prepared.value.get("items").is_none() {
+        if !prepared.audio.is_empty() {
+            if prepared.audio.len() == 1 && prepared.value.get("items").is_none() {
+                let clip = &prepared.audio[0];
+                content_digest(
+                    &json!({"value": prepared.value, "audio_sha256": format!("{:x}", Sha256::digest(clip))}),
+                )
+            } else {
+                let digests: Vec<_> = prepared
+                    .audio
+                    .iter()
+                    .map(|clip| format!("{:x}", Sha256::digest(clip)))
+                    .collect();
+                content_digest(&json!({"value": prepared.value, "audio_sha256": digests}))
+            }
+        } else if prepared.images.len() == 1 && prepared.value.get("items").is_none() {
             let image = &prepared.images[0];
             content_digest(
                 &json!({"value": prepared.value, "image_sha256": format!("{:x}", Sha256::digest(image))}),
@@ -358,6 +375,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
 
     Ok(ToolOutput {
         images: prepared.images,
+        audio: prepared.audio,
         value: prepared.value,
         empty_note: prepared.empty_note,
     })
@@ -435,6 +453,12 @@ fn scope_refusal(
         {
             Some(AdmittedCategory::Screenshots)
         }
+        ValidatedTool::GetTranscript(request)
+            if request.audio.is_some()
+                && !snapshot.categories.contains(&AdmittedCategory::AudioMedia) =>
+        {
+            Some(AdmittedCategory::AudioMedia)
+        }
         ValidatedTool::Search(request) | ValidatedTool::Find(_, request) => request
             .category
             .into_iter()
@@ -480,6 +504,7 @@ pub(crate) fn kind_refusal(kind: AdmittedCategory) -> String {
 fn kind_reason(kind: AdmittedCategory) -> Reason {
     match kind {
         AdmittedCategory::Transcripts => Reason::ReadTranscripts,
+        AdmittedCategory::AudioMedia => Reason::ReadAudioMedia,
         AdmittedCategory::Messages => Reason::ReadMessages,
         AdmittedCategory::Transactions => Reason::ReadTransactions,
         AdmittedCategory::Entities => Reason::ReadEntities,
@@ -698,6 +723,17 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                 arguments.insert("offset_ms".into(), offset.into());
             }
             insert_present(&mut arguments, "display", request.display.as_deref());
+            if let Some(audio) = &request.audio {
+                arguments.insert("audio".into(), Value::Bool(true));
+                if audio.start_ms > 0 {
+                    arguments.insert("audio_start_ms".into(), audio.start_ms.into());
+                }
+                arguments.insert("audio_duration_ms".into(), audio.duration_ms.into());
+                insert_present(&mut arguments, "audio_track", audio.track.as_deref());
+                if audio.encoding != crate::tools::transcripts::AudioEncoding::Content {
+                    arguments.insert("audio_encoding".into(), audio.encoding.as_str().into());
+                }
+            }
             arguments.insert(
                 "reference".to_owned(),
                 reference_fingerprint(&request.reference).into(),
@@ -1287,6 +1323,7 @@ fn read_batch(
             ToolName::GetTranscript => ValidatedTool::GetTranscript(ValidatedGetTranscript {
                 offset_ms: None,
                 display: None,
+                audio: None,
                 reference,
                 cursor: None,
             }),
@@ -4934,6 +4971,11 @@ fn list_transcripts(
             } else {
                 None
             };
+            let segment_has_audio = allowed
+                && segments.len() < request.limit
+                && snapshot.categories.contains(&AdmittedCategory::AudioMedia)
+                && page.as_ref().is_some_and(Result::is_ok)
+                && crate::audio_media::has_audio(journal_root, segment.path());
             // Freeze the page before the last deletion observation. A removal
             // can replace the directory while its initial live marker is read.
             let allowed = allowed
@@ -5014,6 +5056,9 @@ fn list_transcripts(
             }
             if page.next.is_some() {
                 seg_val["more_lines"] = Value::Bool(true);
+            }
+            if segment_has_audio {
+                seg_val["has_audio"] = Value::Bool(true);
             }
             if let Some(zone) =
                 differing_capture_zone(journal_root, &owner_zone, day, &name, &segment)
@@ -5148,6 +5193,7 @@ fn get_transcript(
             &address,
             request.cursor.as_deref(),
             moment,
+            request.audio.as_ref(),
         );
     }
     let reference = match codec()
@@ -5160,7 +5206,7 @@ fn get_transcript(
     {
         ReferenceTarget::Segment(reference) => reference,
         ReferenceTarget::SourceSpan(_) | ReferenceTarget::SegmentSpan(_)
-            if request.offset_ms.is_some() =>
+            if request.offset_ms.is_some() || request.audio.is_some() =>
         {
             return Err(DispatchError::InvalidInput);
         }
@@ -5191,6 +5237,7 @@ fn get_transcript(
         &reference.into(),
         request.cursor.as_deref(),
         moment,
+        request.audio.as_ref(),
     )
 }
 
@@ -5202,6 +5249,7 @@ pub(crate) fn read_segment(
     reference: &crate::references::SegmentAddress,
     cursor: Option<&str>,
     moment: Option<(u32, Option<&str>)>,
+    audio_request: Option<&crate::tools::transcripts::AudioClipRequest>,
 ) -> Result<Prepared, DispatchError> {
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
     let segment =
@@ -5313,8 +5361,26 @@ pub(crate) fn read_segment(
     } else {
         None
     };
+    let audio = if allowed
+        && snapshot.categories.contains(&AdmittedCategory::AudioMedia)
+        && page_res.as_ref().is_some_and(Result::is_ok)
+    {
+        audio_request
+            .map(|request| {
+                crate::audio_media::clip(journal_root, segment.path(), reference, request)
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    let segment_has_audio = allowed
+        && audio_request.is_none()
+        && moment.is_none()
+        && snapshot.categories.contains(&AdmittedCategory::AudioMedia)
+        && page_res.as_ref().is_some_and(Result::is_ok)
+        && crate::audio_media::has_audio(journal_root, segment.path());
     let allowed = allowed
-        && (screen.is_none()
+        && ((screen.is_none() && audio.is_none() && !segment_has_audio)
             || crate::may_see::segment_scope(
                 journal_root,
                 snapshot,
@@ -5409,6 +5475,9 @@ pub(crate) fn read_segment(
     if page.untimed {
         response_val["untimed"] = Value::Bool(true);
     }
+    if segment_has_audio {
+        response_val["has_audio"] = Value::Bool(true);
+    }
     if let Some(zone) = differing_capture_zone(
         journal_root,
         &owner_zone,
@@ -5418,11 +5487,17 @@ pub(crate) fn read_segment(
     ) {
         response_val["capture_zone"] = zone;
     }
-    // Each transcript entry is made literal after paging.
-    let mut prepared = Prepared::new(response_val, count, vec![target]).served_as_is(&["entries"]);
+    // Each transcript entry is made literal after paging; inline base64 audio bytes stay exact.
+    let mut prepared =
+        Prepared::new(response_val, count, vec![target]).served_as_is(&["entries", "data_base64"]);
     if let Some((info, image)) = screen {
         prepared.value["picture"] = info;
         prepared.images.extend(image);
+        prepared.count = prepared.count.max(1);
+        Ok(prepared)
+    } else if let Some((info, clip)) = audio {
+        prepared.value["audio"] = info;
+        prepared.audio.extend(clip);
         prepared.count = prepared.count.max(1);
         Ok(prepared)
     } else {
