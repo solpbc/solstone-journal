@@ -42,20 +42,31 @@ window.whenShellReady(() => {
       ? Math.max(0, Math.floor(latestServerBadges.home.issues))
       : 0;
     const serverSeverity = latestServerBadges?.home?.severity || null;
-    const totalIssues = serverIssues + unviewed;
+    const delta = window.solShellChrome?.getHomeBadgeDelta?.() || null;
+    const deltaIssues = Number.isFinite(delta?.issues) ? Math.max(0, Math.floor(delta.issues)) : 0;
+    const deltaSeverity = delta?.severity || null;
+    const totalIssues = serverIssues + unviewed + deltaIssues;
+    const combinedSeverity = (serverSeverity === 'red' || deltaSeverity === 'red')
+      ? 'red'
+      : (serverSeverity === 'amber' || deltaSeverity === 'amber' ? 'amber' : null);
     const wsState = window.appEvents?.getMetrics?.()?.state || 'connecting';
     if (totalIssues > 0) {
       window.solShellChrome.setBadge('home', {
         count: totalIssues,
-        tone: serverSeverity === 'red' ? 'danger' : 'warn'
+        tone: combinedSeverity === 'red' ? 'danger' : 'warn'
       });
       return;
     }
     const uncertain = wsState === 'disconnected'
       || badgesFetchFailed
       || serverSeverity === 'amber'
+      || Boolean(delta?.uncertain)
       || lastCaptureStatusForPane === 'unknown';
     window.solShellChrome.setBadge('home', uncertain ? { count: 0, tone: 'warn', marker: '!' } : null);
+  }
+
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('sol:home-badge-delta', syncHomeBadge);
   }
 
   function fetchShellBadges() {
@@ -68,12 +79,18 @@ window.whenShellReady(() => {
       .then(data => {
         if (data && typeof data === 'object') {
           latestServerBadges = data;
+          window.solShellBadges = data;
           badgesFetchFailed = false;
           syncHomeBadge();
           const curationCount = Number.isFinite(data.curation) ? Math.max(0, Math.floor(data.curation)) : 0;
           window.solShellChrome?.setBadge?.('curation', curationCount > 0 ? { count: curationCount, tone: 'neutral' } : null);
           const importCount = Number.isFinite(data.import) ? Math.max(0, Math.floor(data.import)) : 0;
           window.solShellChrome?.setBadge?.('import', importCount > 0 ? { count: importCount, tone: 'review' } : null);
+          if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') {
+            try {
+              window.dispatchEvent(new window.CustomEvent('sol:shell-badges', { detail: data }));
+            } catch (_) {}
+          }
         } else {
           badgesFetchFailed = true;
           syncHomeBadge();

@@ -215,19 +215,31 @@ fn replay_convey_home_corpus() {
             input["pipeline"].as_str().unwrap(),
         ));
         if cta_divergence_case {
-            // Four named corpus cases retain the reference CTA, verdict, and
-            // severity. Count both sides of each patched field.
+            // Four named empty-registry corpus cases retain the historical
+            // reference CTA, headline, verdict, and severity; empty registry
+            // now pairs from the device strip below rather than an inline CTA.
             assert_eq!(
                 expected.pointer("/cta/href"),
                 Some(&json!("/app/observer/"))
             );
             asserted += 1;
-            assert_eq!(
-                actual.pointer("/cta/href"),
-                Some(&json!("/app/network/#devices"))
+            assert!(actual["cta"].is_null());
+            asserted += 1;
+            expected["cta"] = Value::Null;
+            assert!(
+                expected
+                    .pointer("/headline")
+                    .and_then(Value::as_str)
+                    .is_some()
             );
             asserted += 1;
-            *expected.pointer_mut("/cta/href").unwrap() = json!("/app/network/#devices");
+            let empty_ready = solstone_core_window_catalog::text(
+                solstone_core_window_catalog::ENGLISH,
+                "journal.window.home.status.headline.ready.empty",
+            );
+            assert_eq!(actual.pointer("/headline"), Some(&json!(empty_ready)));
+            asserted += 1;
+            expected["headline"] = json!(empty_ready);
             assert_eq!(expected.pointer("/verdict"), Some(&json!("ok")));
             asserted += 1;
             assert_eq!(actual.pointer("/verdict"), Some(&json!("calm")));
@@ -239,15 +251,39 @@ fn replay_convey_home_corpus() {
             asserted += 1;
             *expected.pointer_mut("/severity").unwrap() = json!("neutral");
         }
-        if input["capture"] == "no_observers" && expected["cta"].is_null() {
-            // A journal with no devices keeps its way to add one under every
-            // verdict; the reference dropped it whenever anything else showed.
+        let quiet_calm_case = input["backlog"] == "valid_fresh_clear"
+            && matches!(input["brain"].as_str(), Some("none" | "ready"))
+            && matches!(input["capture"].as_str(), Some("stale" | "offline"));
+        if quiet_calm_case {
+            // Paired quiet devices now carry per-device quiet times in the
+            // device strip below, leaving a concise calm headline and no
+            // duplicate inline CTA.
             assert_eq!(
-                actual.pointer("/cta/href"),
-                Some(&json!("/app/network/#devices"))
+                expected.pointer("/cta/href"),
+                Some(&json!("/app/health/#registeredClientsCard"))
             );
+            asserted += 1;
+            assert!(actual["cta"].is_null());
+            asserted += 1;
+            expected["cta"] = Value::Null;
+            assert!(
+                expected
+                    .pointer("/headline")
+                    .and_then(Value::as_str)
+                    .is_some()
+            );
+            asserted += 1;
+            let quiet_headline = solstone_core_window_catalog::text(
+                solstone_core_window_catalog::ENGLISH,
+                "journal.window.home.status.headline.quiet",
+            );
+            assert_eq!(actual.pointer("/headline"), Some(&json!(quiet_headline)));
+            asserted += 1;
+            expected["headline"] = json!(quiet_headline);
+        }
+        if input["capture"] == "no_observers" && expected["cta"].is_null() {
+            assert!(actual["cta"].is_null());
             no_device_cta_divergences += 1;
-            expected["cta"] = actual["cta"].clone();
         }
         eq(&actual, &expected, "health glance");
         asserted += 1;
@@ -271,7 +307,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 1217);
+    assert_eq!(asserted, 1261);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {

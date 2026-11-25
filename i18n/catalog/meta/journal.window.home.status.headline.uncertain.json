@@ -1,0 +1,16 @@
+{
+  "description": "Home status card headline when a status check is unconfirmed or incomplete.",
+  "context": "Journal window, Home view. Home status card headline when a status check is unconfirmed or incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e4b4c01e6718b75535252a6136bc4975c22662e0841832d9f91445725decf08",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -14,6 +14,7 @@ let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   EXPORT_ANCHOR,
   `  window.__vitals = { renderVitalsHtml, homeHealthGlance, receiveSupervisorStatus, invalidateHeldWork, refreshVitals, refreshNarrative, refreshChangedPulse,
+    renderSecurity, securityLineHtml, syncHomeLiveBadge,
     captureNarrative: () => { renderNarrative = data => { window.__narrative = data.narrative_content; }; },
     seedPulse: data => { lastPulse=data; pulseObservedAt=Date.now(); pulseReadFailed=false; pulseRequest=null; vitalsRequest=null; narrativeRequest=null; } };
 ${EXPORT_ANCHOR}`,
@@ -243,6 +244,125 @@ async function issueReadCases() {
   newResult({...ordinary,narrative_content:'finished narrative'});
   await afterFinish;
   assert.strictEqual(window.__narrative, 'finished narrative');
+
+  // Status mark header, R7 integrity slot seam, per-device strip, crashed services,
+  // pending import reviews, security states, and zero-double-count live badge delta.
+  receiveSupervisorStatus({ event: 'status', queues: {}, held: [], crashed: [] });
+  window.solShellStatus = { statusMarksBase: '/static/sol-status/', stem: 'mark-active' };
+  const activeHeaderHtml = renderVitalsHtml(ordinary);
+  assert(activeHeaderHtml.includes('data-home-status-mark'), activeHeaderHtml);
+  assert(activeHeaderHtml.includes('src="/static/sol-status/mark-active.svg"'), activeHeaderHtml);
+  assert(activeHeaderHtml.includes('href="/app/health/"'), activeHeaderHtml);
+  assert(activeHeaderHtml.includes('data-home-integrity-slot'), activeHeaderHtml);
+
+  // Day-0 empty registry device strip vs paired device strip
+  const emptyRegistryHtml = renderVitalsHtml({
+    ...ordinary,
+    segment_count: 0,
+    capture_health: { status: 'no_clients', registry: 'registry_empty', clients: [], unassessed: [] },
+  });
+  assert(emptyRegistryHtml.includes('data-home-device-strip="empty"'), emptyRegistryHtml);
+  assert(emptyRegistryHtml.includes('href="/app/network/#devices"'), emptyRegistryHtml);
+  assert(emptyRegistryHtml.includes('href="/app/sources/"'), emptyRegistryHtml);
+  assert(!emptyRegistryHtml.includes('href="/app/transcripts/"'), emptyRegistryHtml);
+
+  const pairedHtml = renderVitalsHtml({
+    ...ordinary,
+    segment_count: 3,
+    capture_health: {
+      status: 'degraded',
+      registry: 'ok',
+      clients: [
+        { name: 'MacBook', status: 'active', failing: false, capture_elapsed_ms: 120000 },
+        { name: 'iPhone', status: 'stale', failing: false, capture_elapsed_ms: 7200000 },
+        { name: 'iPad', status: 'offline', failing: false, capture_elapsed_ms: null },
+        { name: 'Watch', status: 'degraded', failing: true, capture_elapsed_ms: 60000 },
+      ],
+      unassessed: [{ name: 'Desk', reason: 'awaiting_first_delivery' }],
+    },
+  });
+  assert(pairedHtml.includes('data-home-device-strip="paired"'), pairedHtml);
+  assert(pairedHtml.includes('data-device-chip="active"'), pairedHtml);
+  assert(pairedHtml.includes('data-device-chip="quiet"'), pairedHtml);
+  assert.strictEqual((pairedHtml.match(/data-device-chip="awaiting"/g) || []).length, 2, pairedHtml);
+  assert(pairedHtml.includes('data-device-chip="failing"'), pairedHtml);
+  assert(pairedHtml.includes('href="/app/health/#registeredClientsCard"'), pairedHtml);
+  assert(pairedHtml.includes('href="/app/sources/"'), pairedHtml);
+  assert(pairedHtml.includes('href="/app/transcripts/"'), pairedHtml);
+
+  // Crashed / crash-looping services in supervisor status
+  receiveSupervisorStatus({
+    event: 'status',
+    queues: {},
+    held: [],
+    crashed: [{ name: 'think', phase: 'backoff' }],
+  });
+  const backoffGlance = homeHealthGlance(ordinary).glance;
+  assert.strictEqual(backoffGlance.verdict, 'attention');
+  assert.strictEqual(backoffGlance.severity, 'amber');
+  assert.strictEqual(backoffGlance.issues.length, 1);
+
+  receiveSupervisorStatus({
+    event: 'status',
+    queues: {},
+    held: [],
+    crashed: [{ name: 'parakeet', phase: 'crashed' }],
+  });
+  const stoppedGlance = homeHealthGlance(ordinary).glance;
+  assert.strictEqual(stoppedGlance.verdict, 'attention');
+  assert.strictEqual(stoppedGlance.severity, 'red');
+  assert.strictEqual(stoppedGlance.issues.length, 1);
+  receiveSupervisorStatus({ event: 'status', queues: {}, held: [], crashed: [] });
+
+  // Pending import reviews render as a non-fault row and never inflate g.issues
+  window.solShellBadges = {
+    import: 3,
+    import_reviews: [
+      { id: 'imp-42', source: 'Apple Health', swept_after_hour: true },
+    ],
+  };
+  const importHtml = renderVitalsHtml(ordinary);
+  assert(importHtml.includes('data-home-import-review="imp-42"'), importHtml);
+  assert(importHtml.includes('href="/app/import/imp-42"'), importHtml);
+  assert(importHtml.includes('data-import-review-more'), importHtml);
+  assert(!importHtml.includes('pulse-waiting-row'), importHtml);
+  assert.strictEqual(homeHealthGlance(ordinary).glance.verdict, 'ok');
+  window.solShellBadges = null;
+
+  // Security states: 'checking' is neutral; 'unconfirmed' adds an uncertain note; restart flag renders restart control
+  window.__vitals.renderSecurity({ security: { state: 'checking', flags: [] } });
+  assert.strictEqual(homeHealthGlance(ordinary).glance.verdict, 'ok');
+  window.__vitals.renderSecurity({ security: { state: 'unconfirmed', flags: [] } });
+  const unconfirmedRes = homeHealthGlance(ordinary);
+  assert.strictEqual(unconfirmedRes.glance.verdict, 'unavailable');
+  assert(unconfirmedRes.notes.some(n => n.href === '/app/health/#healthSystemDetails'));
+  window.__vitals.renderSecurity({ security: { state: 'ok', flags: [] } });
+  assert.strictEqual(homeHealthGlance(ordinary).glance.verdict, 'ok');
+
+  const restartHtml = window.__vitals.securityLineHtml({ subject: 'journal', restart: true, notes: 'https://solstone.app/sec' });
+  assert(restartHtml.includes('data-security-restart-btn'), restartHtml);
+  assert(restartHtml.includes('href="https://solstone.app/sec"'), restartHtml);
+
+  // Live badge delta contributes ONLY Home-live issues (crashed, held, nightRows, damaged voice),
+  // never double-counting server-side health_glance.issues or backup.
+  let lastDelta = undefined;
+  window.solShellChrome = { setHomeBadgeDelta(d) { lastDelta = d; } };
+  receiveSupervisorStatus({
+    event: 'status',
+    queues: {},
+    held: [],
+    crashed: [{ name: 'think', phase: 'backoff' }],
+  });
+  window.__vitals.syncHomeLiveBadge({
+    ...diagnosed,
+    needs_you_items: [
+      { source_id: 'owner_voice:damaged', text: 'damaged', kind: 'route', payload: { href: '/app/speakers/' } },
+      { source_id: 'owner_voice:not_established', text: 'teach', kind: 'route', payload: { href: '/app/speakers/' } },
+    ],
+  });
+  assert.deepStrictEqual({ ...lastDelta }, { issues: 2, severity: 'amber', uncertain: false });
+  receiveSupervisorStatus({ event: 'status', queues: {}, held: [], crashed: [] });
+
   console.log('vitals render and issue-read contracts passed');
 }
 issueReadCases().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,0 +1,16 @@
+{
+  "description": "Home status card headline when paired devices are quiet and no faults exist.",
+  "context": "Journal window, Home view. Home status card headline when paired devices are quiet and no faults exist.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f43839dd533b52c2e8e76df9d0f3b7ae93eb5d3f2ce049d602f515de029433a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

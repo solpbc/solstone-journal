@@ -1,0 +1,21 @@
+{
+  "description": "Home status issue for an app service that keeps stopping and restarting.",
+  "context": "Journal window, Home view. Home status issue for an app service that keeps stopping and restarting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cbca654d7ef38f3f9e066b23c60889caa1e6894b215b639e564907ad90c8b126",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

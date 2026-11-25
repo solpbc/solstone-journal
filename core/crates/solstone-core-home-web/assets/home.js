@@ -20,13 +20,35 @@
     const BRIEFING_URL = '/app/home/api/briefing' + accountQuery;
     const FIRST_MINUTES_URL = '/app/home/api/first-minutes';
     const AGENTS_STATE_URL = '/app/agents/api/state';
+    const SHELL_BADGES_URL = '/api/shell/badges';
+    const SYSTEM_RESTART_URL = '/api/system/restart';
     const SETUP_ACTION_URL = '/init/api/action';
     const ORIGINALS_PAGE = '/app/home/originals/';
-    const WAITING_HEADING = window.JournalI18n.render('journal.window.home.attention.heading');
     // The page's sections in the order they stand. A live refresh that brings a
     // section back inserts it after whichever of these is already there.
-    const SURFACE_ORDER = ['vitals', 'getting-started', 'account', 'pair', 'welcome'];
+    const SURFACE_ORDER = ['vitals', 'ready-to-shape', 'getting-started', 'account', 'pair', 'welcome'];
     const ACCOUNT_SIDES = ['yesterday', 'today'];
+
+    const SERVICE_NAMES = {
+      supervisor: window.JournalI18n.render('journal.window.health.service.names.supervisor.system.manager'),
+      convey: window.JournalI18n.render('journal.window.health.service.names.convey.web.interface'),
+      cortex: window.JournalI18n.render('journal.window.health.service.names.cortex.model.runtime'),
+      sense: window.JournalI18n.render('journal.window.health.service.names.sense.media.processor'),
+      observe: window.JournalI18n.render('journal.window.health.service.names.observe.screen.audio'),
+      think: window.JournalI18n.render('journal.window.health.service.names.think.background.analysis'),
+      importer: window.JournalI18n.render('journal.window.health.service.names.importer.file.importer'),
+      schedule: window.JournalI18n.render('journal.window.health.service.names.schedule.task.scheduler'),
+      spl: window.JournalI18n.render('journal.window.health.service.names.spl.private.network'),
+      parakeet: window.JournalI18n.render('journal.window.health.service.names.parakeet.transcription'),
+    };
+
+    const PIN_OFFER_KEYS = {
+      body: 'journal.window.pin.offer.body.text',
+      places: 'journal.window.pin.offer.map.text',
+      location: 'journal.window.pin.offer.map.location.text',
+      unnamed: 'journal.window.pin.offer.speakers.text',
+      named: 'journal.window.pin.offer.speakers.named.text',
+    };
 
     let homeInitialized = false;
     let interactionsWired = false;
@@ -36,6 +58,12 @@
     let lastPulse = null;
     let lastBackupIssue = null;
     let backupObservedAt = null;
+    let shellBadges = isPlainObject(window.solShellBadges) ? window.solShellBadges : null;
+    let shellBadgesFallbackRequested = false;
+    let securityState = null;
+    let securityRestartInFlight = false;
+    let securityRestartError = '';
+    let lastSecurityPayload = null;
     let pulseRequest = null;
     let vitalsRequest = null;
     let narrativeRequest = null;
@@ -194,14 +222,26 @@
       keepGettingStartedFirst();
     }
 
-    // The first-minutes card leads the page, right under the status line,
-    // whichever read finished first and inserted it.
+    // The first-minutes card leads the story cards right after status (and
+    // ready-to-shape when present), whichever read finished first.
     function keepGettingStartedFirst() {
       if (!surface || typeof surface.querySelector !== 'function') return;
       const card = surface.querySelector('[data-home-surface="getting-started"]');
-      const vitals = surface.querySelector('[data-home-surface="vitals"]');
-      if (!card || !vitals || vitals.nextElementSibling === card) return;
-      if (typeof vitals.after === 'function') vitals.after(card);
+      const anchor = surface.querySelector('[data-home-surface="ready-to-shape"]')
+        || surface.querySelector('[data-home-surface="vitals"]');
+      if (!card || !anchor) return;
+      if (typeof anchor.after === 'function') {
+        if (anchor.nextElementSibling === card) return;
+        anchor.after(card);
+        return;
+      }
+      if (anchor.parentNode && typeof anchor.parentNode.insertBefore === 'function') {
+        const siblings = anchor.parentNode.children;
+        const idx = siblings && typeof siblings.indexOf === 'function' ? siblings.indexOf(anchor) : -1;
+        const next = idx >= 0 ? (siblings[idx + 1] || null) : (anchor.nextSibling || null);
+        if (next === card) return;
+        anchor.parentNode.insertBefore(card, next);
+      }
     }
 
     function replaceHomeSurface(name, html, previousNames) {
@@ -290,6 +330,105 @@
       return index > 0 ? SURFACE_ORDER.slice(0, index) : [];
     }
 
+    function currentShellBadges() {
+      if (isPlainObject(shellBadges)) return shellBadges;
+      if (isPlainObject(window.solShellBadges)) return window.solShellBadges;
+      return null;
+    }
+
+    function serviceDisplayName(internal) {
+      return SERVICE_NAMES[internal] || String(internal || '').replace(/[_:-]+/g, ' ');
+    }
+
+    function statusMarkSpec() {
+      const shellStatus = isPlainObject(window.solShellStatus) ? window.solShellStatus : null;
+      const base = typeof shellStatus?.statusMarksBase === 'string' && shellStatus.statusMarksBase
+        ? shellStatus.statusMarksBase
+        : '/static/sol-status/';
+      const stem = typeof shellStatus?.stem === 'string' && /^[a-z0-9-]+$/i.test(shellStatus.stem)
+        ? shellStatus.stem
+        : 'mark-connecting';
+      return { src: base + stem + '.svg' };
+    }
+
+    function syncStatusMarkIcon() {
+      const vitals = document.getElementById?.('pulse-vitals');
+      const img = vitals?.querySelector?.('[data-home-status-mark]')
+        || document.querySelector?.('[data-home-status-mark]');
+      if (!img) return;
+      const { src } = statusMarkSpec();
+      if (img.getAttribute?.('src') !== src) {
+        img.hidden = false;
+        img.setAttribute?.('src', src);
+      }
+      if (!img.__errorBound && typeof img.addEventListener === 'function') {
+        img.__errorBound = true;
+        img.addEventListener('error', function () {
+          img.hidden = true;
+        });
+      }
+    }
+
+    function syncHomePinOffer(pulse) {
+      const host = document.getElementById?.('home-pin-offer');
+      if (!host) return;
+      if (typeof window.solShellChrome?.mountPinOffer !== 'function'
+          || typeof window.solShellChrome?.shouldShowPinOffer !== 'function') {
+        host.replaceChildren?.();
+        host.hidden = true;
+        return;
+      }
+      const candidates = Array.isArray(pulse?.pin_candidates)
+        ? pulse.pin_candidates.filter(isPlainObject)
+        : [];
+      const chosen = candidates.find(function (entry) {
+        return typeof entry.view === 'string'
+          && PIN_OFFER_KEYS[entry.kind]
+          && window.solShellChrome.shouldShowPinOffer(entry.view);
+      });
+      if (!chosen) {
+        host.replaceChildren?.();
+        host.hidden = true;
+        return;
+      }
+      host.hidden = false;
+      window.solShellChrome.mountPinOffer(host, {
+        view: chosen.view,
+        message: window.JournalI18n.render(PIN_OFFER_KEYS[chosen.kind]),
+      });
+    }
+
+    function syncHomeLiveBadge(pulse) {
+      if (typeof window.solShellChrome?.setHomeBadgeDelta !== 'function') return;
+      if (!pulse) {
+        window.solShellChrome.setHomeBadgeDelta(null);
+        return;
+      }
+      const workCurrent = heldWorkCurrent && heldWorkSnapshot
+        && Date.now() - heldWorkSnapshot.observedAt < 30000;
+      const liveIssues = [];
+      if (workCurrent) {
+        crashedServiceIssues().forEach(function (issue) { liveIssues.push(issue); });
+        heldWorkIssues().forEach(function (issue) { liveIssues.push(issue); });
+      }
+      if (!pulseReadFailed) {
+        nightRows(pulse).forEach(function (row) {
+          liveIssues.push({ text: row.text, severity: 'amber', href: row.href });
+        });
+        damagedVoiceIssues(pulse).forEach(function (issue) { liveIssues.push(issue); });
+      }
+      const workGrace = !queuedWorkAuthoritySeen && Date.now() - pageLoadedAt < 15000;
+      const liveUncertain = Boolean(pulseReadFailed || (!workCurrent && !workGrace) || securityState === 'unconfirmed');
+      const severity = liveIssues.length === 0
+        ? null
+        : (liveIssues.some(function (issue) { return issue.severity === 'red'; }) ? 'red' : 'amber');
+      window.solShellChrome.setHomeBadgeDelta({
+        issues: liveIssues.length,
+        severity,
+        uncertain: liveUncertain,
+      });
+    }
+
     // A full paint: the first read, a retry, or the journal leaving the welcome
     // state. Only here is the day switch's opening side decided. It opens on
     // yesterday until today has material, then on today.
@@ -305,20 +444,48 @@
       paintedSide = welcome ? null : (dayHasMaterial(data) ? 'today' : 'yesterday');
       selectedSide = paintedSide;
       const cards = [renderVitalsHtml(data)];
+      const shapeHtml = renderReadyToShapeHtml(data);
+      if (shapeHtml) cards.push(shapeHtml);
       if (isGettingStartedVisible()) cards.push(renderGettingStartedHtml());
       if (welcome) {
         earlyBriefing = null;
         cards.push(renderWelcomeHtml());
         setSurfaceHtml(cards.join(''));
+        syncStatusMarkIcon();
+        syncHomePinOffer(data);
+        syncHomeLiveBadge(data);
         reportHomeReady('empty');
         return;
       }
       cards.push(renderAccountHtml(data));
       cards.push(renderPairHtml(data));
       setSurfaceHtml(cards.join(''));
+      syncStatusMarkIcon();
+      syncHomePinOffer(data);
+      syncHomeLiveBadge(data);
       placeAccountZoneNote();
       refreshBriefing();
       reportHomeReady('content');
+    }
+
+    function crashedServiceIssues() {
+      if (!heldWorkSnapshot || !Array.isArray(heldWorkSnapshot.crashed)) return [];
+      return heldWorkSnapshot.crashed
+        .filter(function (entry) { return isPlainObject(entry) && typeof entry.name === 'string' && entry.name.trim(); })
+        .map(function (entry) {
+          const label = serviceDisplayName(entry.name.trim());
+          const retrying = entry.phase === 'backoff';
+          return {
+            text: window.JournalI18n.render(
+              retrying
+                ? 'journal.window.home.status.service.restarting'
+                : 'journal.window.home.status.service.stopped',
+              [['service', label]],
+            ),
+            severity: retrying ? 'amber' : 'red',
+            href: '/app/health/',
+          };
+        });
     }
 
     function heldWorkIssues() {
@@ -344,24 +511,56 @@
     function observeBackup(pulse) {
       if (pulse.backup?.available !== true || typeof pulse.backup.issue !== 'boolean') return;
       backupObservedAt = Date.now();
-      lastBackupIssue = pulse.backup.issue === true
-        ? { text: window.JournalI18n.render('journal.window.home.text.the.backup.key.couldn.t.open'),
-            severity: 'amber', href: '/app/health/#backup' } : null;
+      if (pulse.backup.issue !== true) {
+        lastBackupIssue = null;
+        return;
+      }
+      const key = pulse.backup.reason === 'auth_failed'
+        ? 'journal.window.home.status.backup.auth.failed'
+        : 'journal.window.home.status.backup.attention';
+      lastBackupIssue = {
+        text: window.JournalI18n.render(key),
+        severity: 'amber',
+        href: '/app/health/#backup',
+      };
+    }
+
+    function damagedVoiceIssues(pulse) {
+      const items = Array.isArray(pulse?.needs_you_items) ? pulse.needs_you_items : [];
+      const out = [];
+      items.forEach(function (item) {
+        if (!isPlainObject(item) || item.source_id !== 'owner_voice:damaged') return;
+        const text = typeof item.text === 'string' ? item.text.trim() : '';
+        if (!text) return;
+        const href = item.kind === 'route' && typeof item.payload?.href === 'string'
+          && item.payload.href.startsWith('/') && !item.payload.href.startsWith('//')
+          ? item.payload.href
+          : '/app/speakers/';
+        out.push({ text, severity: 'amber', href });
+      });
+      return out;
     }
 
     function homeHealthGlance(pulse) {
       const g = Object.assign({}, pulse.health_glance || {});
-      const baseIssues = g.issues || [];
+      const nightIssues = nightRows(pulse).map(function (row) {
+        return { text: row.text || '', severity: 'amber', href: row.href || '/app/thinking/' };
+      });
+      const baseIssues = (g.issues || []).concat(nightIssues).concat(damagedVoiceIssues(pulse));
+      const crashed = crashedServiceIssues();
       const holds = heldWorkIssues();
       const workCurrent = heldWorkCurrent && heldWorkSnapshot
         && Date.now() - heldWorkSnapshot.observedAt < 30000;
       const backupCurrent = !pulseReadFailed && pulse.backup?.available === true
         && typeof pulse.backup.issue === 'boolean';
       const backupIssues = lastBackupIssue ? [lastBackupIssue] : [];
-      const current = (pulseReadFailed ? [] : baseIssues).concat(workCurrent ? holds : [])
+      const current = (pulseReadFailed ? [] : baseIssues)
+        .concat(workCurrent ? crashed : [])
+        .concat(workCurrent ? holds : [])
         .concat(backupCurrent ? backupIssues : []);
       const retained = issue => Object.assign({}, issue, { text: window.JournalI18n.render('journal.window.home.vitals.last.known', [['issue', String(issue.text)]]), severity: 'amber' });
       g.issues = baseIssues.map(issue => pulseReadFailed ? retained(issue) : issue)
+        .concat(crashed.map(issue => workCurrent ? issue : retained(issue)))
         .concat(holds.map(issue => workCurrent ? issue : retained(issue)))
         .concat(backupIssues.map(issue => backupCurrent ? issue : retained(issue)));
       const notes = [];
@@ -371,15 +570,24 @@
       if (!workCurrent && !workGrace) notes.push({text: [window.JournalI18n.render('journal.window.home.text.queued.work.status.is.unavailable'), checked(heldWorkSnapshot?.observedAt)].filter(Boolean).join(' '), href:'/app/health/#processingHolds'});
       const backupUnavailable = !backupCurrent && (pulse.backup || backupObservedAt);
       if (backupUnavailable) notes.push({text: [window.JournalI18n.render('journal.window.home.text.backup.status.is.unavailable'), checked(backupObservedAt)].filter(Boolean).join(' '), href:'/app/health/#backup'});
+      const securityUnconfirmed = securityState === 'unconfirmed';
+      if (securityUnconfirmed) {
+        notes.push({
+          text: window.JournalI18n.render('journal.window.shared.status.pane.visible.text.couldn.t.check.for.security.updates'),
+          href: '/app/health/#healthSystemDetails',
+        });
+      }
       if (current.length) {
         g.verdict = 'attention';
         g.severity = current.some(issue => issue.severity === 'red') ? 'red' : 'amber';
-        g.headline = window.JournalI18n.render('journal.window.home.health.attention.count', [['quantity', window.JournalI18n.cardinalQuantity(current.length)], ['count', String(current.length)]]);
+        g.headline = window.JournalI18n.render('journal.window.home.health.attention.count', [['quantity', window.JournalI18n.cardinalQuantity(g.issues.length)], ['count', String(g.issues.length)]]);
       } else if (notes.length) {
         g.verdict = 'unavailable';
         g.severity = 'amber';
         g.headline = pulseReadFailed ? window.JournalI18n.render('journal.window.home.window.explanation.service.status.is.unavailable.right.now')
-          : (!workCurrent && !workGrace) ? window.JournalI18n.render('journal.window.home.window.explanation.queued.work.status.is.unavailable.right') : window.JournalI18n.render('journal.window.home.window.explanation.backup.status.is.unavailable.right.now');
+          : (!workCurrent && !workGrace) ? window.JournalI18n.render('journal.window.home.window.explanation.queued.work.status.is.unavailable.right')
+          : backupUnavailable ? window.JournalI18n.render('journal.window.home.window.explanation.backup.status.is.unavailable.right.now')
+          : window.JournalI18n.render('journal.window.home.status.headline.uncertain');
         g.last_observation = null;
         g.cta = null;
       }
@@ -431,26 +639,276 @@
       return rows;
     }
 
-    function originalsRow() {
+    function originalsShapeRow() {
       if (originalsTotal === undefined || originalsTotal === 0) return null;
       if (originalsTotal === null) {
-        return { text: window.JournalI18n.render('journal.window.home.text.originals.the.list.couldn.t.be'), href: ORIGINALS_PAGE };
+        return {
+          text: window.JournalI18n.render('journal.window.home.text.originals.the.list.couldn.t.be'),
+          href: ORIGINALS_PAGE,
+        };
       }
-      return { text: window.JournalI18n.render('journal.window.home.originals.heading.count', [['quantity', window.JournalI18n.cardinalQuantity(originalsTotal)], ['count', String(originalsTotal)]]), href: ORIGINALS_PAGE };
+      return {
+        text: window.JournalI18n.render('journal.window.home.shape.originals.count', [
+          ['quantity', window.JournalI18n.cardinalQuantity(originalsTotal)],
+          ['count', String(originalsTotal)],
+        ]),
+        href: ORIGINALS_PAGE,
+      };
     }
 
-    function waitingRows(pulse, glance) {
-      const rows = (glance.issues || []).map(issue => ({
-        text: issue.text || '', href: issue.href || '/app/health/', severity: issue.severity || 'amber'
-      }));
-      (Array.isArray(pulse.needs_you_items) ? pulse.needs_you_items : []).forEach(item => {
+    function readyToShapeRows(pulse) {
+      const shapeRows = [];
+      const badges = currentShellBadges();
+      const curationCount = Number.isFinite(badges?.curation) ? Math.max(0, Math.floor(badges.curation)) : 0;
+      if (curationCount > 0) {
+        shapeRows.push({
+          text: window.JournalI18n.render('journal.window.home.shape.suggestions.count', [
+            ['quantity', window.JournalI18n.cardinalQuantity(curationCount)],
+            ['count', String(curationCount)],
+          ]),
+          href: '/app/curation/',
+        });
+      }
+      const duplicatesCount = Number.isFinite(pulse?.possible_duplicates_count)
+        ? Math.max(0, Math.floor(pulse.possible_duplicates_count))
+        : 0;
+      if (duplicatesCount > 0) {
+        shapeRows.push({
+          text: window.JournalI18n.render('journal.window.home.shape.duplicates.count', [
+            ['quantity', window.JournalI18n.cardinalQuantity(duplicatesCount)],
+            ['count', String(duplicatesCount)],
+          ]),
+          href: '/app/entities/?folder=duplicates',
+        });
+      }
+      const originals = originalsShapeRow();
+      if (originals) shapeRows.push(originals);
+      (Array.isArray(pulse?.needs_you_items) ? pulse.needs_you_items : []).forEach(function (item) {
+        if (!item) return;
+        if (isPlainObject(item) && item.source_id === 'owner_voice:damaged') return;
+        if (isPlainObject(item) && item.source_id === 'owner_voice:candidate_ready') {
+          shapeRows.push({
+            text: window.JournalI18n.render('journal.window.home.shape.voice.candidate'),
+            href: '/app/speakers/#your-voice',
+          });
+          return;
+        }
+        if (isPlainObject(item) && item.source_id === 'owner_voice:not_established') {
+          shapeRows.push({
+            text: window.JournalI18n.render('journal.window.home.shape.voice.teach'),
+            href: '/app/speakers/#your-voice',
+          });
+          return;
+        }
         const row = needsRow(item);
-        if (row) rows.push(row);
+        if (row) shapeRows.push(row);
       });
-      nightRows(pulse).forEach(row => rows.push(row));
-      const originals = originalsRow();
-      if (originals) rows.push(originals);
-      return rows;
+      return shapeRows;
+    }
+
+    function shapeRowHtml(row) {
+      if (row.href) {
+        return '<li class="pulse-shape-row"><a href="' + esc(row.href) + '"><span>' + esc(row.text) + '</span></a></li>';
+      }
+      const reason = row.reason ? '<span class="pulse-waiting-reason">' + esc(row.reason) + '</span>' : '';
+      return '<li class="pulse-shape-row"><span>' + esc(row.text) + reason + '</span></li>';
+    }
+
+    function renderReadyToShapeHtml(pulse) {
+      const shapeRows = readyToShapeRows(pulse);
+      if (!shapeRows.length) return '';
+      return '<section class="pulse-ready-to-shape" id="pulse-ready-to-shape" data-home-surface="ready-to-shape" aria-labelledby="pulse-shape-heading">'
+        + '<h2 class="pulse-shape-heading" id="pulse-shape-heading">'
+        + window.JournalI18n.renderHtml('journal.window.home.shape.heading') + '</h2>'
+        + '<ul class="pulse-shape-list" aria-labelledby="pulse-shape-heading">'
+        + shapeRows.map(shapeRowHtml).join('') + '</ul>'
+        + '</section>';
+    }
+
+    function renderReadyToShape(pulse) {
+      if (!surface) return;
+      const html = renderReadyToShapeHtml(pulse);
+      const current = surface.querySelector?.('[data-home-surface="ready-to-shape"]');
+      if (!html && !current) return;
+      if (current && current.outerHTML === html) return;
+      replaceHomeSurface('ready-to-shape', html, predecessors('ready-to-shape'));
+    }
+
+    function durationPartsFromMs(ms) {
+      let seconds = Math.floor(ms / 1000);
+      if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+      if (seconds < 60) return { unit: 'second', count: seconds };
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return { unit: 'minute', count: minutes };
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return { unit: 'hour', count: hours };
+      const days = Math.floor(hours / 24);
+      if (days < 7) return { unit: 'day', count: days };
+      if (days < 28) return { unit: 'week', count: Math.floor(days / 7) };
+      if (days < 60) return { unit: 'month', count: 1 };
+      return { unit: 'month', count: Math.floor(days / 30) };
+    }
+
+    function formatAgoMs(ms) {
+      if (!Number.isFinite(ms) || ms < 45000) {
+        return window.JournalI18n.render('journal.window.home.health.age.just.now');
+      }
+      const { unit, count } = durationPartsFromMs(ms);
+      return window.JournalI18n.render('journal.window.home.time.ago.' + unit, [
+        ['quantity', window.JournalI18n.cardinalQuantity(count)],
+        ['count', String(count)],
+      ]);
+    }
+
+    function formatQuietDuration(ms) {
+      if (!Number.isFinite(ms) || ms < 45000) {
+        return window.JournalI18n.render('journal.window.home.health.age.just.now');
+      }
+      if (typeof window.relativeTime === 'function') {
+        return window.relativeTime(ms);
+      }
+      const { unit, count } = durationPartsFromMs(ms);
+      return window.JournalI18n.render('journal.window.time.duration.' + unit + '.count', [
+        ['quantity', window.JournalI18n.cardinalQuantity(count)],
+        ['count', String(count)],
+      ]);
+    }
+
+    function clientElapsedMs(client) {
+      if (Number.isFinite(client?.capture_elapsed_ms) && client.capture_elapsed_ms >= 0) {
+        return client.capture_elapsed_ms;
+      }
+      if (typeof client?.last_accepted_ingest_at === 'string' && client.last_accepted_ingest_at) {
+        const parsed = Date.parse(client.last_accepted_ingest_at);
+        if (Number.isFinite(parsed)) {
+          const diff = Date.now() - parsed;
+          return diff >= 0 ? diff : 0;
+        }
+      }
+      return null;
+    }
+
+    function deviceUtilityLinksHtml(pulse) {
+      let links = '<a href="/app/sources/">' + window.JournalI18n.renderHtml('journal.window.view.sources.label') + '</a>';
+      if (Number(pulse?.segment_count || 0) > 0) {
+        links += '<a href="/app/transcripts/">' + window.JournalI18n.renderHtml('journal.window.home.status.transcripts.today') + '</a>';
+      }
+      return '<div class="pulse-device-utilities">' + links + '</div>';
+    }
+
+    function renderDeviceStripHtml(pulse) {
+      const capture = pulse?.capture_health;
+      if (!isPlainObject(capture)) return '';
+      const clients = Array.isArray(capture.clients) ? capture.clients.filter(isPlainObject) : [];
+      const awaitingUnassessed = (Array.isArray(capture.unassessed) ? capture.unassessed.filter(isPlainObject) : [])
+        .filter(function (row) { return row.reason === 'awaiting_first_delivery'; });
+      const registry = typeof capture.registry === 'string' ? capture.registry : '';
+      const isEmptyRegistry = registry === 'registry_empty'
+        || (capture.status === 'no_clients'
+          && clients.length === 0
+          && awaitingUnassessed.length === 0
+          && registry !== 'registry_unknown'
+          && registry !== 'partial_registry');
+      if (isEmptyRegistry) {
+        return '<div class="pulse-device-strip" data-home-device-strip="empty">'
+          + '<div class="pulse-device-empty"><span>'
+          + window.JournalI18n.renderHtml('journal.window.home.status.devices.none')
+          + '</span> <a href="/app/network/#devices">'
+          + window.JournalI18n.renderHtml('journal.window.home.status.devices.pair')
+          + '</a></div>'
+          + deviceUtilityLinksHtml(pulse)
+          + '</div>';
+      }
+      if (clients.length === 0 && awaitingUnassessed.length === 0) {
+        return '<div class="pulse-device-strip" data-home-device-strip="utilities">'
+          + deviceUtilityLinksHtml(pulse)
+          + '</div>';
+      }
+      const fallbackDevice = window.JournalI18n.render('journal.window.health.status.an.unnamed.device');
+      const chips = [];
+      clients.forEach(function (client) {
+        const label = String(client.name || '').trim() || fallbackDevice;
+        if (client.failing === true) {
+          chips.push('<a class="pulse-device-chip pulse-device-chip--failing" data-device-chip="failing" href="/app/health/#registeredClientsCard">'
+            + window.JournalI18n.renderHtml('journal.window.home.status.device.turned.away', [['device', label]])
+            + '</a>');
+          return;
+        }
+        const elapsed = clientElapsedMs(client);
+        if (client.status === 'active') {
+          chips.push('<span class="pulse-device-chip pulse-device-chip--active" data-device-chip="active">'
+            + window.JournalI18n.renderHtml('journal.window.home.status.device.active', [
+              ['device', label],
+              ['relative', formatAgoMs(elapsed === null ? 0 : elapsed)],
+            ])
+            + '</span>');
+          return;
+        }
+        if (elapsed === null) {
+          chips.push('<span class="pulse-device-chip pulse-device-chip--quiet" data-device-chip="awaiting">'
+            + window.JournalI18n.renderHtml('journal.window.home.status.device.awaiting', [['device', label]])
+            + '</span>');
+          return;
+        }
+        chips.push('<span class="pulse-device-chip pulse-device-chip--quiet" data-device-chip="quiet">'
+          + window.JournalI18n.renderHtml('journal.window.home.status.device.quiet', [
+            ['device', label],
+            ['age', formatQuietDuration(elapsed)],
+          ])
+          + '</span>');
+      });
+      awaitingUnassessed.forEach(function (entry) {
+        const label = String(entry.name || '').trim() || fallbackDevice;
+        chips.push('<span class="pulse-device-chip pulse-device-chip--quiet" data-device-chip="awaiting">'
+          + window.JournalI18n.renderHtml('journal.window.home.status.device.awaiting', [['device', label]])
+          + '</span>');
+      });
+      return '<div class="pulse-device-strip" data-home-device-strip="paired">'
+        + '<div class="pulse-device-list">' + chips.join('') + '</div>'
+        + deviceUtilityLinksHtml(pulse)
+        + '</div>';
+    }
+
+    function renderImportReviewRowHtml() {
+      const badges = currentShellBadges();
+      const reviews = Array.isArray(badges?.import_reviews)
+        ? badges.import_reviews.filter(function (entry) { return isPlainObject(entry) && typeof entry.id === 'string' && entry.id; })
+        : [];
+      if (!reviews.length) return '';
+      const totalWaiting = Number.isFinite(badges?.import)
+        ? Math.max(reviews.length, Math.floor(badges.import))
+        : reviews.length;
+      const first = reviews[0];
+      const sourceLabel = String(first.source || '').trim()
+        || window.JournalI18n.render('journal.window.view.import.label');
+      const subKey = first.swept_after_hour === true
+        ? 'journal.window.home.status.import.swept.note'
+        : 'journal.window.home.status.import.waiting.note';
+      const moreCount = totalWaiting - 1;
+      const moreHtml = moreCount > 0
+        ? '<a href="/app/import/" data-import-review-more>'
+          + window.JournalI18n.renderHtml('journal.window.home.status.import.more.count', [
+            ['quantity', window.JournalI18n.cardinalQuantity(moreCount)],
+            ['count', String(moreCount)],
+          ])
+          + '</a>'
+        : '';
+      return '<div class="pulse-import-reviews" data-home-import-reviews>'
+        + '<div class="pulse-import-review-row" data-home-import-review="' + esc(first.id) + '">'
+        + '<div class="pulse-import-review-copy">'
+        + '<span class="pulse-import-review-title">'
+        + window.JournalI18n.renderHtml('journal.window.home.status.import.ready', [['source', sourceLabel]])
+        + '</span>'
+        + '<span class="pulse-import-review-sub">' + window.JournalI18n.renderHtml(subKey) + '</span>'
+        + '</div>'
+        + '<div class="pulse-import-review-actions">'
+        + '<a href="/app/import/' + encodeURIComponent(first.id) + '">'
+        + window.JournalI18n.renderHtml('journal.window.home.status.import.action')
+        + '</a>'
+        + moreHtml
+        + '</div>'
+        + '</div>'
+        + '</div>';
     }
 
     function waitingRowHtml(row) {
@@ -464,33 +922,44 @@
       return '<li class="pulse-waiting-row' + severity + '">' + ring + '<span>' + esc(row.text) + reason + '</span></li>';
     }
 
-    // One status line, and under it whatever is waiting on the owner, only when
-    // something is. When the health verdict itself is what's waiting, the list's
-    // heading takes the headline's place, so a count never sits above a list
-    // holding a different number of rows.
     function renderVitalsHtml(pulse) {
       const { glance: g, notes } = homeHealthGlance(pulse);
       const severity = g.severity || 'amber'; // 'neutral' is truthy; do not fold it into this fallback
-      const rows = waitingRows(pulse, g);
-      const attention = g.verdict === 'attention' && rows.length > 0;
+      const faultRows = (g.issues || []).map(function (issue) {
+        return {
+          text: issue.text || '',
+          href: issue.href || '/app/health/',
+          severity: issue.severity || 'amber',
+        };
+      });
+      const hasCaptureHealth = isPlainObject(pulse?.capture_health);
+      const { src: markSrc } = statusMarkSpec();
       let html = '<div class="pulse-status" id="pulse-vitals" data-home-surface="vitals" role="status" aria-live="polite">'
         + '<div class="pulse-vitals">'
         + '<div class="pulse-vitals-item"><span class="pulse-vitals-dot ' + esc(severity) + `" aria-hidden="true"></span>`
         + '<span class="pulse-vitals-verdict ' + esc(severity) + '" id="pulse-status-headline">'
-        + esc(attention ? WAITING_HEADING : (g.headline || '')) + '</span></div>';
-      if (!g.issues?.length && g.last_observation) {
-        html += `<div class="pulse-vitals-sep"></div><div class="pulse-vitals-item">${window.JournalI18n.renderHtml('journal.window.home.vitals.last.reached.timestamp', [['last_reached_at', g.last_observation]])}</div>`;
+        + esc(g.headline || '') + '</span></div>';
+      if (!hasCaptureHealth) {
+        if (!g.issues?.length && g.last_observation) {
+          html += `<div class="pulse-vitals-sep"></div><div class="pulse-vitals-item">${window.JournalI18n.renderHtml('journal.window.home.vitals.last.reached.timestamp', [['last_reached_at', g.last_observation]])}</div>`;
+        }
+        if (g.cta) {
+          html += '<div class="pulse-vitals-sep"></div><a class="pulse-vitals-item pulse-vitals-cta" href="' + esc(g.cta.href || '#') + '">'
+            + esc(g.cta.text || '') + '</a>';
+        }
       }
-      // The way to add a device stays beside any count: a journal with no
-      // devices needs it most on its first day.
-      if (g.cta) {
-        html += '<div class="pulse-vitals-sep"></div><a class="pulse-vitals-item pulse-vitals-cta" href="' + esc(g.cta.href || '#') + '">'
-          + esc(g.cta.text || '') + '</a>';
+      html += '<a class="pulse-vitals-health-link" href="/app/health/">'
+        + '<img class="pulse-status-mark" data-home-status-mark src="' + esc(markSrc) + '" alt="" aria-hidden="true">'
+        + '<span>' + window.JournalI18n.renderHtml('journal.window.view.status.label') + '</span>'
+        + '</a>';
+      if (hasCaptureHealth) {
+        html += renderDeviceStripHtml(pulse);
       }
       notes.forEach(note => {
-        html += '<a class="pulse-vitals-note" href="' + esc(note.href) + '">' + esc(note.text) + ' →</a>';
+        html += '<a class="pulse-vitals-note" href="' + esc(note.href) + '">'
+          + '<span class="pulse-vitals-ring" aria-hidden="true"></span>'
+          + '<span>' + esc(note.text) + ' →</span></a>';
       });
-      html += `<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">${window.JournalI18n.renderHtml('journal.window.home.link.label.health')}</a>`;
       // Not yet, and that's fine: a calm row on any verdict, never a chip and
       // never in the count (the day-0 rule).
       const note = isPlainObject(g.note) ? g.note : null;
@@ -500,12 +969,11 @@
           + '<span>' + esc(note.text) + ' →</span></a>';
       }
       html += '</div>';
-      if (rows.length) {
-        if (!attention) {
-          html += '<h2 class="pulse-waiting-heading" id="pulse-waiting-heading">' + WAITING_HEADING + '</h2>';
-        }
-        html += '<ul class="pulse-waiting" aria-labelledby="' + (attention ? 'pulse-status-headline' : 'pulse-waiting-heading') + '">'
-          + rows.map(waitingRowHtml).join('') + '</ul>';
+      html += '<div class="pulse-integrity-slot" data-home-integrity-slot hidden></div>';
+      html += renderImportReviewRowHtml();
+      if (faultRows.length) {
+        html += '<ul class="pulse-waiting" aria-labelledby="pulse-status-headline">'
+          + faultRows.map(waitingRowHtml).join('') + '</ul>';
       }
       html += '</div>';
       return html;
@@ -517,14 +985,19 @@
       const active = document.activeElement;
       const focusedHref = current?.contains(active) && active.tagName === 'A' ? active.getAttribute('href') : null;
       const html = renderVitalsHtml(pulse);
-      if (current?.outerHTML === html) return;
-      replaceHomeSurface('vitals', html, []);
-      if (focusedHref) {
-        const next = Array.from(document.querySelectorAll('#pulse-vitals a'))
-          .find(link => link.getAttribute('href') === focusedHref)
-          || document.querySelector('#pulse-vitals .pulse-vitals-health-link');
-        next?.focus({ preventScroll: true });
+      if (current?.outerHTML !== html) {
+        replaceHomeSurface('vitals', html, []);
+        if (focusedHref) {
+          const next = Array.from(document.querySelectorAll('#pulse-vitals a'))
+            .find(link => link.getAttribute('href') === focusedHref)
+            || document.querySelector('#pulse-vitals .pulse-vitals-health-link');
+          next?.focus({ preventScroll: true });
+        }
       }
+      syncStatusMarkIcon();
+      renderReadyToShape(pulse);
+      syncHomePinOffer(pulse);
+      syncHomeLiveBadge(pulse);
     }
 
     function renderWelcomeHtml() {
@@ -578,7 +1051,7 @@
         innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.no.speech.was.found.in.the')} ` + escTime + '. say something, and it shows up in the next one.</p>';
       } else if (state === 'failed') {
         innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.the.segment.from')} ` + escTime + ` ${window.JournalI18n.renderHtml('journal.window.home.visible.text.couldn.t.be.written.out')}</p>`
-          + '<a href="' + esc(proof.href || '/app/health/') + `">${window.JournalI18n.renderHtml('journal.window.home.action.see.health')}</a>`;
+          + '<a href="' + esc(proof.href || '/app/health/') + `">${window.JournalI18n.renderHtml('journal.window.home.action.see.status')}</a>`;
       } else if (state === 'heard') {
         if (proof.fresh === true) {
           innerHtml += `<p>${window.JournalI18n.renderHtml('journal.window.home.visible.text.from')} ` + escTime + ': <q>' + esc(proof.text || '') + '</q></p>'
@@ -594,20 +1067,113 @@
         + '</div>';
     }
 
+    function placesPrecision(read) {
+      const cats = Array.isArray(read?.categories) ? read.categories : [];
+      if (!cats.includes('places')) return 'full';
+      if (cats.includes('places_names')) return 'names';
+      if (cats.includes('places_approx')) return 'approx';
+      if (cats.includes('places_full')) return 'full';
+      return 'names';
+    }
+
+    function starterQuestionsForConnection(connection, journalKinds) {
+      if (!isPlainObject(connection) || connection.paused) return [];
+      const read = connection.permission?.read;
+      if (!isPlainObject(read)) return [];
+      const cats = new Set(Array.isArray(read.categories) ? read.categories : []);
+      const isWhole = read.scope?.kind === 'whole_journal';
+      const hasFacetIds = read.scope?.kind === 'facets'
+        && Array.isArray(read.scope?.ids)
+        && read.scope.ids.length > 0;
+      const jk = isPlainObject(journalKinds) ? journalKinds : {};
+      const out = [];
+      if (jk.transcript_days_7_plus && jk.has_summaries && isWhole && cats.has('transcripts') && cats.has('facets')) {
+        out.push({ id: 'chapter', promptKey: 'journal.window.agents.ideas.prompt.chapter', usesKey: 'journal.window.agents.ideas.uses.transcripts.summaries' });
+      }
+      if (jk.has_entities && jk.has_summaries && isWhole && cats.has('entities') && cats.has('facets') && cats.has('transcripts')) {
+        out.push({ id: 'people-circles', promptKey: 'journal.window.agents.ideas.prompt.people.circles', usesKey: 'journal.window.agents.ideas.uses.entities.summaries.transcripts' });
+      } else if (jk.has_entities && cats.has('entities') && (isWhole || hasFacetIds)) {
+        out.push({ id: 'entities', promptKey: 'journal.window.agents.ideas.prompt.entities', usesKey: 'journal.window.agents.ideas.uses.entities' });
+      }
+      if (jk.has_places && isWhole && cats.has('places')) {
+        const precision = placesPrecision(read);
+        out.push({
+          id: precision === 'names' ? 'places-list' : 'places-map',
+          promptKey: precision === 'names' ? 'journal.window.agents.ideas.prompt.places.list' : 'journal.window.agents.ideas.prompt.places.map',
+          usesKey: 'journal.window.agents.ideas.uses.places',
+        });
+      }
+      if (jk.has_photos && isWhole && cats.has('photos')) {
+        out.push({ id: 'photos', promptKey: 'journal.window.agents.ideas.prompt.photos', usesKey: 'journal.window.agents.ideas.uses.photos' });
+      }
+      if (out.length === 0 && jk.has_transcripts && isWhole && cats.has('transcripts')) {
+        out.push({ id: 'today', promptKey: 'journal.window.agents.ideas.prompt.today', usesKey: 'journal.window.agents.ideas.uses.transcripts' });
+      }
+      return out.slice(0, 2);
+    }
+
+    function renderAgentStarterHtml(connection, items) {
+      if (!connection || !Array.isArray(items) || !items.length) return '';
+      const agentName = String(connection.name || '').trim()
+        || window.JournalI18n.render('journal.window.view.agents.label');
+      const rowsHtml = items.map(function (item) {
+        const promptText = window.JournalI18n.render(item.promptKey);
+        const qId = 'home-agent-idea-' + item.id;
+        return '<li class="pulse-agent-idea-row" data-agent-idea="' + esc(item.id) + '">'
+          + '<div class="pulse-agent-idea-main">'
+          + '<q class="pulse-agent-idea-q" id="' + esc(qId) + '">' + esc(promptText) + '</q>'
+          + '<small class="pulse-agent-idea-uses">' + window.JournalI18n.renderHtml(item.usesKey) + '</small>'
+          + '</div>'
+          + '<button type="button" class="pulse-copy-button" data-copy-agent-idea data-prompt="' + esc(promptText) + '" aria-describedby="' + esc(qId) + '">'
+          + window.JournalI18n.renderHtml('journal.window.agents.button.label.copy')
+          + '</button>'
+          + '</li>';
+      }).join('');
+      return '<div class="pulse-agent-ideas" data-home-agent-ideas>'
+        + '<h4 class="pulse-agent-ideas-head">'
+        + window.JournalI18n.renderHtml('journal.window.agents.ideas.heading', [['agent_name', agentName]])
+        + '</h4>'
+        + '<p class="pulse-agent-ideas-lead">'
+        + window.JournalI18n.renderHtml('journal.window.agents.ideas.lead', [['agent_name', agentName]])
+        + '</p>'
+        + '<ul class="pulse-agent-ideas-list">' + rowsHtml + '</ul>'
+        + '</div>';
+    }
+
     function agentCheckState() {
       if (!agentsSettled) {
-        return { inFlight: true, done: false, showStep: false };
+        return { inFlight: true, done: false, showStep: false, showStarter: false };
       }
       if (agentsPayload && agentsPayload.failed) {
-        return { inFlight: false, done: true, showStep: false };
+        return { inFlight: false, done: true, showStep: false, showStarter: false };
       }
       if (!agentsPayload || !Array.isArray(agentsPayload.connections)) {
-        return { inFlight: false, done: false, showStep: false };
+        return { inFlight: false, done: false, showStep: false, showStarter: false };
       }
       if (agentsPayload.connections.length > 0) {
-        return { inFlight: false, done: true, showStep: false };
+        const anyUsedThisWeek = agentsPayload.connections.some(function (conn) {
+          return isPlainObject(conn) && Number(conn.requests_this_week) > 0;
+        });
+        if (!anyUsedThisWeek && isPlainObject(agentsPayload.journal_kinds)) {
+          for (let i = 0; i < agentsPayload.connections.length; i += 1) {
+            const conn = agentsPayload.connections[i];
+            if (!isPlainObject(conn) || conn.requests_this_week !== 0) continue;
+            const starterItems = starterQuestionsForConnection(conn, agentsPayload.journal_kinds);
+            if (starterItems.length > 0) {
+              return {
+                inFlight: false,
+                done: false,
+                showStep: false,
+                showStarter: true,
+                starterConnection: conn,
+                starterItems,
+              };
+            }
+          }
+        }
+        return { inFlight: false, done: true, showStep: false, showStarter: false };
       }
-      return { inFlight: false, done: false, showStep: true };
+      return { inFlight: false, done: false, showStep: true, showStarter: false };
     }
 
     function isGettingStartedVisible() {
@@ -852,6 +1418,10 @@
         html += `<h3 data-getting-started-next>${window.JournalI18n.renderHtml('journal.window.home.section.heading.next')}</h3>` + stepsHtml.join('');
       }
 
+      if (agentState.showStarter) {
+        html += renderAgentStarterHtml(agentState.starterConnection, agentState.starterItems);
+      }
+
       html += '</div>';
       return html;
     }
@@ -1013,6 +1583,49 @@
       } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         navigator.clipboard.writeText(cmd).catch(function () {});
       }
+    }
+
+    function handleCopyAgentIdea(button) {
+      const prompt = button.getAttribute('data-prompt') || '';
+      if (!prompt) return;
+      if (window.convey && typeof window.convey.copyToClipboard === 'function') {
+        window.convey.copyToClipboard(prompt);
+      } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(prompt).catch(function () {});
+      }
+      button.innerHTML = window.JournalI18n.renderHtml('journal.window.agents.visible.text.copied');
+    }
+
+    function handleSecurityRestart(button) {
+      if (securityRestartInFlight) return;
+      securityRestartInFlight = true;
+      securityRestartError = '';
+      if (button) button.disabled = true;
+      if (lastSecurityPayload) renderSecurity(lastSecurityPayload);
+      if (typeof ctx.read !== 'function') {
+        securityRestartInFlight = false;
+        if (button) button.disabled = false;
+        return;
+      }
+      ctx.read(SYSTEM_RESTART_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        noAuthRedirect: true,
+      })
+        .then(function () {
+          securityRestartInFlight = false;
+          readSecurity();
+        })
+        .catch(function (error) {
+          securityRestartInFlight = false;
+          const msg = (typeof error?.serverMessage === 'string' && error.serverMessage.trim())
+            || (typeof error?.message === 'string' && error.message.trim())
+            || '';
+          securityRestartError = msg;
+          if (lastSecurityPayload) renderSecurity(lastSecurityPayload);
+          else if (button) button.disabled = false;
+        });
     }
 
     function narrativeScope(pulse) {
@@ -1435,7 +2048,7 @@
         return '<div class="pulse-empty-state" data-home-surface="connections">'
           + `<h2 class="pulse-section-header">${window.JournalI18n.renderHtml('journal.window.home.section.heading.connections')}</h2>`
           + `<div class="pulse-empty-message">${window.JournalI18n.renderHtml('journal.window.home.visible.text.connections.are.unavailable.right.now')} `
-          + `<a href="/app/health">${window.JournalI18n.renderHtml('journal.window.home.link.label.check.system.health')}</a></div>`
+          + `<a href="/app/health/">${window.JournalI18n.renderHtml('journal.window.home.link.label.check.journal.status')}</a></div>`
           + '</div>';
       }
       if (connections.state !== 'ok' || !Array.isArray(connections.neighbors)) return '';
@@ -1892,6 +2505,18 @@
         handleCopyAgentCommand(copyCmd);
         return;
       }
+      const copyIdea = closest(target, '[data-copy-agent-idea]');
+      if (copyIdea) {
+        event.preventDefault();
+        handleCopyAgentIdea(copyIdea);
+        return;
+      }
+      const restartBtn = closest(target, '[data-security-restart-btn]');
+      if (restartBtn) {
+        event.preventDefault();
+        handleSecurityRestart(restartBtn);
+        return;
+      }
     }
 
     // The day switch is a tab list: arrow keys, Home and End move the selection.
@@ -1953,8 +2578,13 @@
         return;
       }
       if (msg.event !== 'status') return;
-      heldWorkSnapshot = { queues: msg.queues || {}, held: msg.held || [],
-        queue_hold: msg.queue_hold || null, observedAt: Date.now() };
+      heldWorkSnapshot = {
+        queues: msg.queues || {},
+        held: msg.held || [],
+        crashed: rows(msg.crashed),
+        queue_hold: msg.queue_hold || null,
+        observedAt: Date.now(),
+      };
       heldWorkCurrent = true;
       ctx.clearTimeout(heldWorkExpiry);
       // Match Health's freshness boundary; unrelated bus activity cannot renew it.
@@ -2097,28 +2727,64 @@
     // or a paired app. The banner stays until the status says the install is
     // no longer below its floor; a failed read leaves it as it was.
     function securityLineHtml(flag) {
+      const notes = typeof flag.notes === 'string' && flag.notes.startsWith('https://') ? flag.notes : null;
+      const link = notes ? ' <a href="' + esc(notes) + `" target="_blank" rel="noreferrer" referrerpolicy="no-referrer">${window.JournalI18n.renderHtml('journal.window.home.action.what.it.fixes')}</a>` : '';
+      if (flag.restart === true) {
+        const errHtml = securityRestartError
+          ? '<span class="pulse-security-error" data-press-failure>' + esc(securityRestartError) + '</span>'
+          : '';
+        return '<div class="pulse-security-restart" data-security-restart>'
+          + '<p>' + window.JournalI18n.renderHtml('journal.window.shared.status.pane.visible.text.a.security.update.is.installed.restart') + link + '</p>'
+          + '<div class="pulse-security-actions">'
+          + '<button type="button" class="pulse-security-restart-btn" data-security-restart-btn' + (securityRestartInFlight ? ' disabled' : '') + '>'
+          + window.JournalI18n.renderHtml('journal.window.shared.status.pane.security.restart')
+          + '</button>'
+          + errHtml
+          + '</div>'
+          + '</div>';
+      }
       const fixedIn = typeof flag.fixed_in === 'string' ? flag.fixed_in : '';
       const text = flag.subject === 'journal'
         ? window.JournalI18n.render('journal.window.home.security.journal', [['version', String(fixedIn)]])
         : typeof flag.device === 'string' && flag.device
           ? window.JournalI18n.render('journal.window.home.security.device', [['device', flag.device], ['version', fixedIn]])
           : window.JournalI18n.render('journal.window.home.security.unnamed.device', [['version', fixedIn]]);
-      const notes = typeof flag.notes === 'string' && flag.notes.startsWith('https://') ? flag.notes : null;
-      const link = notes ? ' <a href="' + esc(notes) + `" target="_blank" rel="noreferrer" referrerpolicy="no-referrer">${window.JournalI18n.renderHtml('journal.window.home.action.what.it.fixes')}</a>` : '';
       return '<p>' + esc(text) + link + '</p>';
     }
 
     function renderSecurity(status) {
-      const banner = document.getElementById('security-banner');
-      if (!banner || !isPlainObject(status)) return;
-      const flags = Array.isArray(status.security?.flags) ? status.security.flags.filter(isPlainObject) : [];
-      banner.innerHTML = flags.map(securityLineHtml).join('');
-      banner.hidden = flags.length === 0;
+      if (!isPlainObject(status)) return;
+      lastSecurityPayload = status;
+      const nextState = typeof status.security?.state === 'string' ? status.security.state : null;
+      const stateChanged = nextState !== securityState;
+      securityState = nextState;
+      const banner = document.getElementById?.('security-banner');
+      if (banner) {
+        const flags = Array.isArray(status.security?.flags) ? status.security.flags.filter(isPlainObject) : [];
+        banner.innerHTML = flags.map(securityLineHtml).join('');
+        banner.hidden = flags.length === 0;
+      }
+      if (stateChanged && lastPulse) {
+        renderVitals(lastPulse);
+      }
     }
 
     function readSecurity() {
       if (typeof ctx.read !== 'function') return;
       ctx.read('/api/system/status', { noAuthRedirect: true }).then(renderSecurity, function () {});
+    }
+
+    function applyShellBadges(data) {
+      if (!isPlainObject(data)) return;
+      shellBadges = data;
+      if (lastPulse) renderVitals(lastPulse);
+    }
+
+    function readShellBadgesFallback() {
+      if (shellBadgesFallbackRequested || typeof ctx.read !== 'function') return;
+      if (isPlainObject(shellBadges) || isPlainObject(window.solShellBadges)) return;
+      shellBadgesFallbackRequested = true;
+      ctx.read(SHELL_BADGES_URL, { noAuthRedirect: true }).then(applyShellBadges, function () {});
     }
 
     function initHome() {
@@ -2150,6 +2816,10 @@
           window.location.reload();
         }
       });
+      ctx.on(window, 'sol:shell-status', syncStatusMarkIcon);
+      ctx.on(window, 'sol:shell-badges', function (event) {
+        applyShellBadges(event?.detail || window.solShellBadges);
+      });
       wireInteractions();
       wireRealtime();
       startBriefingEarly();
@@ -2157,8 +2827,19 @@
       readFirstMinutes();
       readAgents();
       readSecurity();
+      if (!isPlainObject(window.solShellBadges)) {
+        if (typeof window.solShellChrome?.setBadge === 'function') {
+          ctx.setTimeout(readShellBadgesFallback, 2500);
+        } else {
+          readShellBadgesFallback();
+        }
+      }
       ctx.visibleInterval(readSecurity, 60000);
     }
+
+    ctx.onDispose?.(function () {
+      window.solShellChrome?.setHomeBadgeDelta?.(null);
+    });
 
     ctx.on(document, 'visibilitychange', function () {
       if (isFirstPage && !firstMinutesClosed) {

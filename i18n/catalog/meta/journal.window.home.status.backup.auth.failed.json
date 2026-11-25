@@ -1,0 +1,16 @@
+{
+  "description": "Home status issue when the backup key could not open the backup destination.",
+  "context": "Journal window, Home view. Home status issue when the backup key could not open the backup destination.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d795b42a75315336a13904b1bb27cbf917c57ddec7c4ec7741b2df0f8032d46",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

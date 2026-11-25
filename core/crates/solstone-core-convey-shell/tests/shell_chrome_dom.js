@@ -2576,6 +2576,84 @@ asyncCase('websocket and status_pane update live region, solShellStatus, and she
   assert.strictEqual(harness.chrome.getBadge('curation')?.tone, 'neutral');
   assert.strictEqual(harness.chrome.getBadge('import')?.count, 1);
   assert.strictEqual(harness.chrome.getBadge('import')?.tone, 'review');
+  assert.strictEqual(harness.window.solShellBadges?.curation, 4);
+
+  // Home live badge delta merges additively with server badges and clears cleanly on null.
+  harness.chrome.setHomeBadgeDelta({ issues: 1, severity: 'amber', uncertain: false });
+  assert.strictEqual(harness.chrome.getBadge('home')?.count, 3);
+  assert.strictEqual(harness.chrome.getBadge('home')?.tone, 'danger');
+  harness.chrome.setHomeBadgeDelta(null);
+  assert.strictEqual(harness.chrome.getBadge('home')?.count, 2);
+});
+
+asyncCase('status_pane publishes sol:shell-badges and honors uncertain Home live delta when count is zero', async () => {
+  const badgeEvents = [];
+  const harness = createHarness({
+    fetchResponses: {
+      '/api/system/status': {
+        status: 200,
+        body: JSON.stringify({ capture: { status: 'active', clients: [] }, version: { current: '2.0.0' }, ok: true }),
+      },
+      '/api/shell/badges': {
+        status: 200,
+        body: JSON.stringify({
+          home: { issues: 0, severity: null },
+          curation: 0,
+          import: 1,
+          import_reviews: [{ id: 'imp-1', source: 'Strava', swept_after_hour: true }],
+        }),
+      },
+    },
+  });
+  harness.window.solShellData = harness.shell;
+  renderChrome(harness, 'home');
+  harness.window.EventSource = class EventSource {
+    constructor() {
+      this.listeners = {};
+      setImmediate(() => {
+        if (this.onopen) this.onopen();
+        for (const listener of this.listeners.continuity || []) {
+          listener({ data: JSON.stringify({ state: 'connected' }) });
+        }
+      });
+    }
+    addEventListener(type, listener) {
+      (this.listeners[type] ||= []).push(listener);
+    }
+    close() {}
+  };
+  harness.context.EventSource = harness.window.EventSource;
+  harness.window.setInterval = () => 0;
+  harness.window.addEventListener('sol:shell-badges', (ev) => badgeEvents.push(ev.detail));
+
+  vm.runInContext(
+    fs.readFileSync(path.join(crateDir, 'assets/static/websocket.js'), 'utf8'),
+    harness.context,
+    { filename: 'websocket.js' },
+  );
+  vm.runInContext(
+    fs.readFileSync(path.join(crateDir, 'assets/static/status_pane.js'), 'utf8'),
+    harness.context,
+    { filename: 'status_pane.js' },
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.strictEqual(badgeEvents.length, 1);
+  assert.strictEqual(badgeEvents[0]?.import_reviews?.[0]?.id, 'imp-1');
+  assert.strictEqual(harness.chrome.getBadge('home'), null);
+
+  harness.chrome.setHomeBadgeDelta({ issues: 0, severity: null, uncertain: true });
+  assert.strictEqual(harness.chrome.getBadge('home')?.count, 0);
+  assert.strictEqual(harness.chrome.getBadge('home')?.marker, '!');
+  assert.strictEqual(harness.chrome.getBadge('home')?.tone, 'warn');
+
+  harness.chrome.setHomeBadgeDelta({ issues: 2, severity: 'amber', uncertain: false });
+  assert.strictEqual(harness.chrome.getBadge('home')?.count, 2);
+  assert.strictEqual(harness.chrome.getBadge('home')?.tone, 'warn');
+
+  harness.chrome.setHomeBadgeDelta(null);
+  assert.strictEqual(harness.chrome.getBadge('home'), null);
 });
 
 async function runAsyncCases() {

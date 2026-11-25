@@ -1,0 +1,16 @@
+{
+  "description": "Home status issue when encrypted backup has a persistent actionable problem.",
+  "context": "Journal window, Home view. Home status issue when encrypted backup has a persistent actionable problem.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "32782e15814773ca3e696d010c7bd9d3d55e28642ff2e3b12512551acbbd6602",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

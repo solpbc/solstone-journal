@@ -1,0 +1,30 @@
+{
+  "description": "Link for additional waiting import reviews on Home status card.",
+  "context": "Journal window, Home view. Link for additional waiting import reviews on Home status card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a7facd672fc02bf5b3907a05d7f6de412e468d682d8798cf80cb3a5041c4ba4f",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

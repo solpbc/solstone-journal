@@ -39,7 +39,7 @@ pub mod uploads;
 pub use embedded_route::{
     CapturedImport, ImportAdmission, ImportRouteRequest, ImportRouteSlot, RetainedImportRoute,
 };
-pub use imports::pending_review_count;
+pub use imports::{pending_review_count, pending_review_summaries, pending_review_summaries_in};
 
 #[cfg(all(test, unix))]
 mod native_folder_tests;

@@ -1,0 +1,21 @@
+{
+  "description": "Title for a non-fault pending import review row on Home status card.",
+  "context": "Journal window, Home view. Title for a non-fault pending import review row on Home status card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "1f7b3e66753bfebd8a4cd06addfb6d84d61ab09ad99a61583962f2028bbc34c4",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

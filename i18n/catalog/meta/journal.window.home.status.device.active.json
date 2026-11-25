@@ -1,0 +1,25 @@
+{
+  "description": "Home per-device intake proof strip item for an active device and when it last added.",
+  "context": "Journal window, Home view. Home per-device intake proof strip item for an active device and when it last added.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "relative",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7a7455a1045cf13def40cfba233fb24414f4435a2dfe39aa4f1fe9a1046965dc",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

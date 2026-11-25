@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// What's waiting on the owner: one list under the status line, only when
-// something is there. Needs-you items, health issues and the originals row are
-// its rows.
+// Calm owner curation stands in its own `ready to shape` card (never inflating
+// the status fault count), while damaged voice profiles remain status issues.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -17,15 +16,14 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   EXPORT_ANCHOR,
-  `  window.__waiting = { renderVitalsHtml, readVitals,
+  `  window.__shape = { renderVitalsHtml, renderReadyToShapeHtml, homeHealthGlance, readVitals,
     seedPulse: data => { lastPulse = data; pulseObservedAt = Date.now(); pulseReadFailed = false; },
-    rendered: () => renderedVitals };
+    rendered: () => ({ vitals: renderedVitals, shape: renderedShape }) };
 ${EXPORT_ANCHOR}`,
 );
-// Keep the last status block the page rendered, without a DOM.
 source = source.replace(
-  '  function renderVitals(pulse) {\n',
-  '  let renderedVitals = null;\n  function renderVitals(pulse) {\n    renderedVitals = renderVitalsHtml(pulse);\n    return;\n',
+  '    function renderVitals(pulse) {\n',
+  '    let renderedVitals = null;\n    let renderedShape = null;\n    function renderVitals(pulse) {\n      renderedVitals = renderVitalsHtml(pulse);\n      renderedShape = renderReadyToShapeHtml(pulse);\n      return;\n',
 );
 
 let pulseResponse = null;
@@ -54,82 +52,121 @@ window.window = window;
 document.defaultView = window;
 
 vm.runInNewContext(withViewRuntime(source), { window, document, console }, { filename: 'home.js' });
-const ui = window.__waiting;
+const ui = window.__shape;
 
-const calm = { verdict: 'ok', severity: 'green', headline: "everything's working", issues: [], last_observation: '4 minutes ago' };
-const voice = {
-  text: 'set up your voice',
+const calm = { verdict: 'ok', severity: 'green', headline: 'ok', issues: [], last_observation: '4m' };
+const voiceTeach = {
+  source_id: 'owner_voice:not_established',
+  text: 'voice setup',
   kind: 'route',
   payload: { href: '/app/speakers/#your-voice' },
   disabled: false,
   reason: '',
 };
-const rows = html => (html.match(/<li class="pulse-waiting-row/g) || []).length;
+const voiceCandidate = {
+  source_id: 'owner_voice:candidate_ready',
+  text: 'voice candidate',
+  kind: 'route',
+  payload: { href: '/app/speakers/#your-voice' },
+  disabled: false,
+  reason: '',
+};
+const voiceDamaged = {
+  source_id: 'owner_voice:damaged',
+  text: 'voice profile unreadable',
+  kind: 'route',
+  payload: { href: '/app/speakers/#your-voice' },
+  disabled: false,
+  reason: '',
+};
+const faultRows = html => (html.match(/<li class="pulse-waiting-row/g) || []).length;
+const shapeRows = html => (html.match(/<li class="pulse-shape-row/g) || []).length;
 
 (async () => {
-  // Nothing waiting: no heading, no list, the line as it was.
-  const quiet = ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] });
-  assert.strictEqual(quiet.includes('pulse-waiting'), false, quiet);
-  assert(quiet.includes('last reached your journal'), quiet);
+  // Nothing waiting: no fault list in status, no ready-to-shape card.
+  const quietPulse = { health_glance: calm, needs_you_items: [] };
+  const quietVitals = ui.renderVitalsHtml(quietPulse);
+  assert.strictEqual(quietVitals.includes('pulse-waiting'), false, quietVitals);
+  assert.strictEqual(ui.renderReadyToShapeHtml(quietPulse), '');
 
-  // A needs-you route is a link to where it goes; a disabled item shows its
-  // reason and is not a link; a note is text.
-  const needs = ui.renderVitalsHtml({
+  // Calm needs-you items (voice teach/candidate, custom routes, disabled routes, notes)
+  // render in ready-to-shape and never turn status into an attention fault.
+  const calmItemsPulse = {
     health_glance: calm,
     needs_you_items: [
-      voice,
-      { text: 'unsafe', kind: 'route', disabled: true, reason: "this link isn't available from here.", payload: { href: '//elsewhere' } },
-      { text: 'the invoice', kind: 'note', disabled: false, reason: '' },
+      voiceTeach,
+      voiceCandidate,
+      { text: 'unsafe', kind: 'route', disabled: true, reason: 'unavailable', payload: { href: '//elsewhere' } },
+      { text: 'custom note', kind: 'note', disabled: false, reason: '' },
     ],
-  });
-  assert.strictEqual(rows(needs), 3, needs);
-  assert(needs.includes('<a href="/app/speakers/#your-voice">'), needs);
-  assert.strictEqual(needs.includes('//elsewhere'), false, needs);
-  assert(needs.includes('pulse-waiting-reason'), needs);
-  // A calm verdict keeps its own headline; the list gets its own heading.
-  assert(needs.includes('pulse-waiting-heading'), needs);
-  assert(needs.includes('aria-labelledby="pulse-waiting-heading"'), needs);
-  assert(needs.includes("everything&#39;s working"), needs);
+  };
+  const calmVitals = ui.renderVitalsHtml(calmItemsPulse);
+  assert.strictEqual(faultRows(calmVitals), 0, calmVitals);
+  assert.strictEqual(ui.homeHealthGlance(calmItemsPulse).glance.verdict, 'ok');
 
-  // Pulse carries the originals list's item total; home never reads the list.
-  const pulseWith = total => ({ health_glance: calm, needs_you_items: [], narrative_content: null, originals_total: total });
+  const shapeHtml = ui.renderReadyToShapeHtml(calmItemsPulse);
+  assert(shapeHtml.includes('data-home-surface="ready-to-shape"'), shapeHtml);
+  assert.strictEqual(shapeRows(shapeHtml), 4, shapeHtml);
+  assert(shapeHtml.includes('href="/app/speakers/#your-voice"'), shapeHtml);
+  assert.strictEqual(shapeHtml.includes('//elsewhere'), false, shapeHtml);
+  assert(shapeHtml.includes('pulse-waiting-reason'), shapeHtml);
+
+  // Damaged voice profile stays in status faults and never enters ready-to-shape.
+  const damagedPulse = {
+    health_glance: calm,
+    needs_you_items: [voiceDamaged],
+  };
+  const damagedGlance = ui.homeHealthGlance(damagedPulse).glance;
+  assert.strictEqual(damagedGlance.verdict, 'attention');
+  assert.strictEqual(damagedGlance.issues.length, 1);
+  const damagedVitals = ui.renderVitalsHtml(damagedPulse);
+  assert.strictEqual(faultRows(damagedVitals), 1, damagedVitals);
+  assert(damagedVitals.includes('href="/app/speakers/#your-voice"'), damagedVitals);
+  assert.strictEqual(ui.renderReadyToShapeHtml(damagedPulse), '');
+
+  // Suggestions (from solShellBadges.curation), possible duplicates, originals, and voice
+  // stand in order inside ready-to-shape without touching status faults.
+  window.solShellBadges = { curation: 5 };
+  const pulseWith = (total, duplicates = 0, items = []) => ({
+    health_glance: calm,
+    needs_you_items: items,
+    possible_duplicates_count: duplicates,
+    narrative_content: null,
+    originals_total: total,
+  });
   ui.seedPulse(pulseWith(undefined));
-  pulseResponse = pulseWith(47);
+  pulseResponse = pulseWith(47, 2, [voiceTeach]);
   await ui.readVitals();
-  // Rows stand in order: health, needs-you, originals.
-  const ordered = ui.renderVitalsHtml({
-    health_glance: {
-      verdict: 'attention', severity: 'amber', headline: '1 thing needs your attention',
-      issues: [{ text: 'a health issue', severity: 'amber', href: '/app/health' }],
-    },
-    needs_you_items: [voice],
-  });
-  const order = ['/app/health', '/app/speakers/#your-voice', '/app/home/originals/'].map(href => ordered.indexOf('href="' + href + '"'));
-  assert(order.every(index => index > 0), ordered);
-  assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), ordered);
-  // The count is the list's whole item total.
-  assert(ordered.includes('47'), ordered);
+  const fullShape = ui.rendered().shape;
+  assert.strictEqual(shapeRows(fullShape), 4, fullShape);
+  const order = [
+    '/app/curation/',
+    '/app/entities/?folder=duplicates',
+    '/app/home/originals/',
+    '/app/speakers/#your-voice',
+  ].map(href => fullShape.indexOf('href="' + href + '"'));
+  assert(order.every(index => index > 0), fullShape);
+  assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), fullShape);
+  assert(fullShape.includes('5'), fullShape);
+  assert(fullShape.includes('2'), fullShape);
+  assert(fullShape.includes('47'), fullShape);
+  assert.strictEqual(faultRows(ui.rendered().vitals), 0, ui.rendered().vitals);
 
-  // A refresh carrying the total keeps the heading and the row.
-  pulseResponse = pulseWith(3);
+  // Zero counts hide ready-to-shape completely.
+  window.solShellBadges = { curation: 0 };
+  pulseResponse = pulseWith(0, 0, []);
   await ui.readVitals();
-  assert(ui.rendered().includes('pulse-waiting-heading'), ui.rendered());
-  assert(ui.rendered().includes('href="/app/home/originals/"'), ui.rendered());
+  assert.strictEqual(ui.rendered().shape, '');
 
-  // Nothing marked: no row, no list.
-  pulseResponse = pulseWith(0);
+  // An unreadable originals total (null) still renders a row in ready-to-shape linking to originals,
+  // and Home never fetches /app/home/api/removals directly.
+  pulseResponse = pulseWith(null, 0, []);
   await ui.readVitals();
-  assert.strictEqual(ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] }).includes('pulse-waiting'), false);
+  assert.strictEqual(shapeRows(ui.rendered().shape), 1, ui.rendered().shape);
+  assert(ui.rendered().shape.includes('href="/app/home/originals/"'), ui.rendered().shape);
+  assert.deepStrictEqual(listReads, [], 'home reads originals count from pulse, never the list');
 
-  // A list that can't be read is still a row, linking to the originals page.
-  pulseResponse = pulseWith(null);
-  await ui.readVitals();
-  const failedRow = ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] });
-  assert.strictEqual(rows(failedRow), 1, failedRow);
-  assert(failedRow.includes('href="/app/home/originals/"'), failedRow);
-  assert.deepStrictEqual(listReads, [], 'home reads the count from pulse, never the list');
-
-  console.log('waiting-list render contract passed');
+  console.log('ready-to-shape render contract passed');
 })().catch(error => {
   console.error(error);
   process.exit(1);

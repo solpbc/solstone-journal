@@ -170,7 +170,10 @@ async fn admitted_copy_to_home_http_to_production_javascript() {
     let bound = get_backup_config(root.path()).unwrap()["last_backup"]["setup_fingerprint"].clone();
     assert!(bound.as_str().is_some_and(|s| s.len() == 64));
     let current = read(&deps).await;
-    assert_eq!(current["backup"], json!({"available":true,"issue":true}));
+    assert_eq!(
+        current["backup"],
+        json!({"available":true,"issue":true,"reason":"auth_failed"})
+    );
     cases.insert("initial_current".into(), current);
     let a = prepare(root.path(), &Fixed).unwrap();
     set_destination(root.path(), &destination("s3:synthetic/replacement")).unwrap();

@@ -1,0 +1,16 @@
+{
+  "description": "Utility link in Home status card to open today's transcripts when segments exist today.",
+  "context": "Journal window, Home view. Utility link in Home status card to open today's transcripts when segments exist today.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "708ae06fe2fc7824ae4b1a4d2bec9e15827d2ff480bd1be5f53138f1fb781acb",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -121,6 +121,12 @@ class DOMElement extends DOMNode {
   get className() { return this.attributes['class'] || ''; }
   set className(val) { this.attributes['class'] = String(val); }
 
+  get hidden() { return this.hasAttribute('hidden'); }
+  set hidden(val) {
+    if (val) this.setAttribute('hidden', '');
+    else this.removeAttribute('hidden');
+  }
+
   get disabled() {
     return this.hasAttribute('disabled') || this._disabled === true;
   }
@@ -406,6 +412,11 @@ ${EXPORT_ANCHOR}`,
 const doc = new DOMDocument();
 const rootEl = doc.createElement('div');
 rootEl.setAttribute('data-home-root', '');
+const pinOfferEl = doc.createElement('div');
+pinOfferEl.id = 'home-pin-offer';
+pinOfferEl.setAttribute('data-home-pin-offer', '');
+pinOfferEl.setAttribute('hidden', '');
+rootEl.appendChild(pinOfferEl);
 const surface = doc.createElement('div');
 surface.setAttribute('data-pulse-surface', '');
 rootEl.appendChild(surface);
@@ -527,13 +538,17 @@ async function runTests() {
   renderPulse(welcomePulse);
 
   const vitalsEl = surface.querySelector('[data-home-surface="vitals"]');
+  const shapeEl = surface.querySelector('[data-home-surface="ready-to-shape"]');
   const welcomeEl = surface.querySelector('[data-home-surface="welcome"]');
   assert(vitalsEl, 'vitals present');
+  assert(shapeEl, 'ready-to-shape card present for calm voice prompt');
   assert(welcomeEl, 'welcome line present');
-  assert(vitalsEl.querySelector('[href="/app/speakers/#your-voice"]'), 'the voice prompt is a waiting row');
+  assert.strictEqual(vitalsEl.querySelector('[href="/app/speakers/#your-voice"]'), null, 'calm voice prompt is not a status fault');
+  assert(shapeEl.querySelector('[href="/app/speakers/#your-voice"]'), 'the voice prompt stands in ready-to-shape');
   assert.strictEqual(surface.querySelector('[data-home-surface="account"]'), null, 'no account card in the welcome state');
   assert.strictEqual(surface.querySelector('[data-home-surface="pair"]'), null, 'no empty cards in the welcome state');
-  assert.strictEqual(surface.children.indexOf(welcomeEl), surface.children.indexOf(vitalsEl) + 1, 'welcome line directly under the status');
+  assert.strictEqual(surface.children.indexOf(shapeEl), surface.children.indexOf(vitalsEl) + 1, 'ready-to-shape directly under status');
+  assert.strictEqual(surface.children.indexOf(welcomeEl), surface.children.indexOf(shapeEl) + 1, 'welcome line directly under ready-to-shape');
 
   // A live refresh on the welcome page adds no connections or week row, even
   // when the pulse carries a first-week line.
@@ -548,8 +563,8 @@ async function runTests() {
   renderVitals(welcomePulse);
   assert.strictEqual(
     surface.children.indexOf(surface.querySelector('[data-home-surface="welcome"]')),
-    surface.children.indexOf(surface.querySelector('[data-home-surface="vitals"]')) + 1,
-    'welcome line stays under the status after a live update'
+    surface.children.indexOf(surface.querySelector('[data-home-surface="ready-to-shape"]')) + 1,
+    'welcome line stays under ready-to-shape after a live update'
   );
 
   // 2. DEVICE STATES & PHONE CHECK:
@@ -1400,8 +1415,8 @@ async function runTests() {
   assert(restoredWelcome, 'welcome line kept on read failure');
   assert.strictEqual(
     surface.children.indexOf(restoredWelcome),
-    surface.children.indexOf(surface.querySelector('[data-home-surface="vitals"]')) + 1,
-    'the welcome line is directly under vitals'
+    surface.children.indexOf(surface.querySelector('[data-home-surface="ready-to-shape"]')) + 1,
+    'the welcome line stays directly under ready-to-shape'
   );
 
   // Response {} does not throw and does not latch
@@ -1825,6 +1840,119 @@ async function runTests() {
   };
   await readFirstMinutes();
   assert.strictEqual(getState().downloadTimer, null, 'heard with fresh false leaves downloadTimer null');
+
+  // Connected-agent zero-request starter prompts & Home one-time pin offer bar
+  const wholeGrant = (categories) => ({
+    read: { scope: { kind: 'whole_journal' }, categories },
+  });
+  setState({
+    firstMinutesPayload: {
+      window_open: true,
+      devices_known: true,
+      devices: [],
+      checks: { phone: true, thinking: true, heard: null },
+      proof: { state: 'none' },
+    },
+    setupPayload: null,
+    agentsPayload: {
+      connections: [
+        {
+          id: 'agent-zero',
+          name: 'Claude Code',
+          requests_this_week: 0,
+          permission: wholeGrant(['transcripts', 'facets', 'entities', 'places', 'places_names']),
+        },
+      ],
+      journal_kinds: {
+        transcript_days_7_plus: true,
+        has_summaries: false,
+        has_entities: true,
+        has_places: true,
+        has_photos: false,
+        has_transcripts: true,
+      },
+    },
+    agentsSettled: true,
+    firstMinutesClosed: false,
+  });
+  renderPulse({ ...welcomePulse, needs_you_items: [] });
+  const starterGs = surface.querySelector('[data-home-surface="getting-started"]');
+  assert(starterGs, 'zero-request connected agent with qualifying kinds keeps Getting Started visible');
+  assert(!starterGs.querySelector('[data-agent-step]'), 'connect-an-agent step is hidden once connected');
+  const starterBlock = starterGs.querySelector('[data-home-agent-ideas]');
+  assert(starterBlock, 'connected-agent starter ideas block rendered');
+  // Without has_summaries, chapter and people-circles stay gated out; entities and places-list qualify.
+  assert(!starterBlock.querySelector('[data-agent-idea="chapter"]'), 'chapter gated on has_summaries');
+  assert(!starterBlock.querySelector('[data-agent-idea="people-circles"]'), 'people-circles gated on has_summaries');
+  assert(starterBlock.querySelector('[data-agent-idea="entities"]'), 'entities starter shown');
+  assert(starterBlock.querySelector('[data-agent-idea="places-list"]'), 'places_names precision selects places-list');
+  const copyIdeaBtn = starterBlock.querySelector('[data-copy-agent-idea]');
+  assert(copyIdeaBtn, 'copy starter idea button present');
+  const beforeLabel = copyIdeaBtn.innerHTML;
+  win.__copied = null;
+  copyIdeaBtn.click();
+  assert.strictEqual(win.__copied, copyIdeaBtn.getAttribute('data-prompt'), 'clicking copy copies starter prompt');
+  assert.notStrictEqual(copyIdeaBtn.innerHTML, beforeLabel, 'button label updates after copy');
+
+  // Once requests_this_week > 0, starter hides and Getting Started closes when other checks are done.
+  setState({
+    agentsPayload: {
+      connections: [
+        {
+          id: 'agent-zero',
+          name: 'Claude Code',
+          requests_this_week: 3,
+          permission: wholeGrant(['transcripts', 'entities']),
+        },
+      ],
+      journal_kinds: { has_entities: true, has_transcripts: true },
+    },
+  });
+  updateGettingStartedSurface();
+  assert.strictEqual(surface.querySelector('[data-home-surface="getting-started"]'), null, 'starter hides once agent has requests_this_week > 0');
+
+  // When 0 prompts qualify (empty journal_kinds), starter never renders an empty card.
+  setState({
+    agentsPayload: {
+      connections: [
+        {
+          id: 'agent-zero',
+          name: 'Claude Code',
+          requests_this_week: 0,
+          permission: wholeGrant(['transcripts']),
+        },
+      ],
+      journal_kinds: { has_transcripts: false },
+    },
+  });
+  updateGettingStartedSurface();
+  assert.strictEqual(surface.querySelector('[data-home-surface="getting-started"]'), null, 'starter hides when 0 prompts qualify');
+
+  // Home pin offer bar mounts at most 1 candidate whose view shouldShowPinOffer approves.
+  const mountedOffers = [];
+  win.solShellChrome = {
+    shouldShowPinOffer(view) { return view === 'map' || view === 'speakers'; },
+    mountPinOffer(host, spec) {
+      host.removeAttribute('hidden');
+      mountedOffers.push(spec);
+    },
+  };
+  renderPulse({
+    ...welcomePulse,
+    pin_candidates: [
+      { view: 'body', kind: 'body' },
+      { view: 'map', kind: 'location' },
+      { view: 'speakers', kind: 'unnamed' },
+    ],
+  });
+  assert.strictEqual(mountedOffers.length, 1, 'at most one pin offer mounted per render');
+  assert.strictEqual(mountedOffers[0].view, 'map', 'first qualifying candidate wins');
+  assert.strictEqual(
+    mountedOffers[0].message,
+    win.JournalI18n.render('journal.window.pin.offer.map.location.text'),
+    'location kind maps to honest location offer key',
+  );
+  delete win.solShellChrome;
 
   await firstPulseDuringStreamLoss(welcomePulse);
   console.log('all getting_started_render acceptance assertions passed');

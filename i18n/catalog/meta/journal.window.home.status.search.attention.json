@@ -1,0 +1,16 @@
+{
+  "description": "Fallback Home status issue when search index health is failing without a specific message.",
+  "context": "Journal window, Home view. Fallback Home status issue when search index health is failing without a specific message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e7713d0b0c3fb825207a33d63cfac40b7c875a1a29aeb1aa93882e06507227a3",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

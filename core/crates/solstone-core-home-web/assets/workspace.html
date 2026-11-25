@@ -23,6 +23,41 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+.pulse-security-restart + .pulse-security-restart,
+.security-banner p + .pulse-security-restart,
+.pulse-security-restart + p {
+  margin-top: 8px;
+}
+.pulse-security-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+.pulse-security-restart-btn {
+  appearance: none;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
+  border-radius: 7px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+.pulse-security-restart-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.pulse-security-error {
+  font-size: 0.82rem;
+  color: var(--warn-ink);
+}
+#home-pin-offer .pin-offer {
+  margin-bottom: 0;
+}
 .pulse-dashboard {
   padding: 1.5rem 2rem 5rem;
   background: var(--cream-bright);
@@ -40,21 +75,295 @@
 }
 
 /* Vital Signs */
-/* One status line on the page ground, and under it, only when something is
-   there, what's waiting on the owner. */
 .pulse-status {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0 0.25rem;
+  gap: 0.55rem;
+  padding: 1rem 1.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  min-width: 0;
 }
 
 .pulse-vitals {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.25rem 0;
+  gap: 0.5rem 1rem;
+  padding: 0;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pulse-device-strip {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem 1rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  min-width: 0;
+}
+
+.pulse-device-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  min-width: 0;
+}
+
+.pulse-device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-2);
+  background: var(--cream-bright);
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pulse-device-chip--quiet {
+  color: var(--ink-soft);
+}
+
+a.pulse-device-chip--failing {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--hairline-2));
+  background: var(--danger-wash);
+  color: var(--danger);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.pulse-device-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.65rem;
+  color: var(--ink-soft);
+}
+
+.pulse-device-empty a,
+.pulse-device-utilities a {
+  color: var(--orange-text-aa);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.pulse-device-utilities {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.85rem;
+  margin-left: auto;
+  font-size: 0.82rem;
+}
+
+.pulse-import-reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pulse-import-review-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--orange-ink) 38%, var(--hairline-2));
+  border-left: 3px solid var(--orange-ink);
+  background: var(--orange-wash);
+  color: var(--ink);
+  min-width: 0;
+}
+
+.pulse-import-review-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+
+.pulse-import-review-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.pulse-import-review-sub {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.pulse-import-review-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  font-size: 0.84rem;
+}
+
+.pulse-import-review-actions a {
+  color: var(--orange-text-aa);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.pulse-import-review-actions a:hover {
+  text-decoration: underline;
+}
+
+.pulse-ready-to-shape {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1rem 1.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.pulse-shape-heading {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-faint-paper);
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.pulse-shape-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pulse-shape-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.875rem;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.pulse-shape-row:first-child {
+  border-top: 0;
+  padding-top: 0.15rem;
+}
+
+.pulse-shape-row:last-child {
+  padding-bottom: 0;
+}
+
+.pulse-shape-row a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.pulse-shape-row a::after {
+  content: '›';
+  color: var(--orange-text-aa);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.pulse-shape-row a:hover {
+  color: var(--orange-text-aa);
+}
+
+.pulse-shape-row a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.pulse-agent-ideas {
+  margin-top: 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 0.85rem 1rem;
+  min-width: 0;
+}
+
+.pulse-agent-ideas-head {
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+
+.pulse-agent-ideas-lead {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  margin: 0.2rem 0 0;
+  line-height: 1.45;
+}
+
+.pulse-agent-ideas-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.65rem 0 0;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--cream-bright);
+}
+
+.pulse-agent-idea-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0.8rem;
+  border-top: 1px solid var(--hairline);
+  min-width: 0;
+}
+
+.pulse-agent-idea-row:first-child {
+  border-top: 0;
+}
+
+.pulse-agent-idea-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pulse-agent-idea-q {
+  display: block;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.pulse-agent-idea-uses {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  margin-top: 0.2rem;
 }
 
 .pulse-waiting-heading {
@@ -242,9 +551,20 @@
 
 .pulse-vitals > a.pulse-vitals-health-link {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   color: var(--orange-text-aa);
   text-decoration: none;
   font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.pulse-status-mark {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .pulse-vitals a:hover { text-decoration: underline; }
@@ -846,6 +1166,37 @@
     display: none;
   }
 
+  .pulse-vitals > a.pulse-vitals-health-link,
+  .pulse-device-empty a,
+  .pulse-device-utilities a,
+  a.pulse-device-chip--failing,
+  .pulse-import-review-actions a,
+  .pulse-shape-row a,
+  .pulse-security-restart-btn,
+  .pulse-getting-started button {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .pulse-shape-row {
+    padding: 0;
+  }
+
+  .pulse-agent-idea-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .pulse-agent-idea-main {
+    flex-basis: 100%;
+  }
+
+  .pulse-agent-idea-copy {
+    margin-left: auto;
+  }
+
   .pulse-facet-chip,
   .pulse-activity,
   .pulse-connections-row {
@@ -1220,6 +1571,7 @@
 </style>
 
 <div class="pulse-dashboard" id="pulse-dashboard" data-home-root>
+  <div id="home-pin-offer" data-home-pin-offer hidden></div>
   <section id="security-banner" class="security-banner" role="status" hidden></section>
   <div id="pulse-surface" data-pulse-surface style="display: contents;">
     <div class="surface-state surface-state--loading" role="status">

@@ -1,0 +1,21 @@
+{
+  "description": "Home status issue for a provider service that stopped and did not restart on its own.",
+  "context": "Journal window, Home view. Home status issue for a provider service that stopped and did not restart on its own.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "service",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b15af26503a0f8ac8c60b772627466ffbdecc76428d377c031d2566fceacaff0",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

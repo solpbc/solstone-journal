@@ -1,0 +1,16 @@
+{
+  "description": "Home status card device-strip message when no devices are paired yet.",
+  "context": "Journal window, Home view. Home status card device-strip message when no devices are paired yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52f3c485cd5e9743728b0723d562ee7ff124103d735e5b4795ab6d3c1708468a",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -13,7 +13,7 @@ use solstone_core_facets::{ConnectionsHorizon, read_connections_horizon};
 use crate::HomeContext;
 use crate::connections::build_connections_card_in;
 use crate::formatting::{format_gap_links_in, format_processing_summary_in, relative_time_ago};
-use crate::health_glance::build_health_glance_in;
+use crate::health_glance::{build_health_glance_with_index_in, search_index_issue};
 use crate::needs_you::{classify_needs_you, classify_owner_voice_needs_in, needs_dedup_key};
 use crate::readers::{
     briefing_freshness, briefing_lateness_state, collect_activities,
@@ -218,13 +218,22 @@ fn build_pulse_context(
         }
     }
     let mut needs_you_items = classify_needs_you(&attention, &deduped_pulse_needs);
-    if let Some(outcome) = resolve_owner_voice_tier(context)
+    let owner_voice_outcome = resolve_owner_voice_tier(context);
+    let mut owner_voice_candidate_ready = false;
+    if let Some(outcome) = owner_voice_outcome.clone()
         && let Some(voice_item) = classify_owner_voice_needs_in(
             outcome,
             || {
-                solstone_core_speaker_resolve::owner_voice::owner_voice_setup(
+                let setup = solstone_core_speaker_resolve::owner_voice::owner_voice_setup(
                     context.journal_root(),
-                )
+                );
+                if matches!(
+                    setup,
+                    solstone_core_speaker_resolve::owner_voice::OwnerVoiceSetup::CandidateReady
+                ) {
+                    owner_voice_candidate_ready = true;
+                }
+                setup
             },
             // The date as the owner's clock will read it then, at that day's
             // own offset.
@@ -260,6 +269,11 @@ fn build_pulse_context(
             needs_you_items.push(voice_item);
         }
     }
+    let pin_candidates = collect_pin_candidates(
+        context.journal_root(),
+        body_data,
+        owner_voice_candidate_ready,
+    );
     let brain = crate::readers::build_brain_snapshot(context);
     let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
         .ok()
@@ -271,14 +285,16 @@ fn build_pulse_context(
                 context.locale(),
             )
         });
+    let index_issue = search_index_issue(context);
     let backlog = load_backlog_source(context);
-    let health_glance = build_health_glance_in(
+    let health_glance = build_health_glance_with_index_in(
         &capture_health,
         last_observe_relative.as_deref(),
         &backlog,
         &brain,
         context.now_utc,
         transcription_issue.as_ref(),
+        index_issue.as_ref(),
         context.locale(),
     );
     let yesterday_processing =
@@ -349,6 +365,7 @@ fn build_pulse_context(
         "possible_duplicates_count".to_owned(),
         possible_duplicates_count(context.journal_root()).into(),
     );
+    fields.insert("pin_candidates".to_owned(), Value::Array(pin_candidates));
     fields.insert(
         "home_state".to_owned(),
         if show_welcome { "welcome" } else { "active" }.into(),
@@ -364,7 +381,7 @@ fn build_pulse_context(
             Value::Null
         },
     );
-    debug_assert_eq!(fields.len(), 33);
+    debug_assert_eq!(fields.len(), 34);
     PulseContext {
         fields,
         now: account_context.now_local(),
@@ -378,6 +395,144 @@ fn possible_duplicates_count(journal: &std::path::Path) -> usize {
         log::warn!("home: possible duplicates not counted: {error}");
         0
     })
+}
+
+fn collect_pin_candidates(
+    journal: &std::path::Path,
+    body_data: bool,
+    owner_voice_candidate_ready: bool,
+) -> Vec<Value> {
+    let mut candidates = Vec::new();
+    if body_data {
+        candidates.push(json!({"view": "body", "kind": "body"}));
+    }
+    if let Some(kind) = map_pin_candidate_kind(journal) {
+        candidates.push(json!({"view": "map", "kind": kind}));
+    }
+    if let Some(kind) = speakers_pin_candidate_kind(journal, owner_voice_candidate_ready) {
+        candidates.push(json!({"view": "speakers", "kind": kind}));
+    }
+    candidates
+}
+
+fn map_pin_candidate_kind(journal: &std::path::Path) -> Option<&'static str> {
+    let store = solstone_core_location::places::PlaceStore::read(journal);
+    if store
+        .places
+        .iter()
+        .any(|place| !place.dormant && !place.hidden)
+    {
+        return Some("places");
+    }
+    let mut days: Vec<String> = solstone_core_journal_io::day_dirs(journal)
+        .map(|map| map.into_keys().collect())
+        .unwrap_or_default();
+    days.sort_unstable_by(|left, right| right.cmp(left));
+    days.truncate(400);
+    let mut has_location = false;
+    for (idx, day) in days.iter().enumerate() {
+        if let Some(record) = solstone_core_location::projection::read_build_record(journal, day) {
+            if !record.stays.is_empty() || record.visits > 0 {
+                return Some("places");
+            }
+            if record.readings > 0 {
+                has_location = true;
+            }
+        } else if !has_location
+            && idx < 14
+            && let Ok(segments) =
+                solstone_core_journal_io::iter_segments_skipping_unreadable_streams(
+                    journal,
+                    solstone_core_journal_io::PathOrDay::Day(day),
+                )
+        {
+            for segment in segments.into_iter().take(32) {
+                if std::fs::symlink_metadata(segment.path().join("location.jsonl"))
+                    .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+                {
+                    has_location = true;
+                    break;
+                }
+            }
+        }
+    }
+    has_location.then_some("location")
+}
+
+fn speakers_pin_candidate_kind(
+    journal: &std::path::Path,
+    owner_voice_candidate_ready: bool,
+) -> Option<&'static str> {
+    if owner_voice_candidate_ready {
+        return Some("unnamed");
+    }
+    if solstone_core_speaker_resolve::discovery_cache::load_discovery_cache(journal)
+        .and_then(|cache| {
+            cache
+                .get("clusters")
+                .and_then(Value::as_object)
+                .map(|clusters| !clusters.is_empty())
+        })
+        .unwrap_or(false)
+    {
+        return Some("unnamed");
+    }
+    let Ok(entries) = std::fs::read_dir(journal.join("entities")) else {
+        return None;
+    };
+    let mut has_named = false;
+    for entry in entries.take(512).filter_map(Result::ok) {
+        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            continue;
+        }
+        let Some(dir_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let has_voiceprints = solstone_core_entity::entity_voiceprints_path(journal, &dir_name)
+            .ok()
+            .is_some_and(|path| {
+                std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+            });
+        if !has_voiceprints {
+            continue;
+        }
+        let Ok(solstone_core_entity::IdentityObservation::Present(snap)) =
+            solstone_core_entity::observe_entity_identity(journal, &dir_name)
+        else {
+            continue;
+        };
+        let entity = snap.value();
+        if entity.get("type").and_then(Value::as_str) != Some("Person")
+            || entity.get("blocked").and_then(Value::as_bool) == Some(true)
+            || solstone_core_entity::identity_is_principal(entity)
+        {
+            continue;
+        }
+        let name = entity
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(snap.entity_id())
+            .trim();
+        if is_placeholder_speaker_label(name, ' ')
+            || is_placeholder_speaker_label(snap.entity_id().trim(), '_')
+        {
+            return Some("unnamed");
+        }
+        if solstone_core_entity::is_placeholder_name(name) {
+            continue;
+        }
+        has_named = true;
+    }
+    has_named.then_some("named")
+}
+
+fn is_placeholder_speaker_label(value: &str, separator: char) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("speaker") else {
+        return false;
+    };
+    let trimmed = rest.trim_start_matches(separator);
+    trimmed.len() < rest.len() && !trimmed.is_empty() && trimmed.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Project a full context to the public pulse API shape.
@@ -866,7 +1021,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 32);
+        assert_eq!(payload.as_object().unwrap().len(), 33);
         assert_eq!(
             payload
                 .as_object()
@@ -905,6 +1060,7 @@ mod tests {
                 "connections",
                 "journal_age_days",
                 "possible_duplicates_count",
+                "pin_candidates",
                 "home_state",
                 "welcome_framing",
             ]
@@ -1093,6 +1249,8 @@ mod tests {
         );
         let mut reference = reference_payload("reference-pulse-empty-journal.json");
         reference["pulse"]["narrative_window"] = Value::Null;
+        // Empty registry no longer injects an inline `set one up` CTA beside status headlines.
+        reference["pulse"]["health_glance"]["cta"] = Value::Null;
         retire_dropped_fields(&mut reference);
         // Absence of weekly reflections is now the first-week object rather than null.
         let payload = pulse_payload(&context);
@@ -1126,14 +1284,15 @@ mod tests {
             expected_pulse.pointer("/health_glance/cta/href"),
             Some(&json!("/app/network/"))
         );
-        // The reference predates the link landing on the devices section.
-        assert_eq!(
-            payload.pointer("/health_glance/cta/href"),
-            Some(&json!("/app/network/#devices"))
-        );
+        // Empty registry now uses the calm ready headline and renders device pairing in the device strip.
+        assert!(payload.pointer("/health_glance/cta").unwrap().is_null());
+        *expected_pulse.pointer_mut("/health_glance/cta").unwrap() = Value::Null;
         *expected_pulse
-            .pointer_mut("/health_glance/cta/href")
-            .unwrap() = json!("/app/network/#devices");
+            .pointer_mut("/health_glance/headline")
+            .unwrap() = json!(solstone_core_window_catalog::text(
+            solstone_core_window_catalog::ENGLISH,
+            "journal.window.home.status.headline.ready.empty",
+        ));
         assert_eq!(
             expected_pulse.pointer("/health_glance/verdict"),
             Some(&json!("ok"))
@@ -1649,7 +1808,7 @@ mod tests {
     }
 
     #[test]
-    fn seeded_fixture_keeps_the_no_client_cta_branch() {
+    fn seeded_fixture_omits_inline_empty_registry_cta_and_reports_no_clients() {
         let root =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_seeded_journal");
         let context = utc_context(
@@ -1657,10 +1816,9 @@ mod tests {
             crate::test_time::utc_at(2026, 8, 14, 23, 25, 13)
                 + jiff::SignedDuration::from_nanos(793_525_000),
         );
-        assert_eq!(
-            pulse_payload(&context)["health_glance"]["cta"]["href"],
-            "/app/network/#devices"
-        );
+        let payload = pulse_payload(&context);
+        assert!(payload["health_glance"]["cta"].is_null());
+        assert_eq!(payload["capture_health"]["status"], "no_clients");
     }
 
     #[test]
@@ -1868,9 +2026,10 @@ mod tests {
         }
         let analysis_day = pulse["briefing_analysis_day"].clone();
         pulse.insert("briefing_body".to_owned(), json!([]));
-        // The duplicate count came later; neither reference journal holds a
-        // suggestion.
+        // The duplicate count and pin candidates came later; neither reference
+        // journal holds suggestions, body data, location, or speaker voiceprints.
         pulse.insert("possible_duplicates_count".to_owned(), json!(0));
+        pulse.insert("pin_candidates".to_owned(), json!([]));
         if let Some(processing) = pulse
             .get_mut("yesterday_processing")
             .and_then(Value::as_object_mut)
@@ -2039,5 +2198,77 @@ mod tests {
             source_id == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED)
                 || source_id == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_DAMAGED)
         }));
+    }
+
+    #[test]
+    fn pin_candidates_distinguishes_body_map_places_vs_location_and_speakers_unnamed_vs_named() {
+        let root = TempDir::new().unwrap();
+        let at = crate::test_time::utc_at(2026, 8, 14, 12, 0, 0);
+        let ctx = || utc_context(root.path(), at);
+        assert_eq!(pulse_payload(&ctx())["pin_candidates"], json!([]));
+
+        // Raw location segment without places -> map: location
+        let loc_seg = root.path().join("chronicle/20260814/090000_300");
+        fs::create_dir_all(&loc_seg).unwrap();
+        fs::write(loc_seg.join("location.jsonl"), "{\"lat\":39.75}\n").unwrap();
+        assert_eq!(
+            pulse_payload(&ctx())["pin_candidates"],
+            json!([{"view": "map", "kind": "location"}])
+        );
+
+        // Place in PlaceStore -> map: places
+        let places_dir = root.path().join("solstone/apps/map");
+        fs::create_dir_all(&places_dir).unwrap();
+        fs::write(
+            places_dir.join("places.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "places": [{
+                    "id": "p1",
+                    "latitude": 39.75,
+                    "longitude": -105.22
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            pulse_payload(&ctx())["pin_candidates"],
+            json!([{"view": "map", "kind": "places"}])
+        );
+
+        // Named speaker with voiceprints -> speakers: named
+        let ada = root.path().join("entities/ada");
+        fs::create_dir_all(&ada).unwrap();
+        fs::write(
+            ada.join("entity.json"),
+            json!({"id": "ada", "name": "Ada", "type": "Person"}).to_string(),
+        )
+        .unwrap();
+        fs::write(ada.join("voiceprints.npz"), b"npz").unwrap();
+        assert_eq!(
+            pulse_payload(&ctx())["pin_candidates"],
+            json!([
+                {"view": "map", "kind": "places"},
+                {"view": "speakers", "kind": "named"}
+            ])
+        );
+
+        // Placeholder speaker entity -> speakers: unnamed
+        let spk = root.path().join("entities/speaker_2");
+        fs::create_dir_all(&spk).unwrap();
+        fs::write(
+            spk.join("entity.json"),
+            json!({"id": "speaker_2", "name": "Speaker 2", "type": "Person"}).to_string(),
+        )
+        .unwrap();
+        fs::write(spk.join("voiceprints.npz"), b"npz").unwrap();
+        assert_eq!(
+            pulse_payload(&ctx())["pin_candidates"],
+            json!([
+                {"view": "map", "kind": "places"},
+                {"view": "speakers", "kind": "unnamed"}
+            ])
+        );
     }
 }

@@ -1,0 +1,25 @@
+{
+  "description": "Home per-device intake proof strip item for a quiet device and how long it has been quiet.",
+  "context": "Journal window, Home view. Home per-device intake proof strip item for a quiet device and how long it has been quiet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38e352c23827937de6743c46213d9bae8b067afbf6b8d557c3c2a2b9484b90aa",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

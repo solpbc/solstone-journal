@@ -4,27 +4,23 @@
 //! Pure health-glance projection.
 
 use jiff::Timestamp;
-use jiff::tz::Offset;
 use serde_json::{Value, json};
 
-use crate::formatting::{cardinal_quantity, relative_time_in, relative_time_parts, render_count};
+use crate::formatting::{cardinal_quantity, render_count};
 use crate::model::{BacklogSource, BacklogValidity};
 use crate::needs_you::format_degraded_capture_line_in;
 use solstone_core_system_health::NotYet;
 use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, strings, text};
 
 const UNAVAILABLE_HEADLINE_ID: &str = "journal.window.home.health.unavailable.headline";
-const EMPTY_REGISTRY_HEADLINE_ID: &str = "journal.window.home.health.empty.registry.headline";
+const EMPTY_REGISTRY_HEADLINE_ID: &str = "journal.window.home.status.headline.ready.empty";
+const QUIET_HEADLINE_ID: &str = "journal.window.home.status.headline.quiet";
 const AWAITING_FIRST_HEADLINE_ID: &str = "journal.window.home.health.awaiting.first.headline";
 const RESIDUE_HEADLINE_ID: &str = "journal.window.home.health.residue.headline";
 const NO_ELIGIBLE_HEADLINE_ID: &str = "journal.window.home.health.no.eligible.headline";
-// An idle device is a device with no new material. Reachability is a heartbeat
-// window, not something the journal measures for its own host, so the line says
-// what is known — nothing was added, and when the last thing was — and stops.
 // Day 0 with a device already delivering: things are arriving, and the summary
 // that could prove the rest hasn't had its first chance yet. Calm, never green.
 const NOT_YET_ACTIVE_HEADLINE_ID: &str = "journal.window.home.health.not.yet.active.headline";
-const UNNAMED_IDLE_ISSUE_ID: &str = "journal.window.home.health.unnamed.idle.issue";
 
 #[derive(Clone, Copy)]
 enum CalmKind {
@@ -70,6 +66,29 @@ pub fn build_health_glance_in(
     transcription_issue: Option<&Value>,
     locale: &str,
 ) -> Value {
+    build_health_glance_with_index_in(
+        capture,
+        last_observe,
+        backlog,
+        brain,
+        now,
+        transcription_issue,
+        None,
+        locale,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_health_glance_with_index_in(
+    capture: &Value,
+    last_observe: Option<&str>,
+    backlog: &BacklogSource,
+    brain: &Value,
+    now: Timestamp,
+    transcription_issue: Option<&Value>,
+    search_index_issue: Option<&Value>,
+    locale: &str,
+) -> Value {
     let mut glance = derive_glance(
         capture,
         last_observe,
@@ -77,13 +96,9 @@ pub fn build_health_glance_in(
         brain,
         now,
         transcription_issue,
+        search_index_issue,
         locale,
     );
-    // A journal with no devices always keeps its way to add one, whatever else
-    // the glance is saying: a new journal is exactly when it's needed.
-    if glance["cta"].is_null() && is_empty_registry(capture) {
-        glance["cta"] = empty_registry_cta(locale);
-    }
     let not_yet = match backlog.validity {
         BacklogValidity::NotYet(not_yet) => Some(not_yet),
         // No way to think chosen is a choice still ahead, never a fault: it
@@ -104,6 +119,7 @@ pub fn build_health_glance_in(
     glance
 }
 
+#[allow(clippy::too_many_arguments)]
 fn derive_glance(
     capture: &Value,
     last_observe: Option<&str>,
@@ -111,6 +127,7 @@ fn derive_glance(
     brain: &Value,
     now: Timestamp,
     transcription_issue: Option<&Value>,
+    search_index_issue: Option<&Value>,
     locale: &str,
 ) -> Value {
     let mut issues = backlog_issues(backlog, now, locale);
@@ -120,6 +137,9 @@ fn derive_glance(
     if let Some(issue) = brain_issue(brain) {
         issues.push(issue);
     } else if let Some(issue) = transcription_issue {
+        issues.push(issue.clone());
+    }
+    if let Some(issue) = search_index_issue {
         issues.push(issue.clone());
     }
     if !issues.is_empty() {
@@ -150,8 +170,7 @@ fn derive_glance(
     }
     match disposition {
         CaptureDisposition::Quiet => {
-            let summary = quiet_capture_summary(capture, now, locale);
-            json!({"verdict":"calm","severity":"neutral","headline":summary,"last_observation":last_observe,"cta":{"text":text(locale, "journal.window.home.health.devices.view"),"href":"/app/health/#registeredClientsCard"},"issues":[]})
+            json!({"verdict":"calm","severity":"neutral","headline":text(locale, QUIET_HEADLINE_ID),"last_observation":last_observe,"cta":null,"issues":[]})
         }
         CaptureDisposition::Active => {
             json!({"verdict":"ok","severity":"green","headline":text(locale, "journal.window.home.health.ready"),"last_observation":last_observe,"cta":null,"issues":[]})
@@ -234,17 +253,6 @@ fn assessed_empty_or_all_active(capture: &Value) -> bool {
             .all(|row| row.get("status").and_then(Value::as_str) == Some("active"))
 }
 
-fn is_empty_registry(capture: &Value) -> bool {
-    matches!(
-        capture_disposition(capture),
-        CaptureDisposition::Calm(CalmKind::EmptyRegistry)
-    )
-}
-
-fn empty_registry_cta(locale: &str) -> Value {
-    json!({"text": text(locale, "journal.window.home.health.device.setup"), "href": "/app/network/#devices"})
-}
-
 /// The brain reason for a journal with no way to think chosen yet.
 fn engine_not_chosen(brain: &Value) -> bool {
     brain.get("reason_code").and_then(Value::as_str) == Some("thinking_engine_not_chosen")
@@ -261,7 +269,7 @@ fn calm_json(kind: CalmKind, locale: &str) -> Value {
             "severity": "neutral",
             "headline": text(locale, EMPTY_REGISTRY_HEADLINE_ID),
             "last_observation": null,
-            "cta": empty_registry_cta(locale),
+            "cta": null,
             "issues": [],
         }),
         CalmKind::AwaitingFirst => json!({
@@ -424,113 +432,7 @@ fn capture_issue(capture: &Value, locale: &str) -> Option<Value> {
     };
     Some(json!({"text":text, "severity":severity, "href":"/app/health/#registeredClientsCard"}))
 }
-/// Health's `describeRegisteredClient` and its `HEALTH_GLANCE_DEVICE*_SILENT`
-/// strings are the single source for this sentence; home echoes them, in
-/// health's order (the quietest device first). X-03.
-fn quiet_capture_summary(capture: &Value, now: Timestamp, locale: &str) -> String {
-    let idle = idle_clients(capture, now);
-    match idle.as_slice() {
-        [] => text(locale, UNNAMED_IDLE_ISSUE_ID),
-        [(name, Some(seconds))] if *seconds < 45 => strings(
-            locale,
-            "journal.window.home.health.quiet.elapsed.just.now",
-            [("device", name)],
-        ),
-        [(name, Some(seconds))] => {
-            let (unit, count) = relative_time_parts(*seconds as f64);
-            render(
-                locale,
-                &format!("journal.window.home.health.quiet.elapsed.{unit}"),
-                &[
-                    ("device", CatalogValue::String(name)),
-                    ("count", CatalogValue::String(&count.to_string())),
-                    ("quantity", cardinal_quantity(count)),
-                ],
-            )
-        }
-        [(name, None)] => strings(
-            locale,
-            "journal.window.home.health.quiet.one.unknown",
-            [("device", name)],
-        ),
-        rows => {
-            let count = rows.len() as i64;
-            let devices = rows
-                .iter()
-                .map(|(name, seconds)| match seconds {
-                    Some(seconds) => strings(
-                        locale,
-                        "journal.window.home.health.device.age",
-                        [
-                            ("device", name),
-                            ("age", &format_idle_age(*seconds, locale)),
-                        ],
-                    ),
-                    None => name.clone(),
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            render(
-                locale,
-                "journal.window.home.health.quiet.devices",
-                &[
-                    ("count", CatalogValue::String(&count.to_string())),
-                    ("devices", CatalogValue::String(&devices)),
-                    ("quantity", cardinal_quantity(count)),
-                ],
-            )
-        }
-    }
-}
-// The names the owner sees decide the number the sentence is written in, so the
-// devices are collected before the line is composed rather than after.
-fn idle_clients(capture: &Value, now: Timestamp) -> Vec<(String, Option<i64>)> {
-    let mut rows = capture
-        .get("clients")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|client| {
-            matches!(
-                client.get("status").and_then(Value::as_str),
-                Some("stale" | "offline")
-            )
-        })
-        .filter_map(|client| {
-            let name = client
-                .get("name")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|name| !name.is_empty())?;
-            Some((name.to_owned(), idle_seconds(client, now)))
-        })
-        .collect::<Vec<_>>();
-    // Health lists the quietest device first and puts a device with no known
-    // age last; home reads the same order. X-03.
-    rows.sort_by(|left, right| {
-        right
-            .1
-            .unwrap_or(-1)
-            .cmp(&left.1.unwrap_or(-1))
-            .then_with(|| left.0.cmp(&right.0))
-    });
-    rows
-}
-fn idle_seconds(client: &Value, now: Timestamp) -> Option<i64> {
-    let last = client
-        .get("last_accepted_ingest_at")
-        .and_then(Value::as_str)
-        .and_then(parse_time)?;
-    let seconds = (now - last).as_secs();
-    (seconds >= 0).then_some(seconds)
-}
-fn format_idle_age(seconds: i64, locale: &str) -> String {
-    if seconds < 45 {
-        text(locale, "journal.window.home.health.age.just.now")
-    } else {
-        relative_time_in(seconds as f64, locale)
-    }
-}
+
 fn brain_issue(brain: &Value) -> Option<Value> {
     let state = brain.get("state").and_then(Value::as_str)?;
     if engine_not_chosen(brain)
@@ -551,15 +453,33 @@ fn brain_issue(brain: &Value) -> Option<Value> {
         json!({"text":text,"severity":"amber","href":brain.pointer("/action/href").and_then(Value::as_str).unwrap_or("/app/health/#brain")}),
     )
 }
-fn parse_time(value: &str) -> Option<Timestamp> {
-    solstone_core_time::parse_rfc3339(value)
-        .ok()
-        .map(|time| time.timestamp())
-        .or_else(|| {
-            solstone_core_time::parse_civil_datetime(value)
-                .ok()
-                .and_then(|time| Offset::UTC.to_timestamp(time).ok())
-        })
+
+pub fn search_index_issue(context: &crate::HomeContext) -> Option<Value> {
+    let observations = solstone_core_system_health::read_indexing_observations(
+        context.journal_root(),
+        context.now_utc,
+    );
+    let index = solstone_core_system_health::evaluate_index_health_recent_in(
+        context.journal_root(),
+        &observations,
+        context.locale(),
+    );
+    if index.state != solstone_core_system_health::IndexHealthState::Failing {
+        return None;
+    }
+    let label = if index.text.trim().is_empty() {
+        text(
+            context.locale(),
+            "journal.window.home.status.search.attention",
+        )
+    } else {
+        index.text
+    };
+    Some(json!({
+        "text": label,
+        "severity": "amber",
+        "href": "/app/health/#backlogVerdict",
+    }))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -589,14 +509,16 @@ pub fn status_badge_summary_at(context: &crate::HomeContext) -> StatusBadgeSumma
                 context.locale(),
             )
         });
+    let index_issue = search_index_issue(context);
     let backlog = crate::readers::load_backlog_source(context);
-    let glance = build_health_glance_in(
+    let glance = build_health_glance_with_index_in(
         &capture_health,
         last_observe.as_deref(),
         &backlog,
         &brain,
         context.now_utc,
         transcription_issue.as_ref(),
+        index_issue.as_ref(),
         context.locale(),
     );
     let issues_arr = glance.get("issues").and_then(Value::as_array);
@@ -748,12 +670,11 @@ mod tests {
         json!({"name": name, "status": status, "reach": reach, "failing": status == "degraded"})
     }
 
-    /// Home preserves Health's quiet-device names, ages and ordering as
-    /// information, without turning silence into an attention demand.
+    /// Quiet paired devices use the calm quiet headline without turning silence
+    /// into an attention demand; per-device quiet ages live in the device strip.
     #[test]
-    fn quiet_device_headline_echoes_health_without_requiring_attention() {
+    fn quiet_device_headline_stays_calm_without_requiring_attention() {
         let mut iphone = client("iPhone's iPhone", "offline", "offline");
-        // 15:30 on 2026-05-14 less six hours, and less one day.
         iphone["last_accepted_ingest_at"] = json!("2026-05-14T09:30:00Z");
         let mut suze = client("suze", "offline", "offline");
         suze["last_accepted_ingest_at"] = json!("2026-05-13T15:30:00Z");
@@ -764,15 +685,12 @@ mod tests {
             "registry": "registry_complete",
         });
         let glanced = glance(&capture);
-        assert_eq!(
-            glanced["headline"],
-            "2 devices haven't added to your journal recently: suze (1 day), iPhone's iPhone (6 hours)."
-        );
+        assert_eq!(glanced["headline"], text(ENGLISH, QUIET_HEADLINE_ID));
         assert_eq!(glanced["verdict"], "calm");
         assert_eq!(glanced["severity"], "neutral");
+        assert!(glanced["cta"].is_null());
         assert_eq!(glanced["issues"].as_array().unwrap().len(), 0);
 
-        // A lone quiet device also stays informational.
         let one = json!({
             "status": "offline",
             "clients": [client("suze", "offline", "offline")],
@@ -780,20 +698,7 @@ mod tests {
             "registry": "registry_complete",
         });
         assert_eq!(glance(&one)["verdict"], "calm");
-
-        // A device with no known age sorts last, the way health sorts it.
-        let mut known = client("known", "stale", "active");
-        known["last_accepted_ingest_at"] = json!("2026-05-14T14:30:00Z");
-        let unknown_last = json!({
-            "status": "stale",
-            "clients": [client("unknown", "stale", "active"), known],
-            "unassessed": [],
-            "registry": "registry_complete",
-        });
-        assert_eq!(
-            glance(&unknown_last)["headline"],
-            "2 devices haven't added to your journal recently: known (1 hour), unknown."
-        );
+        assert_eq!(glance(&one)["headline"], text(ENGLISH, QUIET_HEADLINE_ID));
     }
 
     #[test]
@@ -859,9 +764,9 @@ mod tests {
         let g = glance(&empty);
         assert_eq!(g["verdict"], "calm");
         assert_eq!(g["severity"], "neutral");
-        assert_eq!(g["cta"]["href"], "/app/network/#devices");
+        assert!(g["cta"].is_null());
         assert_eq!(g["issues"].as_array().unwrap().len(), 0);
-        assert!(g["headline"].as_str().unwrap().contains("set one up"));
+        assert_eq!(g["headline"], text(ENGLISH, EMPTY_REGISTRY_HEADLINE_ID));
 
         for capture in [&awaiting, &residue_offline, &residue_stale, &no_eligible] {
             let g = glance(capture);
@@ -973,9 +878,6 @@ mod tests {
             assert!(g["last_observation"].is_null());
         }
 
-        // Two offline devices in one row previously read as one device called
-        // "iPhone's iPhone, suze", followed by singular pronouns, and the line
-        // asserted a reachability failure the journal never measured.
         let two_offline = json!({
             "status": "offline",
             "clients": [
@@ -987,7 +889,7 @@ mod tests {
         });
         assert_eq!(
             glance(&two_offline)["headline"],
-            "2 devices haven't added to your journal recently: iPhone's iPhone, suze."
+            text(ENGLISH, QUIET_HEADLINE_ID)
         );
         assert_eq!(glance(&two_offline)["severity"], "neutral");
         let three_stale_running = json!({
@@ -1002,10 +904,8 @@ mod tests {
         });
         assert_eq!(
             glance(&three_stale_running)["headline"],
-            "3 devices haven't added to your journal recently: desk, laptop, suze."
+            text(ENGLISH, QUIET_HEADLINE_ID)
         );
-        // One device is named on its own, with the age of the last thing it
-        // added when the record carries one.
         let one_offline = json!({
             "status": "offline",
             "clients": [client("suze", "offline", "offline")],
@@ -1014,17 +914,14 @@ mod tests {
         });
         assert_eq!(
             glance(&one_offline)["headline"],
-            "suze hasn't added to your journal recently."
+            text(ENGLISH, QUIET_HEADLINE_ID)
         );
         let mut one_offline_timed = one_offline.clone();
         one_offline_timed["clients"][0]["last_accepted_ingest_at"] = json!("2026-05-13T15:30:00Z");
         let timed = glance(&one_offline_timed);
-        assert_eq!(
-            timed["headline"],
-            "suze hasn't added to your journal in 1 day."
-        );
+        assert_eq!(timed["headline"], text(ENGLISH, QUIET_HEADLINE_ID));
         assert_eq!(timed["severity"], "neutral");
-        assert_eq!(timed["cta"]["href"], "/app/health/#registeredClientsCard");
+        assert!(timed["cta"].is_null());
 
         let stale_with_invalid = json!({
             "status": "stale",
@@ -1133,16 +1030,14 @@ mod tests {
             running_g["issues"].as_array().unwrap().len(),
             asleep_g["issues"].as_array().unwrap().len()
         );
-        assert_eq!(running_g["cta"]["href"], asleep_g["cta"]["href"]);
         assert_eq!(running_g["verdict"], "calm");
         assert_eq!(running_g["severity"], "neutral");
         assert!(running_g["issues"].as_array().unwrap().is_empty());
-        // Reach is a heartbeat window, not delivery. It no longer changes a
-        // word of the line either way.
+        assert!(running_g["cta"].is_null());
         let running_text = running_g["headline"].as_str().unwrap();
         let asleep_text = asleep_g["headline"].as_str().unwrap();
         assert_eq!(running_text, asleep_text);
-        assert_eq!(running_text, "phone hasn't added to your journal recently.");
+        assert_eq!(running_text, text(ENGLISH, QUIET_HEADLINE_ID));
 
         running["clients"][0]["reach"] = json!("stale");
         assert_eq!(glance(&running)["headline"], running_text);
@@ -1156,20 +1051,14 @@ mod tests {
             "unassessed": [],
             "registry": "registry_complete",
         });
-        assert_eq!(
-            glance(&mixed)["headline"],
-            "2 devices haven't added to your journal recently: alpha, bravo."
-        );
+        assert_eq!(glance(&mixed)["headline"], text(ENGLISH, QUIET_HEADLINE_ID));
 
         let corpus_shaped = json!({"status": "stale", "clients": [{"name": "laptop"}]});
         assert_eq!(
             glance(&corpus_shaped)["headline"],
-            text(ENGLISH, UNNAMED_IDLE_ISSUE_ID)
+            text(ENGLISH, QUIET_HEADLINE_ID)
         );
-        assert_eq!(
-            glance(&corpus_shaped)["cta"]["href"],
-            "/app/health/#registeredClientsCard"
-        );
+        assert!(glance(&corpus_shaped)["cta"].is_null());
 
         let checking = glance_at(
             &empty,
@@ -1324,14 +1213,14 @@ mod tests {
         assert_eq!(delivering["note"]["href"], "/app/health/#backlogVerdict");
 
         // No way to think yet is a choice still ahead, not a fault: the note
-        // carries it, nothing is counted, and the device invite stays.
+        // carries it, nothing is counted, and no ambiguous inline CTA is injected.
         let empty = json!({"status": "no_clients", "registry": "registry_empty"});
         let blocked = json!({"state": "blocked", "reason_code": "thinking_engine_not_chosen",
             "headline": "thinking isn't set up yet"});
         let no_engine = not_yet_glance(&empty, &blocked, &not_yet(NotYet::AwaitingEngine(None)));
         assert_eq!(no_engine["verdict"], "calm");
         assert!(no_engine["issues"].as_array().unwrap().is_empty());
-        assert_eq!(no_engine["cta"]["href"], "/app/network/#devices");
+        assert!(no_engine["cta"].is_null());
         assert_eq!(
             note(&no_engine).as_deref(),
             Some("your journal starts catching up once you choose where the thinking happens.")
@@ -1380,24 +1269,23 @@ mod tests {
         let asked = not_yet_glance(&empty, &key_missing, &fresh_backlog());
         assert_eq!(asked["verdict"], "attention");
         assert_eq!(asked["issues"][0]["text"], "thinking isn't set up yet");
-        // ...and with no devices, the invite to add one survives the count.
-        assert_eq!(asked["cta"]["href"], "/app/network/#devices");
+        assert!(asked["cta"].is_null());
 
-        // Local thinking still arriving: progressing, and the invite stays.
+        // Local thinking still arriving: progressing, without an inline device CTA.
         let arriving = json!({"state": "blocked", "reason_code": "local_runtime_not_ready",
             "headline": "setting up local thinking", "progressing": true});
         let progressing = not_yet_glance(&empty, &arriving, &fresh_backlog());
         assert_eq!(progressing["verdict"], "progressing");
-        assert_eq!(progressing["cta"]["href"], "/app/network/#devices");
+        assert!(progressing["cta"].is_null());
 
-        // No devices, thinking set up: the first-run invite comes back.
+        // No devices, thinking set up: ready headline with no inline CTA.
         let first_run = not_yet_glance(&empty, &Value::Null, &not_yet(NotYet::FirstNight));
         assert_eq!(first_run["verdict"], "calm");
         assert_eq!(
             first_run["headline"],
             text(ENGLISH, EMPTY_REGISTRY_HEADLINE_ID)
         );
-        assert_eq!(first_run["cta"]["text"], "set one up →");
+        assert!(first_run["cta"].is_null());
         assert_eq!(
             note(&first_run).as_deref(),
             Some("you'll see whether your journal is caught up after its first night.")
@@ -1457,5 +1345,31 @@ mod tests {
         let red = status_badge_summary_at(&day0_ctx);
         assert_eq!(red.issues, 1);
         assert_eq!(red.severity, Some("red"));
+
+        // Clean backlog + corrupt indexer/journal.sqlite surfaces failing search index on both glance and badge.
+        std::fs::write(
+            root.join("stats.json"),
+            br#"{"generated_at":"2026-05-14T15:25:00Z","backlog":{"stuck_days":0,"days":[]}}"#,
+        )
+        .expect("write clean stats");
+        assert_eq!(status_badge_summary_at(&day0_ctx).issues, 0);
+
+        // Routine behind (searchable file without sqlite yet) stays off Home and badge.
+        std::fs::create_dir_all(root.join("reflections/weekly")).expect("weekly dir");
+        std::fs::write(root.join("reflections/weekly/20260510.md"), b"hello").expect("weekly md");
+        assert!(search_index_issue(&day0_ctx).is_none());
+        assert_eq!(status_badge_summary_at(&day0_ctx).issues, 0);
+
+        // Corrupt sqlite file triggers IndexHealthState::Failing -> amber issue on both glance and badge.
+        std::fs::create_dir_all(root.join("indexer")).expect("indexer dir");
+        std::fs::write(root.join("indexer/journal.sqlite"), b"corrupt sqlite bytes")
+            .expect("write corrupt sqlite");
+        let idx_issue = search_index_issue(&day0_ctx).expect("failing search index issue");
+        assert_eq!(idx_issue["severity"], "amber");
+        assert_eq!(idx_issue["href"], "/app/health/#backlogVerdict");
+        assert!(!idx_issue["text"].as_str().unwrap_or("").is_empty());
+        let with_failing_index = status_badge_summary_at(&day0_ctx);
+        assert_eq!(with_failing_index.issues, 1);
+        assert_eq!(with_failing_index.severity, Some("amber"));
     }
 }

@@ -1,0 +1,30 @@
+{
+  "description": "Row in Home ready-to-shape card for originals waiting for owner review.",
+  "context": "Journal window, Home view. Row in Home ready-to-shape card for originals waiting for owner review.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "77a21d347df2d6ee8d3eb0a0fd5fc83b759d3f3eaa94ac4499385a79ea92a310",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -492,6 +492,28 @@
     return true;
   }
 
+  let homeBadgeDelta = null;
+
+  function setHomeBadgeDelta(delta) {
+    if (delta && typeof delta === 'object') {
+      const issues = Number.isFinite(delta.issues) ? Math.max(0, Math.floor(delta.issues)) : 0;
+      const severity = delta.severity === 'red' ? 'red' : (delta.severity === 'amber' ? 'amber' : null);
+      const uncertain = Boolean(delta.uncertain);
+      homeBadgeDelta = { issues, severity, uncertain };
+    } else {
+      homeBadgeDelta = null;
+    }
+    if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') {
+      try {
+        window.dispatchEvent(new window.CustomEvent('sol:home-badge-delta', { detail: homeBadgeDelta }));
+      } catch (_) {}
+    }
+  }
+
+  function getHomeBadgeDelta() {
+    return homeBadgeDelta ? { ...homeBadgeDelta } : null;
+  }
+
   if (!window.solShellChrome) {
     window.solShellChrome = {
       renderAppRail,
@@ -502,6 +524,8 @@
       markCurrent,
       setBadge,
       getBadge,
+      setHomeBadgeDelta,
+      getHomeBadgeDelta,
       shouldShowPinOffer,
       mountPinOffer,
     };

@@ -1,0 +1,16 @@
+{
+  "description": "Action link on Home pending import review row to review and confirm the import.",
+  "context": "Journal window, Home view. Action link on Home pending import review row to review and confirm the import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "57a85e3cbf1da237fed28294fd3b64c684c137ced78706b9cc003a6007efbdf8",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

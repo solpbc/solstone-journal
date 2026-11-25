@@ -895,6 +895,7 @@ mod tests {
             "connections",
             "journal_age_days",
             "possible_duplicates_count",
+            "pin_candidates",
             "home_state",
             "welcome_framing",
             "originals_total",

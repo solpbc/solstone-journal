@@ -1,0 +1,16 @@
+{
+  "description": "Home status card headline on a fresh journal with no paired devices and no faults.",
+  "context": "Journal window, Home view. Home status card headline on a fresh journal with no paired devices and no faults.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f2e961006380b63a72311c6a5389bd61314645e56e70d2a46f3c94f960c03348",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

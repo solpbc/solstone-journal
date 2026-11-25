@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line on Home pending import review row for swept sources (Apple Health and Strava).",
+  "context": "Journal window, Home view. Sub-line on Home pending import review row for swept sources (Apple Health and Strava).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae61a2df8f0f4dd5f98b5ef3ecfd7842f0b941091dc89ef2e21a082b04a5f3ae",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

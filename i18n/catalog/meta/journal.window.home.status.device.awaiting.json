@@ -1,0 +1,21 @@
+{
+  "description": "Home per-device intake proof strip item for a newly paired device awaiting its first upload.",
+  "context": "Journal window, Home view. Home per-device intake proof strip item for a newly paired device awaiting its first upload.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "64bd538c3c445de647a2c16c642e1d46354ee61c48b314dc08c8b3bce5b2d532",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

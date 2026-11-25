@@ -1,0 +1,16 @@
+{
+  "description": "Section heading for the calm curation card on Home.",
+  "context": "Journal window, Home view. Section heading for the calm curation card on Home.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2c878837dd21e81e16d75a310c5ef7c619438e5bb75939ff601d2067558ffae3",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

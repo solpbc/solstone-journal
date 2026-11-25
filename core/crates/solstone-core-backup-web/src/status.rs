@@ -79,6 +79,18 @@ pub(crate) fn status_with_operation(
     })))
 }
 
+const PERSISTENT_BACKUP_REASONS: &[&str] = &[
+    "auth_failed",
+    "repo_missing",
+    "hosted_entitlement_inactive",
+    "binding_invalid",
+    "binding_superseded",
+    "repository_unsupported",
+    "restic_unavailable",
+    "rclone_unavailable",
+    "backup_unavailable",
+];
+
 /// Home's small read-only observation. Historical or routine failures are quiet;
 /// inability to associate a qualified result is unavailable, never recovery.
 pub fn home_backup_observation(deps: &crate::BackupWebDeps) -> Value {
@@ -88,6 +100,28 @@ pub fn home_backup_observation(deps: &crate::BackupWebDeps) -> Value {
     let Some(enabled) = status["enabled"].as_bool() else {
         return json!({"available": false});
     };
+    if let Some(op) = status["operation"].as_object()
+        && let Some(phase) = op.get("phase").and_then(Value::as_str)
+    {
+        if phase == "cleanup_pending" {
+            return json!({"available": true, "issue": true, "reason": "cleanup_pending"});
+        }
+        let reason_code = op.get("reason_code").and_then(Value::as_str);
+        if matches!(
+            phase,
+            "error" | "degraded" | "refused" | "needs_subscription"
+        ) && !(phase == "error" && reason_code == Some("cancelled"))
+        {
+            return json!({
+                "available": true,
+                "issue": true,
+                "reason": reason_code.unwrap_or(phase),
+            });
+        }
+    }
+    if !enabled && status["last_backup"]["status"].as_str() == Some("cleared_superseded") {
+        return json!({"available": true, "issue": true, "reason": "cleared_superseded"});
+    }
     // A pause is the owner's choice, never an issue.
     if !enabled
         || status["paused_at"].is_i64()
@@ -104,22 +138,27 @@ pub fn home_backup_observation(deps: &crate::BackupWebDeps) -> Value {
     }
     match &status["last_backup"]["status"] {
         Value::Null => {}
-        Value::String(state) if matches!(state.as_str(), "error" | "ok") => {}
+        Value::String(state) if matches!(state.as_str(), "error" | "ok" | "cleared_superseded") => {
+        }
         _ => return json!({"available": false}),
     }
-    if status["last_backup"]["status"] != "error"
-        || status["last_backup"]["error_reason"] != "auth_failed"
+    if status["last_backup"]["status"] == "error"
+        && let Some(reason) = status["last_backup"]["error_reason"].as_str()
+        && PERSISTENT_BACKUP_REASONS.contains(&reason)
+        && status["last_backup"].get("setup_fingerprint").is_some()
     {
-        return json!({"available": true, "issue": false});
+        match status["last_backup_current_setup"].as_bool() {
+            Some(true) => return json!({"available": true, "issue": true, "reason": reason}),
+            Some(false) => {}
+            None => return json!({"available": false}),
+        }
     }
-    // Records predating attempt provenance cannot justify a current warning.
-    if status["last_backup"].get("setup_fingerprint").is_none() {
-        return json!({"available": true, "issue": false});
+    if status["last_verification"].is_object()
+        && status["last_verification"]["status"].as_str() == Some("error")
+    {
+        return json!({"available": true, "issue": true, "reason": "verification_failed"});
     }
-    match status["last_backup_current_setup"].as_bool() {
-        Some(current) => json!({"available": true, "issue": current}),
-        None => json!({"available": false}),
-    }
+    json!({"available": true, "issue": false})
 }
 
 pub fn offload(
@@ -448,5 +487,147 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn home_backup_observation_evaluates_persistent_reasons_and_precedence() {
+        use solstone_core_backup::{
+            Destination, generate_and_store_keys, record_backup_result, record_verification_result,
+            set_backup_paused, set_destination, set_enabled,
+        };
+        let root = tempfile::tempdir().unwrap();
+        set_destination(
+            root.path(),
+            &Destination {
+                repository: "s3:fixture".into(),
+                backend: "s3".into(),
+                credentials: Map::new(),
+            },
+        )
+        .unwrap();
+        generate_and_store_keys(root.path()).unwrap();
+        let deps = crate::BackupWebDeps::new(root.path().into());
+
+        set_enabled(root.path(), false).unwrap();
+        crate::config::mutate(root.path(), |backup| {
+            backup.insert(
+                "last_backup".into(),
+                json!({"status": "cleared_superseded", "time": 100}),
+            );
+            (true, ())
+        })
+        .unwrap();
+        assert_eq!(
+            home_backup_observation(&deps),
+            json!({"available": true, "issue": true, "reason": "cleared_superseded"})
+        );
+
+        crate::config::mutate(root.path(), |backup| {
+            backup.insert("last_backup".into(), json!({"status": null, "time": null}));
+            (true, ())
+        })
+        .unwrap();
+        let begin =
+            crate::operation::begin(&deps.operations, "enable_hosted", None, None, None).unwrap();
+        {
+            let mut lock = deps.operations.lock().unwrap();
+            let view = &mut lock.current.as_mut().unwrap().view;
+            view.phase = "cleanup_pending".into();
+        }
+        assert_eq!(
+            home_backup_observation(&deps),
+            json!({"available": true, "issue": true, "reason": "cleanup_pending"})
+        );
+        {
+            let mut lock = deps.operations.lock().unwrap();
+            let view = &mut lock.current.as_mut().unwrap().view;
+            view.phase = "needs_subscription".into();
+            view.reason_code = None;
+        }
+        assert_eq!(
+            home_backup_observation(&deps),
+            json!({"available": true, "issue": true, "reason": "needs_subscription"})
+        );
+        {
+            let mut lock = deps.operations.lock().unwrap();
+            let view = &mut lock.current.as_mut().unwrap().view;
+            view.phase = "error".into();
+            view.reason_code = Some("cancelled".into());
+        }
+        assert_eq!(
+            home_backup_observation(&deps),
+            json!({"available": true, "issue": false})
+        );
+        {
+            let mut lock = deps.operations.lock().unwrap();
+            lock.current = None;
+        }
+        let _ = begin;
+
+        set_enabled(root.path(), true).unwrap();
+        let config = solstone_core_backup::get_backup_config(root.path()).unwrap();
+        let fingerprint = backup_setup_fingerprint(&config, None).unwrap();
+        for reason in super::PERSISTENT_BACKUP_REASONS {
+            record_backup_result(
+                root.path(),
+                "error",
+                json!(100),
+                Value::Null,
+                json!(reason),
+                None,
+                Some(&fingerprint),
+            )
+            .unwrap();
+            assert_eq!(
+                home_backup_observation(&deps),
+                json!({"available": true, "issue": true, "reason": reason}),
+                "persistent reason {reason}"
+            );
+        }
+        for transient in ["timeout", "locked"] {
+            record_backup_result(
+                root.path(),
+                "error",
+                json!(101),
+                Value::Null,
+                json!(transient),
+                None,
+                Some(&fingerprint),
+            )
+            .unwrap();
+            assert_eq!(
+                home_backup_observation(&deps),
+                json!({"available": true, "issue": false}),
+                "transient reason {transient}"
+            );
+        }
+
+        record_backup_result(
+            root.path(),
+            "ok",
+            json!(102),
+            json!("snap-1"),
+            Value::Null,
+            None,
+            Some(&fingerprint),
+        )
+        .unwrap();
+        record_verification_result(
+            root.path(),
+            "error",
+            json!(103),
+            json!("integrity_failed"),
+            Value::Null,
+        )
+        .unwrap();
+        assert_eq!(
+            home_backup_observation(&deps),
+            json!({"available": true, "issue": true, "reason": "verification_failed"})
+        );
+        set_backup_paused(root.path(), Some(104)).unwrap();
+        assert_eq!(
+            home_backup_observation(&deps),
+            json!({"available": true, "issue": false})
+        );
     }
 }

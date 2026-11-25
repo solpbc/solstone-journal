@@ -1,0 +1,16 @@
+{
+  "description": "Row in Home ready-to-shape card inviting the owner to check a voice candidate.",
+  "context": "Journal window, Home view. Row in Home ready-to-shape card inviting the owner to check a voice candidate.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8043fd3589e12982f2e1317cf0d8c4de8177b54b339feb2c33464a6e45cb7b7c",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

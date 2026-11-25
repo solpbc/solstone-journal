@@ -1,0 +1,16 @@
+{
+  "description": "Link label on Home first-minutes speech proof failure pointing to Status.",
+  "context": "Journal window, Home view. Link label on Home first-minutes speech proof failure pointing to Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "54e3722f3a23068a3ac8a768695d8d6f0ef53a4d2f47646d34a2fe7d7c21876a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

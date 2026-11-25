@@ -23291,3 +23291,71 @@ journal.window.entities.merge.evidence.shared.alias = shared alias
 journal.window.entities.merge.evidence.name.variant = similar name
 
 journal.window.entities.merge.preview.direction.keep.aka = { $source_name } merges into { $target_name } · keeps "{ $source_name }" as another name
+
+journal.window.home.action.see.status = see status →
+
+journal.window.home.link.label.check.journal.status = check journal status →
+
+journal.window.home.status.backup.auth.failed = the backup key couldn't open your backup destination. check backup in status.
+
+journal.window.home.status.backup.attention = encrypted backup needs attention.
+
+journal.window.home.status.search.attention = search needs attention.
+
+journal.window.home.status.headline.quiet = all quiet for now
+
+journal.window.home.status.headline.ready.empty = your journal is ready
+
+journal.window.home.status.headline.uncertain = can't confirm everything right now
+
+journal.window.home.status.devices.none = no devices are paired yet.
+
+journal.window.home.status.devices.pair = pair a device
+
+journal.window.home.status.device.active = { $device } · { $relative }
+
+journal.window.home.status.device.quiet = { $device } · quiet for { $age }
+
+journal.window.home.status.device.awaiting = { $device } · awaiting first upload
+
+journal.window.home.status.device.turned.away = { $device } · uploads turned away
+
+journal.window.home.status.transcripts.today = see today's transcripts
+
+journal.window.home.status.service.stopped = { $service } stopped and didn't restart on its own.
+
+journal.window.home.status.service.restarting = { $service } keeps stopping and restarting.
+
+journal.window.home.status.import.ready = { $source } · ready to review
+
+journal.window.home.status.import.swept.note = your journal removes the waiting copy an hour after it arrived.
+
+journal.window.home.status.import.waiting.note = ready to review before starting.
+
+journal.window.home.status.import.action = review and confirm
+
+journal.window.home.status.import.more.count = { $quantity ->
+        [one] 1 more
+       *[other] { $count } more
+    }
+
+journal.window.home.shape.heading = ready to shape
+
+journal.window.home.shape.originals.count = { $quantity ->
+        [one] 1 original to review
+       *[other] { $count } originals to review
+    }
+
+journal.window.home.shape.suggestions.count = { $quantity ->
+        [one] 1 suggestion to review
+       *[other] { $count } suggestions to review
+    }
+
+journal.window.home.shape.duplicates.count = { $quantity ->
+        [one] 1 possible duplicate
+       *[other] { $count } possible duplicates
+    }
+
+journal.window.home.shape.voice.teach = teach your voice
+
+journal.window.home.shape.voice.candidate = check if this voice is yours

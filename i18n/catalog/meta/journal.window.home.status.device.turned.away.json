@@ -1,0 +1,21 @@
+{
+  "description": "Home per-device intake proof strip item for a device whose uploads are turned away.",
+  "context": "Journal window, Home view. Home per-device intake proof strip item for a device whose uploads are turned away.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bacad4717b97cffd776ed07e2980503e4454c7e823c72ad6f78734b2794d7a0b",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

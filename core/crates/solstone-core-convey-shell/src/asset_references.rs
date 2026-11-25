@@ -63,6 +63,10 @@ const SAME_TREE_ABSOLUTE: &[(&str, &str)] = &[
     // shell.js and sunarc.js is in shell-rest.js.
     ("/static/shell.js", "/static/sol-status/"),
     ("/static/shell-rest.js", "/static/sol-status/"),
+    // Home's status mark reads `window.solShellStatus.statusMarksBase` when the
+    // shell bundle has published it, and keeps `/static/sol-status/` as the
+    // stable fallback when mounted before that publish.
+    ("/app/home/static/home.js", "/static/sol-status/"),
 ];
 
 /// Documents served with references left on their stable paths.

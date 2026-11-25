@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line on Home pending import review row for non-swept sources.",
+  "context": "Journal window, Home view. Sub-line on Home pending import review row for non-swept sources.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5663acbc74e7257933798df78ed62b125f6fe87add2fa8baa3c596ded69ae76c",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

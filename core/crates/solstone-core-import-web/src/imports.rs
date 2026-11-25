@@ -708,12 +708,36 @@ fn row_needs_review(
 /// owner review. Short-circuits immediately when `imported.json` exists and
 /// performs zero staging sweep mutations.
 pub fn pending_review_count(root: &Path, route: Option<&crate::ImportRouteSlot>) -> usize {
+    collect_pending_reviews(root, route, ENGLISH).0
+}
+
+/// Read-only summary of up to 3 staged confirmation-required imports waiting for
+/// owner review, newest first, paired with the full waiting count.
+pub fn pending_review_summaries(root: &Path, route: Option<&crate::ImportRouteSlot>) -> Vec<Value> {
+    collect_pending_reviews(root, route, ENGLISH).1
+}
+
+/// Locale-aware read-only count and up to 3 staged confirmation-required import
+/// summaries (`{ id, source, swept_after_hour }`).
+pub fn pending_review_summaries_in(
+    root: &Path,
+    route: Option<&crate::ImportRouteSlot>,
+    locale: &str,
+) -> (usize, Vec<Value>) {
+    collect_pending_reviews(root, route, locale)
+}
+
+fn collect_pending_reviews(
+    root: &Path,
+    route: Option<&crate::ImportRouteSlot>,
+    locale: &str,
+) -> (usize, Vec<Value>) {
     let imports_dir = root.join("imports");
     let Ok(entries) = fs::read_dir(&imports_dir) else {
-        return 0;
+        return (0, Vec::new());
     };
     let mut sync_made: Option<solstone_core_import::sync_state::SyncMadeImports> = None;
-    let mut count = 0;
+    let mut items: Vec<(String, String, bool)> = Vec::new();
     for entry in entries.flatten() {
         let timestamp = entry.file_name().to_string_lossy().into_owned();
         if timestamp.len() != 15 || timestamp.matches('_').count() != 1 || !entry.path().is_dir() {
@@ -786,10 +810,30 @@ pub fn pending_review_count(root: &Path, route: Option<&crate::ImportRouteSlot>)
         if projection.status == solstone_core_import::ProjectionStatus::Pending
             && projection.raw_publication.is_none()
         {
-            count += 1;
+            let source_slug = hint
+                .filter(|value| !value.is_empty())
+                .unwrap_or(projection.source_type.as_str());
+            let swept_after_hour = matches!(source_slug, "apple_health" | "strava");
+            let source_label = source_display_localized(locale, source_slug)
+                .or_else(|| source_display_localized(locale, &projection.source_type))
+                .unwrap_or(projection.source_display);
+            items.push((timestamp, source_label, swept_after_hour));
         }
     }
-    count
+    items.sort_by(|left, right| right.0.cmp(&left.0));
+    let count = items.len();
+    let summaries = items
+        .into_iter()
+        .take(3)
+        .map(|(id, source, swept_after_hour)| {
+            json!({
+                "id": id,
+                "source": source,
+                "swept_after_hour": swept_after_hour,
+            })
+        })
+        .collect();
+    (count, summaries)
 }
 
 pub(crate) async fn detail(
@@ -1757,6 +1801,50 @@ mod tests {
         .unwrap();
         fs::write(done_dir.join("imported.json"), br#"{"entries_written":5}"#).unwrap();
         assert_eq!(pending_review_count(root, None), 1);
+        let summaries = pending_review_summaries(root, None);
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0]["id"], staged_id);
+        assert_eq!(summaries[0]["swept_after_hour"], true);
+        assert!(!summaries[0]["source"].as_str().unwrap_or("").is_empty());
+
+        for (extra_id, hint) in [
+            ("20261124_120100", "apple_health"),
+            ("20261124_120200", "chatgpt"),
+            ("20261124_120300", "ics"),
+        ] {
+            let extra_dir = root.join("imports").join(extra_id);
+            fs::create_dir_all(&extra_dir).unwrap();
+            let extra_file = extra_dir.join("export.zip");
+            fs::write(&extra_file, b"PK\x03\x04extra").unwrap();
+            let mut extra_meta = json!({
+                "import_id": extra_id,
+                "file_path": extra_file.to_string_lossy(),
+                "file_size": 9,
+                "source_hash": "c".repeat(64),
+                "source_timestamp": "2026-11-24T12:05:00Z",
+                "source_hint": hint,
+                "confirmation_required": true
+            })
+            .as_object()
+            .cloned()
+            .unwrap();
+            solstone_core_import::saved_start::initialize_saved_start(&mut extra_meta, extra_id)
+                .unwrap();
+            fs::write(
+                extra_dir.join("import.json"),
+                serde_json::to_vec(&extra_meta).unwrap(),
+            )
+            .unwrap();
+        }
+        assert_eq!(pending_review_count(root, None), 4);
+        let capped = pending_review_summaries(root, None);
+        assert_eq!(capped.len(), 3);
+        assert_eq!(capped[0]["id"], "20261124_120300");
+        assert_eq!(capped[0]["swept_after_hour"], false);
+        assert_eq!(capped[1]["id"], "20261124_120200");
+        assert_eq!(capped[1]["swept_after_hour"], false);
+        assert_eq!(capped[2]["id"], "20261124_120100");
+        assert_eq!(capped[2]["swept_after_hour"], true);
         assert!(
             payload_file.exists(),
             "read-only count never sweeps staged files"
