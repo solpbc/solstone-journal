@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.91 (build 142)] - 2026-11-25
+
+### Changed
+
+- updated the bundled journal to [2.0.91](https://solstone.app/releases#v2.0.91) →
+
 ### Fixed
 
-- before setup is finished, or while it runs from the disk image, the journal app no longer sets itself to start after you sign in. the choice you make in setup decides it.
+- before setup is finished, or while it runs from the disk image, the journal app no longer sets itself to start after you sign in to your mac. the choice you make in setup decides it.
 
 ## [2.0.90 (build 141)] - 2026-11-24
 
