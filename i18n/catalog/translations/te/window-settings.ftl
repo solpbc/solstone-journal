@@ -18,7 +18,7 @@ journal.window.local.access.instruction.windows = ఈ జర్నల్ మీ�
 
 journal.window.local.access.invalid.open = లోకల్ యాక్సెస్ తెరిచి ఉందో లేదో చెప్పండి: { $slot1 } లేదా { $slot2 }.
 
-journal.window.local.access.link.expired = ఈ లింక్ ఇప్పటికే వాడబడింది లేదా గడువు ముగిసింది.
+journal.window.local.access.link.expired = ఈ లింక్ ఇప్పటికే వాడబడింది లేదా గడువు అయింది.
 
 journal.window.local.access.save.failed = మీ ఎంపికను సేవ్ చేయడం సాధ్యం కాలేదు. దయచేసి మళ్ళీ ప్రయత్నించండి.
 
@@ -44,23 +44,23 @@ journal.window.mcp.owner.diagnostic.label.empty = లేబుల్ ఖాళ�
 
 journal.window.mcp.owner.diagnostic.label.too.long = లేబుల్ గరిష్ఠంగా 64 బైట్‌లు ఉండాలి
 
-journal.window.mcp.owner.diagnostic.oauth.binding.mismatch = { $literal_oauth } అభ్యర్థన బంధించిన ట్రాన్జాక్షన్‌తో సరిపోలడం లేదు
+journal.window.mcp.owner.diagnostic.oauth.binding.mismatch = { $literal_oauth } అభ్యర్థన బంధించిన ట్రాన్జాక్షన్‌తో సరిపోలేదు
 
 journal.window.mcp.owner.diagnostic.oauth.client.not.found = { $literal_oauth } క్లయింట్ దొరకలేదు
 
-journal.window.mcp.owner.diagnostic.oauth.code.expired = { $literal_oauth } ఆథరైజేషన్ కోడ్ గడువు ముగిసింది
+journal.window.mcp.owner.diagnostic.oauth.code.expired = { $literal_oauth } ఆథరైజేషన్ కోడ్ గడువు అయింది
 
 journal.window.mcp.owner.diagnostic.oauth.directory = { $literal_mcp } { $literal_oauth } డైరెక్టరీని సిద్ధం చేయడం సాధ్యం కాలేదు
 
-journal.window.mcp.owner.diagnostic.oauth.entry.too.large = { $literal_oauth } స్టోర్ ఎంట్రీ తన పరిమాణ పరిమితిని మించింది
+journal.window.mcp.owner.diagnostic.oauth.entry.too.large = { $literal_oauth } డేటా నిల్వ ఎంట్రీ తన పరిమాణ పరిమితిని మించింది
 
-journal.window.mcp.owner.diagnostic.oauth.invalid.grant = { $literal_oauth } గ్రాంట్ చెల్లదు
+journal.window.mcp.owner.diagnostic.oauth.invalid.grant = { $literal_oauth } అనుమతి చెల్లదు
 
 journal.window.mcp.owner.diagnostic.oauth.invalid.token = { $literal_oauth } టోకెన్ చెల్లదు
 
-journal.window.mcp.owner.diagnostic.oauth.lock = { $literal_mcp } { $literal_oauth } స్టోర్‌ను లాక్ చేయడం సాధ్యం కాలేదు
+journal.window.mcp.owner.diagnostic.oauth.lock = { $literal_mcp } { $literal_oauth } డేటా నిల్వను లాక్ చేయడం సాధ్యం కాలేదు
 
-journal.window.mcp.owner.diagnostic.oauth.malformed = { $literal_mcp } { $literal_oauth } స్టోర్ ఆకృతి తప్పు
+journal.window.mcp.owner.diagnostic.oauth.malformed = { $literal_mcp } { $literal_oauth } డేటా నిల్వ ఆకృతి తప్పు
 
 journal.window.mcp.owner.diagnostic.oauth.no.active.pairing = యాక్టివ్ పెయిరింగ్ కోడ్ లేదు
 
@@ -70,27 +70,27 @@ journal.window.mcp.owner.diagnostic.oauth.pairing.mismatch = పెయిరి�
 
 journal.window.mcp.owner.diagnostic.oauth.permission = ఎంచుకున్న అనుమతిని నిల్వ చేయడం సాధ్యం కాలేదు
 
-journal.window.mcp.owner.diagnostic.oauth.quota = { $literal_oauth } స్టోర్ కోటా చేరుకుంది
+journal.window.mcp.owner.diagnostic.oauth.quota = { $literal_oauth } డేటా నిల్వ కోటా చేరుకుంది
 
 journal.window.mcp.owner.diagnostic.oauth.randomness = పూర్తి { $literal_oauth } యాదృచ్ఛికతను పొందడం సాధ్యం కాలేదు
 
-journal.window.mcp.owner.diagnostic.oauth.read = { $literal_mcp } { $literal_oauth } స్టోర్‌ను చదవడం సాధ్యం కాలేదు
+journal.window.mcp.owner.diagnostic.oauth.read = { $literal_mcp } { $literal_oauth } డేటా నిల్వను చదవడం సాధ్యం కాలేదు
 
 journal.window.mcp.owner.diagnostic.oauth.refresh.reused = { $literal_oauth } రిఫ్రెష్ టోకెన్ మళ్ళీ వాడబడింది
 
-journal.window.mcp.owner.diagnostic.oauth.state.too.large = { $literal_oauth } స్టోర్ తన పరిమాణ పరిమితిని మించింది
+journal.window.mcp.owner.diagnostic.oauth.state.too.large = { $literal_oauth } డేటా నిల్వ తన పరిమాణ పరిమితిని మించింది
 
 journal.window.mcp.owner.diagnostic.oauth.transaction.exhausted = { $literal_oauth } ఆథరైజేషన్ ట్రాన్జాక్షన్ అయిపోయింది
 
-journal.window.mcp.owner.diagnostic.oauth.transaction.expired = { $literal_oauth } ఆథరైజేషన్ ట్రాన్జాక్షన్ గడువు ముగిసింది
+journal.window.mcp.owner.diagnostic.oauth.transaction.expired = { $literal_oauth } ఆథరైజేషన్ ట్రాన్జాక్షన్ గడువు అయింది
 
 journal.window.mcp.owner.diagnostic.oauth.transaction.not.found = { $literal_oauth } ఆథరైజేషన్ ట్రాన్జాక్షన్ దొరకలేదు
 
-journal.window.mcp.owner.diagnostic.oauth.unsupported.schema = { $literal_mcp } { $literal_oauth } స్టోర్‌లో మద్దతు లేని స్కీమా ఉంది
+journal.window.mcp.owner.diagnostic.oauth.unsupported.schema = { $literal_mcp } { $literal_oauth } డేటా నిల్వలో మద్దతు లేని స్కీమా ఉంది
 
-journal.window.mcp.owner.diagnostic.oauth.write = { $literal_mcp } { $literal_oauth } స్టోర్‌ను రాయడం సాధ్యం కాలేదు
+journal.window.mcp.owner.diagnostic.oauth.write = { $literal_mcp } { $literal_oauth } డేటా నిల్వను రాయడం సాధ్యం కాలేదు
 
-journal.window.mcp.owner.diagnostic.permission.agent.state.fault = ఏజెంట్ స్టేట్ పాజ్ స్టేటస్‌ను తెలుసుకోవడం సాధ్యం కాలేదు
+journal.window.mcp.owner.diagnostic.permission.agent.state.fault = ఏజెంట్ స్టేట్ పాజ్ స్థితిని తెలుసుకోవడం సాధ్యం కాలేదు
 
 journal.window.mcp.owner.diagnostic.permission.connection.not.found = కనెక్షన్ దొరకలేదు: { $key }
 
@@ -98,7 +98,7 @@ journal.window.mcp.owner.diagnostic.permission.directory = అనుమతుల
 
 journal.window.mcp.owner.diagnostic.permission.invalid.connection.key = కనెక్షన్ కీ ఆకృతి చెల్లదు: { $key }
 
-journal.window.mcp.owner.diagnostic.permission.lock = అనుమతుల స్టోర్‌ను లాక్ చేయడం సాధ్యం కాలేదు: { $error }
+journal.window.mcp.owner.diagnostic.permission.lock = అనుమతుల డేటా నిల్వను లాక్ చేయడం సాధ్యం కాలేదు: { $error }
 
 journal.window.mcp.owner.diagnostic.permission.malformed = { $path } వద్ద అనుమతులు ఆకృతి తప్పు: { $reason }
 
@@ -116,9 +116,9 @@ journal.window.mcp.owner.diagnostic.token.invalid.label = టోకెన్ ల
 
 journal.window.mcp.owner.diagnostic.token.invalid.token = బేరర్ టోకెన్ చెల్లదు
 
-journal.window.mcp.owner.diagnostic.token.lock = { $literal_mcp } టోకెన్ స్టోర్‌ను లాక్ చేయడం సాధ్యం కాలేదు: { $error }
+journal.window.mcp.owner.diagnostic.token.lock = { $literal_mcp } టోకెన్ డేటా నిల్వను లాక్ చేయడం సాధ్యం కాలేదు: { $error }
 
-journal.window.mcp.owner.diagnostic.token.malformed = { $literal_mcp } టోకెన్ స్టోర్ ఆకృతి తప్పు: { $path }
+journal.window.mcp.owner.diagnostic.token.malformed = { $literal_mcp } టోకెన్ డేటా నిల్వ ఆకృతి తప్పు: { $path }
 
 journal.window.mcp.owner.diagnostic.token.not.found = లేబుల్ { $label } కోసం బేరర్ టోకెన్ లేదు
 
@@ -126,9 +126,9 @@ journal.window.mcp.owner.diagnostic.token.randomness = పూర్తి బే
 
 journal.window.mcp.owner.diagnostic.token.read = { $path } చదవడం సాధ్యం కాలేదు: { $error }
 
-journal.window.mcp.owner.diagnostic.token.unsupported.schema = { $literal_mcp } టోకెన్ స్టోర్‌లో మద్దతు లేని స్కీమా { $schema } ఉంది: { $path }
+journal.window.mcp.owner.diagnostic.token.unsupported.schema = { $literal_mcp } టోకెన్ డేటా నిల్వలో మద్దతు లేని స్కీమా { $schema } ఉంది: { $path }
 
-journal.window.mcp.owner.diagnostic.token.write = { $literal_mcp } టోకెన్ స్టోర్‌ను రాయడం సాధ్యం కాలేదు: { $error }
+journal.window.mcp.owner.diagnostic.token.write = { $literal_mcp } టోకెన్ డేటా నిల్వను రాయడం సాధ్యం కాలేదు: { $error }
 
 journal.window.network.accessible.label.your.journal.not.set.up.yet = మీ జర్నల్, ఇంకా సెటప్ కాలేదు
 
@@ -228,7 +228,7 @@ journal.window.network.delivery.elapsed.week = { $quantity ->
        *[other] { $count } వారాల క్రితం చేర్చబడ్డాయి
     }
 
-journal.window.network.delivery.failing = డెలివరీ సమస్య
+journal.window.network.delivery.failing = చేరవేత సమస్య
 
 journal.window.network.delivery.group.labels.adding.adding.to.your.journal.now = ఇప్పుడు మీ జర్నల్‌కు చేర్చుతోంది
 
@@ -240,13 +240,13 @@ journal.window.network.delivery.group.labels.quiet.quiet.for.a.while = కొం
 
 journal.window.network.delivery.group.labels.recent.added.recently = ఇటీవల చేర్చబడింది
 
-journal.window.network.delivery.group.labels.unknown.delivery.unavailable = డెలివరీ అందుబాటులో లేదు
+journal.window.network.delivery.group.labels.unknown.delivery.unavailable = చేరవేత అందుబాటులో లేదు
 
 journal.window.network.delivery.never = ఇంకా ఏమీ చేర్చబడలేదు
 
 journal.window.network.delivery.pair.image = పెయిరింగ్ QR
 
-journal.window.network.delivery.unknown = డెలివరీ అందుబాటులో లేదు
+journal.window.network.delivery.unknown = చేరవేత అందుబాటులో లేదు
 
 journal.window.network.details.disclosure = సాంకేతిక వివరాలు
 
@@ -268,15 +268,15 @@ journal.window.network.disclosure.label.device.details = పరికరం వ�
 
 journal.window.network.error.access.basis.required = యాక్సెస్ ఆధారం అవసరం
 
-journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a = అధీకృత క్లయింట్ లెడ్జర్‌లో నకలు క్లయింట్ గుర్తింపు ఉంది
+journal.window.network.error.authorization.ledger.duplicate.cid.authorized.client.ledger.contains.a = అధీకృత క్లయింట్ లెడ్జర్‌లో నకలు క్లయింట్ ఐడెంటిఫయర్ ఉంది
 
 journal.window.network.error.authorization.ledger.malformed.authorized.client.ledger.is.invalid = అధీకృత క్లయింట్ లెడ్జర్ చెల్లదు
 
 journal.window.network.error.authorization.ledger.unreadable.authorized.client.ledger.could.not = అధీకృత క్లయింట్ లెడ్జర్‌ను చదవడం సాధ్యం కాలేదు
 
-journal.window.network.error.client.description.unreadable.client.description.store.could.not = క్లయింట్ వివరణ స్టోర్‌ను చదవడం సాధ్యం కాలేదు
+journal.window.network.error.client.description.unreadable.client.description.store.could.not = క్లయింట్ వివరణ డేటా నిల్వను చదవడం సాధ్యం కాలేదు
 
-journal.window.network.error.device.activity.unavailable.the.delivery.record.for.this = ఈ పరికరం డెలివరీ రికార్డును చదవడం సాధ్యం కాలేదు, కాబట్టి దీన్ని ఇప్పుడు మర్చిపోవడం సాధ్యం కాదు.
+journal.window.network.error.device.activity.unavailable.the.delivery.record.for.this = ఈ పరికరం చేరవేత నమోదును చదవడం సాధ్యం కాలేదు, కాబట్టి దీన్ని ఇప్పుడు మర్చిపోవడం సాధ్యం కాదు.
 
 journal.window.network.error.device.has.delivered.this.device.has.added.material = ఈ పరికరం మీ జర్నల్‌కు విషయం చేర్చింది, కాబట్టి దీన్ని ఇక్కడి నుంచి మర్చిపోవడం సాధ్యం కాదు. బదులుగా దీని పరికర వివరాల నుంచి పెయిరింగ్ తీసివేయండి.
 
@@ -286,7 +286,7 @@ journal.window.network.error.internal.error.couldn.t.read.journal.config = జ�
 
 journal.window.network.error.internal.error.couldn.t.unpair.this.device = ఈ పరికరం పెయిరింగ్ తీసివేయడం సాధ్యం కాలేదు
 
-journal.window.network.error.invalid.operation.for.state.device.label.matches.more.than = పరికరం లేబుల్ ఒకటి కంటే ఎక్కువ పెయిరింగ్ అయిన పరికరాలతో సరిపోలుతోంది
+journal.window.network.error.invalid.operation.for.state.device.label.matches.more.than = పరికరం లేబుల్ ఒకటి కంటే ఎక్కువ పెయిరింగ్ అయిన పరికరాలతో సరిపోతోంది
 
 journal.window.network.error.linked.device.access.required = లింక్ అయిన పరికరం యాక్సెస్ అవసరం
 
@@ -326,7 +326,7 @@ journal.window.network.error.the.choice.couldn.t.be.saved.nothing.changed = ఎ�
 
 journal.window.network.error.the.journal.is.stopping = జర్నల్ ఆగుతోంది.
 
-journal.window.network.expired.button = ఈ కోడ్ గడువు ముగిసింది. కొత్తది చూపండి
+journal.window.network.expired.button = ఈ కోడ్ గడువు అయింది. కొత్తది చూపండి
 
 journal.window.network.field.label.your.name.for.this.device = ఈ పరికరానికి మీ పేరు
 
@@ -362,7 +362,7 @@ journal.window.network.local.network.failed = మీ జర్నల్ మీ �
 
 journal.window.network.local.network.firewall.blocked = windows మీ నెట్‌వర్క్‌లోని పరికరాలు మీ జర్నల్‌ను చేరుకోకుండా అడ్డుకుంటోంది.
 
-journal.window.network.local.network.firewall.blocked.note = windows లో journal కోసం ఇన్‌బౌండ్ Block రూల్ ఉంది, అది Cancel ఎంచుకున్న తర్వాత కూడా ఉండిపోవచ్చు. అడ్మినిస్ట్రేటర్ { $windowsRules } తెరిచి, ఈ journal { $executable } కోసం Block రూల్‌లు తీసివేసి, ఆపై ఫైర్‌వాల్ ద్వారా journal ను అనుమతించాలి. ఆ తర్వాత ఈ పేజీని మళ్ళీ లోడ్ చేయండి.
+journal.window.network.local.network.firewall.blocked.note = windows లో journal కోసం ఇన్‌బౌండ్ Block రూల్ ఉంది, అది రద్దు చేయండి ఎంచుకున్న తర్వాత కూడా ఉండిపోవచ్చు. అడ్మినిస్ట్రేటర్ { $windowsRules } తెరిచి, ఈ journal { $executable } కోసం Block రూల్‌లు తీసివేసి, ఆపై ఫైర్‌వాల్ ద్వారా journal ను అనుమతించాలి. ఆ తర్వాత ఈ పేజీని మళ్ళీ లోడ్ చేయండి.
 
 journal.window.network.local.network.firewall.note = windows అడగకపోతే, మరియు ఒక పరికరం ఇంకా మీ జర్నల్‌ను చేరుకోలేకపోతే, windows లో ముందటి ఎంపిక journal ను అడ్డుకుంటూ ఉండవచ్చు. అడ్మినిస్ట్రేటర్ { $windowsSecurity } లో, { $windowsPath } కింద దాన్ని అనుమతించవచ్చు.
 
@@ -460,7 +460,7 @@ journal.window.network.pairing.refusal.relay.off.machine = రిలే పె�
 
 journal.window.network.pairing.refusal.role.invalid = పాత్ర చెల్లదు
 
-journal.window.network.pairing.refusal.same.machine.boolean = { $field_name } boolean అయి ఉండాలి
+journal.window.network.pairing.refusal.same.machine.boolean = { $field_name } బూలియన్ అయి ఉండాలి
 
 journal.window.network.pairing.refusal.same.machine.loopback = అదే మెషీన్ పెయిరింగ్‌కు హార్డెన్డ్ లూప్‌బ్యాక్ అభ్యర్థన అవసరం
 
@@ -548,7 +548,7 @@ journal.window.network.status.checking = మీ జర్నల్‌ను స�
 
 journal.window.network.status.direct.closed = మీ నెట్‌వర్క్‌లోని పరికరాలకు మీ జర్నల్ మూసి ఉంది.
 
-journal.window.network.status.direct.online = మీ జర్నల్ మీ నెట్‌వర్క్‌లో చేరదగినదిగా ఉంది.
+journal.window.network.status.direct.online = మీ జర్నల్ మీ నెట్‌వర్క్‌లో కనెక్ట్ అవ్వగలదు.
 
 journal.window.network.status.direct.online.vpn = మీ జర్నల్ మీ నెట్‌వర్క్‌లో మరియు మీ VPN ద్వారా చేరదగినదిగా ఉంది.
 
@@ -614,7 +614,7 @@ journal.window.network.unpair.unnamed.device = 'ఈ పరికరం' పె�
 
 journal.window.network.visible.text.connection = కనెక్షన్
 
-journal.window.network.visible.text.delivery.detail = డెలివరీ వివరం
+journal.window.network.visible.text.delivery.detail = చేరవేత వివరం
 
 journal.window.network.visible.text.device.details.haven.t.been.shared = పరికర వివరాలు ఇంకా పంచుకోబడలేదు.
 
@@ -796,7 +796,7 @@ journal.window.settings.activity.default.planning.description = షెడ్య�
 
 journal.window.settings.activity.default.planning.name = ప్రణాళిక
 
-journal.window.settings.activity.default.productivity.description = స్ప్రెడ్‌షీట్‌లు, స్లైడ్‌లు, మరియు టాస్క్ నిర్వహణ
+journal.window.settings.activity.default.productivity.description = స్ప్రెడ్‌షీట్‌లు, స్లైడ్‌లు, మరియు పని నిర్వహణ
 
 journal.window.settings.activity.default.productivity.name = ప్రొడక్టివిటీ
 
@@ -962,7 +962,7 @@ journal.window.settings.config.detail.transcribe.parakeet.cpp.device.must.be = t
 
 journal.window.settings.config.detail.unknown.section = తెలియని సెక్షన్:{ $slot1 }{ $section }
 
-journal.window.settings.consent.facet.delete.copy.back.back = వెనక్కి వెళ్ళండి
+journal.window.settings.consent.facet.delete.copy.back.back = వెనుకకు వెళ్ళండి
 
 journal.window.settings.consent.facet.delete.copy.busy.something.else.is.changing.it.right = వేరొకటి దీన్ని ఇప్పుడే మారుస్తోంది. ఒక నిమిషంలో మళ్ళీ ప్రయత్నించండి.
 
@@ -974,9 +974,9 @@ journal.window.settings.consent.facet.delete.copy.erasenow.erase.now = ఇప్
 
 journal.window.settings.consent.facet.delete.copy.gone.it.s.no.longer.in.your = ఇది ఇకపై మీ జర్నల్‌లో లేదు.
 
-journal.window.settings.consent.facet.delete.copy.last.facet.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ కాని కనీసం ఒక ఫాసెట్ కావాలి.
+journal.window.settings.consent.facet.delete.copy.last.facet.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ అయి లేని కనీసం ఒక ఫాసెట్ కావాలి.
 
-journal.window.settings.consent.facet.delete.copy.last.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ కాని కనీసం ఒక ఫాసెట్ కావాలి. దీన్ని తొలగించడానికి, ముందు మ్యూట్ తీసివేయండి లేదా మరో ఫాసెట్ చేర్చండి.
+journal.window.settings.consent.facet.delete.copy.last.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ అయి లేని కనీసం ఒక ఫాసెట్ కావాలి. దీన్ని తొలగించడానికి, ముందు మ్యూట్ తీసివేయండి లేదా మరో ఫాసెట్ చేర్చండి.
 
 journal.window.settings.consent.facet.delete.copy.lead.this.erases.everything.in.the.facet = ఇది ఫాసెట్‌లోని ప్రతిదీ తుడిచివేస్తుంది:
 
@@ -1172,7 +1172,7 @@ journal.window.settings.consent.trash.copy.returned.the.same.segment.is.back.in 
 
 journal.window.settings.consent.trash.copy.returnedimport.some.of.what.it.brought.in = అది లోపలికి తెచ్చినవాటిలో కొన్ని మీ జర్నల్‌లో తిరిగి ఉన్నాయి. రీస్టోర్ చేయడం ఆ కాపీలను భర్తీ చేస్తుంది.
 
-journal.window.settings.consent.trash.copy.returnedworkout.the.same.workout.is.back.in = అదే వర్కౌట్ మీ జర్నల్‌లో తిరిగి ఉంది. రీస్టోర్ చేయడం ఆ కాపీని భర్తీ చేస్తుంది.
+journal.window.settings.consent.trash.copy.returnedworkout.the.same.workout.is.back.in = అదే వ్యాయామం మీ జర్నల్‌లో తిరిగి ఉంది. రీస్టోర్ చేయడం ఆ కాపీని భర్తీ చేస్తుంది.
 
 journal.window.settings.consent.trash.copy.screen.screen = స్క్రీన్
 
@@ -1278,7 +1278,7 @@ journal.window.settings.facet.action.labels.facet.mute.muted.this.facet = ఈ �
 
 journal.window.settings.facet.action.labels.facet.rename.renamed.this.facet = ఈ ఫాసెట్ పేరు మార్చబడింది
 
-journal.window.settings.facet.action.labels.facet.unmute.unmuted.this.facet = ఈ ఫాసెట్ అన్‌మ్యూట్ చేయబడింది
+journal.window.settings.facet.action.labels.facet.unmute.unmuted.this.facet = ఈ ఫాసెట్ మ్యూట్ తీసివేయబడింది
 
 journal.window.settings.facet.action.labels.facet.update.updated.this.facet = ఈ ఫాసెట్ అప్‌డేట్ చేయబడింది
 
@@ -1320,9 +1320,9 @@ journal.window.settings.facet.receipt.recover.failed = ఆ ఫాసెట్‌
 
 journal.window.settings.facet.receipt.recovered = ఫాసెట్ రీస్టోర్ అయింది
 
-journal.window.settings.facet.unmute = అన్‌మ్యూట్ చేయండి
+journal.window.settings.facet.unmute = మ్యూట్ తీసివేయండి
 
-journal.window.settings.facet.unmute.name = అన్‌మ్యూట్ చేయండి{ $slot1 }{ $title }
+journal.window.settings.facet.unmute.name = మ్యూట్ తీసివేయండి{ $slot1 }{ $title }
 
 journal.window.settings.facets.detail.backups.must.be.true.or.false = బ్యాకప్‌లు true లేదా false అయి ఉండాలి
 
@@ -1346,7 +1346,7 @@ journal.window.settings.facets.detail.unknown.lucide.icon = తెలియన�
 
 journal.window.settings.facets.response.delete.busy = ఆ ఫాసెట్‌ను ఇప్పుడు ట్రాష్‌లోకి తరలించలేకపోయింది, అందుకే ఏదీ తొలగించబడలేదు.
 
-journal.window.settings.field.label.aliases = మారుపేర్లు
+journal.window.settings.field.label.aliases = అలియాస్‌లు
 
 journal.window.settings.field.label.audio.with.no.speech = మాట లేని ఆడియో
 
@@ -1376,7 +1376,7 @@ journal.window.settings.field.label.hourly.sync = ప్రతి గంట స�
 
 journal.window.settings.field.label.icon = ఐకాన్
 
-journal.window.settings.field.label.icon.emoji = ఐకాన్ (ఎమోజీ)
+journal.window.settings.field.label.icon.emoji = ఐకాన్ (ఎమోజి)
 
 journal.window.settings.field.label.instructions = సూచనలు
 
@@ -1398,9 +1398,9 @@ journal.window.settings.field.label.older.than = కంటే పాతది
 
 journal.window.settings.field.label.open.to.this.computer = ఈ కంప్యూటర్‌కు తెరిచి
 
-journal.window.settings.field.label.operational.logs = ఆపరేషనల్ లాగ్‌లు
+journal.window.settings.field.label.operational.logs = ఆపరేషన్ లాగ్‌లు
 
-journal.window.settings.field.label.or.paste.any.emoji = లేదా ఏదైనా ఎమోజీని పేస్ట్ చేయండి
+journal.window.settings.field.label.or.paste.any.emoji = లేదా ఏదైనా ఎమోజిని పేస్ట్ చేయండి
 
 journal.window.settings.field.label.original.media = అసలు మీడియా
 
@@ -1410,7 +1410,7 @@ journal.window.settings.field.label.preferred.name = ఇష్టపడే ప�
 
 journal.window.settings.field.label.pronouns = సర్వనామాలు
 
-journal.window.settings.field.label.search.emoji = ఎమోజీని వెతకండి
+journal.window.settings.field.label.search.emoji = ఎమోజిని వెతకండి
 
 journal.window.settings.field.label.search.icons = ఐకాన్‌లను వెతకండి
 
@@ -1418,9 +1418,9 @@ journal.window.settings.field.label.speech.processing = మాట ప్రా�
 
 journal.window.settings.field.label.stream.filter.optional = ప్రవాహం ఫిల్టర్ (ఐచ్ఛికం)
 
-journal.window.settings.field.label.suggest.profile.pics.from.your.meetings = మీ మీటింగ్‌లు నుండి ప్రొఫైల్ ఫోటోలను సూచించండి
+journal.window.settings.field.label.suggest.profile.pics.from.your.meetings = మీ సమావేశాలు నుండి ప్రొఫైల్ ఫోటోలను సూచించండి
 
-journal.window.settings.field.label.timeout.seconds = టైమ్అవుట్ (సెకన్లు)
+journal.window.settings.field.label.timeout.seconds = టైమ్‌అవుట్ (సెకన్లు)
 
 journal.window.settings.field.or.control.label.days = రోజులు
 
@@ -1450,13 +1450,13 @@ journal.window.settings.field.placeholder.e.g.work.company.com.personal = ఉద
 
 journal.window.settings.field.placeholder.enter.access.token = యాక్సెస్ టోకెన్‌ను ఇవ్వండి
 
-journal.window.settings.field.placeholder.facet.description.example = ఉదా. acme కోసం క్లయింట్ పని: మీటింగ్‌లు, కోడ్ సమీక్ష, ఇన్‌వాయిస్‌లు; వ్యక్తిగత ఈమెయిల్ కాదు
+journal.window.settings.field.placeholder.facet.description.example = ఉదా. acme కోసం క్లయింట్ పని: సమావేశాలు, కోడ్ సమీక్ష, ఇన్‌వాయిస్‌లు; వ్యక్తిగత ఈమెయిల్ కాదు
 
-journal.window.settings.field.placeholder.paste.emoji = ఎమోజీని పేస్ట్ చేయండి
+journal.window.settings.field.placeholder.paste.emoji = ఎమోజిని పేస్ట్ చేయండి
 
 journal.window.settings.field.placeholder.search.by.name.or.tag = పేరు లేదా ట్యాగ్ ద్వారా వెతకండి
 
-journal.window.settings.field.placeholder.search.emoji.by.keyword = కీవర్డ్ ద్వారా ఎమోజీని వెతకండి...
+journal.window.settings.field.placeholder.search.emoji.by.keyword = కీవర్డ్ ద్వారా ఎమోజిని వెతకండి...
 
 journal.window.settings.field.placeholder.search.icons.by.name.or.topic = పేరు లేదా విషయం ద్వారా ఐకాన్‌లను వెతకండి...
 
@@ -1465,8 +1465,8 @@ journal.window.settings.field.placeholder.your.full.name = మీ పూర్�
 journal.window.settings.field.placeholder.your.preferred.name = మీ ఇష్టపడే పేరు
 
 journal.window.settings.granola.attention.meeting.count = { $quantity ->
-        [one] ఇప్పటికే మీ జర్నల్‌లో ఉన్న 1 మీటింగ్ అక్కడే ఉంటుంది.
-       *[other] ఇప్పటికే మీ జర్నల్‌లో ఉన్న { $meetings } మీటింగ్‌లు అక్కడే ఉంటాయి.
+        [one] ఇప్పటికే మీ జర్నల్‌లో ఉన్న 1 సమావేశం అక్కడే ఉంటుంది.
+       *[other] ఇప్పటికే మీ జర్నల్‌లో ఉన్న { $meetings } సమావేశాలు అక్కడే ఉంటాయి.
     }
 
 journal.window.settings.granola.checking.now = ఇప్పుడు సరిచూస్తోంది…
@@ -1482,8 +1482,8 @@ journal.window.settings.granola.clock.minutes.ago = { $quantity ->
     }
 
 journal.window.settings.granola.disconnected.meeting.count = { $quantity ->
-        [one] { $provider } నుండి వచ్చిన 1 మీటింగ్ మీ జర్నల్‌లో ఉంటుంది.
-       *[other] { $provider } నుండి వచ్చిన { $meetings } మీటింగ్‌లు మీ జర్నల్‌లో ఉంటాయి.
+        [one] { $provider } నుండి వచ్చిన 1 సమావేశం మీ జర్నల్‌లో ఉంటుంది.
+       *[other] { $provider } నుండి వచ్చిన { $meetings } సమావేశాలు మీ జర్నల్‌లో ఉంటాయి.
     }
 
 journal.window.settings.granola.disconnected.reconnect = వాటిని తాజాగా ఉంచడానికి మళ్ళీ కనెక్ట్ చేయండి; ఏదీ రెండుసార్లు స్వీకరించబడదు.
@@ -1502,7 +1502,7 @@ journal.window.settings.granola.last.added = చివరిగా చేర్�
 
 journal.window.settings.granola.last.checked = చివరి సరిచూపు
 
-journal.window.settings.granola.meetings = మీటింగ్‌లు
+journal.window.settings.granola.meetings = సమావేశాలు
 
 journal.window.settings.granola.meetings.in.journal = { $count }{ $slot1 }మీ జర్నల్‌లో
 
@@ -1512,11 +1512,11 @@ journal.window.settings.granola.paste.access = { $slot1 } ఆ కీని త�
 
 journal.window.settings.granola.paste.key = { $slot1 } ఆ కీని అంగీకరించలేదు. దాన్ని { $slot2 } నుండి మళ్ళీ కాపీ చేయండి, లేదా కొత్తది సృష్టించండి.
 
-journal.window.settings.granola.progress.intro = { $source } నుండి మీ మీటింగ్‌ను స్వీకరిస్తోంది.
+journal.window.settings.granola.progress.intro = { $source } నుండి మీ సమావేశాన్ని స్వీకరిస్తోంది.
 
 journal.window.settings.granola.progress.meeting.count = { $quantity ->
-        [one] 1 మీటింగ్ ఇప్పటివరకు.
-       *[other] { $meetings } మీటింగ్‌లు ఇప్పటివరకు.
+        [one] 1 సమావేశం ఇప్పటివరకు.
+       *[other] { $meetings } సమావేశాలు ఇప్పటివరకు.
     }
 
 journal.window.settings.granola.response.access = { $slot1 } ఈ కీని తిరస్కరించింది. API యాక్సెస్‌కు { $slot2 } లేదా Enterprise కావాలి, మరియు Enterpriseలో అడ్మిన్ దాన్ని ఆఫ్ చేయవచ్చు.
@@ -1535,7 +1535,7 @@ journal.window.settings.granola.response.stopped = సరిచూపు పూ�
 
 journal.window.settings.granola.response.storage = { $slot1 } నుండి వచ్చినదాన్ని మీ జర్నల్ సేవ్ చేయలేకపోయింది. ఈ కంప్యూటర్‌లో ఖాళీ చోటు ఉందో సరిచూడండి.
 
-journal.window.settings.granola.response.transcript = { $slot1 } ఒక మీటింగ్ ట్రాన్స్క్రిప్ట్‌ను చేర్చలేదు. మీ జర్నల్ తర్వాతి సరిచూపులో మళ్ళీ ప్రయత్నిస్తుంది.
+journal.window.settings.granola.response.transcript = { $slot1 } ఒక సమావేశం ట్రాన్స్క్రిప్ట్‌ను చేర్చలేదు. మీ జర్నల్ తర్వాతి సరిచూపులో మళ్ళీ ప్రయత్నిస్తుంది.
 
 journal.window.settings.granola.response.unavailable = { $slot1 } వద్దకు చేరలేకపోయింది. మీ జర్నల్ తర్వాతి సరిచూపులో మళ్ళీ ప్రయత్నిస్తుంది.
 
@@ -1591,7 +1591,7 @@ journal.window.settings.http.invalid.request.value.one.of.those.values.couldn.t 
 
 journal.window.settings.http.last.enabled.facet.unmute.or.add.another.facet.first = ముందు మ్యూట్ తీసివేయండి లేదా మరో ఫాసెట్ చేర్చండి, ఆపై మళ్ళీ ప్రయత్నించండి
 
-journal.window.settings.http.last.enabled.facet.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ కాని కనీసం ఒక ఫాసెట్ కావాలి.
+journal.window.settings.http.last.enabled.facet.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ అయి లేని కనీసం ఒక ఫాసెట్ కావాలి.
 
 journal.window.settings.http.missing.request.body.no.data.provided = డేటా ఇవ్వలేదు
 
@@ -1630,8 +1630,8 @@ journal.window.settings.local.access.bookmark.address = బుక్‌మార
 journal.window.settings.local.access.open.address = తెరిచి: ఈ కంప్యూటర్ వాడే ఎవరైనా, మరియు దానిపై నడుస్తున్న ఏ ప్రోగ్రామ్ అయినా, మీ జర్నల్‌ను{ $slot1 }{ $journal_address } వద్ద తెరవగలరు.
 
 journal.window.settings.logs.directory.count = { $quantity ->
-      [one] { $count } క్యాష్ డైరెక్టరీ
-     *[other] { $count } క్యాష్ డైరెక్టరీలు
+      [one] { $count } కాష్ డైరెక్టరీ
+     *[other] { $count } కాష్ డైరెక్టరీలు
     }
 
 journal.window.settings.logs.file.count = { $quantity ->
@@ -1644,13 +1644,13 @@ journal.window.settings.logs.no.deletions = తొలగింపులు ల�
 journal.window.settings.logs.preview = ప్రివ్యూ
 
 journal.window.settings.logs.preview.file.and.directory.count = { $quantity ->
-      [one] { $files } ఆపరేషనల్ లాగ్ ఫైల్ మరియు { $directory_quantity ->
-      [one] { $directories } క్యాష్ డైరెక్టరీ
-     *[other] { $directories } క్యాష్ డైరెక్టరీలు
+      [one] { $files } ఆపరేషన్ లాగ్ ఫైల్ మరియు { $directory_quantity ->
+      [one] { $directories } కాష్ డైరెక్టరీ
+     *[other] { $directories } కాష్ డైరెక్టరీలు
     } ({ $bytes } B) తొలగించబడుతుంది.
-     *[other] { $files } ఆపరేషనల్ లాగ్ ఫైల్‌లు మరియు { $directory_quantity ->
-      [one] { $directories } క్యాష్ డైరెక్టరీ
-     *[other] { $directories } క్యాష్ డైరెక్టరీలు
+     *[other] { $files } ఆపరేషన్ లాగ్ ఫైల్‌లు మరియు { $directory_quantity ->
+      [one] { $directories } కాష్ డైరెక్టరీ
+     *[other] { $directories } కాష్ డైరెక్టరీలు
     } ({ $bytes } B) తొలగించబడతాయి.
     }
 
@@ -1660,13 +1660,13 @@ journal.window.settings.logs.preview.retention.compacted.count = { $quantity ->
     }
 
 journal.window.settings.logs.result.file.and.directory.count = { $quantity ->
-      [one] { $files } ఆపరేషనల్ లాగ్ ఫైల్ మరియు { $directory_quantity ->
-      [one] { $directories } క్యాష్ డైరెక్టరీ
-     *[other] { $directories } క్యాష్ డైరెక్టరీలు
+      [one] { $files } ఆపరేషన్ లాగ్ ఫైల్ మరియు { $directory_quantity ->
+      [one] { $directories } కాష్ డైరెక్టరీ
+     *[other] { $directories } కాష్ డైరెక్టరీలు
     } ({ $bytes } B) తొలగించబడింది.
-     *[other] { $files } ఆపరేషనల్ లాగ్ ఫైల్‌లు మరియు { $directory_quantity ->
-      [one] { $directories } క్యాష్ డైరెక్టరీ
-     *[other] { $directories } క్యాష్ డైరెక్టరీలు
+     *[other] { $files } ఆపరేషన్ లాగ్ ఫైల్‌లు మరియు { $directory_quantity ->
+      [one] { $directories } కాష్ డైరెక్టరీ
+     *[other] { $directories } కాష్ డైరెక్టరీలు
     } ({ $bytes } B) తొలగించబడ్డాయి.
     }
 
@@ -2716,8 +2716,8 @@ journal.window.settings.removal.history.group.unknown.count = { $quantity ->
     }
 
 journal.window.settings.removal.history.group.workout.count = { $quantity ->
-        [one] { $count } వర్కౌట్
-       *[other] { $count } వర్కౌట్‌లు
+        [one] { $count } వ్యాయామం
+       *[other] { $count } వ్యాయామాలు
     }
 
 journal.window.settings.removal.history.imported.day = { $imported_day } ఇంపోర్ట్ అయింది
@@ -2778,7 +2778,7 @@ journal.window.settings.removal.source.journal.archive.journal = జర్నల
 
 journal.window.settings.removal.source.quick.quick.import = త్వరిత ఇంపోర్ట్
 
-journal.window.settings.removal.source.recording.meeting.audio = మీటింగ్ ఆడియో
+journal.window.settings.removal.source.recording.meeting.audio = సమావేశం ఆడియో
 
 journal.window.settings.removal.source.text.text = వచనం
 
@@ -2804,7 +2804,7 @@ journal.window.settings.retention.executor.could.not.run = నిలుపుద
 
 journal.window.settings.retention.executor.excess.output = నిలుపుదల టూల్ చాలా ఎక్కువ అవుట్‌పుట్ ఇచ్చింది.
 
-journal.window.settings.retention.executor.join.failed = నిలుపుదల టూల్ నడవలేకపోయింది: టాస్క్ జాయిన్ విఫలమైంది.
+journal.window.settings.retention.executor.join.failed = నిలుపుదల టూల్ నడవలేకపోయింది: పని జాయిన్ విఫలమైంది.
 
 journal.window.settings.retention.executor.no.stderr = { $slot1 }లేదు { $slot2 }{ $slot3 }
 
@@ -2831,8 +2831,8 @@ journal.window.settings.retention.executor.stdout.unavailable = నిలుప�
 journal.window.settings.retention.executor.timeout = నిలుపుదల టూల్ 60 సె లోపు పూర్తి కాలేదు.
 
 journal.window.settings.retention.logs.keep.days = { $quantity ->
-        [one] ప్రస్తుతం: ఆపరేషనల్ లాగ్‌లను { $days } రోజు ఉంచడం
-       *[other] ప్రస్తుతం: ఆపరేషనల్ లాగ్‌లను { $days } రోజులు ఉంచడం
+        [one] ప్రస్తుతం: ఆపరేషన్ లాగ్‌లను { $days } రోజు ఉంచడం
+       *[other] ప్రస్తుతం: ఆపరేషన్ లాగ్‌లను { $days } రోజులు ఉంచడం
     }
 
 journal.window.settings.retention.originals.after.days.except.silent.audio = { $quantity ->
@@ -2905,7 +2905,7 @@ journal.window.settings.settings.action.failure.failed.to.load.facets = ఫా�
 
 journal.window.settings.settings.action.failure.speech.processing.was.not.confirmed = మాట ప్రాసెసింగ్ నిర్ధారించబడలేదు
 
-journal.window.settings.settings.content.cleanup.complete = శుభ్రం పూర్తయింది
+journal.window.settings.settings.content.cleanup.complete = క్లీనప్ పూర్తయింది
 
 journal.window.settings.settings.content.no.description = వివరణ లేదు
 
@@ -2967,7 +2967,7 @@ journal.window.settings.settings.feedback.checking = సరిచూస్తో
 
 journal.window.settings.settings.feedback.checking.the.key = కీని సరిచూస్తోంది…
 
-journal.window.settings.settings.feedback.cleanup.failed = శుభ్రపరచడం విఫలమైంది
+journal.window.settings.settings.feedback.cleanup.failed = క్లీనప్ విఫలమైంది
 
 journal.window.settings.settings.feedback.connect = కనెక్ట్ చేయండి
 
@@ -3029,7 +3029,7 @@ journal.window.settings.settings.feedback.update.failed = అప్‌డేట�
 
 journal.window.settings.settings.feedback.use.this.key = ఈ కీని ఉపయోగించండి
 
-journal.window.settings.settings.feedback.validation.error = ధృవీకరణ లోపం
+journal.window.settings.settings.feedback.validation.error = సరిచూపు లోపం
 
 journal.window.settings.settings.feedback.your.journal.will.bring.in.your = { $slot1 } నుండి మీ సమావేశాలను గంటలోపు మీ జర్నల్ తీసుకువస్తుంది.
 
@@ -3582,9 +3582,9 @@ journal.window.settings.visible.text.choose.a.lucide.override.or.keep = { $slot1
 
 journal.window.settings.visible.text.choose.whether.to.keep.your.original = మీ అసలు ఆడియో, వీడియో, స్క్రీన్ ఫ్రేమ్‌లను ఉంచాలా, లేదా ప్రాసెస్ తర్వాత తొలగింపు కోసం జాబితా చేయాలా అని ఎంచుకోండి.
 
-journal.window.settings.visible.text.clean.up.operational.logs.older.than = పేర్కొన్న రోజుల సంఖ్య కంటే పాత ఆపరేషనల్ లాగ్‌లను శుభ్రపరచండి. ఇది మీ అసలు మీడియాపై లేదా మీ జర్నల్‌పై ప్రభావం చూపదు.
+journal.window.settings.visible.text.clean.up.operational.logs.older.than = పేర్కొన్న రోజుల సంఖ్య కంటే పాత ఆపరేషన్ లాగ్‌లను క్లీనప్ చేయండి. ఇది మీ అసలు మీడియాపై లేదా మీ జర్నల్‌పై ప్రభావం చూపదు.
 
-journal.window.settings.visible.text.cleans.up.operational.logs.this.does = ఆపరేషనల్ లాగ్‌లను శుభ్రపరుస్తుంది. ఇది మీ అసలు మీడియాపై లేదా మీ జర్నల్‌పై ప్రభావం చూపదు.
+journal.window.settings.visible.text.cleans.up.operational.logs.this.does = ఆపరేషన్ లాగ్‌లను క్లీనప్ చేస్తుంది. ఇది మీ అసలు మీడియాపై లేదా మీ జర్నల్‌పై ప్రభావం చూపదు.
 
 journal.window.settings.visible.text.click.to.change.emoji = ఎమోజి మార్చడానికి క్లిక్ చేయండి
 
@@ -3628,9 +3628,9 @@ journal.window.settings.visible.text.currently.keep.audio.with.no.speech = ప�
 
 journal.window.settings.visible.text.currently.keep.everything = ప్రస్తుతం: అన్నీ ఉంచడం.
 
-journal.window.settings.visible.text.currently.keep.operational.logs.days = ప్రస్తుతం: ఆపరేషనల్ లాగ్‌లను 30 రోజులు ఉంచడం
+journal.window.settings.visible.text.currently.keep.operational.logs.days = ప్రస్తుతం: ఆపరేషన్ లాగ్‌లను 30 రోజులు ఉంచడం
 
-journal.window.settings.visible.text.currently.keep.operational.logs.indefinitely = ప్రస్తుతం: ఆపరేషనల్ లాగ్‌లను నిరవధికంగా ఉంచడం.
+journal.window.settings.visible.text.currently.keep.operational.logs.indefinitely = ప్రస్తుతం: ఆపరేషన్ లాగ్‌లను నిరవధికంగా ఉంచడం.
 
 journal.window.settings.visible.text.currently.list.audio.with.no.speech = ప్రస్తుతం: ప్రాసెస్ తర్వాత తొలగింపు కోసం మాట లేని ఆడియోను జాబితా చేయడం.
 
@@ -3730,7 +3730,7 @@ journal.window.settings.visible.text.local.access.is.open = లోకల్ య�
 
 journal.window.settings.visible.text.local.speech.uses.parakeet = లోకల్ మాట { $slot1 } వాడుతుంది.
 
-journal.window.settings.visible.text.log.retention.is.off.operational.logs = లాగ్ నిలుపుదల ఆఫ్ అయి ఉంది. ఆపరేషనల్ లాగ్‌లు నిరవధికంగా ఉంచబడతాయి.
+journal.window.settings.visible.text.log.retention.is.off.operational.logs = లాగ్ నిలుపుదల ఆఫ్ అయి ఉంది. ఆపరేషన్ లాగ్‌లు నిరవధికంగా ఉంచబడతాయి.
 
 journal.window.settings.visible.text.make.an.encrypted.copy.only.you = మీరు మాత్రమే చదవగలిగే ఎన్‌క్రిప్ట్ చేసిన కాపీ చేయండి
 
@@ -3738,7 +3738,7 @@ journal.window.settings.visible.text.manage.original.media.retention.and.view = 
 
 journal.window.settings.visible.text.manage.what.ai.models.your.journal = మీ జర్నల్ వాడే AI మోడల్‌లను నిర్వహించండి
 
-journal.window.settings.visible.text.manually.clean.up.operational.logs.older = పేర్కొన్న రోజుల సంఖ్య కంటే పాత ఆపరేషనల్ లాగ్‌లను మాన్యువల్‌గా శుభ్రం చేయండి.
+journal.window.settings.visible.text.manually.clean.up.operational.logs.older = పేర్కొన్న రోజుల సంఖ్య కంటే పాత ఆపరేషన్ లాగ్‌లను మాన్యువల్‌గా క్లీనప్ చేయండి.
 
 journal.window.settings.visible.text.measuring.storage.use.you.can.edit = నిల్వ వినియోగం కొలుస్తోంది… ఇది నడుస్తున్నప్పుడు మీరు నిలుపుదల సెట్టింగ్‌లను సవరించవచ్చు.
 
@@ -3762,7 +3762,7 @@ journal.window.settings.visible.text.no.description.set = వివరణ పె
 
 journal.window.settings.visible.text.no.description.set.variant2 = వివరణ పెట్టలేదు
 
-journal.window.settings.visible.text.no.extraction.guidance = ఎక్స్‌ట్రాక్షన్ మార్గదర్శకం లేదు
+journal.window.settings.visible.text.no.extraction.guidance = వెలికితీత మార్గదర్శకం లేదు
 
 journal.window.settings.visible.text.no.facets.yet = ఇంకా ఫాసెట్‌లు లేవు.
 
@@ -3770,7 +3770,7 @@ journal.window.settings.visible.text.no.icon = ఐకాన్ లేదు
 
 journal.window.settings.visible.text.no.instructions = సూచనలు లేవు
 
-journal.window.settings.visible.text.no.operational.logs.to.clean.up = శుభ్రం చేయడానికి ఆపరేషనల్ లాగ్‌లు లేవు.
+journal.window.settings.visible.text.no.operational.logs.to.clean.up = క్లీనప్ చేయడానికి ఆపరేషన్ లాగ్‌లు లేవు.
 
 journal.window.settings.visible.text.no.paired.devices = పెయిర్ అయిన పరికరాలు లేవు.
 
@@ -3796,7 +3796,7 @@ journal.window.settings.visible.text.parakeet.cpp.and.its.speech.model = { $slot
 
 journal.window.settings.visible.text.parakeet.cpp.can.t.run.on = { $slot1 } mac పై నడవదు. "{ $slot2 } - లోకల్ ప్రాసెసింగ్" ఎంచుకోండి, ఈ mac పై{ $slot3 }{ $slot4 }ట్రాన్స్క్రిప్ట్ చేయడానికి.
 
-journal.window.settings.visible.text.parakeet.cpp.fetches.two.artifacts.into = { $slot1 } నడవడానికి ముందు ఈ జర్నల్ ప్రొవైడర్ క్యాష్‌లోకి రెండు ఆర్టిఫ్యాక్ట్‌లను తెస్తుంది,{ $slot2 }{ $slot3 }రెండూ { $slot4 } నుండి: { $slot5 } సర్వర్ బైనరీ ({ $slot6 }){ $slot7 }{ $slot8 }మరియు మాట మోడల్ ({ $slot9 }). { $slot10 } చూడండి. దీనితో ఇన్‌స్టాల్ చేయండి
+journal.window.settings.visible.text.parakeet.cpp.fetches.two.artifacts.into = { $slot1 } నడవడానికి ముందు ఈ జర్నల్ ప్రొవైడర్ కాష్‌లోకి రెండు ఆర్టిఫ్యాక్ట్‌లను తెస్తుంది,{ $slot2 }{ $slot3 }రెండూ { $slot4 } నుండి: { $slot5 } సర్వర్ బైనరీ ({ $slot6 }){ $slot7 }{ $slot8 }మరియు మాట మోడల్ ({ $slot9 }). { $slot10 } చూడండి. దీనితో ఇన్‌స్టాల్ చేయండి
 
 journal.window.settings.visible.text.parakeet.tdt.runs.on.this.device = { $slot1 } ఈ పరికరంలో నడుస్తుంది. దాని మాట మోడల్ యాప్‌తో వస్తుంది.
 
@@ -3874,7 +3874,7 @@ journal.window.settings.visible.text.unavailable = అందుబాటుల�
 
 journal.window.settings.visible.text.unsupported = మద్దతు లేదు
 
-journal.window.settings.visible.text.use.emoji = ఎమోజీ వాడండి
+journal.window.settings.visible.text.use.emoji = ఎమోజి వాడండి
 
 journal.window.settings.visible.text.valid = { $slot1 }✓ సరైనది
 
@@ -3950,7 +3950,7 @@ journal.window.settings.vision.detail.category.config.must.be.an.object = కే
 
 journal.window.settings.vision.detail.each.redact.rule.must.be.characters = ప్రతి రిడాక్షన్ నియమం 200 అక్షరాలు లేదా అంతకంటే తక్కువ అయి ఉండాలి
 
-journal.window.settings.vision.detail.extraction = { $name }{ $slot1 }కోసం ఎక్స్‌ట్రాక్షన్{ $slot2 }స్ట్రింగ్ అయి ఉండాలి
+journal.window.settings.vision.detail.extraction = { $name }{ $slot1 }కోసం వెలికితీత{ $slot2 }స్ట్రింగ్ అయి ఉండాలి
 
 journal.window.settings.vision.detail.importance = { $name }{ $slot1 }కోసం ఇంపార్టెన్స్ చెల్లదు:{ $slot2 }{ $importance }. వీటిలో ఒకటి అయి ఉండాలి: { $slot3 }
 
@@ -4057,13 +4057,13 @@ journal.window.system.health.backlog.day.confidential.processing.isn.t.active.fo
 
 journal.window.system.health.backlog.day.original.raw.media.is.missing.or.damaged.re.import.it = అసలు ముడి మీడియా లేదు, లేదా పాడైంది. దాన్ని మళ్ళీ ఇంపోర్ట్ చేయండి
 
-journal.window.system.health.backlog.day.repair.has.stalled.try.again = మరమ్మత్తు ఇరుక్కుంది. మళ్ళీ ప్రయత్నించండి
+journal.window.system.health.backlog.day.repair.has.stalled.try.again = బాగుచేయడం ఇరుక్కుంది. మళ్ళీ ప్రయత్నించండి
 
-journal.window.system.health.backlog.day.repair.is.having.trouble.keeping.up.may.need.a.hand = మరమ్మత్తు కొనసాగడంలో ఇబ్బంది పడుతోంది. సహాయం కావచ్చు
+journal.window.system.health.backlog.day.repair.is.having.trouble.keeping.up.may.need.a.hand = బాగుచేయడం కొనసాగడంలో ఇబ్బంది పడుతోంది. సహాయం కావచ్చు
 
-journal.window.system.health.backlog.day.repair.status.is.unclear.right.now = మరమ్మత్తు స్థితి ఇప్పుడు స్పష్టంగా లేదు
+journal.window.system.health.backlog.day.repair.status.is.unclear.right.now = బాగుచేయడం స్థితి ఇప్పుడు స్పష్టంగా లేదు
 
-journal.window.system.health.backlog.day.repairing.itself.check.back.soon = తనకు తానే మరమ్మత్తు అవుతోంది. కాసేపట్లో మళ్ళీ సరిచూడండి
+journal.window.system.health.backlog.day.repairing.itself.check.back.soon = తనకు తానే బాగుచేసుకుంటోంది. కాసేపట్లో మళ్ళీ సరిచూడండి
 
 journal.window.system.health.backlog.day.signed.out.of.chatgpt.sign.in.again.on.the.thinking.page = ChatGPT నుండి సైన్ అవుట్ అయింది. ఆలోచన పేజీలో మళ్ళీ సైన్ ఇన్ చేయండి
 
@@ -4133,7 +4133,7 @@ journal.window.system.health.index.catching.up = వెతకడం మీ జ�
 
 journal.window.system.health.index.check.overdue = వెతకడం రోజువారీ సరిచూపు రెండు రోజులకు పైగా పూర్తి కాలేదు, కాబట్టి కొన్ని మార్పులు వెతకడంలో లేకపోవచ్చు.
 
-journal.window.system.health.index.classification.stalled = వెతకడం కొన్ని పాత ఎంట్రీలను మీ ఫాసెట్‌లలోకి వర్గీకరించడం ఆపేసింది, మరమ్మత్తు కావాలి.
+journal.window.system.health.index.classification.stalled = వెతకడం కొన్ని పాత ఎంట్రీలను మీ ఫాసెట్‌లలోకి వర్గీకరించడం ఆపేసింది, బాగుచేయడం కావాలి.
 
 journal.window.system.health.index.damage.check = వెతకడం తన ఇండెక్స్‌లో సమస్యను కనుగొంది, దాన్ని సరిచూస్తోంది.
 
@@ -4147,7 +4147,7 @@ journal.window.system.health.index.ok = వెతకడం మీ జర్న�
 
 journal.window.system.health.index.queued.unavailable = వెతకడం ఇప్పుడు వరుసలో ఉన్న అప్‌డేట్‌లను సరిచూడలేకపోతోంది.
 
-journal.window.system.health.index.repair = వెతకడం అప్‌డేట్ కావడం ఆగింది, మరమ్మత్తు కావాలి.
+journal.window.system.health.index.repair = వెతకడం అప్‌డేట్ కావడం ఆగింది, బాగుచేయడం కావాలి.
 
 journal.window.system.health.index.repeated.rebuild = సెర్చ్ ఈ వారం ఒకటికంటే ఎక్కువసార్లు తనను తాను మళ్ళీ బిల్డ్ చేసుకోవాల్సి వచ్చింది, అంటే డిస్క్ పనిచేయకపోవచ్చు.
 
