@@ -2502,6 +2502,7 @@ button:focus:not(:focus-visible) {
 .granola-guide-body li + li { margin-top: 0.25em; }
 .granola-guide-body strong { color: var(--ink); font-weight: 600; }
 .granola-guide-body code { font-family: var(--font-mono); font-size: 0.95em; }
+.granola-guide-body a { color: var(--orange-text-aa); text-decoration: underline; text-underline-offset: 0.16em; }
 .granola-key-field { margin-bottom: 0.85em; }
 .granola-key-field small.granola-key-error { color: var(--danger); }
 .granola-actions { display: flex; flex-wrap: wrap; gap: 0.5em; }
@@ -2571,8 +2572,10 @@ button:focus:not(:focus-visible) {
   gap: 0.65em;
 }
 .garmin-run-receipt[hidden] { display: none; }
+.garmin-run-receipt:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 .garmin-run-receipt-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }
 .garmin-run-receipt-actions a { color: var(--orange-text-aa); font-weight: 600; text-decoration: underline; }
+#garminRunTrashModal h3 { color: var(--ink); }
 @media (max-width: 480px) {
   .granola-actions button,
   .garmin-run-row button,
@@ -7758,10 +7761,19 @@ function garminDayText(raw) {
   return key ? removalDay(key) : '';
 }
 
+function garminInstantDayText(iso) {
+  if (typeof iso !== 'string' || !iso.trim()) return '';
+  const instant = new Date(iso);
+  if (!Number.isNaN(instant.getTime()) && window.JournalClock?.dayKey) {
+    return removalDay(window.JournalClock.dayKey(instant));
+  }
+  return garminDayText(iso);
+}
+
 function garminRunSpan(run) {
   const span = trashSpan(run?.days);
   if (span) return span;
-  return garminDayText(run?.imported_at) || String(run?.id || '');
+  return garminInstantDayText(run?.imported_at) || String(run?.id || '');
 }
 
 function garminMode(data) {
@@ -7857,7 +7869,7 @@ function renderGarminRuns(runs, syncing) {
       spanEl.textContent = garminRunSpan(run);
       info.appendChild(spanEl);
       const metaParts = [];
-      const syncedDay = garminDayText(run.imported_at);
+      const syncedDay = garminInstantDayText(run.imported_at);
       if (syncedDay) {
         metaParts.push(window.JournalI18n.render('journal.window.settings.garmin.runs.synced.on', [['day', syncedDay]]));
       }
@@ -8243,7 +8255,7 @@ async function recoverGarminRun(trashId, button) {
 function buildGarminRunTrashBody(run, preview = null) {
   const nodes = [];
   const metaParts = ['Garmin', garminRunSpan(run)];
-  const syncedDay = garminDayText(run.imported_at);
+  const syncedDay = garminInstantDayText(run.imported_at);
   if (syncedDay) {
     metaParts.push(window.JournalI18n.render('journal.window.settings.garmin.runs.synced.on', [['day', syncedDay]]));
   }
@@ -8307,7 +8319,7 @@ async function trashGarminRun(run) {
       body: JSON.stringify({ erase: false, backups: false }),
     });
     const trashId = res?.trash?.id || null;
-    const eraseDay = garminDayText(res?.trash?.erase_at);
+    const eraseDay = garminInstantDayText(res?.trash?.erase_at);
     const msg = eraseDay
       ? window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.moved.erases', [['date', eraseDay]])
       : window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.moved');
