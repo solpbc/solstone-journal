@@ -160,12 +160,18 @@ fn refresh_update_listing() -> bool {
 
 /// The status body every platform answers with; only how the version is
 /// worked out differs between them.
-fn status_body(version: Value, capture: Value, rev: Option<String>) -> Value {
+fn status_body(
+    version: Value,
+    capture: Value,
+    rev: Option<String>,
+    integrity: solstone_core_system_health::IntegritySummary,
+) -> Value {
     let mut body = json!({
         "version": version,
         "capture": capture,
         "capabilities": CAPABILITIES,
         "sources_rev": rev,
+        "integrity": integrity,
         "ok": true,
     });
     // What the security advisory check last found, on a desktop journal.
@@ -182,10 +188,23 @@ pub async fn status(
     revisions: std::sync::Arc<std::sync::Mutex<solstone_core_ingest::known_sources::RevisionCache>>,
 ) -> Response {
     let registry_root = journal_root.clone();
+    let integrity_root = journal_root.clone();
     let rev = tokio::task::spawn_blocking(move || revisions.lock().ok()?.revision(&registry_root))
         .await
         .ok()
         .flatten();
+    let integrity = tokio::task::spawn_blocking(move || {
+        solstone_core_system_health::read_integrity_summary(&integrity_root)
+    })
+    .await
+    .unwrap_or(solstone_core_system_health::IntegritySummary {
+        state: solstone_core_system_health::IntegrityState::Unavailable,
+        urgent_count: 0,
+        incomplete: false,
+        unavailable: true,
+        disk_low: false,
+        checked_at_ms: None,
+    });
     let context = HomeContext::new(journal_root, Timestamp::now());
     let capture = get_capture_health(&context);
     #[cfg(target_os = "linux")]
@@ -224,7 +243,7 @@ pub async fn status(
         })
         .await
         .unwrap_or_else(|_| json!({"current": env!("CARGO_PKG_VERSION")}));
-        return Json(status_body(version, json!(capture), rev)).into_response();
+        return Json(status_body(version, json!(capture), rev, integrity)).into_response();
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -237,6 +256,7 @@ pub async fn status(
             }),
             json!(capture),
             rev,
+            integrity,
         ))
         .into_response();
     }
@@ -869,7 +889,20 @@ mod tests {
                 json!({"state": "stale"}),
             ),
         ] {
-            let body = status_body(version.clone(), capture.clone(), Some("1".into()));
+            let integrity = solstone_core_system_health::IntegritySummary {
+                state: solstone_core_system_health::IntegrityState::Ok,
+                urgent_count: 0,
+                incomplete: false,
+                unavailable: false,
+                disk_low: false,
+                checked_at_ms: Some(1_700_000_000_000),
+            };
+            let body = status_body(
+                version.clone(),
+                capture.clone(),
+                Some("1".into()),
+                integrity,
+            );
             let capabilities = body["capabilities"].as_array().unwrap();
             for capability in [
                 "calendar_notes",
@@ -881,6 +914,12 @@ mod tests {
             }
             assert_eq!(body["version"], version);
             assert_eq!(body["capture"], capture);
+            assert_eq!(body["integrity"]["state"], "ok");
+            assert_eq!(body["integrity"]["urgent_count"], 0);
+            assert_eq!(body["integrity"]["incomplete"], false);
+            assert_eq!(body["integrity"]["unavailable"], false);
+            assert_eq!(body["integrity"]["disk_low"], false);
+            assert_eq!(body["integrity"]["checked_at_ms"], 1_700_000_000_000_i64);
             assert_eq!(body["ok"], true);
         }
     }

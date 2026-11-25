@@ -121,6 +121,23 @@ pub struct IndexHealth {
     /// days ago, without finishing.
     #[serde(default)]
     pub check_overdue: bool,
+    /// Whether the last light scan refused to auto-prune retained rows because
+    /// too many previously indexed days appeared absent at once.
+    #[serde(default)]
+    pub retained_prune_guarded: bool,
+    /// Number of previously indexed days absent during the last scan.
+    #[serde(default)]
+    pub gone_days: usize,
+    /// Number of previously indexed days known during the last scan.
+    #[serde(default)]
+    pub indexed_days: usize,
+    /// Whether the `@edges` connections refresh has failed three or more times.
+    /// Does not change `state` because full-text search remains usable.
+    #[serde(default)]
+    pub edges_failed: bool,
+    /// Recorded failure attempt count on `@edges` when `edges_failed` is true.
+    #[serde(default)]
+    pub edges_failed_attempts: u32,
 }
 
 /// Measure the index and fold recent failed updates into one value.
@@ -286,6 +303,11 @@ fn unmeasured(locale: &str) -> IndexHealth {
         check_removed: 0,
         oldest_queued_age_ms: None,
         check_overdue: false,
+        retained_prune_guarded: false,
+        gone_days: 0,
+        indexed_days: 0,
+        edges_failed: false,
+        edges_failed_attempts: 0,
     }
 }
 
@@ -425,6 +447,17 @@ fn index_health_from(
         check_removed: 0,
         oldest_queued_age_ms: None,
         check_overdue: false,
+        retained_prune_guarded: status
+            .last_scan
+            .as_ref()
+            .is_some_and(|scan| scan.retained_prune_guarded),
+        gone_days: status.last_scan.as_ref().map_or(0, |scan| scan.gone_days),
+        indexed_days: status
+            .last_scan
+            .as_ref()
+            .map_or(0, |scan| scan.indexed_days),
+        edges_failed: false,
+        edges_failed_attempts: 0,
     }
 }
 
@@ -439,6 +472,8 @@ fn with_work_list(journal: &Path, mut health: IndexHealth, locale: &str) -> Inde
                 solstone_core_indexer_store::todo::now_ms().saturating_sub(enqueued)
             });
             health.failed_deletions = todo.failed_deletions;
+            health.edges_failed = todo.edges_failed;
+            health.edges_failed_attempts = todo.edges_failed_attempts;
             health.pending = health.pending.max(health.queued);
             if health.failed_deletions > 0
                 && health.failure.is_none_or(|failure| {
@@ -1103,5 +1138,49 @@ mod tests {
             index_health_from(&hard_stop, &observations(&[]), ENGLISH).failure,
             Some(IndexFailure::MembershipsMissing)
         );
+
+        let mut guarded = status();
+        guarded.retained = set(&["20261001/talents/gone.md"]);
+        guarded.last_scan = Some(solstone_core_indexer_store::generation::ScanReceipt {
+            retained_prune_guarded: true,
+            gone_days: 3,
+            indexed_days: 8,
+            ..Default::default()
+        });
+        let guarded_health = index_health_from(&guarded, &observations(&[]), ENGLISH);
+        assert!(guarded_health.retained_prune_guarded);
+        assert_eq!(guarded_health.gone_days, 3);
+        assert_eq!(guarded_health.indexed_days, 8);
+    }
+
+    #[test]
+    fn failed_edges_surfaces_additively_without_failing_search_state() {
+        let journal = tempfile::tempdir().unwrap();
+        let source = journal.path().join("imports/fixture/summary.md");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, "kestrel").unwrap();
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+        solstone_core_indexer_store::todo::enqueue_token(
+            journal.path(),
+            solstone_core_indexer_store::todo::Token::Edges,
+        )
+        .unwrap();
+        let path = std::fs::read_dir(journal.path().join("indexer/todo"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| std::fs::read_to_string(path).is_ok_and(|t| t.contains("@edges")))
+            .unwrap();
+        let mut entry: solstone_core_indexer_store::todo::Entry =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        entry.attempts = 4;
+        entry.not_before_ms = u64::MAX;
+        std::fs::write(&path, serde_json::to_vec(&entry).unwrap()).unwrap();
+
+        let health = evaluate_index_health(journal.path(), Timestamp::now());
+        assert_eq!(health.state, IndexHealthState::Ok);
+        assert_eq!(health.failure, None);
+        assert!(health.edges_failed);
+        assert_eq!(health.edges_failed_attempts, 4);
     }
 }

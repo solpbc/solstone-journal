@@ -62,6 +62,21 @@ mod zip_names;
 
 pub use owner_admission::{OWNER_IDENTITY_INVALID_REASON, OWNER_TARGET_MISMATCH_REASON};
 
+/// Clean up speaker-side open review candidates and discovery-cluster caches
+/// referencing an entity that was just detached to the trash.
+pub fn cleanup_entity_references_on_detach(journal_root: &std::path::Path, entity_id: &str) {
+    if let Err(error) =
+        speaker_review_candidates::remove_open_candidates_for_entity(journal_root, entity_id)
+    {
+        log::warn!("trash: {entity_id}'s open speaker review candidates weren't removed: {error}");
+    }
+    if let Err(error) =
+        discovery_cache::prune_discovery_clusters_for_entity(journal_root, entity_id)
+    {
+        log::warn!("trash: {entity_id}'s discovery cluster references weren't pruned: {error}");
+    }
+}
+
 /// Resolve a speaker record's segment using the legacy rule where `_default` denotes direct layout.
 ///
 /// This is a historical `_default` -> Direct decoder only. New code must use

@@ -161,6 +161,118 @@ fn remove_token(journal: &Path) {
     }
 }
 
+fn rebuild_token_path(journal: &Path) -> PathBuf {
+    root(journal).join(
+        Entry {
+            key: Token::Rebuild.key().to_owned(),
+            kind: Token::Rebuild.key()[1..].to_owned(),
+            enqueued_ms: 0,
+            attempts: 0,
+            not_before_ms: 0,
+        }
+        .filename(),
+    )
+}
+
+fn remove_rebuild_token(journal: &Path) {
+    if let Err(error) = fs::remove_file(rebuild_token_path(journal))
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        log::warn!(target: "solstone::indexer", "owner rebuild token not cleared: {error}");
+    }
+}
+
+/// Process an explicit owner-requested search index rebuild (`@rebuild`) queued
+/// from Health or CLI. Runs under the drain lock before passive damage checks,
+/// refuses newer-generation indices, empties and recreates the database cleanly,
+/// queues a fresh `@scan-full`, and lets this drain immediately repopulate it.
+pub(crate) fn process_owner_rebuild(
+    journal: &Path,
+    check: &dyn Fn() -> Result<(), String>,
+) -> AfterCheck {
+    let rebuild_path = rebuild_token_path(journal);
+    let entry = match read_entry(&rebuild_path, false) {
+        Ok(Some(entry)) => entry,
+        Ok(None) => return AfterCheck::CarryOn,
+        Err(error) => {
+            log::warn!(target: "solstone::indexer", "owner rebuild token unreadable: {error}");
+            return AfterCheck::CarryOn;
+        }
+    };
+    if entry.not_before_ms > now_ms() {
+        return AfterCheck::CarryOn;
+    }
+    if whole_journal_restore_admission(journal) != WholeJournalRestoreAdmission::Open {
+        log::warn!(target: "solstone::indexer", "owner index rebuild waiting for restore");
+        return AfterCheck::EndDrain;
+    }
+    let path = db_path(journal);
+    if index_is_newer(&path) {
+        log::warn!(target: "solstone::indexer", "owner index rebuild refused: index is from a newer version");
+        remove_rebuild_token(journal);
+        return AfterCheck::CarryOn;
+    }
+    #[cfg(test)]
+    if TEST_LEASE_BUSY.get() {
+        return AfterCheck::CarryOn;
+    }
+    let admission = match IndexAdmission::acquire_bounded(journal, "reset", LEASE_WAIT, check) {
+        Ok(admission) => admission,
+        Err(StoreError::WriterBusy { .. }) => return AfterCheck::CarryOn,
+        Err(StoreError::IndexGenerationNewer { .. }) => {
+            remove_rebuild_token(journal);
+            return AfterCheck::CarryOn;
+        }
+        Err(StoreError::WriterAdmission { .. }) if check().is_err() => {
+            return AfterCheck::EndDrain;
+        }
+        Err(error) => {
+            log::warn!(target: "solstone::indexer", "owner index rebuild could not take writer: {error}");
+            return AfterCheck::CarryOn;
+        }
+    };
+    if index_is_newer(&path) {
+        remove_rebuild_token(journal);
+        return AfterCheck::CarryOn;
+    }
+    if let Err(error) = queue_fresh_full_pass(journal) {
+        log::warn!(target: "solstone::indexer", "owner index rebuild could not queue scan-full: {error}");
+        return AfterCheck::CarryOn;
+    }
+    for token in [Token::Reclassify, Token::EntitySearch, Token::Edges] {
+        let name = Entry {
+            key: token.key().to_owned(),
+            kind: token.key()[1..].to_owned(),
+            enqueued_ms: 0,
+            attempts: 0,
+            not_before_ms: 0,
+        }
+        .filename();
+        let token_file = root(journal).join(name);
+        if let Ok(Some(mut stuck)) = read_entry(&token_file, false)
+            && (stuck.attempts > 0 || stuck.not_before_ms > 0)
+        {
+            stuck.attempts = 0;
+            stuck.not_before_ms = 0;
+            let _ = rewrite(&token_file, &stuck);
+        }
+    }
+    // Owner explicitly asked for a rebuild now, superseding any passive check wait.
+    remove_token(journal);
+    if let Err(error) = crate::db::reset_index_admitted(journal, &admission) {
+        log::warn!(target: "solstone::indexer", "owner index rebuild reset failed: {error}");
+        return AfterCheck::CarryOn;
+    }
+    let mut state = read_state(journal);
+    state.last_clean_ms = None;
+    write_state(journal, &state);
+    if let Err(error) = crate::scan::update_entity_search_admitted(journal, &admission) {
+        log::warn!(target: "solstone::indexer", "entity search not rebuilt after owner reset: {error}");
+    }
+    remove_rebuild_token(journal);
+    AfterCheck::CarryOn
+}
+
 fn set_token(journal: &Path, entry: &Entry, attempts: u32, not_before_ms: u64) -> io::Result<()> {
     #[cfg(test)]
     if TEST_TOKEN_WRITE_FAULT.get() {

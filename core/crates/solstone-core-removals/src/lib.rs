@@ -152,6 +152,8 @@ pub enum Action {
     /// some older ones still hold it: a media archive from before archive
     /// paths were recorded, or backups of the journal at another place.
     BackupErasePartly,
+    /// Moved a quarantined failed-ingest file to the trash.
+    QuarantinedIngestDiscard,
 }
 
 /// A page of the journal's web app.
@@ -167,6 +169,7 @@ pub enum Page {
     Backup,
     Agents,
     Speakers,
+    Health,
 }
 
 /// A setting the owner turned on that removes things by itself.
@@ -257,6 +260,13 @@ pub enum Unit {
     Memory { day: String, segment: String },
     /// The copies held in a backup destination.
     Backup { storage: String },
+    /// One quarantined failed-ingest file under `chronicle/<day>/observer/failed/`.
+    QuarantinedIngest {
+        day: String,
+        segment: String,
+        stamp: String,
+        file: String,
+    },
 }
 
 /// One entry of the deletion record.

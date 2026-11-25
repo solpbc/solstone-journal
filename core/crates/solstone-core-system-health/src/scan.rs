@@ -206,7 +206,7 @@ pub fn scan_day<S: SegmentSource>(
             .and_then(|name| name.to_str())
             .unwrap_or_default();
         let (data_state, modality_input_mtime_ms) =
-            detect_data_state(segment.path(), parent_name, now)?;
+            detect_data_state_in(Some(journal), segment.path(), parent_name, now)?;
         let types = timeline_types(&data_state);
         if types.is_empty() {
             continue;
@@ -257,7 +257,44 @@ pub fn scan_day<S: SegmentSource>(
     ))
 }
 
+fn infer_journal_root(segment_path: &Path) -> Option<&Path> {
+    let mut current = segment_path.parent();
+    while let Some(dir) = current {
+        if dir.file_name().and_then(|name| name.to_str()) == Some("chronicle") {
+            return dir.parent();
+        }
+        current = dir.parent();
+    }
+    None
+}
+
+fn journal_relative_slash(journal: &Path, path: &Path) -> Option<String> {
+    let rel = path.strip_prefix(journal).ok()?;
+    let mut parts = Vec::new();
+    for component in rel.components() {
+        let std::path::Component::Normal(part) = component else {
+            return None;
+        };
+        parts.push(part.to_str()?);
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
 pub(crate) fn detect_data_state(
+    segment_path: &Path,
+    stream_parent_name: &str,
+    now: Timestamp,
+) -> Result<(DataStateMap, BTreeMap<String, Option<i64>>), HealthError> {
+    detect_data_state_in(
+        infer_journal_root(segment_path),
+        segment_path,
+        stream_parent_name,
+        now,
+    )
+}
+
+pub(crate) fn detect_data_state_in(
+    journal: Option<&Path>,
     segment_path: &Path,
     stream_parent_name: &str,
     now: Timestamp,
@@ -289,7 +326,7 @@ pub(crate) fn detect_data_state(
             .ok()
             .and_then(|bytes| serde_json::from_slice::<AudioArchivePlacement>(&bytes).ok())
             .map_or(DataState::Pending, |placement| {
-                archive_audio_state(segment_path, &placement, now)
+                archive_audio_state(journal, segment_path, &placement, now)
             })
     } else {
         let record = read_processing_record(&audio_jsonl);
@@ -463,17 +500,56 @@ fn aggregate_screen_state(
 }
 
 fn archive_audio_state(
+    journal: Option<&Path>,
     directory: &Path,
     placement: &AudioArchivePlacement,
     now: Timestamp,
 ) -> DataState {
     let mut states = Vec::new();
+    let mut recorded_deletions: Option<BTreeMap<String, solstone_core_retention::RawReleaseClass>> =
+        None;
+    let segment_rel = journal.and_then(|root| journal_relative_slash(root, directory));
     for part in &placement.parts {
         let raw = directory.join(&part.stored_name);
+        let output = raw.with_extension("jsonl");
         let metadata = match fs::symlink_metadata(&raw) {
             Ok(metadata) if metadata.file_type().is_file() => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                states.push(DataState::Purged);
+                // Separate processing state from original custody: a missing raw
+                // file only reads as Purged when an intentional deletion is
+                // recorded or the original is held in recoverable trash.
+                if jsonl_has_row_with_key(&output, vocab::AUDIO_TRANSCRIPT_ROW_KEY) {
+                    states.push(DataState::Analyzed);
+                    continue;
+                }
+                let record = read_processing_record_header(&output);
+                if record
+                    .as_ref()
+                    .and_then(|r| r.get("state"))
+                    .and_then(Value::as_str)
+                    == Some(vocab::STATE_EMPTY)
+                {
+                    states.push(DataState::Empty);
+                    continue;
+                }
+                let deletions = recorded_deletions.get_or_insert_with(|| {
+                    solstone_core_retention::recorded_original_deletions(directory)
+                });
+                let intentionally_deleted = deletions.contains_key(&part.stored_name)
+                    || journal
+                        .zip(segment_rel.as_deref())
+                        .is_some_and(|(root, rel)| {
+                            solstone_core_retention::original_trash::in_trash(
+                                root,
+                                rel,
+                                &part.stored_name,
+                            )
+                        });
+                states.push(if intentionally_deleted {
+                    DataState::Purged
+                } else {
+                    DataState::Absent
+                });
                 continue;
             }
             _ => {
@@ -481,7 +557,6 @@ fn archive_audio_state(
                 continue;
             }
         };
-        let output = raw.with_extension("jsonl");
         let record = read_processing_record_header(&output);
         let state =
             if evaluate_terminal_proof(record.as_ref(), vocab::HANDLER_TRANSCRIBE, metadata.len())
@@ -530,7 +605,11 @@ fn archive_audio_state(
             return state;
         }
     }
-    DataState::Pending
+    if states.is_empty() {
+        DataState::Pending
+    } else {
+        DataState::Absent
+    }
 }
 
 /// The streams that held body day-summary cards, retired but still in journals.
@@ -1487,7 +1566,7 @@ mod tests {
             .with_extension("jsonl");
         fs::write(&first, format!("{header}\n")).unwrap();
         assert_eq!(
-            archive_audio_state(directory, &placement, Timestamp::now()),
+            archive_audio_state(None, directory, &placement, Timestamp::now()),
             DataState::Pending
         );
         let second = directory
@@ -1499,13 +1578,72 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            archive_audio_state(directory, &placement, Timestamp::now()),
+            archive_audio_state(None, directory, &placement, Timestamp::now()),
             DataState::Analyzed
         );
         fs::write(&second, format!("{header}\n")).unwrap();
         assert_eq!(
-            archive_audio_state(directory, &placement, Timestamp::now()),
+            archive_audio_state(None, directory, &placement, Timestamp::now()),
             DataState::Empty
+        );
+    }
+
+    #[test]
+    fn archive_audio_missing_raw_never_claims_purged_without_deletion_or_trash() {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root
+            .path()
+            .join("chronicle/20260920/import.archive/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        let stored_name = "p0000_0123456789abcdef.ogg".to_owned();
+        let placement = AudioArchivePlacement {
+            version: 1,
+            parts: vec![
+                solstone_core_format::audio_archive::AudioArchivePlacementPart {
+                    stored_name: stored_name.clone(),
+                    original_occurrence: "occ-0".to_owned(),
+                    original_time_ms: None,
+                    origin_ms: 0,
+                    offset_ms: 0,
+                    length_ms: 1000,
+                },
+            ],
+        };
+
+        // 1. Missing raw, no transcript, no original_deleted event -> Absent, never Purged.
+        assert_eq!(
+            archive_audio_state(Some(root.path()), &segment, &placement, Timestamp::now()),
+            DataState::Absent
+        );
+
+        // 2. Recorded original_deleted event -> Purged.
+        fs::write(
+            segment.join("events.jsonl"),
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "tract": "retention",
+                    "event": "original_deleted",
+                    "name": stored_name,
+                    "class": "owner_raw_release",
+                })
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            archive_audio_state(Some(root.path()), &segment, &placement, Timestamp::now()),
+            DataState::Purged
+        );
+
+        // 3. Missing raw with existing transcript -> Analyzed (processing state).
+        fs::write(
+            segment.join("p0000_0123456789abcdef.jsonl"),
+            "{\"start\":\"12:00:00\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            archive_audio_state(Some(root.path()), &segment, &placement, Timestamp::now()),
+            DataState::Analyzed
         );
     }
 

@@ -292,6 +292,44 @@ fn is_row_suppressed(row: &Value) -> bool {
         .is_some_and(|s| !s.is_null())
 }
 
+/// Whether an entity slug resolves to a live, non-hidden entity in the journal.
+///
+/// Matches the Entities tidy-up duplicate list and Home's possible-duplicates
+/// count so deleted, merged, missing, or hidden entities never surface as open
+/// merge suggestions.
+pub(crate) fn entity_slug_is_live_and_shown(
+    root: &Path,
+    identity_map: &solstone_core_entity::EntityIdentityMap,
+    slug: &str,
+) -> bool {
+    let Some(winner_dir) = identity_map.resolved.get(slug) else {
+        return false;
+    };
+    let Ok(Some(identity)) = read_entity_identity(root, winner_dir) else {
+        return true;
+    };
+    !solstone_core_entity::entity_is_hidden(identity.value())
+}
+
+/// Shared live-entity filter for open entity merge candidates in curation
+/// state and review counts.
+pub(crate) fn open_entity_merge_row_is_live(
+    root: &Path,
+    identity_map: &solstone_core_entity::EntityIdentityMap,
+    row: &Value,
+) -> bool {
+    let source_slug = row
+        .get("source_slug")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let target_slug = row
+        .get("target_slug")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    entity_slug_is_live_and_shown(root, identity_map, source_slug)
+        && entity_slug_is_live_and_shown(root, identity_map, target_slug)
+}
+
 fn load_state(root: &Path, locale: &str, owner_view: bool) -> Result<Value, String> {
     let facet_items = solstone_core_facets::load_candidates(root)
         .map_err(|error| error.to_string())?
@@ -307,13 +345,23 @@ fn load_state(root: &Path, locale: &str, owner_view: bool) -> Result<Value, Stri
         load_merge_candidates(root, None, None)
     }
     .map_err(|error| error.to_string())?;
+    let mut identity_map: Option<solstone_core_entity::EntityIdentityMap> = None;
     for row in candidates {
         match solstone_core_entity::entity_merge_open_class(&row) {
             solstone_core_entity::EntityMergeOpenClass::SuppressedOpen => {
                 set_aside_items.push(set_aside_merge_item(row));
             }
             solstone_core_entity::EntityMergeOpenClass::Open => {
-                entity_items.push(entity_item(row));
+                let map = match identity_map.as_ref() {
+                    Some(map) => map,
+                    None => {
+                        let loaded = read_identity_map(root).map_err(|error| error.to_string())?;
+                        identity_map.insert(loaded)
+                    }
+                };
+                if open_entity_merge_row_is_live(root, map, &row) {
+                    entity_items.push(entity_item(row));
+                }
             }
             solstone_core_entity::EntityMergeOpenClass::Other => {}
         }
@@ -2446,6 +2494,21 @@ mod tests {
             r#"{"id":"echo","name":"Echo","blocked":"true"}"#,
         )
         .expect("write echo identity");
+        for (id, name) in [
+            ("alpha", "Alpha"),
+            ("bravo", "Bravo"),
+            ("carol", "Carol"),
+            ("dora", "Dora"),
+            ("foxtrot", "Foxtrot"),
+        ] {
+            solstone_core_entity::save_entity_identity(
+                root.path(),
+                id,
+                &json!({"id": id, "name": name}),
+                None,
+            )
+            .expect("seed live entity");
+        }
 
         let state = load_state(
             root.path(),
@@ -2454,10 +2517,9 @@ mod tests {
         )
         .expect("load_state");
         let items = state["entity_items"].as_array().expect("entity_items");
-        assert_eq!(items.len(), 6);
+        assert_eq!(items.len(), 5);
 
         let expected = [
-            ("work|echo|foxtrot", 9, 9.0, "echo", "foxtrot", "work"),
             ("personal|carol|dora", 5, 5.0, "carol", "dora", "personal"),
             ("work|bravo|alpha", 5, 5.0, "bravo", "alpha", "work"),
             ("home|alpha|bravo", 3, 3.0, "alpha", "bravo", "home"),
@@ -2541,5 +2603,48 @@ mod tests {
         )
         .expect("json");
         assert_eq!(body, json!({ "to_review": 0 }));
+    }
+
+    #[test]
+    fn deleted_and_hidden_entity_slugs_are_filtered_from_curation_state() {
+        let root = crate::test_support::phase_root("established_empty");
+        for (id, name) in [("live-a", "Live A"), ("live-b", "Live B")] {
+            solstone_core_entity::save_entity_identity(
+                root.path(),
+                id,
+                &json!({"id": id, "name": name}),
+                None,
+            )
+            .expect("seed live");
+        }
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "hidden-c",
+            &json!({"id": "hidden-c", "name": "Hidden C", "blocked": true}),
+            None,
+        )
+        .expect("seed hidden");
+        let candidates = [
+            r#"{"facet":"work","source_slug":"live-a","target_slug":"live-b","status":"open","evidence":{"detection_count":4}}"#,
+            r#"{"facet":"work","source_slug":"deleted-slug","target_slug":"live-b","status":"open","evidence":{"detection_count":9}}"#,
+            r#"{"facet":"work","source_slug":"hidden-c","target_slug":"live-b","status":"open","evidence":{"detection_count":8}}"#,
+        ]
+        .join("\n")
+            + "\n";
+        crate::test_support::write(
+            &root.path().join("entities/review-candidates.jsonl"),
+            &candidates,
+        );
+
+        let state = load_state(
+            root.path(),
+            solstone_core_convey_http::window_catalog::ENGLISH,
+            false,
+        )
+        .expect("load_state");
+        let items = state["entity_items"].as_array().expect("entity_items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["source_slug"], "live-a");
+        assert_eq!(items[0]["target_slug"], "live-b");
     }
 }

@@ -271,6 +271,11 @@ fn view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
             },
             _,
         ) => return originals_view(journal_root, item, day, stream, segment),
+        (Unit::QuarantinedIngest { day, segment, .. }, _) => {
+            // Mapped to "other" until a dedicated localized Trash label is added for
+            // Unit::QuarantinedIngest ("quarantined_ingest").
+            ("other", day.clone(), None, segment.clone())
+        }
         _ => ("other", String::new(), None, String::new()),
     };
     let mut shown = json!({
@@ -674,6 +679,7 @@ fn page_surface(page: Option<&str>) -> Surface {
         Some("import") => Page::Import,
         Some("body") => Page::Body,
         Some("entities") => Page::Entities,
+        Some("health") => Page::Health,
         _ => Page::Settings,
     };
     Surface::Web { page }

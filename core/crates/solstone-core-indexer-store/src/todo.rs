@@ -7,8 +7,9 @@ use crate::StoreError;
 use crate::writer_admission::IndexAdmission;
 use serde::Serialize;
 pub use solstone_core_indexer_todo::{
-    Entry, TodoStatus, Token, enqueue_path, enqueue_path_bound, enqueue_token, has_due, inspect,
-    listed_attempts, now_ms,
+    Entry, TodoStatus, Token, enqueue_clear_removed, enqueue_path, enqueue_path_bound,
+    enqueue_search_rebuild, enqueue_search_update, enqueue_token, enqueue_token_now, has_due,
+    inspect, listed_attempts, now_ms,
 };
 use solstone_core_indexer_todo::{
     entry_paths, path_absent, publish_if_absent, read_entry, rewrite, root,
@@ -282,6 +283,13 @@ fn run_drain(
             )?;
             report.recovered += 1;
         }
+    }
+    if crate::recovery::process_owner_rebuild(journal, &check)
+        == crate::recovery::AfterCheck::EndDrain
+    {
+        report.timed_out = true;
+        report.remaining = inspect(journal)?;
+        return Ok(report);
     }
     if crate::recovery::check_index_damage(journal, &check) == crate::recovery::AfterCheck::EndDrain
     {
@@ -708,8 +716,8 @@ impl WorkList {
                     entry,
                 )),
                 Some(4) => edges = Some(entry),
-                // The index check runs on its own, before any work.
-                Some(5) => {}
+                // The index check and owner rebuild run on their own, before normal work.
+                Some(5 | 6) => {}
                 Some(_) => tokens.push(entry),
                 None => {}
             }

@@ -70,6 +70,7 @@ pub mod original_deletion;
 pub mod original_trash;
 pub mod owner_voice;
 pub mod policy;
+pub mod quarantined_ingest_trash;
 pub mod receipt;
 pub mod record;
 pub mod recording_trash;
@@ -95,7 +96,11 @@ pub use oplog_retention::{
     OplogRetentionKept, OplogRetentionPlan, OplogRetentionTarget, RetainedOplog,
     plan_oplog_retention,
 };
-pub use original_deletion::{RawReleaseClass, recorded_original_deletions};
+pub use original_deletion::{
+    INTEGRITY_TRACT, ORIGINAL_MISSING_ACKNOWLEDGED_EVENT, RawReleaseClass,
+    SEGMENT_MISSING_WILDCARD, acknowledged_missing_originals, record_original_missing_acknowledged,
+    recorded_original_deletions,
+};
 pub use policy::{Anchor, Days, Eligibility, Policy, Rule, SegmentAge};
 pub use receipt::{
     NotRemoved, Outcome, PostCommitFailure, RemovedPath, RunHalt, Target, TargetOutcome,

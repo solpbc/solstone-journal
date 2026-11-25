@@ -181,7 +181,11 @@ pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
 #[cfg(any(unix, windows))]
-pub use disk_space::available_disk_bytes;
+pub use disk_space::{
+    JOURNAL_DISK_MIN_FLOOR_BYTES, JournalDiskLevel, JournalDiskSpace, available_disk_bytes,
+    journal_disk_floor_bytes, journal_disk_is_low, journal_disk_level, journal_disk_percent_used,
+    read_journal_disk_space, total_disk_bytes,
+};
 #[cfg(unix)]
 pub use entry::sync_root;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};

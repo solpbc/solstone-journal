@@ -1102,6 +1102,7 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
         return;
     }
     state.discovery.request();
+    state.last_index_todo_scan = None;
 }
 
 /// Now in the journal's owner zone: the one clock every day, rollover and

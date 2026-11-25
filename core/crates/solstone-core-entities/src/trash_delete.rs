@@ -124,7 +124,8 @@ fn moved(root: &Path, item: &Item, asked: bool, erased: bool) -> Value {
 /// Erase item `id` now, as the owner asked. A refusal leaves it in the trash.
 fn erase_now(root: &Path, id: &str, surface: Surface, backups: bool) -> bool {
     let index = RetentionIndex::new(root);
-    let kind = Entities::new(&index);
+    let kind = Entities::new(&index)
+        .with_on_detached(&solstone_core_speaker_resolve::cleanup_entity_references_on_detach);
     match solstone_core_trash::erase_with(
         root,
         &[&kind],
@@ -167,14 +168,15 @@ pub(crate) async fn delete_entity(
     let root = state.journal_root.clone();
     let outcome = solstone_core_serving::seam::run_blocking(move || {
         let index = RetentionIndex::new(&root);
-        let item =
-            match Entities::new(&index).trash(&root, &entity_id, Action::EntityDelete, surface) {
-                Ok(item) => item,
-                // It left the journal; the sweep finishes what remains.
-                Err(TrashError::Unfinished(item_id)) => solstone_core_trash::item(&root, &item_id)?
-                    .ok_or(TrashError::Unfinished(item_id))?,
-                Err(error) => return Err(error),
-            };
+        let entities = Entities::new(&index)
+            .with_on_detached(&solstone_core_speaker_resolve::cleanup_entity_references_on_detach);
+        let item = match entities.trash(&root, &entity_id, Action::EntityDelete, surface) {
+            Ok(item) => item,
+            // It left the journal; the sweep finishes what remains.
+            Err(TrashError::Unfinished(item_id)) => solstone_core_trash::item(&root, &item_id)?
+                .ok_or(TrashError::Unfinished(item_id))?,
+            Err(error) => return Err(error),
+        };
         let erased = request.erase && erase_now(&root, &item.id, surface, request.backups);
         Ok(moved(&root, &item, request.erase, erased))
     })
@@ -233,7 +235,9 @@ pub(crate) async fn delete_set(
         let mut done = Vec::new();
         if !chosen.is_empty() {
             let index = RetentionIndex::new(&root);
-            let kind = Entities::new(&index);
+            let kind = Entities::new(&index).with_on_detached(
+                &solstone_core_speaker_resolve::cleanup_entity_references_on_detach,
+            );
             let results = solstone_core_trash::detach_set_with(
                 &root,
                 &[&kind],

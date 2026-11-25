@@ -79,7 +79,7 @@ pub const DROPPED_FILES: &str = "files";
 pub const MERGE_PREFIX: &str = ".facet-merge-";
 
 /// Whether `name` can name a facet's folder.
-fn facet_name(name: &str) -> bool {
+pub fn facet_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('.')
         && !name.contains(['/', '\\'])
@@ -163,6 +163,40 @@ impl<'a> Facets<'a> {
             Some(title.chars().take(200).collect()),
         )
     }
+
+    /// Move an undeclared facet folder (`facets/<name>/` with no `facet.json`)
+    /// to recoverable trash. Refuses declared or malformed-declaration folders
+    /// and symlinks so owners never lose a live facet through this path.
+    pub fn trash_undeclared(
+        &self,
+        journal: &Path,
+        name: &str,
+        action: Action,
+        surface: Surface,
+    ) -> Result<Item, TrashError> {
+        if !facet_name(name) {
+            return Err(TrashError::Missing("facet".to_owned()));
+        }
+        let path = format!("facets/{name}");
+        let full = journal.join(&path);
+        if !fs::symlink_metadata(&full).is_ok_and(|meta| meta.file_type().is_dir()) {
+            return Err(TrashError::Missing("facet".to_owned()));
+        }
+        match crate::observe_facet_destination(journal, name) {
+            Ok(crate::DestinationObservation::Absent) => {}
+            Ok(_) => return Err(TrashError::Held(BUSY.to_owned())),
+            Err(_) => return Err(TrashError::Held(BUSY.to_owned())),
+        }
+        solstone_core_trash::detach_labelled(
+            journal,
+            self,
+            Unit::Facet,
+            action,
+            surface,
+            vec![path],
+            Some(name.chars().take(200).collect()),
+        )
+    }
 }
 
 impl Kind for Facets<'_> {
@@ -214,7 +248,8 @@ impl Kind for Facets<'_> {
             matches!(
                 crate::facet_declaration_entry(journal, name),
                 Ok(Some(solstone_core_journal_io::DirEntryKind::File))
-            )
+            ) || fs::symlink_metadata(journal.join(path))
+                .is_ok_and(|meta| meta.file_type().is_dir())
         })
     }
 

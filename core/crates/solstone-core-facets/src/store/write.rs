@@ -69,6 +69,50 @@ pub fn create_facet(
     save_facet_declaration(journal_root, facet_dir, &Value::Object(declaration))
 }
 
+/// Declare an existing undeclared facet folder (`facets/<slug>/` without `facet.json`).
+///
+/// Refuses missing folders, symlinks, non-directories, already-declared facets,
+/// malformed declarations, and retired-redirected names. Queues search rescan and
+/// reclassification so existing files in the folder become searchable.
+pub fn declare_undeclared_facet(
+    journal_root: &Path,
+    facet_dir: &str,
+    title: Option<&str>,
+) -> Result<(), FacetWriteError> {
+    if facet_dir.is_empty()
+        || facet_dir.starts_with('.')
+        || facet_dir.contains(['/', '\\'])
+        || !facet_dir.chars().all(|c| !c.is_control())
+    {
+        return Err(FacetWriteError::DeclarationMissing {
+            path: declaration_path(journal_root, facet_dir)?,
+        });
+    }
+    let folder = super::paths::facets_dir(journal_root)
+        .map_err(FacetWriteError::Read)?
+        .join(facet_dir);
+    if !std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.file_type().is_dir()) {
+        return Err(FacetWriteError::DeclarationMissing {
+            path: declaration_path(journal_root, facet_dir)?,
+        });
+    }
+    let resolved_title = title
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| crate::humanize_facet_title(facet_dir));
+    create_facet(journal_root, facet_dir, &resolved_title, "", "", "", None)?;
+    for token in [
+        solstone_core_indexer_store::todo::Token::ScanFull,
+        solstone_core_indexer_store::todo::Token::Reclassify,
+    ] {
+        if let Err(error) = solstone_core_indexer_store::todo::enqueue_token(journal_root, token) {
+            log::warn!("declare undeclared facet {facet_dir}: search was not queued: {error}");
+        }
+    }
+    Ok(())
+}
+
 /// The facet a journal with nothing to route to is given.
 pub const DEFAULT_FACET: &str = "personal";
 const DEFAULT_FACET_TITLE: &str = "Personal";

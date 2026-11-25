@@ -17,7 +17,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumSocketServer;
-use solstone_core_offload::measurement::{MIN_FLOOR_BYTES, device_free_bytes, device_total_bytes};
+use solstone_core_journal_io::disk_space::{
+    JournalDiskLevel, JournalDiskSpace, journal_disk_level, read_journal_disk_space,
+};
 
 use solstone_core_window_catalog::{ENGLISH, text};
 
@@ -50,14 +52,13 @@ pub(super) fn due(last: Option<Instant>, tick: Instant) -> bool {
 
 /// Read the journal's filesystem. `None` when either figure is unreadable.
 pub(super) fn read(journal: &Path) -> Option<Space> {
-    match (device_free_bytes(journal), device_total_bytes(journal)) {
-        (Ok(free), Ok(total)) => Some(Space { free, total }),
-        (free, total) => {
-            log::debug!(
-                "journal free space unreadable: free={:?} total={:?}",
-                free.err(),
-                total.err()
-            );
+    match read_journal_disk_space(journal) {
+        Ok(space) => Some(Space {
+            free: space.free_bytes,
+            total: space.total_bytes,
+        }),
+        Err(error) => {
+            log::debug!("journal free space unreadable: {error}");
             None
         }
     }
@@ -67,18 +68,14 @@ pub(super) fn read(journal: &Path) -> Option<Space> {
 /// is less; clear at or above the floor plus half again; say
 /// nothing in between, or for a disk whose size is unknown.
 pub(super) fn level(space: Space) -> Option<Level> {
-    if space.total == 0 {
-        return None;
-    }
-    let floor = MIN_FLOOR_BYTES.min(space.total / 4);
-    let clear = floor.saturating_add(floor / 2);
-    if space.free < floor {
-        Some(Level::Low)
-    } else if space.free >= clear {
-        Some(Level::Back)
-    } else {
-        None
-    }
+    journal_disk_level(JournalDiskSpace {
+        free_bytes: space.free,
+        total_bytes: space.total,
+    })
+    .map(|level| match level {
+        JournalDiskLevel::Low => Level::Low,
+        JournalDiskLevel::Back => Level::Back,
+    })
 }
 
 /// The Callosum event and fields announcing `level`.

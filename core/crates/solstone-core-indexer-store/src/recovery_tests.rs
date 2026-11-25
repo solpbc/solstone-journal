@@ -1096,3 +1096,67 @@ fn a_held_or_waiting_check_is_not_work_on_the_list() {
     assert!(status.keys.is_empty());
     assert_eq!(status.oldest_enqueued_ms, None);
 }
+
+#[test]
+fn owner_rebuild_recovers_corrupt_stalled_unreadable_and_failed_work_without_wait() {
+    // 1. Corrupt / unreadable SQLite database
+    let journal = Journal::indexed();
+    journal.scribble(&[0]);
+    crate::todo::enqueue_search_rebuild(journal.path()).unwrap();
+    drain(journal.path(), DrainOptions::default()).unwrap();
+    journal.assert_rebuilt();
+    assert!(
+        read_state(journal.path()).rebuilds_ms.is_empty(),
+        "owner-requested rebuild does not count as an automatic disk-failure rebuild"
+    );
+
+    // 2. Unreadable generation stamp + stalled classification + stuck failed work
+    let conn = rusqlite::Connection::open(db_path(journal.path())).unwrap();
+    conn.execute(
+        "REPLACE INTO index_meta(key, value) VALUES ('index_generation', 'not-valid-json')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    crate::todo::enqueue_token(journal.path(), Token::Reclassify).unwrap();
+    for path in solstone_core_indexer_todo::entry_paths(&root(journal.path())).unwrap() {
+        if let Some(mut entry) = read_entry(&path, false).unwrap()
+            && entry.key == Token::Reclassify.key()
+        {
+            entry.attempts = 4;
+            entry.not_before_ms = u64::MAX;
+            rewrite(&path, &entry).unwrap();
+        }
+    }
+    crate::todo::enqueue_search_rebuild(journal.path()).unwrap();
+    drain(journal.path(), DrainOptions::default()).unwrap();
+    journal.assert_rebuilt();
+    let status = crate::status::inspect_index(journal.path()).unwrap();
+    assert!(status.stamp_error.is_none());
+    assert!(!status.memberships_missing);
+    assert_eq!(
+        crate::todo::inspect(journal.path()).unwrap().failed_tokens,
+        0
+    );
+}
+
+#[test]
+fn owner_rebuild_refuses_newer_generation_index() {
+    let journal = Journal::indexed();
+    let conn = rusqlite::Connection::open(db_path(journal.path())).unwrap();
+    conn.execute_batch("PRAGMA user_version = 99;").unwrap();
+    drop(conn);
+    let before = fs::read(db_path(journal.path())).unwrap();
+
+    crate::todo::enqueue_search_rebuild(journal.path()).unwrap();
+    drain(journal.path(), DrainOptions::default()).unwrap();
+
+    assert_eq!(fs::read(db_path(journal.path())).unwrap(), before);
+    assert!(
+        !crate::todo::inspect(journal.path())
+            .unwrap()
+            .keys
+            .iter()
+            .any(|key| key == Token::Rebuild.key())
+    );
+}

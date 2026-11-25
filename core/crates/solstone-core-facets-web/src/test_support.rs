@@ -53,6 +53,14 @@ fn curation(root: &Path) {
         "{\"name\":\"Atlas\",\"name_key\":\"atlas\",\"status\":\"open\",\"count\":4,\"window_days\":7,\"evidence\":{\"samples\":[{\"day\":\"20260510\",\"quote\":\"we should look at Atlas again\",\"segment\":\"100000_300\"}]},\"first_surfaced\":\"20260510\",\"last_surfaced\":\"20260510\",\"created_at\":\"2026-05-15T12:00:00Z\",\"updated_at\":\"2026-05-15T12:00:00Z\"}\n{\"name\":\"Ledger\",\"name_key\":\"ledger\",\"status\":\"open\",\"count\":2,\"window_days\":7,\"evidence\":{\"samples\":[{\"day\":\"20260510\",\"quote\":\"we should look at Ledger again\",\"segment\":\"100000_300\"}]},\"first_surfaced\":\"20260510\",\"last_surfaced\":\"20260510\",\"created_at\":\"2026-05-15T12:00:00Z\",\"updated_at\":\"2026-05-15T12:00:00Z\"}\n",
     );
     write(
+        &root.join("entities/jordan-vance/entity.json"),
+        "{\"id\":\"jordan-vance\",\"name\":\"Jordan Vance\",\"type\":\"Person\"}\n",
+    );
+    write(
+        &root.join("entities/jordan-vancey/entity.json"),
+        "{\"id\":\"jordan-vancey\",\"name\":\"Jordan Vancey\",\"type\":\"Person\"}\n",
+    );
+    write(
         &root.join("entities/review-candidates.jsonl"),
         "{\"facet\":\"work\",\"source\":\"Jordan Vancey\",\"source_slug\":\"jordan-vancey\",\"target\":\"Jordan Vance\",\"target_slug\":\"jordan-vance\",\"status\":\"open\",\"evidence\":{\"basis\":\"name-variant\",\"summary\":\"the two names appear in the same segment\",\"detection_count\":3,\"needs\":2}}\n",
     );

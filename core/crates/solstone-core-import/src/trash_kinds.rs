@@ -12,6 +12,7 @@ use solstone_core_facets::entity_trash::Entities;
 use solstone_core_facets::facet_trash::{FacetDrops, Facets};
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::original_trash::Originals;
+use solstone_core_retention::quarantined_ingest_trash::QuarantinedIngest;
 use solstone_core_retention::recording_trash::Recordings;
 use solstone_core_speaker_resolve::speakers_trash::Speakers;
 use solstone_core_trash::{Kind, Swept};
@@ -43,12 +44,14 @@ fn with_made<T>(journal: &Path, made: &MadeFromIt, act: impl FnOnce(&[&dyn Kind]
     let speakers = Speakers::new(&index);
     let facets = Facets::new(&index);
     let drops = FacetDrops::new(&index);
-    let entities = Entities::new(&index);
+    let entities = Entities::new(&index)
+        .with_on_detached(&solstone_core_speaker_resolve::cleanup_entity_references_on_detach);
     // A segment an import made is the import's kind first: what it needs.
     act(&[
         &segments,
         &recordings,
         &Originals,
+        &QuarantinedIngest,
         &imports,
         &speakers,
         &facets,

@@ -2385,6 +2385,7 @@ fn describe(unit: &Unit) -> &'static str {
         Unit::Import { .. } => "import",
         Unit::Workout { .. } => "workout",
         Unit::Originals { .. } => "original",
+        Unit::QuarantinedIngest { .. } => "file",
         _ => "thing",
     }
 }

@@ -15,7 +15,7 @@ use solstone_core_retention::content::{ContentName, JournalMedia, MediaClassifie
 
 use crate::run::{CurrentOffloadAvailability, CurrentOffloadDecision};
 
-pub const MIN_FLOOR_BYTES: u64 = 20_000_000_000;
+pub const MIN_FLOOR_BYTES: u64 = solstone_core_journal_io::JOURNAL_DISK_MIN_FLOOR_BYTES;
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct RawMediaDayUsage {
     pub day: String,

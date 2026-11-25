@@ -35,6 +35,9 @@ pub enum Token {
     /// A real operation hit what looks like a damaged index, so the drain should
     /// check the file. Never claimed and never served as work.
     IndexCheck,
+    /// An owner explicitly asked to verify and rebuild the search index on the
+    /// next drain. Processed before normal work, never claimed.
+    Rebuild,
 }
 
 impl Token {
@@ -46,6 +49,7 @@ impl Token {
             Self::EntitySearch => "@entity-search",
             Self::Edges => "@edges",
             Self::IndexCheck => "@index-check",
+            Self::Rebuild => "@rebuild",
         }
     }
 }
@@ -69,6 +73,7 @@ impl Entry {
             ("entity-search", "@entity-search") => Some(3),
             ("edges", "@edges") => Some(4),
             ("index-check", "@index-check") => Some(5),
+            ("rebuild", "@rebuild") => Some(6),
             _ => None,
         }
     }
@@ -293,6 +298,69 @@ pub fn enqueue_token(journal: &Path, token: Token) -> io::Result<()> {
     enqueue(journal, token.key().to_owned(), &token.key()[1..])
 }
 
+/// Queue `token` and clear any existing retry backoff or stuck failure count so
+/// the next drain processes it immediately.
+pub fn enqueue_token_now(journal: &Path, token: Token) -> io::Result<()> {
+    enqueue_token(journal, token)?;
+    let name = Entry {
+        key: token.key().to_owned(),
+        kind: token.key()[1..].to_owned(),
+        enqueued_ms: 0,
+        attempts: 0,
+        not_before_ms: 0,
+    }
+    .filename();
+    let path = root(journal).join(name);
+    if let Some(mut entry) = read_entry(&path, false)?
+        && (entry.attempts > 0 || entry.not_before_ms > 0)
+    {
+        entry.attempts = 0;
+        entry.not_before_ms = 0;
+        rewrite(&path, &entry)?;
+    }
+    Ok(())
+}
+
+/// Queue a search catch-up pass: clears retry backoff on pending entries
+/// (including stuck `@edges`) and queues `@scan-full` when no search work is
+/// already waiting. Never acquires the SQLite writer lease.
+pub fn enqueue_search_update(journal: &Path) -> io::Result<()> {
+    let now = now_ms();
+    let mut has_search_work = false;
+    for path in entry_paths(&root(journal))? {
+        let Some(mut entry) = read_entry(&path, false)? else {
+            continue;
+        };
+        if entry.key == Token::IndexCheck.key() {
+            continue;
+        }
+        if entry.is_search_work() {
+            has_search_work = true;
+        }
+        if entry.not_before_ms > now || entry.attempts >= 3 {
+            entry.not_before_ms = 0;
+            entry.attempts = 0;
+            rewrite(&path, &entry)?;
+        }
+    }
+    if !has_search_work {
+        enqueue_token_now(journal, Token::ScanFull)?;
+    }
+    Ok(())
+}
+
+/// Queue an unguarded `@scan-full` pass to clear retained rows for removed days.
+/// Never acquires the SQLite writer lease.
+pub fn enqueue_clear_removed(journal: &Path) -> io::Result<()> {
+    enqueue_token_now(journal, Token::ScanFull)
+}
+
+/// Queue an explicit owner-requested search index verify and rebuild on the next
+/// drain. Never acquires the SQLite writer lease.
+pub fn enqueue_search_rebuild(journal: &Path) -> io::Result<()> {
+    enqueue_token_now(journal, Token::Rebuild)
+}
+
 fn enqueue(journal: &Path, key: String, kind: &str) -> io::Result<()> {
     let entry = Entry {
         key,
@@ -477,6 +545,13 @@ pub struct TodoStatus {
     /// that have failed three or more times and are waiting to retry.
     #[serde(default)]
     pub failed_tokens: usize,
+    /// Whether the `@edges` connections refresh has failed three or more times.
+    /// Kept separate from `failed_tokens` so full-text search health stays intact.
+    #[serde(default)]
+    pub edges_failed: bool,
+    /// Failure attempt count recorded on `@edges` when `edges_failed` is true.
+    #[serde(default)]
+    pub edges_failed_attempts: u32,
 }
 
 impl Entry {
@@ -524,6 +599,10 @@ pub fn inspect(journal: &Path) -> io::Result<TodoStatus> {
                 }
                 if entry.kind != "path" && entry.is_search_work() && entry.attempts >= 3 {
                     status.failed_tokens += 1;
+                }
+                if entry.key == Token::Edges.key() && entry.attempts >= 3 {
+                    status.edges_failed = true;
+                    status.edges_failed_attempts = status.edges_failed_attempts.max(entry.attempts);
                 }
                 // Entries that have failed three times read as failed on
                 // Health, not as lag; a kept one keeps its first enqueue time.

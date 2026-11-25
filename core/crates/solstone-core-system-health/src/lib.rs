@@ -46,6 +46,7 @@ mod freshness;
 mod grep_compile;
 mod index_health;
 mod indexing_observation;
+pub mod integrity;
 mod loader;
 mod not_yet;
 mod progress;
@@ -94,6 +95,15 @@ pub use indexing_observation::{
     LIMIT_TOKEN_FAILURES_NOT_RETAINED_PAST_HISTORY, LIMIT_TOKEN_PUBLICATION_NOT_CRASH_ATOMIC,
     LIMIT_TOKEN_UNFINISHED_NO_DAY_INDEX, LIMIT_TOKEN_UNOBSERVED_OUTSIDE_DAYS,
     indexing_window_bounds, normalize_indexing_identity, read_indexing_observations,
+};
+pub use integrity::{
+    ChecksumVerificationSummary, ChecksumVerifyOptions, DEFAULT_SCAN_BUDGET, DEFAULT_VERIFY_BUDGET,
+    INTEGRITY_RECEIPT_SCHEMA_VERSION, IntegrityFinding, IntegrityReceipt, IntegrityScanOptions,
+    IntegrityScopeKind, IntegrityState, IntegritySummary, JournalDiskStatus,
+    OLDER_MISSING_CUTOFF_DAY, OlderMissingOriginal, ROUTINE_RECENT_DAYS,
+    ROUTINE_ROLLING_OLDER_DAYS, integrity_receipt_path, read_integrity_receipt,
+    read_integrity_summary, read_journal_disk_status, run_integrity_scan, verify_kept_originals,
+    write_integrity_receipt,
 };
 pub use loader::{
     BoundedStderr, STDERR_LIMIT, classify_loader_failure, read_bounded_stderr, unresolved_library,

@@ -109,6 +109,48 @@ pub fn default_stream() -> &'static str {
     DEFAULT_STREAM
 }
 
+/// One quarantined failed-ingest file below `chronicle/<day>/observer/failed/`.
+pub fn quarantined_ingest_rel(day: &str, segment: &str, stamp: &str, file: &str) -> String {
+    format!("chronicle/{day}/observer/failed/{segment}/{stamp}/{file}")
+}
+
+/// The `chronicle/<day>/observer/failed` quarantine directory for one day.
+pub fn quarantined_ingest_day_rel(day: &str) -> String {
+    format!("chronicle/{day}/observer/failed")
+}
+
+/// Parse a validated journal-relative path under `chronicle/<day>/observer/failed/`.
+pub fn parse_quarantined_ingest_rel(rel: &str) -> Option<(String, String, String, String)> {
+    let parts: Vec<&str> = rel.split('/').collect();
+    match parts.as_slice() {
+        ["chronicle", day, "observer", "failed", segment, stamp, file]
+            if solstone_core_format::segment::is_date_key(day)
+                && valid_quarantine_segment(segment)
+                && !stamp.is_empty()
+                && stamp.bytes().all(|b| b.is_ascii_digit())
+                && crate::ContentName::new(file)
+                    .is_some_and(|name| !name.as_str().starts_with('.')) =>
+        {
+            Some((
+                (*day).to_owned(),
+                (*segment).to_owned(),
+                (*stamp).to_owned(),
+                (*file).to_owned(),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn valid_quarantine_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && !segment.starts_with('.')
+        && segment != "."
+        && segment != ".."
+        && !segment.contains(['/', '\\'])
+        && segment.chars().all(|c| !c.is_control())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

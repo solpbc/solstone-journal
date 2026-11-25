@@ -11,7 +11,8 @@ use serde_json::Value;
 use solstone_core_entity::{EntityTrustLockError, hold_entity_trust_lock};
 use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, ReadError, hold_lock, write_jsonl,
+    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, ReadError, hold_lock,
+    hold_or_reuse_lock, write_jsonl,
 };
 use solstone_core_time::{Precision, utc_z};
 use thiserror::Error;
@@ -215,6 +216,37 @@ pub fn dismiss_candidate(
         object.insert("updated_at".to_owned(), Value::String(now_iso()));
         Some(existing.clone())
     })
+}
+
+/// Remove only `"open"` review candidates referencing `entity_id`, preserving
+/// `"dismissed"`, `"accepted"`, and `"suppressed"` decisions.
+///
+/// Leaves an absent file absent so trashing an entity never creates
+/// `speakers/review-candidates.jsonl`.
+pub fn remove_open_candidates_for_entity(
+    journal_root: &Path,
+    entity_id: &str,
+) -> Result<usize, SpeakerReviewCandidateError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    let path = review_candidates_path(journal_root);
+    if !path.exists() {
+        return Ok(0);
+    }
+    let _lock = hold_or_reuse_lock(&path, LockOptions::default())?;
+    let mut rows = load_candidates(journal_root)?;
+    let names = |row: &Value| {
+        row.get("status").and_then(Value::as_str).unwrap_or("open") == "open"
+            && [row.get("source_id"), row.get("target_id")]
+                .iter()
+                .any(|side| side.and_then(Value::as_str) == Some(entity_id))
+    };
+    let before = rows.len();
+    rows.retain(|row| !names(row));
+    let removed = before - rows.len();
+    if removed > 0 {
+        write_jsonl(&path, rows, AtomicWriteOptions::default())?;
+    }
+    Ok(removed)
 }
 
 fn mutate_candidates<T>(
@@ -487,5 +519,53 @@ mod tests {
                 .is_none()
         );
         assert_eq!(load_candidates(journal.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn remove_open_candidates_for_entity_prunes_only_open_rows_and_preserves_decisions() {
+        let journal = temporary_journal("prune-entity");
+        let path = review_candidates_path(journal.path());
+        assert_eq!(
+            remove_open_candidates_for_entity(journal.path(), "alice").unwrap(),
+            0
+        );
+        assert!(!path.exists(), "absent file must remain absent");
+
+        create_parent(&path).unwrap();
+        write_jsonl(
+            &path,
+            vec![
+                json!({"source_id": "alice", "target_id": "alicia", "status": "open"}),
+                json!({"source_id": "ally", "target_id": "alice", "status": "open"}),
+                json!({"source_id": "alice", "target_id": "bob", "status": "dismissed"}),
+                json!({"source_id": "carol", "target_id": "alice", "status": "accepted", "merge_id": "m1"}),
+                json!({"source_id": "alice", "target_id": "dave", "status": "suppressed"}),
+                json!({"source_id": "erin", "target_id": "frank", "status": "open"}),
+            ],
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+
+        let removed = remove_open_candidates_for_entity(journal.path(), "alice").unwrap();
+        assert_eq!(removed, 2);
+
+        let remaining = load_candidates(journal.path()).unwrap();
+        assert_eq!(remaining.len(), 4);
+        assert!(remaining.iter().any(|row| {
+            row["source_id"] == "alice" && row["target_id"] == "bob" && row["status"] == "dismissed"
+        }));
+        assert!(remaining.iter().any(|row| {
+            row["source_id"] == "carol"
+                && row["target_id"] == "alice"
+                && row["status"] == "accepted"
+        }));
+        assert!(remaining.iter().any(|row| {
+            row["source_id"] == "alice"
+                && row["target_id"] == "dave"
+                && row["status"] == "suppressed"
+        }));
+        assert!(remaining.iter().any(|row| {
+            row["source_id"] == "erin" && row["target_id"] == "frank" && row["status"] == "open"
+        }));
     }
 }

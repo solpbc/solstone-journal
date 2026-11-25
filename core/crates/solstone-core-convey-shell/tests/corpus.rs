@@ -323,6 +323,20 @@ fn strip_permanent_status_sources_rev_addition_from_actual(actual: &mut Value) {
     );
 }
 
+fn strip_permanent_status_integrity_addition_from_actual(actual: &mut Value) {
+    let integrity = actual
+        .as_object_mut()
+        .expect("system status is an object")
+        .remove("integrity")
+        .expect("system status reports integrity summary");
+    assert!(integrity["state"].is_string());
+    assert!(integrity["urgent_count"].is_u64());
+    assert!(integrity["incomplete"].is_boolean());
+    assert!(integrity["unavailable"].is_boolean());
+    assert!(integrity["disk_low"].is_boolean());
+    assert!(integrity.get("checked_at_ms").is_some());
+}
+
 fn apply_client_capture_projection_rename(expected: &mut Value) {
     #[cfg(target_os = "linux")]
     {
@@ -1075,6 +1089,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     strip_permanent_status_capabilities_addition_from_actual(&mut actual);
                     strip_permanent_status_security_addition_from_actual(&mut actual);
                     strip_permanent_status_sources_rev_addition_from_actual(&mut actual);
+                    strip_permanent_status_integrity_addition_from_actual(&mut actual);
                 }
                 if phase == "established" && path == "/app/speakers/api/state" {
                     // The corpus checks the state contract, not the evolving

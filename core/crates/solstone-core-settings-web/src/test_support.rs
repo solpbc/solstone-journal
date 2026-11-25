@@ -30,6 +30,9 @@ static CORPUS: LazyLock<Value> = LazyLock::new(|| {
     crate::settings_corpus_divergence::apply_permanent_plaud_oauth_sync_availability_divergence(
         &mut corpus,
     );
+    crate::settings_corpus_divergence::apply_permanent_storage_custody_summary_divergence(
+        &mut corpus,
+    );
     corpus
 });
 

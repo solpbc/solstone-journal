@@ -197,14 +197,30 @@ pub fn trash_view(journal: &Path, item: &Item) -> EntityTrashView {
     }
 }
 
+/// Callback invoked after an entity detaches to the trash (`(journal_root, entity_id)`).
+pub type EntityDetachedHook<'a> = &'a dyn Fn(&Path, &str);
+
 /// The trash's kind for entities.
 pub struct Entities<'a> {
     index: &'a dyn IndexNotify,
+    on_detached: Option<EntityDetachedHook<'a>>,
 }
 
 impl<'a> Entities<'a> {
     pub fn new(index: &'a dyn IndexNotify) -> Self {
-        Self { index }
+        Self {
+            index,
+            on_detached: None,
+        }
+    }
+
+    /// Register an additional reference-cleanup hook called after an entity
+    /// detaches to the trash (for example, pruning speaker review candidates
+    /// and discovery caches owned by higher crates).
+    #[must_use]
+    pub fn with_on_detached(mut self, hook: EntityDetachedHook<'a>) -> Self {
+        self.on_detached = Some(hook);
+        self
     }
 
     /// Move entity `entity_id` to the trash, as the owner's `action` from
@@ -344,6 +360,9 @@ impl Kind for Entities<'_> {
                     solstone_core_entity::remove_open_merge_candidates_for(journal, &id)
                 {
                     log::warn!("trash: {id}'s open duplicate suggestions weren't removed: {error}");
+                }
+                if let Some(hook) = self.on_detached {
+                    hook(journal, &id);
                 }
                 solstone_core_entity::rewrite_identity_map_cache(journal)
                     .map_err(|error| format!("the entity map wasn't rewritten: {error}"))?;

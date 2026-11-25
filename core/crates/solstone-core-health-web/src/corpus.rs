@@ -285,6 +285,16 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                         actual.as_object_mut().unwrap().remove("work");
                         assert_eq!(actual["backlog"]["scope"], "recent days");
                         actual["backlog"].as_object_mut().unwrap().remove("scope");
+                        assert!(actual["integrity"]["state"].is_string());
+                        assert!(actual["integrity"]["findings"].is_array());
+                        actual.as_object_mut().unwrap().remove("integrity");
+                        if !actual["journal_disk"].is_null() {
+                            assert!(actual["journal_disk"]["free_bytes"].is_u64());
+                            assert!(actual["journal_disk"]["total_bytes"].is_u64());
+                            assert!(actual["journal_disk"]["percent_used"].is_u64());
+                            assert!(actual["journal_disk"]["low"].is_boolean());
+                        }
+                        actual.as_object_mut().unwrap().remove("journal_disk");
                     }
                     // The info route names this machine; the corpus was captured on another.
                     if case["name"].as_str() == Some("api_info") && expected["status"] == 200 {

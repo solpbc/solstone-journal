@@ -131,7 +131,10 @@ pub fn response(day: &str, outcome: DayOutcome, locale: &str) -> axum::response:
     }
 }
 
-fn send(root: &std::path::Path, envelope: &solstone_core_callosum::CallosumEnvelope) -> bool {
+pub(crate) fn send(
+    root: &std::path::Path,
+    envelope: &solstone_core_callosum::CallosumEnvelope,
+) -> bool {
     let Ok(mut line) = serde_json::to_string(envelope) else {
         return false;
     };

@@ -21,6 +21,7 @@ pub(crate) struct Check {
     pub(crate) name: String,
     pub(crate) passed: bool,
     pub(crate) detail: String,
+    pub(crate) unverified: bool,
 }
 
 pub(crate) fn split_path<'a>(
@@ -584,20 +585,24 @@ pub(crate) fn checks_in(journal: &Path, location: &SegmentLocation, locale: &str
         ),
     };
     let index = read_segment_index(journal, &location.index_rel);
-    let index_check = match &index {
+    let (index_passed, index_unverified, index_detail) = match &index {
         SegmentIndexStatus::Absent => (
+            true,
             true,
             copy::render_for(locale, "journal.cli.segment.check.index.absent", &[]),
         ),
         SegmentIndexStatus::Ready { indexed: true, .. } => (
             true,
+            false,
             copy::render_for(locale, "journal.cli.segment.check.index.present", &[]),
         ),
         SegmentIndexStatus::Ready { indexed: false, .. } => (
             false,
+            false,
             copy::render_for(locale, "journal.cli.segment.check.index.missing", &[]),
         ),
         SegmentIndexStatus::Unreadable { error } => (
+            false,
             false,
             copy::display_for(
                 locale,
@@ -626,6 +631,7 @@ pub(crate) fn checks_in(journal: &Path, location: &SegmentLocation, locale: &str
             } else {
                 copy::render_for(locale, "journal.cli.segment.check.directory.missing", &[])
             },
+            unverified: false,
         },
         Check {
             name: copy::render_for(locale, "journal.cli.segment.check.marker.exists", &[]),
@@ -635,11 +641,13 @@ pub(crate) fn checks_in(journal: &Path, location: &SegmentLocation, locale: &str
             } else {
                 copy::render_for(locale, "journal.cli.segment.check.marker.missing", &[])
             },
+            unverified: false,
         },
         Check {
             name: copy::render_for(locale, "journal.cli.segment.check.marker.valid", &[]),
             passed: marker_valid.0,
             detail: marker_valid.1,
+            unverified: false,
         },
         Check {
             name: copy::render_for(locale, "journal.cli.segment.check.content.present", &[]),
@@ -651,21 +659,25 @@ pub(crate) fn checks_in(journal: &Path, location: &SegmentLocation, locale: &str
             } else {
                 copy::render_for(locale, "journal.cli.segment.check.directory.absent", &[])
             },
+            unverified: false,
         },
         Check {
             name: copy::render_for(locale, "journal.cli.segment.check.backward", &[]),
             passed: backward.0,
             detail: backward.1,
+            unverified: false,
         },
         Check {
             name: copy::render_for(locale, "journal.cli.segment.check.forward", &[]),
             passed: forward.0,
             detail: forward.1,
+            unverified: false,
         },
         Check {
             name: copy::render_for(locale, "journal.cli.segment.check.index", &[]),
-            passed: index_check.0,
-            detail: index_check.1,
+            passed: index_passed,
+            detail: index_detail,
+            unverified: index_unverified,
         },
     ]
 }

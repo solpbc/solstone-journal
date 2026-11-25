@@ -61,6 +61,10 @@ const SOURCES: &[(&str, &str)] = &[
     ("original_trash", include_str!("../src/original_trash.rs")),
     ("owner_voice", include_str!("../src/owner_voice.rs")),
     ("policy", include_str!("../src/policy.rs")),
+    (
+        "quarantined_ingest_trash",
+        include_str!("../src/quarantined_ingest_trash.rs"),
+    ),
     ("receipt", include_str!("../src/receipt.rs")),
     ("record", include_str!("../src/record.rs")),
     ("recording_trash", include_str!("../src/recording_trash.rs")),

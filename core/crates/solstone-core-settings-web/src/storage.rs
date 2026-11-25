@@ -19,13 +19,39 @@ pub async fn get(locale: &'static str, journal_root: PathBuf) -> Response {
             .map_err(|error| error.to_string())?;
         let config = read_config(&journal_root)?;
         let mut payload = config_payload(&journal_root, &config);
-        payload["summary"] = json!({"raw_media_bytes": summary.raw_media_bytes, "raw_media_human": summary.raw_media_human(), "derived_bytes": summary.derived_bytes, "derived_human": summary.derived_human(), "total_segments": summary.total_segments, "segments_with_raw": summary.segments_with_raw, "segments_purged": summary.segments_purged});
-        payload["warnings"] = json!(storage_warnings(locale, &summary, config.get("retention").and_then(Value::as_object), &config, disk_percent(&journal_root)));
+        payload["summary"] = json!({
+            "raw_media_bytes": summary.raw_media_bytes,
+            "raw_media_human": summary.raw_media_human(),
+            "derived_bytes": summary.derived_bytes,
+            "derived_human": summary.derived_human(),
+            "total_segments": summary.total_segments,
+            "segments_with_raw": summary.segments_with_raw,
+            "segments_purged": summary.segments_purged,
+            "segments_missing_unrecorded": summary.segments_missing_unrecorded,
+            "segments_damaged_zero_byte": summary.segments_damaged_zero_byte,
+        });
+        payload["warnings"] = json!(storage_warnings(
+            locale,
+            &summary,
+            config.get("retention").and_then(Value::as_object),
+            &config,
+            disk_percent(&journal_root)
+        ));
         Ok::<_, String>(payload)
-    }).await {
+    })
+    .await
+    {
         Ok(Ok(payload)) => json_response(payload),
-        Ok(Err(detail)) => read_failed("storage_measurement_failed", text(locale, "journal.window.settings.storage.storage.measure"), detail),
-        Err(error) => read_failed("storage_measurement_failed", text(locale, "journal.window.settings.storage.storage.measure"), error.to_string()),
+        Ok(Err(detail)) => read_failed(
+            "storage_measurement_failed",
+            text(locale, "journal.window.settings.storage.storage.measure"),
+            detail,
+        ),
+        Err(error) => read_failed(
+            "storage_measurement_failed",
+            text(locale, "journal.window.settings.storage.storage.measure"),
+            error.to_string(),
+        ),
     }
 }
 

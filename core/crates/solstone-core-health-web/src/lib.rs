@@ -24,6 +24,7 @@ mod backlog;
 mod brain;
 mod brain_action;
 mod host;
+mod integrity;
 mod journal_data;
 mod logs;
 pub mod search_index;
@@ -127,6 +128,7 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
                 actions::retry_work(work_retry_root.clone(), body, response_locale(locale))
             }),
         )
+        .merge(integrity::routes(journal_root.clone()))
         .merge(api_router(journal_root))
 }
 
@@ -209,6 +211,11 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
         let storage_privacy = storage_privacy::snapshot(&root, locale);
         #[cfg(not(any(unix, windows)))]
         let storage_privacy = serde_json::Value::Null;
+        let integrity = solstone_core_system_health::read_integrity_receipt(&root);
+        let journal_disk = integrity
+            .journal_disk
+            .clone()
+            .or_else(|| solstone_core_system_health::read_journal_disk_status(&root));
         let mut payload = json!({
             "work": {
                 "inventory": work.ok().flatten().map(work_view::summarize),
@@ -248,6 +255,8 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
                 "count": count,
                 "label": errors_today_label(count, ok, locale),
             },
+            "integrity": integrity,
+            "journal_disk": journal_disk,
         });
         if !storage_privacy.is_null() { payload["storage_privacy"] = storage_privacy; }
         Json(payload).into_response()

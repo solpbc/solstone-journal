@@ -9,7 +9,7 @@ use jiff::Timestamp;
 use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, day_path, iter_segments, segment_path};
 use solstone_core_segment::is_body_only_segment;
 
-use crate::{DataStateMap, scan::detect_data_state};
+use crate::{DataStateMap, scan::detect_data_state_in};
 
 /// Locate a segment by its directory basename.  Native `Segment::key` strips a
 /// valid suffix, while the Python reference compares the basename, so retain it.
@@ -58,7 +58,7 @@ pub fn read_segment_data_state(
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
         .unwrap_or(DEFAULT_STREAM);
-    detect_data_state(&path, parent, now)
+    detect_data_state_in(Some(journal), &path, parent, now)
         .map(|(states, _)| states)
         .unwrap_or_default()
 }

@@ -214,6 +214,45 @@ pub fn apply_permanent_plaud_oauth_sync_availability_divergence(expected: &mut V
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced 2026-11-24: `GET api/storage` now
+/// reports original-file custody honestly across four mutually exclusive counts
+/// (`segments_with_raw`, `segments_purged`, `segments_missing_unrecorded`,
+/// `segments_damaged_zero_byte`) rather than labeling any segment without raw
+/// media as intentionally purged. In the frozen `populated` fixture,
+/// `chronicle/20260810/tmux/100000_300` has `audio.jsonl` without an
+/// `original_deleted` provenance event, so it moves from `segments_purged` to
+/// `segments_missing_unrecorded`; the other four non-corrupt phases gain the
+/// two zero-valued custody counts. Never generalize this rule.
+pub fn apply_permanent_storage_custody_summary_divergence(expected: &mut Value) {
+    let mut updated = 0;
+    for phase in ["established", "malformed", "populated", "rich", "tokened"] {
+        let summary = expected
+            .pointer_mut(&format!(
+                "/phases/{phase}/GET api~1storage/normalized/summary"
+            ))
+            .and_then(Value::as_object_mut)
+            .unwrap_or_else(|| panic!("frozen {phase} GET api/storage summary"));
+        if phase == "populated" {
+            assert_eq!(
+                summary.get("segments_purged"),
+                Some(&Value::from(1)),
+                "frozen populated GET api/storage miscounted unrecorded missing original as purged"
+            );
+            summary.insert("segments_purged".to_owned(), Value::from(0));
+            summary.insert("segments_missing_unrecorded".to_owned(), Value::from(1));
+        } else {
+            summary.insert("segments_missing_unrecorded".to_owned(), Value::from(0));
+        }
+        summary.insert("segments_damaged_zero_byte".to_owned(), Value::from(0));
+        updated += 1;
+    }
+    assert_eq!(
+        updated, 5,
+        "frozen settings corpus has five non-corrupt storage phases"
+    );
+    recompute_case_digests(expected);
+}
+
 fn update_empty_journal_name_probes(value: &mut Value) {
     match value {
         Value::Object(map) => {

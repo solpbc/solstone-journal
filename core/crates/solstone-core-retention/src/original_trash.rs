@@ -120,6 +120,87 @@ pub fn in_trash(journal: &Path, segment_rel: &str, name: &str) -> bool {
     originals_holder(journal, &path).is_some()
 }
 
+/// Whether any originals item (waiting or detaching) currently holds at least one
+/// file belonging to the segment at `segment_rel`.
+#[must_use]
+pub fn segment_has_original_in_trash(journal: &Path, segment_rel: &str) -> bool {
+    let prefix = format!("{segment_rel}/");
+    let mut items = solstone_core_trash::list(journal).unwrap_or_default();
+    items.extend(solstone_core_trash::moving(journal).unwrap_or_default());
+    items.into_iter().any(|item| {
+        matches!(item.unit, Unit::Originals { .. })
+            && item.paths.iter().any(|path| path.starts_with(&prefix))
+    })
+}
+
+/// Collect the journal-relative segment prefixes that currently have an original
+/// waiting in (or moving to) recoverable trash, in a single trash scan.
+#[must_use]
+pub fn segments_with_originals_in_trash(journal: &Path) -> std::collections::BTreeSet<String> {
+    let mut segments = std::collections::BTreeSet::new();
+    let mut items = solstone_core_trash::list(journal).unwrap_or_default();
+    items.extend(solstone_core_trash::moving(journal).unwrap_or_default());
+    for item in items {
+        if !matches!(item.unit, Unit::Originals { .. }) {
+            continue;
+        }
+        for path in &item.paths {
+            if let Some(segment) = segment_of(path) {
+                segments.insert(segment.to_owned());
+            }
+        }
+    }
+    segments
+}
+
+/// Move one or more original media files of a live segment into recoverable trash
+/// without removing the segment or its transcripts.
+///
+/// Uses `Unit::Originals { day, stream, segment, files }` through [`Originals`]'s
+/// existing hold and references contract so `original_deleted` is recorded on detach
+/// and the file restores cleanly from Trash.
+pub fn trash_originals(
+    journal: &Path,
+    target: &Target,
+    files: Vec<String>,
+    action: Action,
+    surface: Surface,
+) -> Result<Item, solstone_core_trash::TrashError> {
+    if files.is_empty() {
+        return Err(solstone_core_trash::TrashError::Missing(
+            "original".to_owned(),
+        ));
+    }
+    let mut validated = Vec::with_capacity(files.len());
+    let mut paths = Vec::with_capacity(files.len());
+    for file in files {
+        let Some(name) = crate::ContentName::new(&file) else {
+            return Err(solstone_core_trash::TrashError::Missing(
+                "original".to_owned(),
+            ));
+        };
+        if !crate::MediaClassifier::is_owner_media(&crate::content::JournalMedia, &name) {
+            return Err(solstone_core_trash::TrashError::Missing(
+                "original".to_owned(),
+            ));
+        }
+        paths.push(crate::layout::content_rel(
+            &target.day,
+            &target.stream,
+            &target.dir,
+            name.as_str(),
+        ));
+        validated.push(name.into_string());
+    }
+    let unit = Unit::Originals {
+        day: target.day.clone(),
+        stream: target.stream.clone(),
+        segment: target.dir.clone(),
+        files: validated,
+    };
+    solstone_core_trash::detach(journal, &Originals, unit, action, surface, paths)
+}
+
 /// The trash's kind for original files.
 pub struct Originals;
 

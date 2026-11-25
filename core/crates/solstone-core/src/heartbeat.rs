@@ -131,7 +131,7 @@ fn guarded_pass(journal: &Path, pid_path: &Path) -> io::Result<()> {
     fs::write(pid_path, std::process::id().to_string())?;
     let started = Instant::now();
     let mut log = open_heartbeat_log(journal, &ZonedDateTime::now())?;
-    let pass = run_pass(&mut log);
+    let pass = run_pass(journal, &mut log);
     let outcome = if pass.is_ok() { "success" } else { "error" };
     let log_result = append_heartbeat_log(&mut log, started.elapsed().as_secs(), outcome);
     pass.and(log_result)
@@ -148,13 +148,25 @@ fn open_heartbeat_log(journal: &Path, opened: &ZonedDateTime) -> io::Result<Oplo
     })
 }
 
-fn run_pass(log: &mut OplogWriter) -> io::Result<()> {
+fn run_pass(journal: &Path, log: &mut OplogWriter) -> io::Result<()> {
+    let receipt = solstone_core_system_health::run_integrity_scan(
+        journal,
+        solstone_core_system_health::IntegrityScanOptions::default(),
+    )?;
     let record = json!({
         "data_source_errors": [],
+        "days_checked": receipt.days_checked,
+        "days_total": receipt.days_total,
+        "days_unreadable": receipt.days_unreadable,
         "escalated_targets": [],
         "event": "pass",
         "fired": [],
+        "incomplete": receipt.incomplete,
+        "integrity_state": receipt.state.as_str(),
+        "maintenance_count": receipt.maintenance_count,
+        "segments_checked": receipt.segments_checked,
         "ts": Timestamp::now().as_millisecond(),
+        "urgent_count": receipt.urgent_count,
     });
     write_record(log, &record)
 }

@@ -3,11 +3,12 @@
 
 //! Original-media deletion provenance and reader.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
+use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_io::{DirEntryKind, list_dir_entries};
 
 use crate::marks::RemovalClass;
@@ -17,6 +18,14 @@ const RETENTION_TRACT: &str = "retention";
 const ORIGINAL_DELETED_EVENT: &str = "original_deleted";
 /// The trash put a released original back: the name reads as present again.
 pub const ORIGINAL_RECOVERED_EVENT: &str = "original_recovered";
+/// Tract for durable integrity provenance events (strictly distinct from retention deletions).
+pub const INTEGRITY_TRACT: &str = "integrity";
+/// Owner acknowledged an unrecorded missing original. Clears active integrity alerts
+/// without ever converting an unexplained loss into a recorded intentional deletion.
+pub const ORIGINAL_MISSING_ACKNOWLEDGED_EVENT: &str = "original_missing_acknowledged";
+/// Sentinel stored as `name` when acknowledging a segment-level missing original whose
+/// exact original filename was not recorded in a manifest.
+pub const SEGMENT_MISSING_WILDCARD: &str = "*";
 
 /// Provenance of a released original media file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -158,6 +167,97 @@ pub fn recorded_original_deletions(segment_dir: &Path) -> BTreeMap<String, RawRe
     }
 
     map
+}
+
+/// Read all owner-acknowledged missing-original names from a segment's event log.
+///
+/// Strictly separate from [`recorded_original_deletions`]: acknowledging a missing
+/// original silences the active integrity alarm without ever labeling the segment
+/// as intentionally deleted/purged.
+#[must_use]
+pub fn acknowledged_missing_originals(segment_dir: &Path) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    let entries = match list_dir_entries(segment_dir) {
+        Ok(entries) => entries,
+        Err(_) => return set,
+    };
+
+    let has_regular_events_file = entries.iter().any(|entry| {
+        entry.name.as_os_str() == std::ffi::OsStr::new(EVENTS_FILE)
+            && entry.kind == DirEntryKind::File
+    });
+    if !has_regular_events_file {
+        return set;
+    }
+
+    let path = segment_dir.join(EVENTS_FILE);
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => return set,
+    };
+
+    for raw_line in bytes.split(|&b| b == b'\n') {
+        let trimmed = match std::str::from_utf8(raw_line) {
+            Ok(s) => s.trim(),
+            Err(_) => continue,
+        };
+        if trimmed.is_empty() {
+            continue;
+        }
+        let parsed: Value = match serde_json::from_str(trimmed) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let Some(obj) = parsed.as_object() else {
+            continue;
+        };
+        let Some(tract) = obj.get("tract").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(event) = obj.get("event").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(name) = obj.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        if tract == INTEGRITY_TRACT && event == ORIGINAL_MISSING_ACKNOWLEDGED_EVENT {
+            set.insert(name.to_owned());
+        } else if tract == RETENTION_TRACT && event == ORIGINAL_RECOVERED_EVENT {
+            set.remove(name);
+            set.remove(SEGMENT_MISSING_WILDCARD);
+        }
+    }
+
+    set
+}
+
+/// Append a durable `original_missing_acknowledged` event to a segment's `events.jsonl`.
+///
+/// Pass `Some(filename)` for a specific expected original or `None` to acknowledge
+/// a segment-level missing original (`"*"`).
+pub fn record_original_missing_acknowledged(
+    segment_dir: &Path,
+    name: Option<&str>,
+    at_ms: i64,
+) -> Result<(), String> {
+    let target_name = match name {
+        Some(file) => {
+            let valid = crate::ContentName::new(file)
+                .ok_or_else(|| "invalid original filename".to_owned())?;
+            valid.into_string()
+        }
+        None => SEGMENT_MISSING_WILDCARD.to_owned(),
+    };
+    let mut extra = Map::new();
+    extra.insert("name".to_owned(), Value::String(target_name));
+    let envelope = CallosumEnvelope {
+        tract: INTEGRITY_TRACT.to_owned(),
+        event: ORIGINAL_MISSING_ACKNOWLEDGED_EVENT.to_owned(),
+        ts: Some(at_ms),
+        extra,
+    };
+    append_durable_event(segment_dir, &DurableEvent::Callosum(envelope))
+        .map_err(|error| format!("segment events could not be written: {error}"))
 }
 
 #[cfg(test)]

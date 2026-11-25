@@ -532,7 +532,16 @@ pub(crate) fn check_summary(locale: &str, passed: usize, total: usize, summary: 
 }
 
 fn check_json(check: &read::Check) -> serde_json::Value {
-    serde_json::json!({"check": check.name, "passed": check.passed, "detail": check.detail})
+    if check.unverified {
+        serde_json::json!({
+            "check": check.name,
+            "passed": check.passed,
+            "detail": check.detail,
+            "unverified": true,
+        })
+    } else {
+        serde_json::json!({"check": check.name, "passed": check.passed, "detail": check.detail})
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1972,5 +1981,50 @@ mod tests {
             SegmentLocation::resolve(fail2_root, "20260805", &f2_b1.stream, "150000_60").unwrap();
         let f2_chks1 = checks(fail2_root, &f2_loc1);
         assert!(!check_passed(&f2_chks1, "forward chain"));
+    }
+
+    #[test]
+    fn verify_json_marks_absent_index_unverified_without_creating_db() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        segment(
+            root,
+            "20260805",
+            "desk",
+            "120000_60",
+            Some(json!({"stream": "desk", "seq": 1})),
+        );
+        stream_state(root, "desk", "20260805", "120000_60", 1);
+
+        let run = bypass(&["verify", "20260805/desk/120000_60", "--json"], root);
+        assert_eq!(run.exit_code, 0, "stderr: {}", run.stderr);
+        assert!(
+            !db_path(root).exists(),
+            "verify must not create indexer/journal.sqlite"
+        );
+        let parsed: Vec<Value> = serde_json::from_str(&run.stdout).unwrap();
+        let index_row = parsed
+            .iter()
+            .find(|row| row["check"] == "index presence")
+            .expect("index presence check row");
+        assert_eq!(index_row["passed"], Value::Bool(true));
+        assert_eq!(index_row["unverified"], Value::Bool(true));
+        for row in &parsed {
+            if row["check"] != "index presence" {
+                assert!(row.get("unverified").is_none());
+            }
+        }
+
+        // Once indexed, "unverified" is omitted.
+        seed_index(root, "20260805/desk/120000_60");
+        let indexed_run = bypass(&["verify", "20260805/desk/120000_60", "--json"], root);
+        assert_eq!(indexed_run.exit_code, 0);
+        let indexed_parsed: Vec<Value> = serde_json::from_str(&indexed_run.stdout).unwrap();
+        let indexed_row = indexed_parsed
+            .iter()
+            .find(|row| row["check"] == "index presence")
+            .expect("index presence check row");
+        assert_eq!(indexed_row["passed"], Value::Bool(true));
+        assert!(indexed_row.get("unverified").is_none());
     }
 }

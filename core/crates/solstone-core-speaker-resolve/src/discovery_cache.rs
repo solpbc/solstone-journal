@@ -7,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
+use solstone_core_entity::hold_entity_trust_lock;
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use thiserror::Error;
 
 use crate::identify_operations::MemberProvenance;
@@ -146,4 +148,175 @@ fn required_member_string(
         .and_then(Value::as_str)
         .map(str::to_owned)
         .ok_or(DiscoveryMemberError::InvalidField { field })
+}
+
+/// Remove stale references to `entity_id` from the discovery cluster caches
+/// (`awareness/discovery_clusters.json` and `awareness/discovery_clusters.resolved.json`).
+///
+/// Leaves absent, unreadable, or unaffected caches untouched.
+pub fn prune_discovery_clusters_for_entity(
+    journal_root: &Path,
+    entity_id: &str,
+) -> Result<bool, String> {
+    let _trust = hold_entity_trust_lock(journal_root).map_err(|error| error.to_string())?;
+    let mut changed = false;
+
+    let resolved_path = journal_root.join("awareness/discovery_clusters.resolved.json");
+    if let Ok(bytes) = fs::read(&resolved_path)
+        && let Ok(Value::Object(mut map)) = serde_json::from_slice::<Value>(&bytes)
+    {
+        let before = map.len();
+        map.retain(|_, value| value.get("entity_id").and_then(Value::as_str) != Some(entity_id));
+        if map.len() != before {
+            let encoded = serde_json::to_vec_pretty(&Value::Object(map))
+                .map_err(|error| error.to_string())?;
+            atomic_replace(&resolved_path, &encoded, AtomicWriteOptions::default())
+                .map_err(|error| error.to_string())?;
+            changed = true;
+        }
+    }
+
+    let cache_path = discovery_cache_path(journal_root);
+    if let Ok(bytes) = fs::read(&cache_path)
+        && let Ok(mut cache) = serde_json::from_slice::<Value>(&bytes)
+    {
+        let mut cache_changed = false;
+        if let Some(root_obj) = cache.as_object_mut() {
+            if let Some(resolved) = root_obj.get_mut("resolved").and_then(Value::as_object_mut) {
+                let before = resolved.len();
+                resolved.retain(|_, value| {
+                    value.get("entity_id").and_then(Value::as_str) != Some(entity_id)
+                });
+                if resolved.len() != before {
+                    cache_changed = true;
+                }
+            }
+            if let Some(clusters) = root_obj.get_mut("clusters").and_then(Value::as_object_mut) {
+                for cluster in clusters.values_mut() {
+                    if prune_cluster_value_for_entity(cluster, entity_id) {
+                        cache_changed = true;
+                    }
+                }
+            }
+        }
+        if cache_changed {
+            let encoded = serde_json::to_vec_pretty(&cache).map_err(|error| error.to_string())?;
+            atomic_replace(&cache_path, &encoded, AtomicWriteOptions::default())
+                .map_err(|error| error.to_string())?;
+            changed = true;
+        }
+    }
+
+    Ok(changed)
+}
+
+fn prune_cluster_value_for_entity(cluster: &mut Value, entity_id: &str) -> bool {
+    const ENTITY_FIELDS: [&str; 4] = [
+        "entity_id",
+        "matched_entity_id",
+        "candidate_entity_id",
+        "suggested_entity_id",
+    ];
+    let mut changed = false;
+    match cluster {
+        Value::Object(map) => {
+            for field in ENTITY_FIELDS {
+                if map.get(field).and_then(Value::as_str) == Some(entity_id) {
+                    map.remove(field);
+                    changed = true;
+                }
+            }
+            for list_field in ["near_matches", "candidates"] {
+                if let Some(items) = map.get_mut(list_field).and_then(Value::as_array_mut) {
+                    let before = items.len();
+                    items.retain(|item| {
+                        !ENTITY_FIELDS
+                            .iter()
+                            .any(|field| item.get(field).and_then(Value::as_str) == Some(entity_id))
+                    });
+                    if items.len() != before {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                if let Some(obj) = item.as_object_mut() {
+                    for field in ENTITY_FIELDS {
+                        if obj.get(field).and_then(Value::as_str) == Some(entity_id) {
+                            obj.remove(field);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_discovery_clusters_clears_stale_entity_references() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(!prune_discovery_clusters_for_entity(root.path(), "alice").unwrap());
+
+        let awareness = root.path().join("awareness");
+        fs::create_dir_all(&awareness).unwrap();
+        fs::write(
+            awareness.join("discovery_clusters.resolved.json"),
+            serde_json::to_vec_pretty(&json!({
+                "0": {"entity_id": "alice", "label": "Alice", "ts": "2026-01-01T00:00:00Z"},
+                "1": {"entity_id": "bob", "label": "Bob", "ts": "2026-01-01T00:00:00Z"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            awareness.join("discovery_clusters.json"),
+            serde_json::to_vec_pretty(&json!({
+                "version": "2026-01-01T00:00:00Z",
+                "clusters": {
+                    "0": [
+                        {"day": "20260101", "stream_layout": "direct", "stream": "_default", "segment_key": "100000_300", "source": "audio", "sentence_id": 1, "entity_id": "alice"},
+                        {"day": "20260101", "stream_layout": "direct", "stream": "_default", "segment_key": "100000_300", "source": "audio", "sentence_id": 2}
+                    ],
+                    "2": {
+                        "entity_id": "alice",
+                        "near_matches": [
+                            {"entity_id": "alice", "score": 0.9},
+                            {"entity_id": "bob", "score": 0.8}
+                        ]
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(prune_discovery_clusters_for_entity(root.path(), "alice").unwrap());
+
+        let resolved: Value = serde_json::from_slice(
+            &fs::read(awareness.join("discovery_clusters.resolved.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(resolved.get("0").is_none());
+        assert_eq!(resolved["1"]["entity_id"], "bob");
+
+        let cache = load_discovery_cache(root.path()).unwrap();
+        assert!(cache["clusters"]["0"][0].get("entity_id").is_none());
+        assert_eq!(cache["clusters"]["0"][0]["sentence_id"], 1);
+        assert!(cache["clusters"]["2"].get("entity_id").is_none());
+        assert_eq!(
+            cache["clusters"]["2"]["near_matches"],
+            json!([{"entity_id": "bob", "score": 0.8}])
+        );
+
+        assert!(!prune_discovery_clusters_for_entity(root.path(), "alice").unwrap());
+    }
 }

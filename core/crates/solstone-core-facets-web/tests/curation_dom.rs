@@ -85,6 +85,18 @@ fn curation_dom_contract() {
     // 3. entities/review-candidates.jsonl
     let entities_dir = journal_path.join("entities");
     fs::create_dir_all(&entities_dir).expect("entities dir");
+    for (id, name) in [
+        ("jordan-vance", "Jordan Vance"),
+        ("jordan-vancey", "Jordan Vancey"),
+    ] {
+        let dir = entities_dir.join(id);
+        fs::create_dir_all(&dir).expect("entity dir");
+        fs::write(
+            dir.join("entity.json"),
+            json!({"id": id, "name": name, "type": "Person"}).to_string(),
+        )
+        .expect("entity identity");
+    }
     let entity_merge_rows = [
         json!({
             "facet": "work",
