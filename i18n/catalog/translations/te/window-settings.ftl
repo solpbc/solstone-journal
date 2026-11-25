@@ -132,7 +132,7 @@ journal.window.mcp.owner.diagnostic.token.write = { $literal_mcp } టోకె�
 
 journal.window.network.accessible.label.your.journal.not.set.up.yet = మీ జర్నల్, ఇంకా సెటప్ కాలేదు
 
-journal.window.network.accessible.label.your.journal.s.mark.unavailable.right = మీ జర్నల్ యొక్క మార్క్, ఇప్పుడు అందుబాటులో లేదు
+journal.window.network.accessible.label.your.journal.s.mark.unavailable.right = మీ జర్నల్ మార్క్, ఇప్పుడు అందుబాటులో లేదు
 
 journal.window.network.accessible.name.close = మూసివేయండి
 
@@ -150,9 +150,9 @@ journal.window.network.app.onoff.sub.byo = ఆన్, మీ సొంత నె
 
 journal.window.network.app.onoff.sub.byo.closed = ఆన్, మీ నెట్‌వర్క్‌లోని పరికరాలకు మూసి ఉంది
 
-journal.window.network.app.onoff.sub.hosted = ఆన్, ఎక్కడి నుండైనా చేరగలిగేది
+journal.window.network.app.onoff.sub.hosted = ఆన్, ఎక్కడి నుండైనా కనెక్ట్ అవ్వగలదు
 
-journal.window.network.brandlock.line = మీ జర్నల్ ఎప్పుడూ ప్రైవేట్, కేవలం మీదే.
+journal.window.network.brandlock.line = మీ జర్నల్ ఎప్పుడూ ప్రైవేట్, మీదే.
 
 journal.window.network.button.label.cancel.edit = సవరణను రద్దు చేయండి
 
@@ -164,7 +164,7 @@ journal.window.network.button.label.forget.this.device = ఈ పరికరా�
 
 journal.window.network.button.label.keep.it = దీన్ని ఉంచండి
 
-journal.window.network.button.label.save.name = పేరును సేవ్ చేయండి
+journal.window.network.button.label.save.name = పేరు సేవ్ చేయండి
 
 journal.window.network.button.label.unpair = పెయిరింగ్ తీసివేయండి
 
@@ -178,7 +178,7 @@ journal.window.network.check.pairing.cta = పెయిరింగ్ సరి
 
 journal.window.network.client.last.added.at = చివరిసారి { $timestamp } చేర్చబడింది
 
-journal.window.network.computer.linux.note = linux లో, మీరు లింక్‌ను { $filename } అని కూడా సేవ్ చేసి నడపవచ్చు:
+journal.window.network.computer.linux.note = linux‌లో, లింక్‌ను { $filename } పేరుతో సేవ్ చేసి ఇలా రన్ చేయవచ్చు:
 
 journal.window.network.computer.step.one = కింద ఉన్న పెయిరింగ్ లింక్‌ను ఆ కంప్యూటర్‌కు పంపండి, అక్కడ దాన్ని తెరవండి
 
@@ -350,15 +350,15 @@ journal.window.network.identity.id.label = జర్నల్ ఐడి
 
 journal.window.network.local.network.agents.closes.note = మీరు ఏజెంట్లలో దాన్ని ఆఫ్ చేసినప్పుడు అది వాటికి మూసుకుంటుంది.
 
-journal.window.network.local.network.agents.note = "మీ నెట్‌వర్క్‌లోని ఏజెంట్లు" ఆన్‌లో ఉన్నంత వరకు మీ జర్నల్ మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరిచి ఉంటుంది.
+journal.window.network.local.network.agents.note = "మీ నెట్‌వర్క్‌లోని ఏజెంట్‌లు" ఆన్‌లో ఉన్నంతవరకు మీ జర్నల్ మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరిచి ఉంటుంది.
 
 journal.window.network.local.network.agents.on = "మీ నెట్‌వర్క్‌లోని ఏజెంట్లు" ఆన్‌లో ఉన్నంత వరకు మీ జర్నల్ మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరిచి ఉంటుంది. మీరు ఏజెంట్లలో దాన్ని ఆఫ్ చేసినప్పుడు అది వాటికి మూసుకుంటుంది.
 
-journal.window.network.local.network.close.confirm = మీ జర్నల్‌ను మీ నెట్‌వర్క్‌లోని పరికరాలకు మూసివేయాలా? ఇప్పుడు మీ నెట్‌వర్క్ ద్వారా కనెక్ట్ అయి ఉన్న ఏ పరికరమైనా డిస్‌కనెక్ట్ అవుతుంది.
+journal.window.network.local.network.close.confirm = మీ నెట్‌వర్క్‌లోని పరికరాలకు మీ జర్నల్‌ను మూసివేయాలా? ఇప్పుడు మీ నెట్‌వర్క్ ద్వారా కనెక్ట్ అయి ఉన్న ప్రతి పరికరం డిస్‌కనెక్ట్ అవుతుంది.
 
 journal.window.network.local.network.close.cta = మీ నెట్‌వర్క్‌లోని పరికరాలకు మూసివేయండి
 
-journal.window.network.local.network.failed = మీ జర్నల్ మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరిచి ఉందో లేదో మార్చడం సాధ్యం కాలేదు. మళ్ళీ ప్రయత్నించండి.
+journal.window.network.local.network.failed = మీ నెట్‌వర్క్‌లోని పరికరాలకు మీ జర్నల్ తెరిచి ఉందో లేదో మార్చలేకపోయింది. మళ్ళీ ప్రయత్నించండి.
 
 journal.window.network.local.network.firewall.blocked = windows మీ నెట్‌వర్క్‌లోని పరికరాలు మీ జర్నల్‌ను చేరుకోకుండా అడ్డుకుంటోంది.
 
@@ -366,7 +366,7 @@ journal.window.network.local.network.firewall.blocked.note = windows లో jour
 
 journal.window.network.local.network.firewall.note = windows అడగకపోతే, మరియు ఒక పరికరం ఇంకా మీ జర్నల్‌ను చేరుకోలేకపోతే, windows లో ముందటి ఎంపిక journal ను అడ్డుకుంటూ ఉండవచ్చు. అడ్మినిస్ట్రేటర్ { $windowsSecurity } లో, { $windowsPath } కింద దాన్ని అనుమతించవచ్చు.
 
-journal.window.network.local.network.not.reachable = పరికరాలు ఇప్పుడు మీ జర్నల్‌ను చేరుకోలేవు.
+journal.window.network.local.network.not.reachable = పరికరాలు ఇప్పుడు మీ జర్నల్‌కు చేరలేకపోతున్నాయి.
 
 journal.window.network.local.network.open = మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరవండి
 
@@ -392,7 +392,7 @@ journal.window.network.mode.byo.desc.closed = మీరు వాటికి �
 
 journal.window.network.mode.byo.disclosure = { $company } ఎప్పుడూ మార్గంలో ఉండదు
 
-journal.window.network.mode.byo.name = మీ స్వంత
+journal.window.network.mode.byo.name = మీ స్వంతం
 
 journal.window.network.mode.hosted.desc = మీ కోసం { $company } నడిపే రిలే ద్వారా ఎక్కడి నుంచైనా మీ జర్నల్‌ను చేరుకోవచ్చు.
 
@@ -482,7 +482,7 @@ journal.window.network.private.link.disable.success.closed = మీ ప్రై
 
 journal.window.network.private.link.needs.repair = మీ ప్రైవేట్ నెట్‌వర్క్‌కు మళ్ళీ సెటప్ అవసరం.
 
-journal.window.network.private.link.needs.subscription.cta = సేవల పోర్టల్‌ను తెరవండి
+journal.window.network.private.link.needs.subscription.cta = సేవల పోర్టల్ తెరవండి
 
 journal.window.network.private.link.needs.subscription.detail = మీ సమ్మతి సేవ్ అయి ఉంది. ఒక గంటలోపు సేవల పోర్టల్‌లో దీన్ని ఆన్ చేయడం పూర్తి చేయండి, మరియు మీ జర్నల్ దాన్ని దానంతట అదే తీసుకుంటుంది.
 
@@ -574,7 +574,7 @@ journal.window.network.status.text.couldn.t.copy.journal.id = జర్నల్
 
 journal.window.network.status.text.journal.id.copied = జర్నల్ ఐడి కాపీ అయింది
 
-journal.window.network.status.text.open.the.services.portal = సేవల పోర్టల్‌ను తెరవండి
+journal.window.network.status.text.open.the.services.portal = సేవల పోర్టల్ తెరవండి
 
 journal.window.network.status.text.time.unavailable = సమయం అందుబాటులో లేదు
 
@@ -582,19 +582,19 @@ journal.window.network.status.text.try.again = మళ్ళీ ప్రయత�
 
 journal.window.network.success.done = పూర్తి
 
-journal.window.network.success.heading.unnamed = ఒక కొత్త పరికరం ఇప్పుడు మీ జర్నల్‌ను చేరగలదు
+journal.window.network.success.heading.unnamed = కొత్త పరికరం ఇప్పుడు మీ జర్నల్‌కు చేరగలదు
 
 journal.window.network.success.remove.fail = ఈ పరికరం పెయిరింగ్ తీసివేయడం సాధ్యం కాలేదు. మళ్ళీ ప్రయత్నించండి, లేదా పరికరాల కింద దాని పెయిరింగ్ తీసివేయండి.
 
 journal.window.network.success.remove.label = ఈ పరికరం పెయిరింగ్ తీసివేయండి
 
-journal.window.network.success.removed = పెయిరింగ్ తీసివేయబడింది. మళ్ళీ పెయిరింగ్ అయ్యే వరకు పరికరం మీ జర్నల్‌ను చేరలేదు.
+journal.window.network.success.removed = పెయిరింగ్ తీసివేయబడింది. మళ్ళీ పెయిర్ అయ్యే వరకు పరికరం మీ జర్నల్‌కు చేరలేదు.
 
-journal.window.network.success.verify.note = ఆ పరికరంపై, ఇదే మార్క్ కనిపిస్తుందా అని సరిచూడండి, తర్వాత అక్కడ సమాధానం ఇవ్వండి. మీరు దీన్ని పెయిరింగ్ చేయలేదా?
+journal.window.network.success.verify.note = ఆ పరికరంలో ఇదే మార్క్ కనబడుతుందో సరిచూడండి, తర్వాత అక్కడ సమాధానం ఇవ్వండి. మీరు పెయిరింగ్ చేయలేదా?
 
-journal.window.network.success.verify.note.anywhere = ఆ పరికరంపై, ఇదే మార్క్ కనిపిస్తుందా అని సరిచూడండి, తర్వాత అక్కడ సమాధానం ఇవ్వండి. అది ఎక్కడి నుంచైనా మీ జర్నల్‌ను చేరగలదు. మీరు దీన్ని పెయిరింగ్ చేయలేదా?
+journal.window.network.success.verify.note.anywhere = ఆ పరికరంలో ఇదే మార్క్ కనబడుతుందో సరిచూడండి, తర్వాత అక్కడ సమాధానం ఇవ్వండి. అది ఎక్కడి నుండైనా మీ జర్నల్‌కు చేరగలదు. మీరు పెయిరింగ్ చేయలేదా?
 
-journal.window.network.success.verify.note.this.computer = solstone యాప్ అడిగితే, ఇదే మార్క్ కనిపిస్తుందా అని సరిచూడండి, తర్వాత అక్కడ సమాధానం ఇవ్వండి. మీరు దీన్ని పెయిరింగ్ చేయలేదా?
+journal.window.network.success.verify.note.this.computer = solstone యాప్ అడిగితే, ఇదే మార్క్ కనబడుతుందో సరిచూడండి, తర్వాత అక్కడ సమాధానం ఇవ్వండి. మీరు పెయిరింగ్ చేయలేదా?
 
 journal.window.network.text.loading.network = నెట్‌వర్క్ లోడ్ అవుతోంది…
 
@@ -650,7 +650,7 @@ journal.window.network.window.explanation.couldn.t.confirm.the.save.check = స�
 
 journal.window.network.window.explanation.couldn.t.finish.setting.up.your = మీ ప్రైవేట్ నెట్‌వర్క్ సెటప్‌ను పూర్తి చేయడం సాధ్యం కాలేదు.
 
-journal.window.network.window.explanation.couldn.t.finish.that.request = ఆ అభ్యర్థనను పూర్తి చేయడం సాధ్యం కాలేదు.
+journal.window.network.window.explanation.couldn.t.finish.that.request = ఆ అభ్యర్థనను పూర్తి చేయలేకపోయింది.
 
 journal.window.network.window.explanation.couldn.t.turn.off.your.private = మీ ప్రైవేట్ నెట్‌వర్క్‌ను ఆఫ్ చేయడం సాధ్యం కాలేదు.
 
@@ -868,7 +868,7 @@ journal.window.settings.button.label.copy = కాపీ చేయండి
 
 journal.window.settings.button.label.delete.logs = లాగ్‌లు తొలగించండి
 
-journal.window.settings.button.label.disconnect = డిస్‌కనెక్ట్
+journal.window.settings.button.label.disconnect = డిస్‌కనెక్ట్ చేయండి
 
 journal.window.settings.button.label.done = పూర్తి
 
@@ -962,9 +962,9 @@ journal.window.settings.config.detail.transcribe.parakeet.cpp.device.must.be = t
 
 journal.window.settings.config.detail.unknown.section = తెలియని సెక్షన్:{ $slot1 }{ $section }
 
-journal.window.settings.consent.facet.delete.copy.back.back = వెనుకకు వెళ్ళండి
+journal.window.settings.consent.facet.delete.copy.back.back = వెనుకకు
 
-journal.window.settings.consent.facet.delete.copy.busy.something.else.is.changing.it.right = వేరొకటి దీన్ని ఇప్పుడే మారుస్తోంది. ఒక నిమిషంలో మళ్ళీ ప్రయత్నించండి.
+journal.window.settings.consent.facet.delete.copy.busy.something.else.is.changing.it.right =మరేదో దీన్ని ఇప్పుడే మారుస్తోంది. ఒక నిమిషం తర్వాత మళ్ళీ ప్రయత్నించండి.
 
 journal.window.settings.consent.facet.delete.copy.button.delete.this.facet = ఈ ఫాసెట్‌ను తొలగించండి
 
@@ -972,7 +972,7 @@ journal.window.settings.consent.facet.delete.copy.cancel.cancel = రద్ద�
 
 journal.window.settings.consent.facet.delete.copy.erasenow.erase.now = ఇప్పుడు తుడిచివేయండి
 
-journal.window.settings.consent.facet.delete.copy.gone.it.s.no.longer.in.your = ఇది ఇకపై మీ జర్నల్‌లో లేదు.
+journal.window.settings.consent.facet.delete.copy.gone.it.s.no.longer.in.your = ఇది ఇక మీ జర్నల్‌లో లేదు.
 
 journal.window.settings.consent.facet.delete.copy.last.facet.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ అయి లేని కనీసం ఒక ఫాసెట్ కావాలి.
 
@@ -990,19 +990,19 @@ journal.window.settings.consent.facet.delete.copy.list.the.activities.it.found.a
 
 journal.window.settings.consent.facet.delete.copy.list.the.notes.it.keeps.about.its = అది దాని ఎంటిటీల గురించి ఉంచే నోట్‌లు
 
-journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.back.in = ఇది ఇప్పటికే తిరిగి మీ జర్నల్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.back.in = ఇది ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
 journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.erased.reload = ఇది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
 journal.window.settings.consent.facet.delete.copy.message.it.may.already.be.in.the = ఇది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.settings.consent.facet.delete.copy.message.it.s.back.in.your.journal = ఇది తిరిగి మీ జర్నల్‌లో ఉంది.
+journal.window.settings.consent.facet.delete.copy.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లో తిరిగి ఉంది.
 
-journal.window.settings.consent.facet.delete.copy.message.it.s.in.the.trash.you = ఇది ట్రాష్‌లో ఉంది. మీరు అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.settings.consent.facet.delete.copy.message.it.s.in.the.trash.you = అది ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
-journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.the.trash = ఇది ఇంకా ట్రాష్‌లో ఉంది. మీరు అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.the.trash = అది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
-journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.your.journal = ఇది ఇంకా మీ జర్నల్‌లో ఉంది.
+journal.window.settings.consent.facet.delete.copy.message.it.s.still.in.your.journal = అది ఇంకా మీ జర్నల్‌లో ఉంది.
 
 journal.window.settings.consent.facet.delete.copy.movetotrash.move.to.trash = ట్రాష్‌కు తరలించండి
 
@@ -1010,9 +1010,9 @@ journal.window.settings.consent.facet.delete.copy.newname.a.new.facet.you.give.t
 
 journal.window.settings.consent.facet.delete.copy.opentrash.open.trash = ట్రాష్ తెరవండి
 
-journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and = ఇది ఇప్పుడు మీ జర్నల్‌ను వదిలిపోతుంది మరియు దీన్ని రీస్టోర్ చేయడం సాధ్యం కాదు.
+journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి వెళ్తుంది, మరియు రీస్టోర్ చేయడం కుదరదు.
 
-journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్లి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత అది తుడిచివేయబడుతుంది. అప్పటి వరకు మీరు దాన్ని రీస్టోర్ చేయవచ్చు.
+journal.window.settings.consent.facet.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు మీరు దాన్ని రీస్టోర్ చేయవచ్చు.
 
 journal.window.settings.consent.facet.delete.copy.recover.recover = రీస్టోర్ చేయండి
 
@@ -1022,13 +1022,13 @@ journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.
 
 journal.window.settings.consent.facet.delete.copy.stays.segments.sorted.into.it.and.the.variant2 = దానిలోకి క్రమబద్ధం చేసిన సెగ్మెంట్‌లు, మరియు దానికి జోడించిన ఎంటిటీలు, మీ జర్నల్‌లో ఉంటాయి. మీ జర్నల్‌లో వేరే చోట సారాంశాలు అవి ఉన్న చోటే ఉంటాయి, మరియు ఇంకా దాన్ని ప్రస్తావించవచ్చు.
 
-journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the = దాన్ని ట్రాష్‌లోకి తరలించలేకపోయింది
+journal.window.settings.consent.facet.delete.copy.title.couldn.t.move.that.to.the = దాన్ని ట్రాష్‌కు తరలించలేకపోయింది
 
 journal.window.settings.consent.facet.delete.copy.title.delete.this.facet = ఈ ఫాసెట్‌ను తొలగించాలా?
 
 journal.window.settings.consent.facet.delete.copy.title.erase.this.facet.now = ఈ ఫాసెట్‌ను ఇప్పుడు తుడిచివేయాలా?
 
-journal.window.settings.consent.facet.delete.copy.title.moved.to.the.trash = ట్రాష్‌లోకి తరలించబడింది
+journal.window.settings.consent.facet.delete.copy.title.moved.to.the.trash = ట్రాష్‌కు తరలించబడింది
 
 journal.window.settings.consent.facet.delete.copy.title.your.journal.didn.t.answer = మీ జర్నల్ సమాధానం ఇవ్వలేదు
 
@@ -1046,7 +1046,7 @@ journal.window.settings.consent.settings.feedback.yes.open.it = అవును,
 
 journal.window.settings.consent.trash.copy.agentmany.anything.an.agent.already.read.stays = ఏజెంట్ ఇప్పటికే చదివినది వాటి వద్దనే ఉంటుంది.
 
-journal.window.settings.consent.trash.copy.agentone.anything.an.agent.already.read.stays = ఏజెంట్ ఇప్పటికే చదివినది దాని వద్దనే ఉంటుంది.
+journal.window.settings.consent.trash.copy.agentone.anything.an.agent.already.read.stays = ఏజెంట్ ఇప్పటికే చదివినది దాని దగ్గరే ఉంటుంది.
 
 journal.window.settings.consent.trash.copy.attaching.this.stopped.part.way.through.being = ఇది రీస్టోర్ అవుతూ మధ్యలో ఆగింది. మీ జర్నల్ దాన్ని తిరిగి పెట్టడం పూర్తి చేయడానికి ప్రయత్నిస్తూనే ఉంటుంది.
 
@@ -1206,7 +1206,7 @@ journal.window.settings.consent.trash.copy.speakersreplaces.recovering.puts.back
 
 journal.window.settings.consent.trash.copy.staysmany.summaries.made.from.them.elsewhere.in = మీ జర్నల్‌లో వేరే చోట వాటి నుండి చేసిన సారాంశాలు తుడిచివేయబడవు, మరియు ఇంకా వాటిని ప్రస్తావించవచ్చు.
 
-journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = మీ జర్నల్‌లో వేరే చోట దాని నుండి చేసిన సారాంశాలు తుడిచివేయబడవు, మరియు ఇంకా దాన్ని ప్రస్తావించవచ్చు.
+journal.window.settings.consent.trash.copy.staysone.summaries.made.from.it.elsewhere.in = మీ జర్నల్‌లో వేరే చోట దీని నుండి చేసిన సారాంశాలు తుడిచివేయబడవు, మరియు దీన్ని ఇంకా ప్రస్తావించవచ్చు.
 
 journal.window.settings.consent.trash.copy.stopped.removing.erased.things.from.your.backups = మీ బ్యాకప్‌ల నుండి తుడిచివేసినవాటిని తీసివేయడం మధ్యలో ఆగింది. మీ జర్నల్ దాన్ని తనంతట తానే మళ్ళీ చేపడుతుంది.
 
@@ -1238,7 +1238,7 @@ journal.window.settings.consent.trash.copy.waitingownoneone.the.segment.from.it.
 
 journal.window.settings.consent.trash.copy.waitoffline.your.journal.can.t.reach.your = మీ జర్నల్ ఇప్పుడు మీ బ్యాకప్ నిల్వకు కనెక్ట్ కాలేదు. అది ప్రయత్నిస్తూనే ఉంటుంది.
 
-journal.window.settings.consent.trash.copy.waitpaused.backup.is.paused.so.this.happens = బ్యాకప్ పాజ్ అయి ఉంది, అందుకే మీరు దాన్ని కొనసాగించిన తర్వాత ఇది జరుగుతుంది.
+journal.window.settings.consent.trash.copy.waitpaused.backup.is.paused.so.this.happens = బ్యాకప్ పాజ్ అయి ఉంది, కాబట్టి మీరు దాన్ని కొనసాగించాక ఇది జరుగుతుంది.
 
 journal.window.settings.consent.trash.copy.waitsboth.recover.the.segments.and.imports.it = ముందు, అది గొంతు డేటా క్లియర్ చేసిన సెగ్మెంట్‌లను మరియు ఇంపోర్ట్‌లను రీస్టోర్ చేయండి. అవి ట్రాష్‌లో ఉన్నాయి.
 
@@ -1310,7 +1310,7 @@ journal.window.settings.facet.mute = మ్యూట్ చేయండి
 
 journal.window.settings.facet.mute.name = మ్యూట్ చేయండి{ $slot1 }{ $title }
 
-journal.window.settings.facet.receipt.erase.date = మీరు దాన్ని రీస్టోర్ చేయకపోతే { $erase_day } నాడు తుడిచివేస్తుంది.
+journal.window.settings.facet.receipt.erase.date = మీరు దాన్ని రీస్టోర్ చేయకపోతే { $erase_day } తుడిచివేస్తుంది.
 
 journal.window.settings.facet.receipt.erase.failed = ఆ ఫాసెట్‌ను తుడిచివేయలేకపోయింది
 
@@ -1382,7 +1382,7 @@ journal.window.settings.field.label.instructions = సూచనలు
 
 journal.window.settings.field.label.keep.audio.with.no.speech = మాట లేని ఆడియోను ఉంచండి
 
-journal.window.settings.field.label.keep.originals = అసలైనవాటిని ఉంచండి
+journal.window.settings.field.label.keep.originals =అసలు ప్రతులను ఉంచండి
 
 journal.window.settings.field.label.leave.out.other.voices = ఇతర గొంతులను మినహాయించండి
 
@@ -1500,7 +1500,7 @@ journal.window.settings.granola.guide.settings = దిగువ ఎడమ వ�
 
 journal.window.settings.granola.last.added = చివరిగా చేర్చబడింది
 
-journal.window.settings.granola.last.checked = చివరి సరిచూపు
+journal.window.settings.granola.last.checked = చివరిసారి సరిచూసింది
 
 journal.window.settings.granola.meetings = సమావేశాలు
 
@@ -1565,7 +1565,7 @@ journal.window.settings.group.label.this.computer = ఈ కంప్యూటర
 
 journal.window.settings.http.activity.not.found.activity.not.found.in.facet = ఫాసెట్‌లో కార్యకలాపం కనబడలేదు
 
-journal.window.settings.http.activity.not.found.that.activity.isn.t.in.the = ఆ కార్యకలాపం ఫాసెట్‌లో లేదు.
+journal.window.settings.http.activity.not.found.that.activity.isn.t.in.the = ఆ కార్యకలాపం ఆ ఫాసెట్‌లో లేదు.
 
 journal.window.settings.http.activity.protected.cannot.remove.always.on.activity = ఎప్పుడూ ఆన్‌లో ఉండే కార్యకలాపాన్ని తీసివేయడం సాధ్యం కాదు
 
@@ -1577,7 +1577,7 @@ journal.window.settings.http.activity.settings.unavailable.those.activity.settin
 
 journal.window.settings.http.config.busy.settings.configuration.is.busy = సెట్టింగ్‌ల కాన్ఫిగరేషన్ బిజీగా ఉంది
 
-journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = ఆ సెట్టింగ్‌లు బిజీగా ఉన్నందున వాటిని ఇప్పుడు సేవ్ చేయలేకపోయింది. కాసేపట్లో మళ్ళీ ప్రయత్నించండి.
+journal.window.settings.http.config.busy.those.settings.couldn.t.be.saved = అవి బిజీగా ఉన్నాయి కాబట్టి ఆ సెట్టింగ్‌లను ఇప్పుడు సేవ్ చేయలేకపోయింది. కాసేపటి తర్వాత మళ్ళీ ప్రయత్నించండి.
 
 journal.window.settings.http.detail.something.went.wrong.try.again.and = ఏదో తప్పు జరిగింది — మళ్ళీ ప్రయత్నించండి, అది కొనసాగితే స్థితి డాష్‌బోర్డ్‌ను సరిచూడండి
 
@@ -1587,7 +1587,7 @@ journal.window.settings.http.facet.not.found.that.facet.isn.t.in.your = ఆ ఫ�
 
 journal.window.settings.http.invalid.config.value.that.setting.couldn.t.be.saved = ఒక విలువ చెల్లనిది కాబట్టి ఆ సెట్టింగ్‌ను సేవ్ చేయలేకపోయింది.
 
-journal.window.settings.http.invalid.request.value.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని వాడలేకపోయింది.
+journal.window.settings.http.invalid.request.value.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని ఉపయోగించలేకపోయింది.
 
 journal.window.settings.http.last.enabled.facet.unmute.or.add.another.facet.first = ముందు మ్యూట్ తీసివేయండి లేదా మరో ఫాసెట్ చేర్చండి, ఆపై మళ్ళీ ప్రయత్నించండి
 
@@ -1595,9 +1595,9 @@ journal.window.settings.http.last.enabled.facet.your.journal.needs.at.least.one 
 
 journal.window.settings.http.missing.request.body.no.data.provided = డేటా ఇవ్వలేదు
 
-journal.window.settings.http.missing.request.body.that.request.had.no.data.in = ఆ రిక్వెస్ట్‌లో డేటా లేదు.
+journal.window.settings.http.missing.request.body.that.request.had.no.data.in = ఆ అభ్యర్థనలో డేటా లేదు.
 
-journal.window.settings.http.missing.required.field.a.required.field.is.missing = అవసరమైన ఫీల్డ్ లేదు.
+journal.window.settings.http.missing.required.field.a.required.field.is.missing = తప్పనిసరి ఫీల్డ్ లేదు.
 
 journal.window.settings.http.owner.voice.consent.required.only.the.journal.s.owner.can = దీన్ని ఆన్ చేయగలిగేది మీరు మాత్రమే.
 
@@ -2734,7 +2734,7 @@ journal.window.settings.removal.kind.facet.facet = ఫాసెట్
 
 journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge = ఫాసెట్ జత నుండి ఫైల్‌లు
 
-journal.window.settings.removal.kind.fallback.label.something.else = మరేదో
+journal.window.settings.removal.kind.fallback.label.something.else = ఇంకేదైనా
 
 journal.window.settings.removal.kind.import.import = ఇంపోర్ట్
 
@@ -2778,7 +2778,7 @@ journal.window.settings.removal.source.journal.archive.journal = జర్నల
 
 journal.window.settings.removal.source.quick.quick.import = త్వరిత ఇంపోర్ట్
 
-journal.window.settings.removal.source.recording.meeting.audio = సమావేశం ఆడియో
+journal.window.settings.removal.source.recording.meeting.audio = సమావేశ ఆడియో
 
 journal.window.settings.removal.source.text.text = వచనం
 
@@ -2999,7 +2999,7 @@ journal.window.settings.settings.feedback.loading.icons = ఐకాన్‌ల�
 
 journal.window.settings.settings.feedback.maximum.of.rules.allowed = గరిష్టంగా 50 నియమాలు అనుమతి ఉంది
 
-journal.window.settings.settings.feedback.name.is.required = పేరు తప్పనిసరి
+journal.window.settings.settings.feedback.name.is.required = పేరు అవసరం
 
 journal.window.settings.settings.feedback.new.personal.api.key = కొత్త వ్యక్తిగత API కీ
 
@@ -3866,7 +3866,7 @@ journal.window.settings.visible.text.to.erase.the.face.data.your = మీ జర
 
 journal.window.settings.visible.text.try.again = మళ్ళీ ప్రయత్నించండి
 
-journal.window.settings.visible.text.turn.this.on.if.you.want = అసలు వాటి లోకల్ కాపీ మీ జర్నల్‌లో కావాలంటే దీన్ని ఆన్ చేయండి.
+journal.window.settings.visible.text.turn.this.on.if.you.want = అసలు ప్రతుల లోకల్ కాపీ మీ జర్నల్‌లో కావాలంటే దీన్ని ఆన్ చేయండి.
 
 journal.window.settings.visible.text.turning.this.off.stops.new.reading = దీన్ని ఆఫ్ చేయడం కొత్త చదవడాన్ని ఆపుతుంది.
 
@@ -4049,7 +4049,7 @@ journal.window.system.health.backlog.age.minute = { $quantity ->
 
 journal.window.system.health.backlog.day.a.chatgpt.usage.limit.was.reached.check.usage.and.app.limits.in.chatgpt = ChatGPT వినియోగ పరిమితి చేరింది. ChatGPT సెట్టింగ్‌లలో వినియోగం, యాప్ పరిమితులు సరిచూడండి
 
-journal.window.system.health.backlog.day.a.processing.step.keeps.failing.try.again = ఒక ప్రాసెసింగ్ దశ పదే విఫలమవుతోంది. మళ్ళీ ప్రయత్నించండి
+journal.window.system.health.backlog.day.a.processing.step.keeps.failing.try.again = ఒక ప్రాసెస్ స్టెప్ పదే పదే విఫలమవుతోంది. మళ్ళీ ప్రయత్నించండి
 
 journal.window.system.health.backlog.day.a.setting.s.missing.check.your.journal.s.setup = ఒక సెట్టింగ్ లేదు. మీ జర్నల్ సెటప్‌ను సరిచూడండి
 
@@ -4073,17 +4073,17 @@ journal.window.system.health.backlog.day.the.ai.provider.refused.a.request.retry
 
 journal.window.system.health.backlog.day.the.ai.provider.was.unreachable.try.again = AI ప్రొవైడర్‌తో కనెక్ట్ కాలేదు. మళ్ళీ ప్రయత్నించండి
 
-journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o = ఈ ChatGPT ఖాతాను ఆలోచనకు వాడలేరు. ఆలోచన పేజీలో మరో ప్రొవైడర్‌ను ఎంచుకోండి
+journal.window.system.health.backlog.day.this.chatgpt.account.can.t.be.used.for.thinking.pick.another.provider.o = ఈ ChatGPT ఖాతా ఆలోచనకు వాడబడదు. ఆలోచన పేజీలో మరో ప్రొవైడర్ ఎంచుకోండి
 
 journal.window.system.health.backlog.day.this.day.s.remaining.content.still.will.not.fit.the.on.device.model.aft = కుదించిన తర్వాత కూడా ఈ రోజు మిగిలిన కంటెంట్ ఈ పరికరంలోని మోడల్‌కు ఇమడదు. అది మళ్ళీ ప్రయత్నిస్తూనే ఉంటుంది
 
 journal.window.system.health.backlog.day.waiting.to.retry.automatically.no.action.needed.yet = స్వయంగా మళ్ళీ ప్రయత్నించడానికి వేచి ఉంది. ఇంకా చర్య అవసరం లేదు
 
-journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = మీ AI ప్రొవైడర్ మీ కీని తిరస్కరించింది. ఆలోచన పేజీలో దాన్ని సరిచూడండి
+journal.window.system.health.backlog.day.your.ai.provider.turned.down.your.key.check.it.on.the.thinking.page = మీ AI ప్రొవైడర్ మీ కీని నిరాకరించింది. ఆలోచన పేజీలో దాన్ని సరిచూడండి
 
 journal.window.system.health.backlog.verdict.age.unknown = చివరి స్థితి అప్‌డేట్‌కు నమ్మదగిన సమయం లేకుండా, మీ జర్నల్ తాజాగా ఉందో లేదో చెప్పలేకపోతోంది.
 
-journal.window.system.health.backlog.verdict.all.caught.up = మీ జర్నల్ తాజాగా ఉంది.
+journal.window.system.health.backlog.verdict.all.caught.up = మీ జర్నల్ అంతా తాజాగా ఉంది.
 
 journal.window.system.health.backlog.verdict.caught.up = మీ జర్నల్ తాజాగా ఉంది.
 

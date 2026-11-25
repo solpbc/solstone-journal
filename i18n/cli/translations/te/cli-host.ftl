@@ -165,7 +165,7 @@ journal.cli.doctor.backlog.eligible = { $name } { $location } మీద ఆగ�
 
 journal.cli.doctor.backlog.eligible.reason = { $name } { $location } మీద { $reason } కారణంతో ఆగింది; తర్వాతి అర్హమైన రన్‌లో మళ్ళీ ప్రయత్నించవచ్చు
 
-journal.cli.doctor.backlog.empty.date = ఏమీ లేదు
+journal.cli.doctor.backlog.empty.date = ఏదీ లేదు
 
 journal.cli.doctor.backlog.exhausted = { $name } { $location } మీద స్వయంచాలక మళ్ళీ ప్రయత్నం తర్వాత ఆగింది; { $command } నడపండి
 
@@ -355,7 +355,7 @@ journal.cli.doctor.backup.status.unconfigured = బ్యాకప్ కాన�
 
 journal.cli.doctor.brain.age.unknown = తెలియదు
 
-journal.cli.doctor.brain.no.component = ఏమీ లేదు
+journal.cli.doctor.brain.no.component = ఏదీ లేదు
 
 journal.cli.doctor.brain.report = { $headline }; { $state_key }={ $state }; { $reason_key }={ $reason }; { $component_key }={ $component }; { $age_key }={ $age }
 
@@ -765,7 +765,7 @@ journal.cli.doctor.package.layout = ఎగ్జిక్యూటబుల్ �
 
 journal.cli.doctor.package.missing = ఇన్‌స్టాల్ రూట్ { $root } లో డైరెక్టరీ { $path } లేదు
 
-journal.cli.doctor.package.none = ఏమీ లేదు
+journal.cli.doctor.package.none = ఏదీ లేదు
 
 journal.cli.doctor.package.target = { $newline }Cargo టార్గెట్ డైరెక్టరీ { $target } ఏ చెక్‌అవుట్‌కు బయట ఉంది: అక్కడ బిల్డ్ అయిన బైనరీ పేలోడ్‌ను కనుగొనలేదు, కాబట్టి { $target_env } ను చెక్‌అవుట్ లోపల ఉంచండి
 
@@ -1056,9 +1056,9 @@ journal.cli.doctor.sync.identity.changed = ఫ్లాట్-డైరెక్
 
 journal.cli.doctor.sync.io = { $path } కు { $operation } విఫలమైంది: { $reason }
 
-journal.cli.doctor.sync.kind.blockdevice = బ్లాక్ డివైస్
+journal.cli.doctor.sync.kind.blockdevice = బ్లాక్ పరికరం
 
-journal.cli.doctor.sync.kind.characterdevice = క్యారెక్టర్ డివైస్
+journal.cli.doctor.sync.kind.characterdevice = క్యారెక్టర్ పరికరం
 
 journal.cli.doctor.sync.kind.directory = డైరెక్టరీ
 
@@ -1205,7 +1205,7 @@ journal.cli.doctor.windows.parakeet.root = ప్యాకేజీ bin డై�
 
 journal.cli.doctor.windows.parakeet.verification = సంతకం చేసిన { $parakeet_name } యాప్ పేలోడ్ ధృవీకరించలేకపోయింది: { $error }
 
-journal.cli.host.arguments.invalid = { $command }: లోపం: ఆర్గ్యుమెంట్‌లు తప్పు
+journal.cli.host.arguments.invalid = { $command }: లోపం: చెల్లని ఆర్గ్యుమెంట్‌లు
 
 journal.cli.host.backfill.facet.ids.help = usage: { $syntax }{ $line_break }{ $line_break }అన్ని ఫాసెట్ డిక్లరేషన్‌ల్లో లేని { $term } ఐడెంటిఫయర్‌లను బ్యాక్‌ఫిల్ చేయండి.{ $line_break }{ $line_break }ఆప్షన్‌లు:{ $line_break }{ $spaces_2 }{ $option }{ $spaces_2 }ఈ సహాయ సందేశం చూపి నిష్క్రమించండి{ $line_break }{ $spaces_2 }{ $option_6 }{ $spaces_4 }బ్యాక్‌ఫిల్ అయిన ఫాసెట్ ఐడిలను డిస్క్‌కు రాయండి (డిఫాల్ట్ డ్రై-రన్){ $line_break }
 
@@ -1369,7 +1369,7 @@ journal.cli.host.config.service.summary.service.not.installed.will.move = సర
 
 journal.cli.host.config.service.summary.service.not.installed.will.rewrite = సర్వీస్: ఇన్‌స్టాల్ కాలేదు; ర్యాపర్ మళ్ళీ రాస్తుంది
 
-journal.cli.host.config.show.next.next = తర్వాతిది: { $next }
+journal.cli.host.config.show.next.next = తర్వాత: { $next }
 
 journal.cli.host.config.show.source.built.in.default = బిల్ట్-ఇన్ డిఫాల్ట్ ({ $literal_1 })
 
@@ -1558,7 +1558,7 @@ journal.cli.host.health.queue.hold = { $space_2 }వరుస-నిలుపు
 
 journal.cli.host.health.rfdetr.assets = ఆబ్జెక్ట్ గుర్తించడం బలహీనంగా ఉంది, ఎందుకంటే దాని RF-DETR assets అందుబాటులో లేవు. స్క్రీన్ వివరణలు కొనసాగుతాయి. RF-DETR assets ను సరిచూడటానికి లేదా బాగుచేయడానికి `{ $command }` వాడండి.
 
-journal.cli.host.health.rfdetr.package = ఆబ్జెక్ట్ గుర్తించడం అందుబాటులో లేదు. మీ జర్నల్‌ను బాగుచేయండి లేదా మళ్ళీ ఇన్‌స్టాల్ చేయండి.
+journal.cli.host.health.rfdetr.package =వస్తువు గుర్తించడం అందుబాటులో లేదు. మీ జర్నల్‌ను బాగుచేయండి లేదా మళ్ళీ ఇన్‌స్టాల్ చేయండి.
 
 journal.cli.host.health.rfdetr.ready = rf-detr.cpp ఆబ్జెక్ట్-గుర్తించే ఇంజిన్ మరియు మోడల్ సిద్ధంగా ఉన్నాయి
 
@@ -3264,7 +3264,7 @@ journal.cli.install.fit.ram.unknown = { $model } కు అందుబాటు
 
 journal.cli.install.fit.row = [{ $severity }] { $name }: { $detail }
 
-journal.cli.install.fit.severity.blocked = నిరోధించబడింది
+journal.cli.install.fit.severity.blocked = అడ్డుపడింది
 
 journal.cli.install.fit.severity.ok = సరే
 

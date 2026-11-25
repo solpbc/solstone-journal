@@ -36,7 +36,7 @@ journal.setup.downloads.complete = సిద్ధంగా ఉంది
 
 journal.setup.downloads.error = డౌన్‌లోడ్ సాధ్యం కాలేదు. మళ్ళీ ప్రయత్నించండి.
 
-journal.setup.downloads.idle = ప్రారంభం కాలేదు
+journal.setup.downloads.idle = స్టార్ట్ కాలేదు
 
 journal.setup.downloads.progress = డౌన్‌లోడ్ అవుతోంది…
 
@@ -46,7 +46,7 @@ journal.setup.downloads.speech = మాట గుర్తింపు
 
 journal.setup.downloads.thinking = లోకల్ ఆలోచన
 
-journal.setup.drive.unsupported = ఈ డ్రైవ్‌లో మీ జర్నల్ నడవదు, ఎందుకంటే మీ జర్నల్‌కు కావలసిన విధంగా ఈ డ్రైవ్ ఫైళ్లను సేవ్ చేయలేదు. మీ జర్నల్ కోసం mac ఫార్మాట్ చేసిన డ్రైవ్ వాడండి.
+journal.setup.drive.unsupported = ఈ డ్రైవ్‌లో మీ జర్నల్ నడవదు, ఎందుకంటే మీ జర్నల్‌కు కావలసిన విధంగా ఈ డ్రైవ్ ఫైల్‌లను సేవ్ చేయలేదు. మీ జర్నల్ కోసం mac ఫార్మాట్ చేసిన డ్రైవ్ వాడండి.
 
 journal.setup.fits.app = మీరు ఎంచుకున్న ప్రతి పరికరంలో నడుస్తుంది, మీరు దానితో పంచుకున్నదాన్ని స్వీకరిస్తుంది. అంతా మీ జర్నల్‌లోకి వెళ్తుంది.
 
@@ -334,15 +334,17 @@ journal.window.body.accessible.name.empty.day = ఖాళీ రోజు
 
 journal.window.body.button.label.delete = తొలగించండి
 
-journal.window.body.count.day = { $quantity ->
-    [one] { $count } రోజు
-   *[other] { $count } రోజులు
-}
+journal.window.body.count.day =
+    { $quantity ->
+        [one] { $count } రోజు
+       *[other] { $count } రోజులు
+    }
 
-journal.window.body.count.entry = { $quantity ->
-    [one] { $count } ఎంట్రీ
-   *[other] { $count } ఎంట్రీలు
-}
+journal.window.body.count.entry =
+    { $quantity ->
+        [one] { $count } ఎంట్రీ
+       *[other] { $count } ఎంట్రీలు
+    }
 
 journal.window.body.count.interval = { $quantity ->
     [one] { $count } విరామం
@@ -594,7 +596,7 @@ journal.window.body.error.hidden.unsaved = ఆ మార్పు సేవ్ �
 
 journal.window.body.error.invalid.request = ఆ విలువల్లో ఒకదాన్ని ఉపయోగించలేకపోయింది.
 
-journal.window.body.error.limit.integer = limit పూర్ణాంకం అయి ఉండాలి
+journal.window.body.error.limit.integer = పరిమితి పూర్ణాంకం అయి ఉండాలి
 
 journal.window.body.error.limit.minimum = limit కనీసం 1 అయి ఉండాలి
 
@@ -645,7 +647,7 @@ journal.window.body.hide.copy.hide.failed.couldn.t.hide.this.day.nothing = ఈ �
 
 journal.window.body.hide.copy.hide.hide.this.day = ఈ రోజు దాచండి
 
-journal.window.body.hide.copy.mark.head.you.hid.this.day.s.body = మీరు ఈ రోజు శరీర డేటా దాచారు
+journal.window.body.hide.copy.mark.head.you.hid.this.day.s.body = మీరు ఈ రోజు శరీర డేటాను దాచారు
 
 journal.window.body.hide.copy.mark.line1.it.s.still.in.your.journal = ఇది ఇంకా మీ జర్నల్‌లో ఉంది, మళ్ళీ ఇంపోర్ట్ చేసినా సింక్ చేసినా దాచబడి ఉంటుంది.
 
@@ -657,7 +659,7 @@ journal.window.body.hide.copy.no.answer.hide.it.may.already.be.hidden.reload = �
 
 journal.window.body.hide.copy.no.answer.unhide.it.may.already.be.unhidden.reload = ఇది ఇప్పటికే మళ్ళీ కనబడుతూ ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.body.hide.copy.no.answer.your.journal.didn.t.answer = మీ జర్నల్ స్పందించలేదు
+journal.window.body.hide.copy.no.answer.your.journal.didn.t.answer = మీ జర్నల్ సమాధానం ఇవ్వలేదు
 
 journal.window.body.hide.copy.receipt.message.it.stays.hidden.when.you.import = మళ్ళీ ఇంపోర్ట్ చేసినా సింక్ చేసినా ఇది దాచబడి ఉంటుంది.
 
@@ -755,13 +757,13 @@ journal.window.body.message.it.may.already.be.erased.reload = ఇది ఇప�
 
 journal.window.body.message.it.may.already.be.in.the = ఇది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.body.message.it.s.back.in.your.journal = ఇది మళ్ళీ మీ జర్నల్‌లో ఉంది.
+journal.window.body.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లో తిరిగి ఉంది.
 
-journal.window.body.message.it.s.in.the.trash.you = ఇది ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.body.message.it.s.in.the.trash.you = అది ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
-journal.window.body.message.it.s.still.in.the.trash = ఇది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.body.message.it.s.still.in.the.trash = అది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
-journal.window.body.message.it.s.still.in.your.journal = ఇది ఇంకా మీ జర్నల్‌లో ఉంది.
+journal.window.body.message.it.s.still.in.your.journal = అది ఇంకా మీ జర్నల్‌లో ఉంది.
 
 journal.window.body.section.heading.counts = లెక్కలు
 
@@ -839,7 +841,7 @@ journal.window.body.title.workout.erased.from.your.journal = వ్యాయా�
 
 journal.window.body.title.workout.recovered = వ్యాయామం రీస్టోర్ అయింది
 
-journal.window.body.title.your.journal.didn.t.answer = మీ జర్నల్ స్పందించలేదు
+journal.window.body.title.your.journal.didn.t.answer = మీ జర్నల్ సమాధానం ఇవ్వలేదు
 
 journal.window.body.visible.text.nothing.for.this.day = ఈ రోజుకు ఏమీ లేదు.
 
@@ -867,15 +869,15 @@ journal.window.body.workout.copy.move.to.trash.move.to.trash = ట్రాష�
 
 journal.window.body.workout.copy.open.trash.open.trash = ట్రాష్ తెరవండి
 
-journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్తుంది, రీస్టోర్ చేయలేరు.
+journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి వెళ్తుంది, మరియు రీస్టోర్ చేయడం కుదరదు.
 
-journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and.variant2 = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్లి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు రీస్టోర్ చేయవచ్చు.
+journal.window.body.workout.copy.reach.it.leaves.your.journal.now.and.variant2 = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు మీరు దాన్ని రీస్టోర్ చేయవచ్చు.
 
 journal.window.body.workout.copy.recover.recover = రీస్టోర్ చేయండి
 
-journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from = దీని నుండి మీ జర్నల్‌లో మరెక్కడో చేసిన కార్యకలాపాలు, సారాంశాలు, ఎంటిటీలు తుడిచివేయబడవు, దీన్ని ఇంకా చెప్పవచ్చు.
+journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from = మీ జర్నల్‌లో మరెక్కడైనా దీని నుండి తయారైన కార్యకలాపాలు, సారాంశాలు, ఎంటిటీలు తుడిచివేయబడవు, దీన్ని ఇంకా ప్రస్తావించవచ్చు.
 
-journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2 = దీని నుండి మీ జర్నల్‌లో మరెక్కడో చేసిన కార్యకలాపాలు, సారాంశాలు, ఎంటిటీలు అక్కడే ఉంటాయి, దీన్ని ఇంకా చెప్పవచ్చు.
+journal.window.body.workout.copy.stays.activities.summaries.and.entities.made.from.variant2 = మీ జర్నల్‌లో మరెక్కడైనా దీని నుండి తయారైన కార్యకలాపాలు, సారాంశాలు, ఎంటిటీలు అక్కడే ఉంటాయి, దీన్ని ఇంకా ప్రస్తావించవచ్చు.
 
 journal.window.body.workout.delete.name = తొలగించండి: { $workout_name }
 
@@ -886,7 +888,7 @@ journal.window.body.workout.strava.additional.count = { $quantity ->
 
 journal.window.body.workout.strava.figures = Strava సంఖ్యలు: { $figures }
 
-journal.window.body.workout.trash.recovers.until.day = మీరు రీస్టోర్ చేయకపోతే { $erase_day } తుడిచివేస్తుంది.
+journal.window.body.workout.trash.recovers.until.day = మీరు దాన్ని రీస్టోర్ చేయకపోతే { $erase_day } తుడిచివేస్తుంది.
 
 journal.window.calendar.note.added = క్యాలెండర్ ఈవెంట్ చేర్చబడింది
 
@@ -1019,7 +1021,7 @@ journal.window.chrome.retry = మళ్ళీ ప్రయత్నించం�
 
 journal.window.chrome.section.error = ఈ విభాగాన్ని లోడ్ చేయలేకపోయింది
 
-journal.window.chrome.still.working = ఇంకా పని జరుగుతోంది…
+journal.window.chrome.still.working = ఇంకా పని చేస్తోంది…
 
 journal.window.chrome.unknown.error = ఏదో తప్పు జరిగింది. మళ్ళీ ప్రయత్నించడానికి మళ్ళీ లోడ్ చేయండి.
 
@@ -1254,7 +1256,7 @@ journal.window.content.import.book.unknown = తెలియని పుస్�
 
 journal.window.content.import.duration.min = { $minutes } ని
 
-journal.window.content.import.event.untitled = శీర్షిక లేని ఈవెంట్
+journal.window.content.import.event.untitled = పేరులేని ఈవెంట్
 
 journal.window.content.import.links = లింక్‌లు: { $links }
 
@@ -1539,7 +1541,7 @@ journal.window.home.connections.mentions.count = { $quantity ->
 
 journal.window.home.connections.moments.count = { $quantity ->
     [one] 1 క్షణం
-    *[other] { $count } క్షణాలు
+   *[other] { $count } క్షణాలు
 }
 
 journal.window.home.connections.moments.recent.count = { $quantity ->
@@ -1692,7 +1694,7 @@ journal.window.home.link.label.all.connections = అన్ని కనెక్
 
 journal.window.home.link.label.cancel.on.the.thinking.page = ఆలోచన పేజీలో రద్దు చేయండి →
 
-journal.window.home.link.label.check.system.health = సిస్టమ్ స్థితిని సరిచూడండి →
+journal.window.home.link.label.check.system.health = సిస్టమ్ స్థితి సరిచూడండి →
 
 journal.window.home.link.label.health = ఆరోగ్యం →
 
@@ -1920,7 +1922,7 @@ journal.window.home.originals.confirm.trash.until.erase.named.stream.third = { $
     } తర్వాత తుడిచివేస్తుంది, అప్పుడు వాటి చోటు తిరిగి వస్తుంది.
 }
 
-journal.window.home.originals.copy.bulk.clear = ఎంపికను తీసివేయండి
+journal.window.home.originals.copy.bulk.clear = ఎంపికను క్లియర్ చేయండి
 
 journal.window.home.originals.copy.bulk.delete = ఎంచుకున్నవి తొలగించండి
 
@@ -2128,7 +2130,7 @@ journal.window.home.setup.agent.description = మీ జర్నల్‌ను
 
 journal.window.home.setup.phone.download = మీ ఫోన్‌కు solstone ను{ $slot1 }{ $site } వద్ద తీసుకోండి, తర్వాత మీ జర్నల్‌తో పెయిరింగ్ చేయండి.
 
-journal.window.home.setup.speech.package.repair = జర్నల్ యాప్‌ను బాగుచేయండి లేదా మళ్ళీ ఇన్‌stాల్ చేయండి, తర్వాత మీ జర్నల్‌ను రీస్టార్ట్ చేయండి.
+journal.window.home.setup.speech.package.repair = జర్నల్ యాప్‌ను బాగుచేయండి లేదా మళ్ళీ ఇన్‌స్టాల్ చేయండి, తర్వాత మీ జర్నల్‌ను రీస్టార్ట్ చేయండి.
 
 journal.window.home.text.backup.status.is.unavailable = బ్యాకప్ స్థితి అందుబాటులో లేదు.
 
@@ -2390,7 +2392,7 @@ journal.window.home.week.day.short.wed = బుధ
 
 journal.window.home.week.day.short.with.number = { $weekday }{ $slot1 }{ $day }
 
-journal.window.home.week.days.conjunction = { $leading }{ $slot1 } మరియు{ $slot2 }{ $last }
+journal.window.home.week.days.conjunction = { $leading }{ $slot1 }మరియు{ $slot2 }{ $last }
 
 journal.window.home.week.days.from = { $days }{ $slot1 } నుండి.
 
@@ -2518,7 +2520,7 @@ journal.window.home.window.explanation.yesterday.shows.here.the.morning.after = 
 
 journal.window.home.window.explanation.your.first.day.shows.here.by = మీ జర్నల్ మొదటి రాత్రి తర్వాత, ఉదయం 10 లోగా మీ మొదటి రోజు ఇక్కడ కనిపిస్తుంది.
 
-journal.window.home.window.explanation.your.journal.s.computer.can.t = మీ జర్నల్ ఉన్న కంప్యూటర్ లోకల్ ఆలోచనను నడపలేదు.
+journal.window.home.window.explanation.your.journal.s.computer.can.t = మీ జర్నల్ కంప్యూటర్ లోకల్ ఆలోచనను నడపలేదు
 
 journal.window.loading.activities = కార్యకలాపాలు లోడ్ అవుతున్నాయి…
 
@@ -2968,7 +2970,7 @@ journal.window.shared.app.visible.text.reference = రిఫరెన్స్:
 
 journal.window.shared.app.visible.text.server.reason = సర్వర్ కారణం:
 
-journal.window.shared.app.visible.text.still.working = ఇంకా పని జరుగుతోంది…
+journal.window.shared.app.visible.text.still.working = ఇంకా పని చేస్తోంది…
 
 journal.window.shared.app.visible.text.time = సమయం:
 
@@ -3078,7 +3080,7 @@ journal.window.shared.date.format.months.since.apr = ఏప్రి
 
 journal.window.shared.date.format.months.since.aug = ఆగ
 
-journal.window.shared.date.format.months.since.dec = డిసెం
+journal.window.shared.date.format.months.since.dec = డిసె
 
 journal.window.shared.date.format.months.since.feb = ఫిబ్ర
 
@@ -3092,11 +3094,11 @@ journal.window.shared.date.format.months.since.mar = మార్చి
 
 journal.window.shared.date.format.months.since.may = మే
 
-journal.window.shared.date.format.months.since.nov = నవం
+journal.window.shared.date.format.months.since.nov = నవ
 
 journal.window.shared.date.format.months.since.oct = అక్టో
 
-journal.window.shared.date.format.months.since.sep = సెప్టెం
+journal.window.shared.date.format.months.since.sep = సెప్టె
 
 journal.window.shared.date.format.source.browser = మీ బ్రౌజర్
 
@@ -3193,7 +3195,7 @@ journal.window.shared.day.grid.visible.text.less = తక్కువ
 
 journal.window.shared.day.grid.visible.text.more = మరిన్ని
 
-journal.window.shared.day.grid.visible.text.none = ఏమీ లేదు
+journal.window.shared.day.grid.visible.text.none = ఏదీ లేదు
 
 journal.window.shared.day.grid.visible.text.open = తెరవండి →
 
@@ -3938,7 +3940,7 @@ journal.window.year.months.label.nov = నవం
 
 journal.window.year.months.label.oct = అక్టో
 
-journal.window.year.months.label.sep = సెప్టెం
+journal.window.year.months.label.sep = సెప్టె
 
 journal.window.year.source.or.date.unit.label.activities = కార్యకలాపాలు
 

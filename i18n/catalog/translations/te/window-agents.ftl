@@ -448,7 +448,7 @@ journal.window.agents.lane.local.reaches.directly = ఈ పరికరంలో
 
 journal.window.agents.lane.local.reaches.directly.default = డిఫాల్ట్.
 
-journal.window.agents.lane.own = మీ సొంత
+journal.window.agents.lane.own = మీ స్వంతం
 
 journal.window.agents.link.label.agents = ← ఏజెంట్‌లు
 
@@ -526,11 +526,11 @@ journal.window.agents.memory.see.all.count = { $quantity ->
 
 journal.window.agents.message.changing.your.journal.s.address.disconnects = మీ జర్నల్ చిరునామా మార్చడం పాత చిరునామా వద్ద పెయిర్ అయిన ఏజెంట్‌లను డిస్‌కనెక్ట్ చేస్తుంది. కొనసాగించాలా?
 
-journal.window.agents.message.it.may.already.be.back.in = అది ఇప్పటికే మీ జర్నల్‌లో తిరిగి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.agents.message.it.may.already.be.back.in = ఇది ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.agents.message.it.may.already.be.erased.reload = అది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.agents.message.it.may.already.be.erased.reload = ఇది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.agents.message.it.may.already.be.in.the = అది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.agents.message.it.may.already.be.in.the = ఇది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
 journal.window.agents.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లో తిరిగి ఉంది.
 
@@ -717,7 +717,7 @@ journal.window.agents.section.heading.no.agents.connected.yet = ఇంకా ఏ
 
 journal.window.agents.section.heading.nothing.matches.these.filters = ఈ ఫిల్టర్‌లకు ఏమీ సరిపోలేదు.
 
-journal.window.agents.section.heading.pause = పాజ్
+journal.window.agents.section.heading.pause = పాజ్ చేయండి
 
 journal.window.agents.section.heading.paused = పాజ్ అయి ఉంది
 
@@ -898,7 +898,7 @@ journal.window.agents.title.delete.this.memory = ఈ జ్ఞాపకం త�
 
 journal.window.agents.title.erase.this.memory.now = ఈ జ్ఞాపకం ఇప్పుడు తుడిచివేయాలా?
 
-journal.window.agents.title.moved.to.the.trash = ట్రాష్‌కు తరలింది
+journal.window.agents.title.moved.to.the.trash = ట్రాష్‌కు తరలించబడింది
 
 journal.window.agents.title.your.journal.didn.t.answer = మీ జర్నల్ సమాధానం ఇవ్వలేదు
 
@@ -1020,7 +1020,7 @@ journal.window.agents.visible.text.it.stays.connected.with.its.memories = అద
 
 journal.window.agents.visible.text.it.works.once.and.expires.after = అది ఒకసారి పని చేస్తుంది, మరియు 10 నిమిషాల తర్వాత గడువు అవుతుంది.
 
-journal.window.agents.visible.text.loading.agents = ఏజెంట్‌లు లోడ్ అవుతోంది…
+journal.window.agents.visible.text.loading.agents = ఏజెంట్‌లు లోడ్ అవుతున్నాయి…
 
 journal.window.agents.visible.text.local.address = లోకల్ చిరునామా
 
@@ -1478,7 +1478,7 @@ journal.window.oauth.scope.whole.detail = మీ జర్నల్‌లో ఇ
 
 journal.window.oauth.wrong.code = ఆ కోడ్ సరిపోలేదు. దాన్ని మళ్ళీ ఎంటర్ చేయండి, లేదా ఏజెంట్‌ల యాప్‌లో కొత్తది తయారు చేసి, మీ ఏజెంట్ నుండి మళ్ళీ కనెక్ట్ చేయండి.
 
-journal.window.sol.link.capability.runtime.unavailable = జర్నల్ యాప్ ఈ లోకల్ రన్‌టైమ్‌ను ఇవ్వదు
+journal.window.sol.link.capability.runtime.unavailable = జర్నల్ యాప్ ఈ లోకల్ రన్‌టైమ్ ఇవ్వదు
 
 journal.window.stats.accessible.name.day.token.activity.rollup = 30 రోజుల టోకెన్ కార్యకలాప రోలప్
 
@@ -1566,7 +1566,7 @@ journal.window.stats.chart.categories.caption = { $day }: { $total } ({ $categor
 
 journal.window.stats.chart.category.value = { $name }: { $count }
 
-journal.window.stats.chart.day = { $month }{ $slot1 }{ $day }
+journal.window.stats.chart.day = { $day }{ $slot1 }{ $month }
 
 journal.window.stats.chart.empty = డేటా అందుబాటులో లేదు
 
@@ -1602,7 +1602,7 @@ journal.window.stats.facets.accessible = గత 30 రోజుల ఫాసె�
 
 journal.window.stats.facets.empty = ఇంకా ఫాసెట్ డేటా లేదు
 
-journal.window.stats.facets.unassigned = కేటాయించనిది
+journal.window.stats.facets.unassigned = కేటాయించబడలేదు
 
 journal.window.stats.freshness = అప్‌డేట్ అయింది{ $slot1 }{ $age }{ $slot2 }క్రితం
 
@@ -1660,13 +1660,13 @@ journal.window.stats.repair.thinking = ఆలోచన పాస్ కోసం
 
 journal.window.stats.response.invalid.day.detail = చెల్లని రోజు ఆకృతి
 
-journal.window.stats.response.invalid.day.error = ఆ రోజును వాడలేకపోయింది.
+journal.window.stats.response.invalid.day.error = ఆ రోజు ఉపయోగించలేకపోయింది.
 
-journal.window.stats.response.invalid.month.detail = చెల్లని నెల ఆకృతి, ఊహించినది { $slot1 }
+journal.window.stats.response.invalid.month.detail = చెల్లని నెల ఆకృతి, { $slot1 } అయి ఉండాలి
 
-journal.window.stats.response.invalid.month.error = ఆ నెలను వాడలేకపోయింది.
+journal.window.stats.response.invalid.month.error =ఆ నెలను ఉపయోగించలేకపోయింది.
 
-journal.window.stats.response.read.failed.error = ఆ ఫైల్ చదవలేకపోయింది.
+journal.window.stats.response.read.failed.error = ఆ ఫైల్‌ను చదవలేకపోయింది.
 
 journal.window.stats.response.read.stats.detail = గణాంకాల డేటా చదవలేకపోయింది
 
@@ -2056,7 +2056,7 @@ journal.window.thinking.copy.gpt.key = GPT కీ
 
 journal.window.thinking.copy.holding = నిలిచి ఉంది
 
-journal.window.thinking.copy.how.it.works = ఇది ఎలా పని చేస్తుంది
+journal.window.thinking.copy.how.it.works = ఎలా పని చేస్తుంది
 
 journal.window.thinking.copy.if.it.keeps.failing.start.over = అది విఫలమవుతూనే ఉంటే, ChatGPT‌తో మొదటి నుండి మళ్ళీ స్టార్ట్ చేయండి.
 
@@ -2130,7 +2130,7 @@ journal.window.thinking.copy.model.id = మోడల్ ఐడి
 
 journal.window.thinking.copy.needs.attention = శ్రద్ధ కావాలి
 
-journal.window.thinking.copy.no.content.is.retained.no.human = ఏ కంటెంట్ నిలుపుకోబడదు · ఏ మనిషీ దాన్ని సమీక్షించదు · శిక్షణకు ఏదీ వాడబడదు
+journal.window.thinking.copy.no.content.is.retained.no.human = ఏ కంటెంట్‌నూ ఉంచబడదు · ఏ మనిషీ దాన్ని సమీక్షించదు · శిక్షణకు ఏదీ వాడబడదు
 
 journal.window.thinking.copy.not.on.your.journal.s.computer = మీ జర్నల్ కంప్యూటర్‌లో కాదా?
 
@@ -2354,7 +2354,7 @@ journal.window.thinking.copy.your.journal.can.t.read.its = మీ జర్న�
 
 journal.window.thinking.copy.your.journal.is.here.choose.how = మీ జర్నల్ ఇక్కడ ఉంది. కింద ప్రాసెసింగ్ ఎలా నడుస్తుందో ఎంచుకోండి.
 
-journal.window.thinking.copy.your.journal.must.verify.the.service = ఏదైనా పంపడానికి ముందు మీ జర్నల్ సేవను ధృవీకరించాలి. ధృవీకరించలేకపోతే, అది పంపదు.
+journal.window.thinking.copy.your.journal.must.verify.the.service = మీ జర్నల్ ఏదైనా పంపే ముందు సేవను సరిచూడాలి. సరిచూడలేకపోతే, అది పంపదు.
 
 journal.window.thinking.copy.your.journal.needs.to.re.check = పంపడానికి ముందు మీ జర్నల్ సేవను మళ్ళీ సరిచూడాలి.
 
@@ -2502,11 +2502,11 @@ journal.window.thinking.label.thinking.events = ఆలోచన ఈవెంట�
 
 journal.window.thinking.label.tool.calls = టూల్ కాల్‌లు
 
-journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = ఏదైనా పంపడానికి ముందు మీ జర్నల్ సేవను ధృవీకరించాలి. ధృవీకరించలేకపోతే, అది పంపదు.
+journal.window.thinking.lane.attestation.your.journal.must.verify.the.service = మీ జర్నల్ ఏదైనా పంపే ముందు సేవను సరిచూడాలి. సరిచూడలేకపోతే, అది పంపదు.
 
 journal.window.thinking.lane.check.failed.keep.active = లోకల్ సెటప్‌ను సరిచూడలేకపోయింది. మీరు ఇంకా { $active_lane } వాడవచ్చు.
 
-journal.window.thinking.lane.claims.no.content.is.retained.no.human = ఏ కంటెంట్ నిలుపుకోబడదు · ఏ మనిషీ దాన్ని సమీక్షించదు · శిక్షణకు ఏదీ వాడబడదు
+journal.window.thinking.lane.claims.no.content.is.retained.no.human = ఏ కంటెంట్‌నూ ఉంచబడదు · ఏ మనిషీ దాన్ని సమీక్షించదు · శిక్షణకు ఏదీ వాడబడదు
 
 journal.window.thinking.lane.current.can.continue = మీరు ఇంకా { $active_lane } వాడవచ్చు.
 
@@ -2996,7 +2996,7 @@ journal.window.thinking.thinking.response.error.or.detail.model.must.be.a.non.em
 
 journal.window.thinking.thinking.response.error.or.detail.no.data.provided = డేటా ఇవ్వలేదు
 
-journal.window.thinking.thinking.response.error.or.detail.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని వాడలేకపోయింది.
+journal.window.thinking.thinking.response.error.or.detail.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని ఉపయోగించలేకపోయింది.
 
 journal.window.thinking.thinking.response.error.or.detail.operation.already.running = ఆపరేషన్ ఇప్పటికే నడుస్తోంది
 
@@ -3004,7 +3004,7 @@ journal.window.thinking.thinking.response.error.or.detail.runtime.retry.requires
 
 journal.window.thinking.thinking.response.error.or.detail.that.request.had.no.data.in = ఆ అభ్యర్థనలో డేటా లేదు.
 
-journal.window.thinking.thinking.response.error.or.detail.that.setting.couldn.t.be.saved = ఒక విలువ చెల్లదు కాబట్టి ఆ సెట్టింగ్‌ను సేవ్ చేయలేకపోయింది.
+journal.window.thinking.thinking.response.error.or.detail.that.setting.couldn.t.be.saved = ఒక విలువ చెల్లనిది కాబట్టి ఆ సెట్టింగ్‌ను సేవ్ చేయలేకపోయింది.
 
 journal.window.thinking.thinking.response.error.or.detail.that.url.needs.to.start.with = ఆ URL http:// లేదా https:// తో మొదలవ్వాలి, మరియు హోస్ట్ పేరు ఉండాలి.
 
@@ -3140,7 +3140,7 @@ journal.window.thinking.window.explanation.couldn.t.check.local.setup = లో�
 
 journal.window.thinking.window.explanation.couldn.t.check.local.setup.check = లోకల్ సెటప్ సరిచూడలేకపోయింది. కాసేపటి తర్వాత మళ్ళీ సరిచూడండి.
 
-journal.window.thinking.window.explanation.couldn.t.finish.that.request = ఆ అభ్యర్థన పూర్తి చేయలేకపోయింది.
+journal.window.thinking.window.explanation.couldn.t.finish.that.request = ఆ అభ్యర్థనను పూర్తి చేయలేకపోయింది.
 
 journal.window.thinking.window.explanation.couldn.t.get.local.thinking.ready = లోకల్ ఆలోచనను సిద్ధం చేయలేకపోయింది.
 

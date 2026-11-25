@@ -486,7 +486,7 @@ journal.cli.depict.admission.wait.incomplete = లాంచ్ { $io } వేచ
 
 journal.cli.depict.detection.unavailable = వస్తువు గుర్తించడం అందుబాటులో లేదు. `{ $command }` రన్ చేయండి, { $engine } అసెట్‌లను సరిచూడటానికి లేదా బాగుచేయడానికి.
 
-journal.cli.depict.detection.unavailable.windows = వస్తువు గుర్తించడం అందుబాటులో లేదు. మీ జర్నల్ బాగుచేయండి లేదా మళ్ళీ ఇన్‌స్టాల్ చేయండి.
+journal.cli.depict.detection.unavailable.windows =వస్తువు గుర్తించడం అందుబాటులో లేదు. మీ జర్నల్‌ను బాగుచేయండి లేదా మళ్ళీ ఇన్‌స్టాల్ చేయండి.
 
 journal.cli.depict.help = usage: { $syntax }
 
@@ -1287,7 +1287,7 @@ journal.cli.maintenance.list.status.divergent = విభిన్నం
 
 journal.cli.maintenance.list.status.missing = దొరకలేదు
 
-journal.cli.maintenance.list.status.nothere = n/a
+journal.cli.maintenance.list.status.nothere = వర్తించదు
 
 journal.cli.maintenance.list.status.synced = సింక్ అయింది
 

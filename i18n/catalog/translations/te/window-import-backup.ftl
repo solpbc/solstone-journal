@@ -114,41 +114,35 @@ journal.window.backup.age.check.skipped.week =
 
 journal.window.backup.age.elapsed.clock = { $recorded_at }
 
-journal.window.backup.age.elapsed.day =
-    { $quantity ->
-        [one] { $count } రోజు క్రితం
-       *[other] { $count } రోజుల క్రితం
-    }
+journal.window.backup.age.elapsed.day = { $quantity ->
+    [one] { $count } రోజు క్రితం
+   *[other] { $count } రోజుల క్రితం
+}
 
-journal.window.backup.age.elapsed.hour =
-    { $quantity ->
-        [one] { $count } గంట క్రితం
-       *[other] { $count } గంటల క్రితం
-    }
+journal.window.backup.age.elapsed.hour = { $quantity ->
+    [one] { $count } గంట క్రితం
+   *[other] { $count } గంటల క్రితం
+}
 
-journal.window.backup.age.elapsed.minute =
-    { $quantity ->
-        [one] { $count } నిమిషం క్రితం
-       *[other] { $count } నిమిషాల క్రితం
-    }
+journal.window.backup.age.elapsed.minute = { $quantity ->
+    [one] { $count } నిమిషం క్రితం
+   *[other] { $count } నిమిషాల క్రితం
+}
 
-journal.window.backup.age.elapsed.month =
-    { $quantity ->
-        [one] { $count } నెల క్రితం
-       *[other] { $count } నెలల క్రితం
-    }
+journal.window.backup.age.elapsed.month = { $quantity ->
+    [one] { $count } నెల క్రితం
+   *[other] { $count } నెలల క్రితం
+}
 
-journal.window.backup.age.elapsed.second =
-    { $quantity ->
-        [one] { $count } సెకను క్రితం
-       *[other] { $count } సెకన్ల క్రితం
-    }
+journal.window.backup.age.elapsed.second = { $quantity ->
+    [one] { $count } సెకను క్రితం
+   *[other] { $count } సెకన్ల క్రితం
+}
 
-journal.window.backup.age.elapsed.week =
-    { $quantity ->
-        [one] { $count } వారం క్రితం
-       *[other] { $count } వారాల క్రితం
-    }
+journal.window.backup.age.elapsed.week = { $quantity ->
+    [one] { $count } వారం క్రితం
+   *[other] { $count } వారాల క్రితం
+}
 
 journal.window.backup.capacity.gib = { $amount } { $unit }
 
@@ -178,7 +172,7 @@ journal.window.backup.copy.action.labels.cleanup.blocked = ఒక జర్న�
 
 journal.window.backup.copy.action.labels.cleanup.checking = బ్యాకప్ అందుబాటు సరిచూస్తోంది
 
-journal.window.backup.copy.action.labels.cleanup.contended = కాసేపటి తర్వాత మళ్ళీ సరిచూడండి.
+journal.window.backup.copy.action.labels.cleanup.contended = ఒక క్షణంలో మళ్ళీ సరిచూడండి.
 
 journal.window.backup.copy.action.labels.cleanup.waiting = బ్యాకప్ చర్యలు వేచి ఉన్నాయి
 
@@ -210,7 +204,7 @@ journal.window.backup.copy.action.labels.teardown = బ్యాకప్ ఆఫ
 
 journal.window.backup.copy.action.labels.try.again = మళ్ళీ ప్రయత్నించండి
 
-journal.window.backup.copy.action.labels.understand = అర్థమైంది
+journal.window.backup.copy.action.labels.understand = నాకు అర్థమైంది
 
 journal.window.backup.copy.action.labels.view.key = రికవరీ కీ చూడండి
 
@@ -282,7 +276,7 @@ journal.window.backup.copy.destination.modes.hosted.desc = { $slot1 } పరి�
 
 journal.window.backup.copy.destination.modes.hosted.note = { $slot1 } ఎప్పుడూ ఉంచేది, మీ పరికరం నుండి బయటకు వెళ్ళే ముందు అక్కడే ఎన్‌క్రిప్ట్ అయిన కాపీ మాత్రమే.
 
-journal.window.backup.copy.destination.modes.hosted.title = { $slot1 } నిర్వహిస్తుంది
+journal.window.backup.copy.destination.modes.hosted.title = { $slot1 } నడుపుతుంది
 
 journal.window.backup.copy.destination.object.lock.summary = బకెట్ సెటప్ గమనికలు
 
@@ -396,7 +390,7 @@ journal.window.backup.copy.management.status.labels.last.verification = చి�
 
 journal.window.backup.copy.management.status.labels.not.available = ఇంకా అందుబాటులో లేదు
 
-journal.window.backup.copy.management.status.labels.not.yet = ఇంకా లేదు
+journal.window.backup.copy.management.status.labels.not.yet = ఇంకా కాదు
 
 journal.window.backup.copy.management.status.labels.retention = నిలుపుదల
 
@@ -422,7 +416,7 @@ journal.window.backup.copy.offload.actions.prepare = కాపీలు సి�
 
 journal.window.backup.copy.offload.actions.restore.day = ఈ రోజు రీస్టోర్ చేయండి
 
-journal.window.backup.copy.offload.actions.review.originals = అసలు వాటిని సమీక్షించండి
+journal.window.backup.copy.offload.actions.review.originals = అసలు ప్రతులను సమీక్షించండి
 
 journal.window.backup.copy.offload.actions.save = పరిమితులు సేవ్ చేయండి
 
@@ -556,7 +550,7 @@ journal.window.backup.copy.offload.result.labels.partial = పాక్షిక
 
 journal.window.backup.copy.offload.result.labels.skipped = నడవలేదు
 
-journal.window.backup.copy.offload.result.labels.stalled = పూర్తి కాలేదు
+journal.window.backup.copy.offload.result.labels.stalled = పూర్తి చేయలేకపోయింది
 
 journal.window.backup.copy.offload.result.labels.unknown = ఫలితం అందుబాటులో లేదు
 
@@ -670,7 +664,7 @@ journal.window.backup.copy.phase.labels.done = పూర్తి
 
 journal.window.backup.copy.phase.labels.empty = ఇంకా సెటప్ కాలేదు
 
-journal.window.backup.copy.phase.labels.error = పూర్తి కాలేదు
+journal.window.backup.copy.phase.labels.error = పూర్తి చేయలేకపోయింది
 
 journal.window.backup.copy.phase.labels.loading = లోడ్ అవుతోంది…
 
@@ -798,7 +792,7 @@ journal.window.backup.response.backup.refusal.a.backup.can.t.start.because = మ
 
 journal.window.backup.response.backup.refusal.a.backup.couldn.t.be.set = అక్కడ బ్యాకప్ సెటప్ కాలేదు. ఏమీ సేవ్ కాలేదు.
 
-journal.window.backup.response.backup.refusal.a.required.field.is.missing = ఒక తప్పనిసరి ఫీల్డ్ లేదు.
+journal.window.backup.response.backup.refusal.a.required.field.is.missing = తప్పనిసరి ఫీల్డ్ లేదు.
 
 journal.window.backup.response.backup.refusal.backup.can.t.be.turned.on = మీ రికవరీ కీని నిర్ధారించే వరకు బ్యాకప్ ఆన్ కాలేదు.
 
@@ -846,7 +840,7 @@ journal.window.backup.response.backup.refusal.that.s.a.different.repository.conf
 
 journal.window.backup.response.backup.refusal.that.s.already.your.destination = అది ఇప్పటికే మీ గమ్యం.
 
-journal.window.backup.response.backup.refusal.that.setting.couldn.t.be.saved = ఒక విలువ చెల్లదు, కాబట్టి ఆ సెట్టింగ్ సేవ్ కాలేదు.
+journal.window.backup.response.backup.refusal.that.setting.couldn.t.be.saved = ఒక విలువ చెల్లనిది కాబట్టి ఆ సెట్టింగ్‌ను సేవ్ చేయలేకపోయింది.
 
 journal.window.backup.response.backup.refusal.the.restore.from.encrypted.backup.couldn = ఎన్‌క్రిప్ట్ చేసిన బ్యాకప్ నుండి రీస్టోర్ సిద్ధం కాలేదు.
 
@@ -1210,7 +1204,7 @@ journal.window.backup.verification.parts.checked =
 
 journal.window.backup.verification.parts.checked.all = ఈ వారం మీ బ్యాకప్ అంతా సరిచూయబడింది.
 
-journal.window.backup.visible.text.checking.backup.status = బ్యాకప్ స్థితి సరిచూస్తోంది…
+journal.window.backup.visible.text.checking.backup.status = బ్యాకప్ స్థితిని సరిచూస్తోంది…
 
 journal.window.backup.visible.text.couldn.t.load.backup.settings.reload = బ్యాకప్ సెట్టింగ్‌లు లోడ్ కాలేదు. మళ్ళీ ప్రయత్నించడానికి ఈ పేజీని మళ్ళీ లోడ్ చేయండి.
 
@@ -1222,7 +1216,7 @@ journal.window.backup.window.explanation.a.backup.waits.until.this.finishes = �
 
 journal.window.handoff.sme.already.enabled.detail = solstone.me ఇప్పటికే ఆన్‌లో ఉంది
 
-journal.window.handoff.sme.consent.link.prepare.failed.detail = solstone.me ఆన్ చేయడం స్టార్ట్ కాలేదు. మళ్ళీ ప్రయత్నించండి.
+journal.window.handoff.sme.consent.link.prepare.failed.detail = solstone.me ఆన్ చేయడం స్టార్ట్ చేయలేకపోయింది. మళ్ళీ ప్రయత్నించండి.
 
 journal.window.handoff.sme.outcome.guidance.expired = సుమారు పదిహేను నిమిషాల్లో అభ్యర్థన అనుమతించబడలేదు. మీరు సిద్ధంగా ఉన్నప్పుడు solstone.me మళ్ళీ ఆన్ చేయండి.
 
@@ -1410,7 +1404,7 @@ journal.window.import.body.status.upload.limit.mac = ఈ ఎక్స్‌ప�
 
 journal.window.import.body.status.upload.limit.other = ఈ ఎక్స్‌పోర్ట్ 4.3 { $slot1 } కంటే పెద్దది. ఈ పేజీ అప్‌లోడ్ చేసే గరిష్ఠం అది. బదులుగా, మీ జర్నల్ నడిచే కంప్యూటర్‌లో టెర్మినల్ నుండి ఇలా నడపండి: { $slot2 }
 
-journal.window.import.button.label.check.status = స్థితి సరిచూడండి
+journal.window.import.button.label.check.status = స్థితిని సరిచూడండి
 
 journal.window.import.button.label.choose.folder = ఫోల్డర్ ఎంచుకోండి
 
@@ -1434,7 +1428,7 @@ journal.window.import.column.heading.source = మూలం
 
 journal.window.import.column.heading.status = స్థితి
 
-journal.window.import.consent.import.removal.erasenow.erase.now = ఇప్పుడే తుడిచివేయండి
+journal.window.import.consent.import.removal.erasenow.erase.now = ఇప్పుడు తుడిచివేయండి
 
 journal.window.import.consent.import.removal.found.detected.entities.drop.it.too.and = గుర్తించిన ఎంటిటీలు దీన్ని కూడా వదులుతాయి, దాని నుండి వచ్చిన ఏ గొంతు నమూనాలు అయినా మీకు తెలిసిన గొంతుల నుండి వెళ్ళిపోతాయి. మీరు చూసుకుంటున్న ఎంటిటీలు ఉంటాయి, మీ జర్నల్ వాటి గురించి రాసింది దీన్ని ఇంకా ప్రస్తావించవచ్చు.
 
@@ -1454,9 +1448,9 @@ journal.window.import.consent.import.removal.ownmany.this.erases.each.import.s.o
 
 journal.window.import.consent.import.removal.ownmany.this.moves.each.import.s.own = ఇది ప్రతి ఇంపోర్ట్ సొంత సెగ్మెంట్‌లను, అది ఉంచిన ఏ అసలు ఫైల్ అయినా, మీ ఇంపోర్ట్ చరిత్రలో దాని వరుసను తరలిస్తుంది.
 
-journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి, రీస్టోర్ చేయలేరు.
+journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి వెళ్తుంది, మరియు రీస్టోర్ చేయడం కుదరదు.
 
-journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and.variant2 = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు దాన్ని రీస్టోర్ చేయవచ్చు.
+journal.window.import.consent.import.removal.reach.it.leaves.your.journal.now.and.variant2 = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు మీరు దాన్ని రీస్టోర్ చేయవచ్చు.
 
 journal.window.import.consent.import.removal.reachmany.they.leave.your.journal.now.and = అవి ఇప్పుడు మీ జర్నల్‌ను వదిలి, రీస్టోర్ చేయలేరు.
 
@@ -1480,7 +1474,7 @@ journal.window.import.consent.import.removal.staysbodymany.activities.summaries.
 
 journal.window.import.consent.import.removal.staysbodymany.activities.summaries.and.entities.made.from.variant2 = మీ జర్నల్‌లో మరెక్కడైనా వాటి నుండి తయారైన కార్యకలాపాలు, సారాంశాలు, ఎంటిటీలు అక్కడే ఉంటాయి, వాటిని ఇంకా ప్రస్తావించవచ్చు.
 
-journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = వాటి నుండి తయారైన కార్యకలాపాలు వాటిని ఇప్పుడు వదులుతాయి, వాటి రోజుల, వారాల రాతలు సెర్చ్ నుండి వెళ్ళిపోతాయి. మీ జర్నల్ మిగిలిన దాని నుండి, మీరు ఎంచుకున్న ఆలోచనతో, వాటిని మళ్ళీ రాస్తుంది.
+journal.window.import.consent.import.removal.staysmany.activities.made.from.them.drop.them = వాటి నుండి తయారైన కార్యకలాపాలు ఇప్పుడు వాటిని డ్రాప్ చేస్తాయి, మరియు వాటి రోజులు మరియు వారాల రాతలు సెర్చ్ నుండి వెళ్తాయి. మీ జర్నల్ తర్వాత మిగిలిన దాని నుండి, మీరు ఎంచుకున్న ఆలోచనతో, వాటిని మళ్ళీ రాస్తుంది.
 
 journal.window.import.consent.import.removal.title.delete.this.import = ఈ ఇంపోర్ట్‌ను తొలగించాలా?
 
@@ -1646,11 +1640,10 @@ journal.window.import.detail.duration.elapsed.short = ఒక నిమిషం 
 
 journal.window.import.detail.heading.timestamp = ఇంపోర్ట్: { $date } · { $clock_time }
 
-journal.window.import.detail.merge.body.days.hidden =
-    { $quantity ->
-        [one] ఆర్కైవ్‌లో శరీరం డేటా 1 రోజు దాచబడింది, కాబట్టి ఈ జర్నల్‌లో కూడా దాచబడింది.
-       *[other] ఆర్కైవ్‌లో శరీరం డేటా { $count } రోజులు దాచబడ్డాయి, కాబట్టి ఈ జర్నల్‌లో కూడా అవి దాచబడ్డాయి.
-    }
+journal.window.import.detail.merge.body.days.hidden = { $quantity ->
+    [one] ఆర్కైవ్‌లో 1 రోజు శరీర డేటా దాచబడింది, అందుకే ఈ జర్నల్‌లో కూడా అది దాచబడింది.
+   *[other] ఆర్కైవ్‌లో { $count } రోజుల శరీర డేటా దాచబడ్డాయి, అందుకే ఈ జర్నల్‌లో కూడా అవి దాచబడ్డాయి.
+}
 
 journal.window.import.detail.merge.clock.hours =
     { $quantity ->
@@ -1740,7 +1733,7 @@ journal.window.import.field.label.context = సందర్భం
 
 journal.window.import.field.label.date = తేదీ
 
-journal.window.import.field.label.keep.originals = అసలు వాటిని ఉంచండి
+journal.window.import.field.label.keep.originals =అసలు ప్రతులను ఉంచండి
 
 journal.window.import.field.label.manifest.filename = మానిఫెస్ట్ ఫైల్ పేరు
 
@@ -2032,13 +2025,13 @@ journal.window.import.import.delete.copy.hideday.a.day.you.hide.on.the = శర�
 
 journal.window.import.import.delete.copy.importing.this.wasn.t.moved.because.it = ఇది ఇంకా ఇంపోర్ట్ అవుతోంది, కాబట్టి తరలించబడలేదు. అది పూర్తయిన తర్వాత మళ్ళీ ప్రయత్నించండి.
 
-journal.window.import.import.delete.copy.message.it.may.already.be.back.in = అది ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.import.import.delete.copy.message.it.may.already.be.back.in = ఇది ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload = అది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.import.import.delete.copy.message.it.may.already.be.erased.reload = ఇది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.import.import.delete.copy.message.it.may.already.be.in.the = అది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.import.import.delete.copy.message.it.may.already.be.in.the = ఇది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.import.import.delete.copy.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లోకి తిరిగి వచ్చింది.
+journal.window.import.import.delete.copy.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లో తిరిగి ఉంది.
 
 journal.window.import.import.delete.copy.message.it.s.in.the.trash.you = అది ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
@@ -2104,7 +2097,7 @@ journal.window.import.import.source.names.quick.quick.import = త్వరి�
 
 journal.window.import.import.source.names.recording.meeting.audio = సమావేశ ఆడియో
 
-journal.window.import.import.source.names.text.text = టెక్స్ట్
+journal.window.import.import.source.names.text.text = వచనం
 
 journal.window.import.import.view.choose.the.time.zone.in.the = రికార్డింగ్ ఫైల్ పేర్లలోని టైమ్‌జోన్ ఎంచుకోండి, లేదా మానిఫెస్ట్ ఫైల్ పేరు ఇవ్వండి.
 
@@ -2192,7 +2185,7 @@ journal.window.import.ox.detail.discard.confirm = విస్మరించం
 
 journal.window.import.ox.detail.discard.title = ఈ వేచి ఉన్న కాపీని విస్మరించాలా?
 
-journal.window.import.ox.detail.expired.badge = గడువు అయిపోయింది
+journal.window.import.ox.detail.expired.badge = గడువు అయింది
 
 journal.window.import.ox.detail.expired.body = స్టార్ట్ కాకుండా ఒక గంట తర్వాత ఈ వేచి ఉన్న కాపీ తీసివేయబడింది.
 
@@ -2230,7 +2223,7 @@ journal.window.import.ox.discard.not.waiting = ఇంపోర్ట్ స్�
 
 journal.window.import.ox.history.review.link = సమీక్షించి నిర్ధారించండి
 
-journal.window.import.ox.status.ready.to.review = సమీక్షకు సిద్ధం
+journal.window.import.ox.status.ready.to.review = సమీక్షించడానికి సిద్ధంగా ఉంది
 
 journal.window.import.ox.tray.attention.badge = శ్రద్ధ కావాలి
 
@@ -2248,13 +2241,13 @@ journal.window.import.ox.tray.in.journal.stage = మీ జర్నల్‌ల
 
 journal.window.import.ox.tray.review.action = సమీక్షించి నిర్ధారించండి
 
-journal.window.import.ox.tray.review.detail = మీ జర్నల్‌లో సేవ్ అయింది. స్టార్ట్ చేయడానికి ప్రివ్యూ చూసి నిర్ధారించండి.
+journal.window.import.ox.tray.review.detail = మీ జర్నల్‌లో సేవ్ అయింది. ప్రారంభించడానికి ప్రివ్యూ చూసి నిర్ధారించండి.
 
 journal.window.import.ox.tray.review.heading = మీ సమీక్ష కోసం వేచి ఉంది
 
 journal.window.import.ox.tray.sending.device = మీ { $device } నుండి పంపుతోంది…
 
-journal.window.import.ox.tray.sending.generic = మీ జర్నల్‌కు పంపుతోంది…
+journal.window.import.ox.tray.sending.generic = మీ జర్నల్‌కు పంపిస్తోంది…
 
 journal.window.import.ox.tray.view.import = ఇంపోర్ట్ చూడండి
 
@@ -2320,11 +2313,10 @@ journal.window.import.preview.apple.nights.label =
        *[other] నిద్ర దశల నుండి కూర్చిన రాత్రులు
     }
 
-journal.window.import.preview.apple.readings =
-    { $quantity ->
-        [one] { $count } కొలత
-       *[other] { $count } కొలతలు
-    }
+journal.window.import.preview.apple.readings = { $quantity ->
+    [one] { $count } కొలత
+   *[other] { $count } కొలతలు
+}
 
 journal.window.import.preview.apple.readings.label =
     { $quantity ->
@@ -2682,7 +2674,7 @@ journal.window.import.removal.waiting.one.import =
 
 journal.window.import.response.apple.insufficient.space = ఈ ఇంపోర్ట్‌కు దాదాపు{ $slot1 }{ $need }{ $slot2 }ఖాళీ కావాలి, ఈ డిస్క్‌లో{ $slot3 }{ $free }{ $slot4 }ఖాళీ ఉంది, సిస్టమ్ చెప్పినట్టు. దాదాపు{ $slot5 }{ $difference } ఖాళీ చేసి, తర్వాత దాన్ని స్టార్ట్ చేయండి.
 
-journal.window.import.response.error.a.required.field.is.missing = ఒక తప్పనిసరి ఫీల్డ్ లేదు.
+journal.window.import.response.error.a.required.field.is.missing = తప్పనిసరి ఫీల్డ్ లేదు.
 
 journal.window.import.response.error.could.not.read.progress = ఇంపోర్ట్ ప్రోగ్రెస్ చదవలేకపోయింది
 
@@ -2968,9 +2960,9 @@ journal.window.import.stage.names.segmenting.preparing.segments = సెగ్�
 
 journal.window.import.stage.names.segments.merging.segments = సెగ్మెంట్‌లు జత చేస్తోంది…
 
-journal.window.import.stage.names.transcribing.transcribing.audio = ఆడియోను ట్రాన్స్క్రిప్ట్ చేస్తోంది…
+journal.window.import.stage.names.transcribing.transcribing.audio = ఆడియో ట్రాన్స్క్రిప్ట్ అవుతోంది…
 
-journal.window.import.stage.names.transcription.transcribing.audio = ఆడియోను ట్రాన్స్క్రిప్ట్ చేస్తోంది…
+journal.window.import.stage.names.transcription.transcribing.audio = ఆడియో ట్రాన్స్క్రిప్ట్ అవుతోంది…
 
 journal.window.import.stage.names.writing.writing.to.journal = జర్నల్‌కు రాస్తోంది…
 
@@ -3044,7 +3036,7 @@ journal.window.import.strings.body.partly.saved.partly.saved = పాక్ష�
 
 journal.window.import.strings.body.stopped.stopped = ఆగింది
 
-journal.window.import.strings.check.status.check.status = స్థితి సరిచూడండి
+journal.window.import.strings.check.status.check.status = స్థితిని సరిచూడండి
 
 journal.window.import.strings.checking.status.checking.status = స్థితి సరిచూస్తోంది…
 
@@ -3098,7 +3090,7 @@ journal.window.import.strings.file.size.file.size = ఫైల్ పరిమా
 
 journal.window.import.strings.files.created.files.created = ఫైళ్లు సృష్టించబడ్డాయి
 
-journal.window.import.strings.files.files = ఫైళ్లు
+journal.window.import.strings.files.files = ఫైల్‌లు
 
 journal.window.import.strings.has.gaps.contains.gaps = ఖాళీలు ఉన్నాయి
 
@@ -3138,7 +3130,7 @@ journal.window.import.strings.preview.import.preview.import = ఇంపోర్
 
 journal.window.import.strings.processing.facts.processing.facts = వాస్తవాలు ప్రాసెస్ చేస్తోంది
 
-journal.window.import.strings.processing.processing = ప్రాసెస్ చేస్తోంది…
+journal.window.import.strings.processing.processing =ప్రాసెస్ అవుతోంది…
 
 journal.window.import.strings.profile.link.review.profile.settings = ప్రొఫైల్ సెట్టింగ్‌లు సమీక్షించండి
 
@@ -3368,7 +3360,7 @@ journal.window.link.heading = ఈ మూలం తెరవలేం
 
 journal.window.link.invalid = మీ జర్నల్ ఈ లింక్‌ను అనుసరించదు.
 
-journal.window.link.open.journal = మీ జర్నల్ తెరవండి
+journal.window.link.open.journal = మీ జర్నల్‌ను తెరవండి
 
 journal.window.link.read.error = మీ జర్నల్ ఈ మూలం సరిచూడలేకపోయింది.
 
@@ -3936,7 +3928,7 @@ journal.window.stored.event.rrule.month.feb = ఫిబ్ర
 
 journal.window.stored.event.rrule.month.jan = జన
 
-journal.window.stored.event.rrule.month.jul = జులై
+journal.window.stored.event.rrule.month.jul = జూలై
 
 journal.window.stored.event.rrule.month.jun = జూన్
 
@@ -3948,7 +3940,7 @@ journal.window.stored.event.rrule.month.nov = నవం
 
 journal.window.stored.event.rrule.month.oct = అక్టో
 
-journal.window.stored.event.rrule.month.sep = సెప్టెం
+journal.window.stored.event.rrule.month.sep = సెప్టె
 
 journal.window.stored.event.rrule.monthly = నెలవారీ
 

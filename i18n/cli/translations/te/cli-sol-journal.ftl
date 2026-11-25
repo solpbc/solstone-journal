@@ -878,7 +878,7 @@ journal.cli.journal.facet.trash.io = మీ ట్రాష్‌ను మా�
 
 journal.cli.journal.facet.trash.missing = మీ జర్నల్‌లో అలాంటి { $item } లేదు
 
-journal.cli.journal.facet.trash.unfinished = అది ట్రాష్‌లో ఉంది, అక్కడ పెట్టడం పూర్తి అవుతుంది
+journal.cli.journal.facet.trash.unfinished = అది ట్రాష్‌లో ఉంది, ట్రాష్ దాన్ని పక్కన పెట్టడం పూర్తి చేస్తుంది
 
 journal.cli.journal.facet.trash.unknown = ఈ బిల్డ్ దాన్ని రీస్టోర్ చేయలేం
 
@@ -1428,7 +1428,7 @@ journal.cli.journal.notify.sent = నోటిఫికేషన్ పంపబ
 
 journal.cli.journal.notify.utf8 = స్థానిక journal notify సాధ్యం కాలేదు: మీ ఆర్గ్యుమెంట్‌లు చెల్లుబాటు అయ్యే UTF-8 కావు
 
-journal.cli.journal.process.admission = జర్నల్ ప్రాసెస్ అంగీకారం సాధ్యం కాలేదు: { $detail }
+journal.cli.journal.process.admission = జర్నల్ ప్రాసెస్ అంగీకారం విఫలమైంది: { $detail }
 
 journal.cli.journal.process.body = స్థానిక జర్నల్ ప్రాసెస్ లాంచ్ సాధ్యం కాలేదు: { $token } కు స్థానిక బాడీ లేదు
 
@@ -1574,7 +1574,7 @@ journal.cli.sol.call.transcripts.max.integer = లోపం: ఆప్షన్ 
 
 journal.cli.sol.call.transcripts.month.empty = { $month } కోసం డేటా లేదు.
 
-journal.cli.sol.call.transcripts.none = (ఏమీ లేదు)
+journal.cli.sol.call.transcripts.none = (ఏదీ లేదు)
 
 journal.cli.sol.call.transcripts.pending = { $count ->
     [one] { $indent }{ $start } - { $end } ({ $display_count } సెగ్మెంట్ { $starts } వద్ద వేచి ఉంది)
@@ -2455,7 +2455,7 @@ journal.cli.sol.help.tools = టూల్స్
 
 journal.cli.sol.import.already.started = ఇప్పటికే స్టార్ట్ అయింది{ $line_break }
 
-journal.cli.sol.import.argument.media = ఈ ఆర్గ్యుమెంట్‌లు అవసరం: media
+journal.cli.sol.import.argument.media = ఈ కింది ఆర్గ్యుమెంట్‌లు అవసరం: media
 
 journal.cli.sol.import.argument.unexpected = ఊహించని ఆర్గ్యుమెంట్(లు): { $arguments }
 

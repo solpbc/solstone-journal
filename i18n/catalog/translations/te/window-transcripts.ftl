@@ -58,7 +58,7 @@ journal.window.date.yesterday = నిన్న
 
 journal.window.health.accessible.label.active = యాక్టివ్
 
-journal.window.health.accessible.label.none = ఏమీ లేదు
+journal.window.health.accessible.label.none = ఏదీ లేదు
 
 journal.window.health.accessible.label.services.all.running = సేవలు: అన్నీ నడుస్తున్నాయి
 
@@ -144,9 +144,9 @@ journal.window.health.backlog.action.process.now = రోజుకు ప్ర�
 
 journal.window.health.backlog.action.redo.scratch = మొదటి నుండి మళ్ళీ చేయండి
 
-journal.window.health.backlog.bucket.description = కొన్ని రోజులు స్వయంగా మళ్ళీ ప్రయత్నిస్తాయి; ఇతర రోజులకు మీ సహాయం కావాలి. ప్రతి రోజు తన ప్రస్తుత స్థితిని చూపిస్తుంది.
+journal.window.health.backlog.bucket.description = కొన్ని రోజులు స్వయంచాలకంగా మళ్ళీ ప్రయత్నిస్తాయి; మరికొన్నికి మీ సహాయం కావాలి. ప్రతి రోజు తన ప్రస్తుత స్థితిని చూపుతుంది.
 
-journal.window.health.backlog.bucket.heading = సహాయం కావాల్సిన రోజులు
+journal.window.health.backlog.bucket.heading = సహాయం కావలసిన రోజులు
 
 journal.window.health.backlog.catching.up.day = { $day } ఇంకా తాజా అవుతోంది →
 
@@ -351,7 +351,7 @@ journal.window.health.glance.devices.count.many = { $quantity ->
        *[other] { $count } పరికరాలు మీ జర్నల్‌కు చేర్చుతున్నాయి.
     }
 
-journal.window.health.glance.devices.empty.no.devices.are.paired.yet = ఇంకా ఏ పరికరాలూ పెయిర్ కాలేదు.
+journal.window.health.glance.devices.empty.no.devices.are.paired.yet = ఇంకా పరికరాలు ఏవీ పెయిర్ కాలేదు.
 
 journal.window.health.glance.devices.failing = { $quantity ->
         [one] మీ జర్నల్ { $count } పరికరం నుండి అప్‌లోడ్‌లను అంగీకరించలేకపోయింది: { $devices }.
@@ -365,9 +365,9 @@ journal.window.health.glance.devices.pair.pair.a.device = పరికరాన�
 journal.window.health.glance.devices.see.see.your.devices.in.network = నెట్‌వర్క్‌లో మీ పరికరాలు చూడండి →
 
 journal.window.health.glance.devices.silent = { $quantity ->
-        [one] { $count } పరికరం ఇటీవల మీ జర్నల్‌కు చేర్చలేదు: { $devices }.
-       *[other] { $count } పరికరాలు ఇటీవల మీ జర్నల్‌కు చేర్చలేదు: { $devices }.
-    }
+    [one] { $count } పరికరం ఇటీవల మీ జర్నల్‌కు చేర్చలేదు: { $devices }.
+    *[other] { $count } పరికరాలు ఇటీవల మీ జర్నల్‌కు చేర్చలేదు: { $devices }.
+}
 
 journal.window.health.glance.glance.checking.checking.where.your.journal.stands = మీ జర్నల్ ఎలా ఉందో సరిచూస్తోంది…
 
@@ -381,7 +381,7 @@ journal.window.health.glance.glance.ok.the.journal.s.live.services.and = జర�
 
 journal.window.health.glance.glance.services.the.journal.s.services.couldn.t = జర్నల్ సేవలను చేరలేకపోయింది. మీ జర్నల్ నడుస్తోందో సరిచూడండి.
 
-journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right = వరుసలో ఉన్న పని స్థితి ఇప్పుడు అందుబాటులో లేదు.
+journal.window.health.glance.glance.work.queued.work.status.is.unavailable.right = వరుసలో పని స్థితి ఇప్పుడు అందుబాటులో లేదు.
 
 journal.window.health.glance.glance.work.some.queued.work.is.on.hold = కొంత వరుసలో ఉన్న పని భద్రతా సరిచూపు కోసం నిలిచి ఉంది.
 
@@ -482,9 +482,9 @@ journal.window.health.logs.labels.logs.service.filter.service = సేవ
 journal.window.health.logs.labels.logs.stream.filter.stream = ప్రవాహం
 
 journal.window.health.logs.lines.count = { $quantity ->
-        [one] 1 లైన్
-       *[other] { $count } లైన్‌లు
-    }
+    [one] 1 పంక్తి
+   *[other] { $count } పంక్తులు
+}
 
 journal.window.health.logs.log.file.not.found = లాగ్ ఫైల్ దొరకలేదు
 
@@ -756,13 +756,13 @@ journal.window.health.status.no.devices = పరికరాలు లేవు
 
 journal.window.health.status.no.recorded.days = నమోదు అయిన రోజులు లేవు
 
-journal.window.health.status.ok = ok
+journal.window.health.status.ok = సరే
 
 journal.window.health.status.organizing.segments = సెగ్మెంట్‌లను సర్దుతోంది…
 
 journal.window.health.status.power.saving = పవర్ సేవింగ్
 
-journal.window.health.status.processing = ప్రాసెసింగ్…
+journal.window.health.status.processing =ప్రాసెస్ అవుతోంది…
 
 journal.window.health.status.queued.processing = వరుసలో ప్రాసెసింగ్
 
@@ -792,7 +792,7 @@ journal.window.health.status.transcribing.audio = ఆడియో ట్రా�
 
 journal.window.health.status.unavailable = అందుబాటులో లేదు
 
-journal.window.health.status.under.a.minute = ఒక నిమిషం కంటే తక్కువ
+journal.window.health.status.under.a.minute = ఒక నిమిషం లోపు
 
 journal.window.health.status.unknown = తెలియదు
 
@@ -818,7 +818,7 @@ journal.window.health.storage.privacy.heading = జర్నల్ ఫోల్�
 
 journal.window.health.storage.privacy.private = మీ జర్నల్ ఫోల్డర్ ఈ కంప్యూటర్‌లోని మీ ఖాతాకు ప్రైవేట్‌గా ఉంది.
 
-journal.window.health.storage.privacy.save.failed = మీ ఎంపికను సేవ్ చేయలేకపోయింది. దయచేసి మళ్ళీ ప్రయత్నించండి.
+journal.window.health.storage.privacy.save.failed = మీ ఎంపికను సేవ్ చేయడం సాధ్యం కాలేదు. దయచేసి మళ్ళీ ప్రయత్నించండి.
 
 journal.window.health.storage.privacy.unavailable = మీ జర్నల్ ఫోల్డర్ గోప్యతను సరిచూడలేకపోయింది.
 
@@ -924,19 +924,19 @@ journal.window.health.visible.text.no.recent.errors.variant2 = ఇటీవల�
 
 journal.window.health.visible.text.none.since.this.journal.started = ఈ జర్నల్ స్టార్ట్ అయినప్పటి నుండి ఏమీ లేదు.
 
-journal.window.health.visible.text.ok = ok
+journal.window.health.visible.text.ok = సరే
 
 journal.window.health.visible.text.older.work.is.allowed.to.use = పాత పని మీ ఎంచుకున్న మోడల్‌ను వాడటానికి అనుమతించబడింది, మీ ప్రొవైడర్ నుండి ఛార్జీలు చేరవచ్చు. ఈ రోజు పని ముందు.
 
 journal.window.health.visible.text.on.the.computer.running.your.journal = మీ జర్నల్ నడుస్తున్న కంప్యూటర్‌లో:
 
-journal.window.health.visible.text.processing.details = ప్రాసెసింగ్ వివరాలు
+journal.window.health.visible.text.processing.details = ప్రాసెస్ వివరాలు
 
 journal.window.health.visible.text.processing.status.unavailable = ప్రాసెసింగ్ స్థితి అందుబాటులో లేదు.
 
 journal.window.health.visible.text.programs.that.reach.your.journal.without = బ్రౌజర్ లేకుండా మీ జర్నల్‌తో కనెక్ట్ అయ్యే ప్రోగ్రామ్‌లు, మీ జర్నల్ స్టార్ట్ అయినప్పటి నుండి. ఈ జాబితా ఈ కంప్యూటర్‌లో ఉంటుంది.
 
-journal.window.health.visible.text.queued.work.status.is.unavailable = వరుసలో ఉన్న పని స్థితి అందుబాటులో లేదు.
+journal.window.health.visible.text.queued.work.status.is.unavailable = వరుసలో పని స్థితి అందుబాటులో లేదు.
 
 journal.window.health.visible.text.queues = వరుసలు
 
@@ -1024,7 +1024,7 @@ journal.window.health.visible.text.what.s.going.into.your.journal = మీ జ�
 
 journal.window.health.visible.text.your.choice.could.not.be.saved = మీ ఎంపికను సేవ్ చేయలేకపోయింది. మళ్ళీ ప్రయత్నించండి.
 
-journal.window.health.visible.text.your.choice.could.not.be.saved.variant2 = మీ ఎంపికను సేవ్ చేయలేకపోయింది. దయచేసి మళ్ళీ ప్రయత్నించండి.
+journal.window.health.visible.text.your.choice.could.not.be.saved.variant2 = మీ ఎంపికను సేవ్ చేయడం సాధ్యం కాలేదు. దయచేసి మళ్ళీ ప్రయత్నించండి.
 
 journal.window.health.visible.text.your.devices = మీ పరికరాలు
 
@@ -1642,7 +1642,7 @@ journal.window.speakers.copy.owner.teach.start.label = నేర్పడం స
 
 journal.window.speakers.copy.owner.teach.title = మీ గొంతు నేర్పండి
 
-journal.window.speakers.copy.owner.undo.cancel.label = ఉంచుకోండి
+journal.window.speakers.copy.owner.undo.cancel.label = దీన్ని ఉంచండి
 
 journal.window.speakers.copy.owner.undo.confirm.body = గత సంభాషణలు పేరు లేని గొంతులకు తిరిగి వెళ్తాయి. మీ జర్నల్ మీ గొంతు కోసం మళ్ళీ చూస్తుంది, కానీ ఈ గొంతును సూచించదు. మీరే పెట్టిన లేబుల్‌లు అలాగే ఉంటాయి, మీరు పేరు పెట్టిన వ్యక్తులు అలాగే ఉంటారు. ఈ రోజు, గత 7 రోజుల కార్యకలాపాల వ్యక్తులు, కథ సరిపోయేలా మళ్ళీ రాయబడతాయి, పాతవి రాసినట్లే ఉంటాయి.
 
@@ -1794,7 +1794,7 @@ journal.window.speakers.error.task.not.found = ఆ మాట్లాడిన �
 
 journal.window.speakers.error.that.day.couldn.t.be.used = ఆ రోజు ఉపయోగించలేకపోయింది.
 
-journal.window.speakers.error.that.month.couldn.t.be.used = ఆ నెల ఉపయోగించలేకపోయింది.
+journal.window.speakers.error.that.month.couldn.t.be.used =ఆ నెలను ఉపయోగించలేకపోయింది.
 
 journal.window.speakers.error.that.request.couldn.t.be.used = ఆ అభ్యర్థన ఉపయోగించలేకపోయింది.
 
@@ -1842,7 +1842,7 @@ journal.window.speakers.known.count.sample.other = { $count }{ $slot1 }నమూ
 
 journal.window.speakers.known.count.segment.one = { $count }{ $slot1 }సెగ్మెంట్
 
-journal.window.speakers.known.count.segment.other = { $count }{ $slot1 }సెగ్మెంట్‌లు
+journal.window.speakers.known.count.segment.other = { $count }{ $slot1 } సెగ్మెంట్‌లు
 
 journal.window.speakers.known.placeholder.count = { $count_quantity ->
         [one] ప్లేస్‌హోల్డర్ పేరు ఇంకా వాడుతున్న గొంతులు ({ $count })
@@ -2082,9 +2082,9 @@ journal.window.speakers.segment.meeting.matching.prompt = { $count_quantity ->
     }
 
 journal.window.speakers.segment.review.badge = { $quantity ->
-        [one] { $count } సమీక్షించడానికి
-       *[other] { $count } సమీక్షించడానికి
-    }
+    [one] సమీక్షించడానికి { $count }
+    *[other] సమీక్షించడానికి { $count }
+}
 
 journal.window.speakers.segment.speaker.count = { $count_quantity ->
         [one] { $count } మాట్లాడిన వారు
@@ -2539,19 +2539,19 @@ journal.window.transcripts.consent.trash.copy.erase.if.it.s.the.last.segment = �
 
 journal.window.transcripts.consent.trash.copy.erase.if.these.include.the.last.segments = వీటిలో ఒక ఇంపోర్ట్ నుండి చివరి సెగ్మెంట్‌లు ఉంటే, ఇంపోర్ట్, అది ఉంచిన ఏ ఫైల్ అయినా, ట్రాష్‌లో ఉన్న దాని సెగ్మెంట్‌లు ఏవైనా వాటితో కలిసి తుడిచివేయబడతాయి.
 
-journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and = గుర్తించిన ఎంటిటీలు వాటిని కూడా డ్రాప్ చేస్తాయి, మరియు వాటి నుండి గొంతు నమూనాలు ఏవైనా మీ తెలిసిన గొంతుల నుండి వెళ్తాయి. మీరు చూసుకుంటున్న ఎంటిటీలు తుడిచివేయబడవు, మరియు వాటి గురించి మీ జర్నల్ రాసింది ఇంకా వాటిని ప్రస్తావించవచ్చు.
+journal.window.transcripts.consent.trash.copy.erasefound.detected.entities.drop.them.too.and = గుర్తించిన ఎంటిటీలు వాటిని కూడా వదులుతాయి, వాటి నుండి వచ్చిన ఏ గొంతు నమూనాలు అయినా మీకు తెలిసిన గొంతుల నుండి వెళ్ళిపోతాయి. మీరు చూసుకుంటున్న ఎంటిటీలు తుడిచివేయబడవు, మీ జర్నల్ వాటి గురించి రాసింది వాటిని ఇంకా ప్రస్తావించవచ్చు.
 
 journal.window.transcripts.consent.trash.copy.eraselead.this.erases.each.segment.s.own = ఇది ప్రతి సెగ్మెంట్ సొంతదాన్ని తుడిచివేస్తుంది:
 
 journal.window.transcripts.consent.trash.copy.erasenow.erase.now = ఇప్పుడు తుడిచివేయండి
 
-journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and = అవి ఇప్పుడు మీ జర్నల్ నుండి వెళ్తాయి, మరియు రీస్టోర్ చేయలేరు.
+journal.window.transcripts.consent.trash.copy.erasereach.they.leave.your.journal.now.and = అవి ఇప్పుడు మీ జర్నల్‌ను వదిలి, రీస్టోర్ చేయలేరు.
 
 journal.window.transcripts.consent.trash.copy.erasestays.activities.made.from.them.drop.them = వాటి నుండి తయారైన కార్యకలాపాలు ఇప్పుడు వాటిని డ్రాప్ చేస్తాయి, మరియు వాటి రోజులు మరియు వారాల రాతలు సెర్చ్ నుండి వెళ్తాయి. మీ జర్నల్ తర్వాత మిగిలిన దాని నుండి, మీరు ఎంచుకున్న ఆలోచనతో, వాటిని మళ్ళీ రాస్తుంది.
 
-journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and = గుర్తించిన ఎంటిటీలు దాన్ని కూడా డ్రాప్ చేస్తాయి, మరియు దాని నుండి గొంతు నమూనాలు ఏవైనా మీ తెలిసిన గొంతుల నుండి వెళ్తాయి. మీరు చూసుకుంటున్న ఎంటిటీలు ఉంటాయి, మరియు వాటి గురించి మీ జర్నల్ రాసింది ఇంకా దాన్ని ప్రస్తావించవచ్చు.
+journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and = గుర్తించిన ఎంటిటీలు దీన్ని కూడా వదులుతాయి, దాని నుండి వచ్చిన ఏ గొంతు నమూనాలు అయినా మీకు తెలిసిన గొంతుల నుండి వెళ్ళిపోతాయి. మీరు చూసుకుంటున్న ఎంటిటీలు ఉంటాయి, మీ జర్నల్ వాటి గురించి రాసింది దీన్ని ఇంకా ప్రస్తావించవచ్చు.
 
-journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2 = గుర్తించిన ఎంటిటీలు దాన్ని కూడా డ్రాప్ చేస్తాయి, మరియు దాని నుండి గొంతు నమూనాలు ఏవైనా మీ తెలిసిన గొంతుల నుండి వెళ్తాయి. మీరు చూసుకుంటున్న ఎంటిటీలు తుడిచివేయబడవు, మరియు వాటి గురించి మీ జర్నల్ రాసింది ఇంకా దాన్ని ప్రస్తావించవచ్చు.
+journal.window.transcripts.consent.trash.copy.found.detected.entities.drop.it.too.and.variant2 = గుర్తించిన ఎంటిటీలు దీన్ని కూడా వదులుతాయి, దాని నుండి వచ్చిన ఏ గొంతు నమూనాలు అయినా మీకు తెలిసిన గొంతుల నుండి వెళ్ళిపోతాయి. మీరు చూసుకుంటున్న ఎంటిటీలు తుడిచివేయబడవు, మీ జర్నల్ వాటి గురించి రాసింది దీన్ని ఇంకా ప్రస్తావించవచ్చు.
 
 journal.window.transcripts.consent.trash.copy.lead.this.erases.the.segment.s.own = ఇది సెగ్మెంట్ సొంతదాన్ని తుడిచివేస్తుంది:
 
@@ -2571,11 +2571,11 @@ journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment = �
 
 journal.window.transcripts.consent.trash.copy.move.if.these.include.the.last.segments = వీటిలో ఒక ఇంపోర్ట్ నుండి చివరి సెగ్మెంట్‌లు ఉంటే, ఇంపోర్ట్ మరియు అది ఉంచిన ఏ ఫైల్ అయినా వాటితో కలిసి ట్రాష్‌కు వెళ్తాయి.
 
-journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and = గుర్తించిన ఎంటిటీలు వాటిని కూడా డ్రాప్ చేస్తాయి, మరియు వాటి నుండి గొంతు నమూనాలు ఏవైనా మీ తెలిసిన గొంతుల నుండి వెళ్తాయి. మీరు చూసుకుంటున్న ఎంటిటీలు ఉంటాయి, మరియు వాటి గురించి మీ జర్నల్ రాసింది ఇంకా వాటిని ప్రస్తావించవచ్చు.
+journal.window.transcripts.consent.trash.copy.movefound.detected.entities.drop.them.too.and = గుర్తించిన ఎంటిటీలు వాటిని కూడా వదులుతాయి, వాటి నుండి వచ్చిన ఏ గొంతు నమూనాలు అయినా మీకు తెలిసిన గొంతుల నుండి వెళ్ళిపోతాయి. మీరు చూసుకుంటున్న ఎంటిటీలు ఉంటాయి, మీ జర్నల్ వాటి గురించి రాసింది వాటిని ఇంకా ప్రస్తావించవచ్చు.
 
 journal.window.transcripts.consent.trash.copy.movelead.this.moves.each.segment.s.own = ఇది ప్రతి సెగ్మెంట్ సొంతదాన్ని తరలిస్తుంది:
 
-journal.window.transcripts.consent.trash.copy.movereach.they.leave.your.journal.now.and = అవి ఇప్పుడు మీ జర్నల్ నుండి వెళ్తాయి, ట్రాష్‌లో వేచి ఉంటాయి, తర్వాత అవి తుడిచివేయబడతాయి. అప్పటి వరకు ప్రతిదాన్ని రీస్టోర్ చేయవచ్చు.
+journal.window.transcripts.consent.trash.copy.movereach.they.leave.your.journal.now.and = అవి ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటాయి, తర్వాత తుడిచివేయబడతాయి. అప్పటి వరకు ప్రతిదాన్ని రీస్టోర్ చేయవచ్చు.
 
 journal.window.transcripts.consent.trash.copy.movestays.activities.made.from.them.drop.them = వాటి నుండి తయారైన కార్యకలాపాలు ఇప్పుడు వాటిని డ్రాప్ చేస్తాయి, మరియు వాటి రోజులు మరియు వారాల రాతలు సెర్చ్ నుండి వెళ్తాయి. మీ జర్నల్ తర్వాత మిగిలిన దాని నుండి, మీరు ఎంచుకున్న ఆలోచనతో, వాటిని మళ్ళీ రాస్తుంది.
 
@@ -2611,9 +2611,9 @@ journal.window.transcripts.consent.trash.copy.openimport.open.the.import = ఇ�
 
 journal.window.transcripts.consent.trash.copy.photo.photo = ఫోటో
 
-journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్తుంది, మరియు రీస్టోర్ చేయలేరు.
+journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి వెళ్తుంది, మరియు రీస్టోర్ చేయడం కుదరదు.
 
-journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and.variant2 = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్తుంది, ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత అది తుడిచివేయబడుతుంది. అప్పటి వరకు రీస్టోర్ చేయవచ్చు.
+journal.window.transcripts.consent.trash.copy.reach.it.leaves.your.journal.now.and.variant2 = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు మీరు దాన్ని రీస్టోర్ చేయవచ్చు.
 
 journal.window.transcripts.consent.trash.copy.screen.screen.frames = స్క్రీన్ ఫ్రేమ్‌లు
 
@@ -3023,7 +3023,7 @@ journal.window.transcripts.response.detail.modality.must.be.audio.screen.or = �
 
 journal.window.transcripts.response.detail.raw.media.is.no.longer.available = ముడి మీడియా ఇక అందుబాటులో లేదు
 
-journal.window.transcripts.response.detail.saying.who.said.a.line.needs = ఒక లైన్ ఎవరు చెప్పారో చెప్పడానికి మీరు కావాలి
+journal.window.transcripts.response.detail.saying.who.said.a.line.needs = ఒక పంక్తిని ఎవరు అన్నారో చెప్పడానికి మీరు కావాలి
 
 journal.window.transcripts.response.detail.segment.directory.not.found = సెగ్మెంట్ డైరెక్టరీ దొరకలేదు
 
@@ -3063,13 +3063,13 @@ journal.window.transcripts.response.error.that.action.isn.t.available.in = ఆ �
 
 journal.window.transcripts.response.error.that.day.couldn.t.be.used = ఆ రోజు ఉపయోగించలేకపోయింది.
 
-journal.window.transcripts.response.error.that.delete.couldn.t.be.read = ఆ తొలగింపు చదవలేకపోయింది, అందుకే ఏదీ తొలగించబడలేదు.
+journal.window.transcripts.response.error.that.delete.couldn.t.be.read = ఆ తొలగింపు చదవలేకపోయింది, కాబట్టి ఏమీ తొలగలేదు.
 
 journal.window.transcripts.response.error.that.file.couldn.t.be.read = ఆ ఫైల్‌ను చదవలేకపోయింది.
 
 journal.window.transcripts.response.error.that.file.isn.t.available = ఆ ఫైల్ అందుబాటులో లేదు.
 
-journal.window.transcripts.response.error.that.month.couldn.t.be.used = ఆ నెల ఉపయోగించలేకపోయింది.
+journal.window.transcripts.response.error.that.month.couldn.t.be.used =ఆ నెలను ఉపయోగించలేకపోయింది.
 
 journal.window.transcripts.response.error.that.path.couldn.t.be.used = ఆ పాత్ ఉపయోగించలేకపోయింది.
 
@@ -3085,9 +3085,9 @@ journal.window.transcripts.response.error.the.end.has.to.be.after = ముగి
 
 journal.window.transcripts.response.error.who.said.that.line.couldn.t = ఆ లైన్ ఎవరు చెప్పారో సేవ్ చేయలేకపోయింది.
 
-journal.window.transcripts.response.error.your.journal.couldn.t.finish.that = మీ జర్నల్ ఆ తొలగింపు పూర్తి చేయలేకపోయింది. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.response.error.your.journal.couldn.t.finish.that = మీ జర్నల్ ఆ తొలగింపు పూర్తి చేయలేకపోయింది. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.transcripts.response.error.your.journal.couldn.t.move.that = మీ జర్నల్ దాన్ని ట్రాష్‌కు తరలించలేకపోయింది, కాబట్టి ఏదీ తొలగించబడలేదు.
+journal.window.transcripts.response.error.your.journal.couldn.t.move.that = మీ జర్నల్ దాన్ని ట్రాష్‌కు తరలించలేకపోయింది, కాబట్టి ఏమీ తొలగించలేదు.
 
 journal.window.transcripts.response.error.your.journal.couldn.t.move.that.variant2 = మీ జర్నల్ దాన్ని ట్రాష్‌కు తరలించలేకపోయింది.
 
@@ -3229,9 +3229,9 @@ journal.window.transcripts.speaker.copy.line.only.body = మీ సమాధా�
 
 journal.window.transcripts.speaker.copy.line.only.link = మాట్లాడిన వారు
 
-journal.window.transcripts.speaker.copy.line.owner = మీ జర్నల్‌కు ఏ వ్యక్తి మీరో ఇంకా తెలియదు, కాబట్టి లైన్‌లను మీవిగా గుర్తు పెట్టలేదు.
+journal.window.transcripts.speaker.copy.line.owner = మీ జర్నల్‌కు మీరు ఏ వ్యక్తో ఇంకా తెలియదు, అందుకే పంక్తులను మీవిగా గుర్తు పెట్టలేదు.
 
-journal.window.transcripts.speaker.copy.line.person = ఆ వ్యక్తిని ఎంచుకోలేరు. ఇంకొకరిని ఎంచుకోండి, లేదా మీకు తెలియని వారిని.
+journal.window.transcripts.speaker.copy.line.person = ఆ వ్యక్తిని ఎంచుకోలేం. వేరొకరిని ఎంచుకోండి, లేదా మీకు తెలియని వ్యక్తిని ఎంచుకోండి.
 
 journal.window.transcripts.speaker.copy.line.refused = ఆ సమాధానం సేవ్ చేయలేకపోయింది
 
@@ -3267,7 +3267,7 @@ journal.window.transcripts.speaker.copy.picker.search.placeholder = వ్యక
 
 journal.window.transcripts.speaker.copy.picker.title = మాట్లాడిన వారిని ఎంచుకోండి
 
-journal.window.transcripts.speaker.copy.picker.unknown = నాకు తెలియని వారు
+journal.window.transcripts.speaker.copy.picker.unknown =నాకు తెలియని వ్యక్తి
 
 journal.window.transcripts.speaker.copy.propagation.dismiss = వదిలివేయండి
 
@@ -3383,9 +3383,9 @@ journal.window.transcripts.timeline.day.range = రోజు టైమ్‌ల�
 journal.window.transcripts.timeline.detail.range = వివరం టైమ్‌లైన్ ({ $start_time }–{ $end_time })
 
 journal.window.transcripts.timeline.duration.minute = { $quantity ->
-        [one] { $minutes } ని
-       *[other] { $minutes } ని
-    }
+    [one] { $minutes } ని
+    *[other] { $minutes } ని
+}
 
 journal.window.transcripts.timeline.midnight = అర్ధరాత్రి
 
@@ -3407,7 +3407,7 @@ journal.window.transcripts.tooltip.previous.frame.left.arrow = మునుప�
 
 journal.window.transcripts.trash.copy.back.back = వెనుకకు
 
-journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = ఇది ఇప్పటికే తరలించబడుతోంది లేదా తుడిచివేయబడుతోంది. ఒక నిమిషంలో సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.busy.this.is.already.being.moved.or = ఇది ఇప్పటికే తరలించబడుతోంది, లేదా తుడిచివేయబడుతోంది. సరిచూడటానికి ఒక నిమిషం తర్వాత మళ్ళీ లోడ్ చేయండి.
 
 journal.window.transcripts.trash.copy.cancel.cancel = రద్దు చేయండి
 
@@ -3415,17 +3415,17 @@ journal.window.transcripts.trash.copy.delete.delete = తొలగించం�
 
 journal.window.transcripts.trash.copy.done.done = పూర్తి
 
-journal.window.transcripts.trash.copy.eraseimporting.this.wasn.t.erased.because.it = ఇది ఇంకా ఇంపోర్ట్ అవుతోంది కాబట్టి తుడిచివేయబడలేదు. పూర్తయిన తర్వాత మళ్ళీ ప్రయత్నించండి.
+journal.window.transcripts.trash.copy.eraseimporting.this.wasn.t.erased.because.it = ఇది ఇంకా ఇంపోర్ట్ అవుతోంది, కాబట్టి తుడిచివేయబడలేదు. అది పూర్తయిన తర్వాత మళ్ళీ ప్రయత్నించండి.
 
 journal.window.transcripts.trash.copy.eraseother.this.wasn.t.erased.try.again = ఇది తుడిచివేయబడలేదు. మళ్ళీ ప్రయత్నించండి.
 
-journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it = ఇది ఇంకా ఇంపోర్ట్ అవుతోంది కాబట్టి తరలించబడలేదు. పూర్తయిన తర్వాత మళ్ళీ ప్రయత్నించండి.
+journal.window.transcripts.trash.copy.importing.this.wasn.t.moved.because.it = ఇది ఇంకా ఇంపోర్ట్ అవుతోంది, కాబట్టి తరలించబడలేదు. అది పూర్తయిన తర్వాత మళ్ళీ ప్రయత్నించండి.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = అది ఇప్పటికే మీ జర్నల్‌లో తిరిగి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.message.it.may.already.be.back.in = ఇది ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = అది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.message.it.may.already.be.erased.reload = ఇది ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.transcripts.trash.copy.message.it.may.already.be.in.the = అది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.message.it.may.already.be.in.the = ఇది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
 journal.window.transcripts.trash.copy.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లో తిరిగి ఉంది.
 
@@ -3435,13 +3435,13 @@ journal.window.transcripts.trash.copy.message.it.s.still.in.the.trash = అద�
 
 journal.window.transcripts.trash.copy.message.it.s.still.in.your.journal = అది ఇంకా మీ జర్నల్‌లో ఉంది.
 
-journal.window.transcripts.trash.copy.message.they.may.already.be.back.in = అవి ఇప్పటికే మీ జర్నల్‌లో తిరిగి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.message.they.may.already.be.back.in = అవి ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload = అవి ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.message.they.may.already.be.erased.reload = అవి ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.transcripts.trash.copy.message.they.may.already.be.in.the = అవి ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.transcripts.trash.copy.message.they.may.already.be.in.the = అవి ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal = అవి మీ జర్నల్‌లో తిరిగి ఉన్నాయి.
+journal.window.transcripts.trash.copy.message.they.re.back.in.your.journal = అవి మీ జర్నల్‌లోకి తిరిగి వచ్చాయి.
 
 journal.window.transcripts.trash.copy.message.they.re.still.in.the.trash = అవి ఇంకా ట్రాష్‌లో ఉన్నాయి. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
@@ -3468,9 +3468,9 @@ journal.window.transcripts.trash.copy.title.moved.to.the.trash = ట్రాష
 journal.window.transcripts.trash.copy.title.your.journal.didn.t.answer = మీ జర్నల్ సమాధానం ఇవ్వలేదు
 
 journal.window.transcripts.trash.receipt.erase.none.help = { $remaining_quantity ->
-        [one] దాన్ని కింద లేదా ట్రాష్‌లో వెతకండి.
-       *[other] వాటిని కింద లేదా ట్రాష్‌లో వెతకండి.
-    }
+    [one] కింద లేదా ట్రాష్‌లో దాన్ని వెతకండి.
+   *[other] కింద లేదా ట్రాష్‌లో వాటిని వెతకండి.
+}
 
 journal.window.transcripts.trash.receipt.erase.partial.help = { $remaining_quantity ->
         [one] మిగతాది తుడిచివేయబడలేదు. దాన్ని కింద లేదా ట్రాష్‌లో వెతకండి.
@@ -3478,14 +3478,14 @@ journal.window.transcripts.trash.receipt.erase.partial.help = { $remaining_quant
     }
 
 journal.window.transcripts.trash.receipt.keep.remaining = { $remaining_quantity ->
-        [one] { $remaining } ఇంకా మీ జర్నల్‌లో ఉంది, కింద గుర్తు పెట్టబడింది.
-       *[other] { $remaining } ఇంకా మీ జర్నల్‌లో ఉన్నాయి, కింద గుర్తు పెట్టబడ్డాయి.
-    }
+    [one] { $remaining } ఇంకా మీ జర్నల్‌లో ఉంది, కింద గుర్తు ఉంది.
+   *[other] { $remaining } ఇంకా మీ జర్నల్‌లో ఉన్నాయి, కింద గుర్తు ఉంది.
+}
 
 journal.window.transcripts.trash.receipt.marked.remaining = { $remaining_quantity ->
-        [one] { $remaining } తరలించలేకపోయింది, ఇంకా మీ జర్నల్‌లో ఉంది, కింద గుర్తు పెట్టబడింది.
-       *[other] { $remaining } తరలించలేకపోయాయి, ఇంకా మీ జర్నల్‌లో ఉన్నాయి, కింద గుర్తు పెట్టబడ్డాయి.
-    }
+    [one] { $remaining } తరలించలేకపోయింది, ఇంకా మీ జర్నల్‌లో ఉంది, కింద గుర్తు ఉంది.
+   *[other] { $remaining } తరలించలేకపోయాయి, ఇంకా మీ జర్నల్‌లో ఉన్నాయి, కింద గుర్తు ఉంది.
+}
 
 journal.window.transcripts.trash.receipt.partial.erase = { $processed_quantity ->
         [one] { $processed } తుడిచివేయబడింది, { $segments_quantity ->
@@ -3521,9 +3521,9 @@ journal.window.transcripts.trash.receipt.partial.recovery = { $processed_quantit
     }
 
 journal.window.transcripts.trash.receipt.recovery.partial.help = { $remaining_quantity ->
-        [one] మిగతాది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
-       *[other] మిగతావి ఇంకా ట్రాష్‌లో ఉన్నాయి. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
-    }
+    [one] మిగతాది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మీరు మళ్ళీ ప్రయత్నించవచ్చు.
+   *[other] మిగతావి ఇంకా ట్రాష్‌లో ఉన్నాయి. అక్కడి నుండి మీరు మళ్ళీ ప్రయత్నించవచ్చు.
+}
 
 journal.window.transcripts.trash.receipt.segment.erase.date = మీరు దాన్ని రీస్టోర్ చేయకపోతే { $erase_date } రోజున తుడిచివేస్తుంది.
 

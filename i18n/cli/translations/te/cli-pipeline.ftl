@@ -34,7 +34,7 @@ journal.cli.backup.config.invalid.retention.value = బ్యాకప్ ని
 
 journal.cli.backup.config.invalid.verification.status = బ్యాకప్ ధృవీకరణ స్థితి { $ok_value }, { $skipped_value }, లేదా { $error_value } అయి ఉండాలి
 
-journal.cli.backup.config.lock.timeout = { $path } కోసం లాక్ { $seconds } సె లోపు పొందలేకపోయింది
+journal.cli.backup.config.lock.timeout = { $path } కోసం { $seconds } సె లోపు లాక్ తీసుకోలేకపోయింది
 
 journal.cli.backup.config.missing.credential = బ్యాకప్ క్రెడెన్షియల్ లేదు: { $key }
 
@@ -834,9 +834,9 @@ journal.cli.importer.body.days.hidden = { $quantity ->
 
 journal.cli.importer.body.facet.ask.existing = మీ వ్యాయామాలు, నిద్ర, ఇతర శరీర డేటాను మీరు { $facet } అని పేరు పెట్టిన ఫాసెట్ కింద ఫైల్ చేయాలా?
 
-journal.cli.importer.body.facet.ask.make.body = మీ వ్యాయామాలు, నిద్ర, ఇతర శరీర డేటా కోసం శరీరం ఫాసెట్ తయారు చేయాలా?
+journal.cli.importer.body.facet.ask.make.body = మీ వ్యాయామాలు, నిద్ర, ఇతర శరీరం డేటా కోసం ఒక శరీరం ఫాసెట్ తయారు చేయాలా?
 
-journal.cli.importer.body.facet.ask.unmute = మీ శరీరం ఫాసెట్ మ్యూట్ అయి ఉంది. మీ వ్యాయామాలు, నిద్ర, ఇతర శరీర డేటా కోసం దాన్ని మళ్ళీ ఆన్ చేయాలా?
+journal.cli.importer.body.facet.ask.unmute = మీ శరీరం ఫాసెట్ మ్యూట్ అయి ఉంది. మీ వ్యాయామాలు, నిద్ర, ఇతర శరీరం డేటా కోసం దాన్ని తిరిగి ఆన్ చేయాలా?
 
 journal.cli.importer.body.facet.moves.body = { $quantity ->
     [one] అవును అంటే కార్యకలాపాల పేజీలో ఇప్పటికే జాబితాలో ఉన్న 1 నమోదు వరకు తరలించవచ్చు, { $from } నుండి.
@@ -848,9 +848,9 @@ journal.cli.importer.body.facet.moves.strava = { $quantity ->
    *[other] అవును అంటే ఇప్పటికే ఫైల్ చేయబడిన { $count } వ్యాయామాలు తరలిస్తుంది, { $from } నుండి.
 }
 
-journal.cli.importer.body.facet.no.means.body = మీరు కాదు అంటే, కొత్త వ్యాయామాలు, నిద్ర కార్యకలాపాల పేజీలో జాబితాలో ఉండవు, కొన్ని ఫాసెట్‌లకు పరిమితం అయిన ఏజెంట్‌లకు అవి కనబడవు. వెతకడం, శరీరం యాప్ ఇంకా వాటిని చూపిస్తాయి.
+journal.cli.importer.body.facet.no.means.body = మీరు కాదు అంటే, కొత్త వ్యాయామాలు, నిద్ర కార్యకలాపాల పేజీలో కనిపించవు, కొన్ని ఫాసెట్‌లకు పరిమితమైన ఏజెంట్‌లు వాటిని చూడవు. సెర్చ్, శరీరం యాప్ ఇంకా వాటిని చూపుతాయి.
 
-journal.cli.importer.body.facet.no.means.strava = మీరు కాదు అంటే, కొత్త వ్యాయామాలు కార్యకలాపాల పేజీలో జాబితాలో ఉండవు, వాటి నుండి వ్యక్తులు గానీ వస్తువులు గానీ రావు, కొన్ని ఫాసెట్‌లకు పరిమితం అయిన ఏజెంట్‌లకు అవి కనబడవు. వెతకడం, శరీరం యాప్ ఇంకా వాటిని చూపిస్తాయి.
+journal.cli.importer.body.facet.no.means.strava = మీరు కాదు అంటే, కొత్త వ్యాయామాలు కార్యకలాపాల పేజీలో కనిపించవు, వాటి నుండి వ్యక్తులూ, వస్తువులూ రారు, కొన్ని ఫాసెట్‌లకు పరిమితమైన ఏజెంట్‌లు వాటిని చూడవు. సెర్చ్, శరీరం యాప్ ఇంకా వాటిని చూపుతాయి.
 
 journal.cli.importer.body.facet.prompt.yn = { $question } [y/n]
 
@@ -866,12 +866,13 @@ journal.cli.importer.body.oura.window.conflict = --window-days లేదా త�
 
 journal.cli.importer.body.oura.window.zero = --window-days కు కనీసం ఒక రోజు అవసరం. ఏమీ చదవలేదు.
 
-journal.cli.importer.body.zones.hours = { $quantity ->
-    [one] { $source } యొక్క 1 గంట తప్పు సమయంలో కనబడవచ్చు: ఇది ఈ జర్నల్ { $source } కోసం ఉంచుకున్న దాని కంటే వేరే టైమ్‌జోన్‌లో సేవ్ అయింది.
-   *[other] { $count } గంటల { $source } తప్పు సమయంలో కనబడవచ్చు: అవి ఈ జర్నల్ { $source } కోసం ఉంచుకున్న దాని కంటే వేరే టైమ్‌జోన్‌లో సేవ్ అయ్యాయి.
-}
+journal.cli.importer.body.zones.hours =
+    { $quantity ->
+        [one] { $source } లో 1 గంట తప్పు సమయంలో కనిపించవచ్చు: ఈ జర్నల్ { $source } కోసం ఉంచుకున్న టైమ్‌జోన్ కాక, వేరే టైమ్‌జోన్‌లో అది సేవ్ అయింది.
+       *[other] { $source } లో { $count } గంటలు తప్పు సమయంలో కనిపించవచ్చు: ఈ జర్నల్ { $source } కోసం ఉంచుకున్న టైమ్‌జోన్ కాక, వేరే టైమ్‌జోన్‌లో అవి సేవ్ అయ్యాయి.
+    }
 
-journal.cli.importer.body.zones.under.hour = { $source } యొక్క ఒక గంట కంటే తక్కువ తప్పు సమయంలో కనబడవచ్చు: ఇది ఈ జర్నల్ { $source } కోసం ఉంచుకున్న దాని కంటే వేరే టైమ్‌జోన్‌లో సేవ్ అయింది.
+journal.cli.importer.body.zones.under.hour = { $source } లో ఒక గంట కంటే తక్కువ తప్పు సమయంలో కనిపించవచ్చు: అది ఈ జర్నల్ { $source } కోసం ఉంచిన దాని కంటే మరో టైమ్‌జోన్‌లో సేవ్ అయింది.
 
 journal.cli.importer.connect.available = కనెక్ట్ చేయగల backend‌లు: oura, plaud
 
@@ -1220,7 +1221,7 @@ journal.cli.importer.plaud.failure.token.refused = సైన్-ఇన్ గడ
 
 journal.cli.importer.plaud.preview.complete = Plaud సింక్ ప్రివ్యూ పూర్తయింది: files={ $files }
 
-journal.cli.importer.plaud.sync.busy = మీ జర్నల్ ఇప్పటికే { $provider } సరిచూస్తోంది. అది పూర్తయినప్పుడు మళ్ళీ ప్రయత్నించండి.
+journal.cli.importer.plaud.sync.busy = మీ జర్నల్ ఇప్పటికే { $provider } సరిచూపులో ఉంది. అది పూర్తయిన తర్వాత మళ్ళీ ప్రయత్నించండి.
 
 journal.cli.importer.plaud.sync.missing.credential = Plaud క్రెడెన్షియల్స్ కాన్ఫిగ్ అయి లేదు
 
@@ -1357,7 +1358,7 @@ journal.cli.importer.text.unconfirmed = వచనం ఇంపోర్ట్ �
 
 journal.cli.importer.timestamp.confirm = గుర్తించిన టైమ్‌స్టాంప్ { $timestamp }; --timestamp { $timestamp } లేదా --auto తో మళ్ళీ రన్ చేయండి
 
-journal.cli.oauth.callback.failure = సైన్-ఇన్ పూర్తి కాలేదు. మీ జర్నల్‌కు తిరిగి వెళ్ళండి, మళ్ళీ ప్రయత్నించండి
+journal.cli.oauth.callback.failure = సైన్-ఇన్ పూర్తి కాలేదు. మీ జర్నల్‌కు తిరిగి వెళ్ళి మళ్ళీ ప్రయత్నించండి
 
 journal.cli.oauth.callback.success = సైన్ ఇన్ అయింది. ఈ ట్యాబ్ మూసివేసి మీ జర్నల్‌కు తిరిగి వెళ్ళవచ్చు
 
@@ -1439,7 +1440,7 @@ journal.cli.setup.clean.outcome.stopped.failed = విఫలమైన అడు
 
 journal.cli.setup.clean.preflight.census.error = ఇన్‌స్టాల్ గుర్తింపు లెక్కింపు చదవలేనిది: { $error }
 
-journal.cli.setup.clean.preflight.census.unreadable = ఇన్‌స్టాల్ గుర్తింపు లెక్కింపు చదవలేనిది
+journal.cli.setup.clean.preflight.census.unreadable = ఇన్‌స్టాల్ గుర్తింపు లెక్కింపు చదవలేం
 
 journal.cli.setup.clean.preflight.config.mismatch = కాన్ఫిగ్‌లోని journal ఇన్‌స్టాల్ గుర్తింపుతో సరిపోలేదు
 

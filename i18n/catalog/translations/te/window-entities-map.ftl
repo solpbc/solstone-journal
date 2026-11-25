@@ -455,7 +455,7 @@ journal.window.entities.copy.scope.facet.missing = ఆ ఫాసెట్ ఇక
 
 journal.window.entities.copy.scope.showing = చూపిస్తోంది
 
-journal.window.entities.copy.scope.whole.journal = మీ జర్నల్ మొత్తం
+journal.window.entities.copy.scope.whole.journal = మీ జర్నల్ అంతా
 
 journal.window.entities.copy.trust.action.failed = ఆ ఎంటిటీ మార్పు పూర్తి కాలేదు.
 
@@ -614,12 +614,12 @@ journal.window.entities.delete.other.items.gone = { $other_quantity ->
 }
 
 journal.window.entities.delete.partial.items.not.erased = { $remaining_quantity ->
-    [one] మరొకటి తుడిచివేయబడలేదు. కింద లేదా ట్రాష్‌లో దాన్ని వెతకండి.
-   *[other] మిగతావి తుడిచివేయబడలేదు. కింద లేదా ట్రాష్‌లో వాటిని వెతకండి.
-}
+        [one] మిగతాది తుడిచివేయబడలేదు. దాన్ని కింద లేదా ట్రాష్‌లో వెతకండి.
+       *[other] మిగతావి తుడిచివేయబడలేదు. వాటిని కింద లేదా ట్రాష్‌లో వెతకండి.
+    }
 
 journal.window.entities.delete.partial.items.not.recovered = { $remaining_quantity ->
-    [one] మరొకటి ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మీరు మళ్ళీ ప్రయత్నించవచ్చు.
+    [one] మిగతాది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మీరు మళ్ళీ ప్రయత్నించవచ్చు.
    *[other] మిగతావి ఇంకా ట్రాష్‌లో ఉన్నాయి. అక్కడి నుండి మీరు మళ్ళీ ప్రయత్నించవచ్చు.
 }
 
@@ -700,7 +700,7 @@ journal.window.entities.entity.delete.copy.again.many.any.of.them.your.journal.f
 
 journal.window.entities.entity.delete.copy.back.back = వెనుకకు
 
-journal.window.entities.entity.delete.copy.busy.something.else.is.changing.it.right = మరేదో దీన్ని ఇప్పుడు మారుస్తోంది. ఒక నిమిషం తర్వాత మళ్ళీ ప్రయత్నించండి.
+journal.window.entities.entity.delete.copy.busy.something.else.is.changing.it.right =మరేదో దీన్ని ఇప్పుడే మారుస్తోంది. ఒక నిమిషం తర్వాత మళ్ళీ ప్రయత్నించండి.
 
 journal.window.entities.entity.delete.copy.busy.something.else.is.changing.this.right = మరేదో దీన్ని ఇప్పుడు మారుస్తోంది, కాబట్టి ఇది తరలించబడలేదు. ఒక నిమిషం తర్వాత మళ్ళీ ప్రయత్నించండి.
 
@@ -724,7 +724,7 @@ journal.window.entities.entity.delete.copy.facet.unknown.its.place.and.notes.in.
 
 journal.window.entities.entity.delete.copy.gone.it.s.no.longer.in.your = ఇది ఇక మీ జర్నల్‌లో లేదు.
 
-journal.window.entities.entity.delete.copy.last.facet.your.journal.needs.at.least.one = మ్యూట్ కాని ఫాసెట్ ఒకటైనా మీ జర్నల్‌కు కావాలి.
+journal.window.entities.entity.delete.copy.last.facet.your.journal.needs.at.least.one = మీ జర్నల్‌కు మ్యూట్ అయి లేని కనీసం ఒక ఫాసెట్ కావాలి.
 
 journal.window.entities.entity.delete.copy.lead.this.erases.the.entity.s.own = ఇది ఎంటిటీ సొంతవాటిని తుడిచివేస్తుంది:
 
@@ -744,13 +744,13 @@ journal.window.entities.entity.delete.copy.own.many.this.moves.each.one.s.own = 
 
 journal.window.entities.entity.delete.copy.principal.this.is.you.so.it.can = ఇది మీరు, కాబట్టి దీన్ని తొలగించలేం.
 
-journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్తుంది, రీస్టోర్ చేయలేరు.
+journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి వెళ్తుంది, మరియు రీస్టోర్ చేయడం కుదరదు.
 
-journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = ఇది ఇప్పుడు మీ జర్నల్ నుండి వెళ్లి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు రీస్టోర్ చేయవచ్చు.
+journal.window.entities.entity.delete.copy.reach.it.leaves.your.journal.now.and.variant2 = అది ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటుంది, తర్వాత తుడిచివేయబడుతుంది. అప్పటి వరకు మీరు దాన్ని రీస్టోర్ చేయవచ్చు.
 
-journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and = ఇవి ఇప్పుడు మీ జర్నల్ నుండి వెళ్తాయి, రీస్టోర్ చేయలేరు.
+journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and = అవి ఇప్పుడు మీ జర్నల్‌ను వదిలి, రీస్టోర్ చేయలేరు.
 
-journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and.variant2 = ఇవి ఇప్పుడు మీ జర్నల్ నుండి వెళ్లి ట్రాష్‌లో వేచి ఉంటాయి, తర్వాత తుడిచివేయబడతాయి. అప్పటి వరకు ప్రతిదాన్ని రీస్టోర్ చేయవచ్చు.
+journal.window.entities.entity.delete.copy.reach.many.they.leave.your.journal.now.and.variant2 = అవి ఇప్పుడు మీ జర్నల్‌ను వదిలి ట్రాష్‌లో వేచి ఉంటాయి, తర్వాత తుడిచివేయబడతాయి. అప్పటి వరకు ప్రతిదాన్ని రీస్టోర్ చేయవచ్చు.
 
 journal.window.entities.entity.delete.copy.record.damaged.your.journal.couldn.t.update.its = ఎంటిటీల నమోదును మీ జర్నల్ అప్‌డేట్ చేయలేకపోయింది. ఏమీ తరలలేదు.
 
@@ -848,7 +848,7 @@ journal.window.entities.folder.duplicates = సాధ్యమైన నకల�
 
 journal.window.entities.folder.hidden = దాచబడింది
 
-journal.window.entities.folder.other = ఇతరం
+journal.window.entities.folder.other = ఇతర
 
 journal.window.entities.folder.people = వ్యక్తులు
 
@@ -1124,23 +1124,23 @@ journal.window.entities.message.it.may.already.be.erased.reload = ఇది ఇ�
 
 journal.window.entities.message.it.may.already.be.in.the = ఇది ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.entities.message.it.s.back.in.your.journal = ఇది మళ్ళీ మీ జర్నల్‌లో ఉంది.
+journal.window.entities.message.it.s.back.in.your.journal = అది మీ జర్నల్‌లో తిరిగి ఉంది.
 
-journal.window.entities.message.it.s.in.the.trash.you = ఇది ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.entities.message.it.s.in.the.trash.you = అది ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
-journal.window.entities.message.it.s.still.in.the.trash = ఇది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.entities.message.it.s.still.in.the.trash = అది ఇంకా ట్రాష్‌లో ఉంది. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
-journal.window.entities.message.it.s.still.in.your.journal = ఇది ఇంకా మీ జర్నల్‌లో ఉంది.
+journal.window.entities.message.it.s.still.in.your.journal = అది ఇంకా మీ జర్నల్‌లో ఉంది.
 
-journal.window.entities.message.they.may.already.be.back.in = ఇవి ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.entities.message.they.may.already.be.back.in = అవి ఇప్పటికే మీ జర్నల్‌లోకి తిరిగి వచ్చి ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.entities.message.they.may.already.be.erased.reload = ఇవి ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.entities.message.they.may.already.be.erased.reload = అవి ఇప్పటికే తుడిచివేయబడి ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.entities.message.they.may.already.be.in.the = ఇవి ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడటానికి మళ్ళీ లోడ్ చేయండి.
+journal.window.entities.message.they.may.already.be.in.the = అవి ఇప్పటికే ట్రాష్‌లో ఉండవచ్చు. సరిచూడడానికి మళ్ళీ లోడ్ చేయండి.
 
-journal.window.entities.message.they.re.back.in.your.journal = ఇవి మళ్ళీ మీ జర్నల్‌లో ఉన్నాయి.
+journal.window.entities.message.they.re.back.in.your.journal = అవి మీ జర్నల్‌లోకి తిరిగి వచ్చాయి.
 
-journal.window.entities.message.they.re.still.in.the.trash = ఇవి ఇంకా ట్రాష్‌లో ఉన్నాయి. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
+journal.window.entities.message.they.re.still.in.the.trash = అవి ఇంకా ట్రాష్‌లో ఉన్నాయి. అక్కడి నుండి మళ్ళీ ప్రయత్నించవచ్చు.
 
 journal.window.entities.notes.count = { $notes_quantity ->
     [one] 1 నోట్
@@ -1389,7 +1389,7 @@ journal.window.entities.response.detail.merge.commit.failed = జత కమి�
 
 journal.window.entities.response.detail.merge.preview.failed = జత ప్రివ్యూ విఫలమైంది
 
-journal.window.entities.response.detail.missing.name.key = { $slot1 } లేదు
+journal.window.entities.response.detail.missing.name.key = లేదు { $slot1 }
 
 journal.window.entities.response.detail.name.is.required = పేరు అవసరం
 
@@ -1505,7 +1505,7 @@ journal.window.entities.response.operation.id.invalid = చెల్లని �
 
 journal.window.entities.response.operation.limit.invalid = చెల్లని పరిమితి: { $limit }
 
-journal.window.entities.response.photo.entity.not.found = ఆ వ్యక్తి దొరకలేదు.
+journal.window.entities.response.photo.entity.not.found = ఆ వ్యక్తి కనుగొనలేకపోయింది.
 
 journal.window.entities.response.photo.face.action.changed = పేజీ లోడ్ అయిన తర్వాత ఇది మారింది. పేజీని రిఫ్రెష్ చేయండి.
 
@@ -1767,7 +1767,7 @@ journal.window.entities.visible.text.save.changes = మార్పులు స
 
 journal.window.entities.visible.text.saved = సేవ్ అయింది!
 
-journal.window.entities.visible.text.saving = సేవ్ చేస్తోంది…
+journal.window.entities.visible.text.saving = సేవ్ అవుతోంది…
 
 journal.window.entities.visible.text.select.a.facet.to.add.entities = మీ జర్నల్‌కు ఎంటిటీలు చేర్చడానికి ఒక ఫాసెట్‌ను ఎంచుకోండి.
 
@@ -1842,7 +1842,7 @@ journal.window.entities.window.state.text.loading.this.entity = ఈ ఎంటి
 
 journal.window.entities.window.state.text.next.page = తర్వాతి పేజీ
 
-journal.window.entities.window.state.text.not.set = పెట్టలేదు
+journal.window.entities.window.state.text.not.set = సెట్ కాలేదు
 
 journal.window.entities.window.state.text.previous.page = మునుపటి పేజీ
 
@@ -1942,7 +1942,7 @@ journal.window.facets.activities.copy.show.hidden = దాచబడినవి 
 
 journal.window.facets.activities.copy.source.unknown = మూలం తెలియదు
 
-journal.window.facets.activities.copy.speaker.me = మీరు
+journal.window.facets.activities.copy.speaker.me = నేను
 
 journal.window.facets.activities.copy.speaker.person = ఒక వ్యక్తి
 
@@ -2042,7 +2042,7 @@ journal.window.facets.activities.months.short.feb = ఫిబ్ర
 
 journal.window.facets.activities.months.short.jan = జన
 
-journal.window.facets.activities.months.short.jul = జులై
+journal.window.facets.activities.months.short.jul = జూలై
 
 journal.window.facets.activities.months.short.jun = జూన్
 
@@ -2054,7 +2054,7 @@ journal.window.facets.activities.months.short.nov = నవం
 
 journal.window.facets.activities.months.short.oct = అక్టో
 
-journal.window.facets.activities.months.short.sep = సెప్టెం
+journal.window.facets.activities.months.short.sep = సెప్టె
 
 journal.window.facets.activities.people.recorded.more = { $quantity ->
     [one] { $first_person }, { $second_person } మరియు మరో 1 వ్యక్తితో
@@ -2123,11 +2123,11 @@ journal.window.facets.activities.response.error.message.that.activity.isn.t.in.t
 
 journal.window.facets.activities.response.error.message.that.activity.setting.couldn.t.be = ఆ కార్యకలాపం సెట్టింగ్‌ను వాడలేకపోయింది.
 
-journal.window.facets.activities.response.error.message.that.day.couldn.t.be.used = ఆ రోజును వాడలేకపోయింది.
+journal.window.facets.activities.response.error.message.that.day.couldn.t.be.used = ఆ రోజు ఉపయోగించలేకపోయింది.
 
 journal.window.facets.activities.response.error.message.that.edit.couldn.t.be.removed = ఆ సవరణను తీసివేయలేకపోయింది.
 
-journal.window.facets.activities.response.error.message.that.month.couldn.t.be.used = ఆ నెలను వాడలేకపోయింది.
+journal.window.facets.activities.response.error.message.that.month.couldn.t.be.used =ఆ నెలను ఉపయోగించలేకపోయింది.
 
 journal.window.facets.activities.response.error.message.that.request.didn.t.finish = ఆ అభ్యర్థన పూర్తి కాలేదు.
 
@@ -2203,7 +2203,7 @@ journal.window.facets.activities.window.explanation.seen.as.cancelled.or.decline
 
 journal.window.facets.activities.window.explanation.some.of.those.lines.aren.t = ఆ పంక్తుల్లో కొన్ని ఈ కార్యకలాపంలో భాగం కావు.
 
-journal.window.facets.activities.window.explanation.someone.i.don.t.know = మీకు తెలియని వ్యక్తి
+journal.window.facets.activities.window.explanation.someone.i.don.t.know =నాకు తెలియని వ్యక్తి
 
 journal.window.facets.activities.window.explanation.tell.your.journal.in.your.own = మీ మాటల్లో మీ జర్నల్‌కు చెప్పండి
 
@@ -2257,9 +2257,9 @@ journal.window.facets.awareness.response.error.detail.no.request.body = అభ�
 
 journal.window.facets.awareness.response.error.detail.request.body.must.be.a.json = అభ్యర్థన బాడీ { $slot1 } ఆబ్జెక్ట్ అయి ఉండాలి
 
-journal.window.facets.awareness.response.error.message.a.required.field.is.missing = అవసరమైన ఫీల్డ్ లేదు.
+journal.window.facets.awareness.response.error.message.a.required.field.is.missing = తప్పనిసరి ఫీల్డ్ లేదు.
 
-journal.window.facets.awareness.response.error.message.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని వాడలేకపోయింది.
+journal.window.facets.awareness.response.error.message.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని ఉపయోగించలేకపోయింది.
 
 journal.window.facets.awareness.response.error.message.that.json.request.couldn.t.be = ఆ { $slot1 } అభ్యర్థన చదవలేకపోయింది.
 
@@ -2521,9 +2521,9 @@ journal.window.facets.curation.response.error.detail.key.does.not.match.anchor.a
 
 journal.window.facets.curation.response.error.detail.key.does.not.match.source.id = కీ { $slot1 } తో సరిపోలేదు
 
-journal.window.facets.curation.response.error.message.a.required.field.is.missing = అవసరమైన ఫీల్డ్ లేదు.
+journal.window.facets.curation.response.error.message.a.required.field.is.missing = తప్పనిసరి ఫీల్డ్ లేదు.
 
-journal.window.facets.curation.response.error.message.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని వాడలేకపోయింది.
+journal.window.facets.curation.response.error.message.one.of.those.values.couldn.t = ఆ విలువల్లో ఒకదాన్ని ఉపయోగించలేకపోయింది.
 
 journal.window.facets.curation.response.error.message.that.entity.operation.couldn.t.be = ఆ ఎంటిటీ ఆపరేషన్ పూర్తి చేయలేకపోయింది.
 
@@ -2594,7 +2594,7 @@ journal.window.facets.curation.suggestions.dismiss = వదిలివేయం
 
 journal.window.facets.curation.suggestions.earlier.accepted = మీరు దీన్ని అంగీకరించారు
 
-journal.window.facets.curation.suggestions.earlier.agent = ముందటి ఏజెంట్
+journal.window.facets.curation.suggestions.earlier.agent = మునుపటి ఏజెంట్
 
 journal.window.facets.curation.suggestions.earlier.dismissed = మీరు దీన్ని వదిలివేశారు
 
@@ -2901,7 +2901,7 @@ journal.window.map.attribution.outlines = పట్టణాలు { $geonames_s
 
 journal.window.map.attribution.places = పట్టణాలు { $geonames_start }GeoNames{ $geonames_end } నుండి ({ $licence_start }CC BY 4.0{ $licence_end }) · సరిహద్దులు Natural Earth నుండి · ప్రదేశాలు { $overture_start }Overture Maps{ $overture_end } నుండి
 
-journal.window.map.button.label.clear = క్లియర్
+journal.window.map.button.label.clear = క్లియర్ చేయండి
 
 journal.window.map.button.label.download.again = మళ్ళీ డౌన్‌లోడ్ చేయండి
 
@@ -2952,10 +2952,11 @@ journal.window.map.count.area = { $quantity ->
    *[other] { $count } ప్రాంతాలు
 }
 
-journal.window.map.count.day = { $quantity ->
-    [one] { $count } రోజు
-   *[other] { $count } రోజులు
-}
+journal.window.map.count.day =
+    { $quantity ->
+        [one] { $count } రోజు
+       *[other] { $count } రోజులు
+    }
 
 journal.window.map.count.night = { $quantity ->
     [one] { $count } రాత్రి
@@ -3580,7 +3581,7 @@ journal.window.map.response.accuracy.remove.failed = లొకేషన్ ఖ�
 
 journal.window.map.response.area.unavailable = మీ జర్నల్‌తో వచ్చే ప్రదేశాల పేర్లు చదవలేకపోయాయి.
 
-journal.window.map.response.day.invalid = ఆ రోజును వాడలేకపోయింది.
+journal.window.map.response.day.invalid = ఆ రోజు ఉపయోగించలేకపోయింది.
 
 journal.window.map.response.day.invalid.detail = రోజు దొరకలేదు
 
@@ -3596,7 +3597,7 @@ journal.window.map.response.edit.invalid = ఆ మార్పు వాడల�
 
 journal.window.map.response.edit.name = { $slot1 } స్ట్రింగ్ లేదా { $slot2 } అయి ఉండాలి
 
-journal.window.map.response.month.invalid = ఆ నెలను వాడలేకపోయింది.
+journal.window.map.response.month.invalid =ఆ నెలను ఉపయోగించలేకపోయింది.
 
 journal.window.map.response.month.invalid.detail = నెల { $slot1 } అయి ఉండాలి
 
