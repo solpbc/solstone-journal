@@ -114,10 +114,15 @@ fn selected_work_with_refresh(
     facet: &str,
     activity_id: &str,
     record: &solstone_core_facets::ActivityRecord,
-    refresh: bool,
+    allow_historical_synthesis: bool,
 ) -> Result<Option<(Vec<TalentConfig>, String)>, String> {
-    let Some(configs) =
-        selected_configs_with_refresh(context, facet, activity_id, record, refresh)?
+    let Some(configs) = selected_configs_with_refresh(
+        context,
+        facet,
+        activity_id,
+        record,
+        allow_historical_synthesis,
+    )?
     else {
         return Ok(None);
     };
@@ -130,18 +135,6 @@ fn selected_work_with_refresh(
             )
         })?;
     Ok(Some((configs, input_hash)))
-}
-
-fn selected_configs(
-    context: &ThinkContext,
-    record: &solstone_core_facets::ActivityRecord,
-) -> Result<Option<Vec<TalentConfig>>, String> {
-    let facet = record
-        .get("facet")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
-    selected_configs_with_refresh(context, facet, id, record, false)
 }
 
 fn owner_asked_activity(journal: &std::path::Path, day: &str, facet: &str, id: &str) -> bool {
@@ -259,7 +252,7 @@ fn selected_configs_with_refresh(
     facet: &str,
     activity_id: &str,
     record: &solstone_core_facets::ActivityRecord,
-    refresh: bool,
+    allow_historical_synthesis: bool,
 ) -> Result<Option<Vec<TalentConfig>>, String> {
     if activity_contract::is_synthetic(record) || !activity_contract::has_nonempty_span(record) {
         return Ok(None);
@@ -278,7 +271,7 @@ fn selected_configs_with_refresh(
             .and_then(Value::as_str)
             .is_some_and(|s| solstone_core_segment::is_backfill_stream(&context.journal, s));
     if is_historical_backfill
-        && !refresh
+        && !allow_historical_synthesis
         && !owner_asked_activity(&context.journal, &context.day, facet, activity_id)
         && !historical_backfill_merits_synthesis(&context.journal, &context.day, record)
     {
@@ -348,7 +341,11 @@ pub(crate) fn reconcile_retained(
     held: FileLock,
 ) -> Result<ModeResult, String> {
     let record = crate::activity_work::retained_record(context, &context.day, facet, activity)?;
-    let Some(configs) = selected_configs(context, &record)? else {
+    // Retained provenance already exists for this activity; reconciling a stale
+    // receipt after a rebuild must run its owning talents rather than letting
+    // the initial-backfill skip reject the seal.
+    let Some(configs) = selected_configs_with_refresh(context, facet, activity, &record, true)?
+    else {
         return Err("retained activity has no eligible work".into());
     };
     if configs.is_empty() {
@@ -468,8 +465,21 @@ pub(crate) fn run_held(
     if crate::activity_work::is_body_data_activity(&record) {
         return settle_body_data(context, log, activity_id, facet, held);
     }
-    let Some((configs, input_hash)) =
-        selected_work_with_refresh(context, facet, activity_id, &record, refresh)?
+    if activity_contract::is_synthetic(&record) || !activity_contract::has_nonempty_span(&record) {
+        return Ok(ModeResult::default());
+    }
+    let held = match held {
+        Some(held) => held,
+        None => crate::activity_work::claim_activity(context, facet, activity_id)?,
+    };
+    let has_existing_work = crate::activity_work::has_work_record(context, facet, activity_id)?;
+    let Some((configs, input_hash)) = selected_work_with_refresh(
+        context,
+        facet,
+        activity_id,
+        &record,
+        refresh || has_existing_work,
+    )?
     else {
         return Ok(ModeResult::default());
     };
@@ -481,7 +491,7 @@ pub(crate) fn run_held(
         refresh,
         reactivate,
         max_concurrency,
-        held,
+        Some(held),
         record,
         configs,
         input_hash,

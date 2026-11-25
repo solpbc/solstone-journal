@@ -106,10 +106,7 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, String> {
     }
 }
 
-fn relative_output(root: &Path, path: &Path) -> Result<String, MessageDetail> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| MessageDetail::message("journal.cli.talent.daily.output.outside", []))?;
+fn normalize_relative_output(relative: &Path) -> Result<String, MessageDetail> {
     if relative
         .components()
         .any(|part| !matches!(part, std::path::Component::Normal(_)))
@@ -121,6 +118,22 @@ fn relative_output(root: &Path, path: &Path) -> Result<String, MessageDetail> {
         ));
     }
     Ok(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn relative_output(root: &Path, path: &Path) -> Result<String, MessageDetail> {
+    if let Ok(relative) = path.strip_prefix(root) {
+        return normalize_relative_output(relative);
+    }
+    // Canonicalized paths from `contained_path` carry a verbatim `\\?\` prefix on
+    // Windows (or resolved symlink parents on Unix); compare both in canonical form.
+    let canonical_root = solstone_core_journal_io::realpath_non_strict(root)
+        .map_err(|_| MessageDetail::message("journal.cli.talent.daily.output.outside", []))?;
+    let canonical_path = solstone_core_journal_io::realpath_non_strict(path)
+        .map_err(|_| MessageDetail::message("journal.cli.talent.daily.output.outside", []))?;
+    let relative = canonical_path
+        .strip_prefix(&canonical_root)
+        .map_err(|_| MessageDetail::message("journal.cli.talent.daily.output.outside", []))?;
+    normalize_relative_output(relative)
 }
 
 fn action_facet(action: &PreparedDailyAction) -> Option<(&str, &str)> {
@@ -2714,5 +2727,26 @@ mod tests {
         )
         .unwrap();
         assert!(!started, "merge no-op must not checkpoint started");
+    }
+
+    #[test]
+    fn relative_output_accepts_contained_path_for_non_canonical_root() {
+        let root = fixture();
+        let rel = "chronicle/20261016/health/experience-candidates/home.json";
+        let contained = solstone_core_journal_io::contained_path(root.path(), rel).unwrap();
+        assert_eq!(relative_output(root.path(), &contained).unwrap(), rel);
+
+        #[cfg(unix)]
+        {
+            let parent = tempfile::tempdir().unwrap();
+            let alias = parent.path().join("journal-link");
+            std::os::unix::fs::symlink(root.path(), &alias).unwrap();
+            let alias_contained = solstone_core_journal_io::contained_path(&alias, rel).unwrap();
+            assert_eq!(relative_output(&alias, &alias_contained).unwrap(), rel);
+        }
+
+        let outside = tempfile::tempdir().unwrap();
+        let escaped = outside.path().join("escape.json");
+        assert!(relative_output(root.path(), &escaped).is_err());
     }
 }

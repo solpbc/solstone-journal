@@ -794,8 +794,8 @@ fn append_materializes_legacy_ids_and_keeps_them_stable() {
     fs::write(
         &path,
         concat!(
-            "{\"content\":\"Older legacy fact\",\"observed_at\":1700000000000,\"source_day\":\"20240101\"}\n",
-            "{\"content\":\"Newer legacy fact\",\"observed_at\":1700000001000}\n",
+            "{\"content\":\"Older legacy fact\",\"observed_at\":1704110400000,\"source_day\":\"20240101\"}\n",
+            "{\"content\":\"Newer legacy fact\",\"observed_at\":1704196800000}\n",
         ),
     )
     .unwrap();

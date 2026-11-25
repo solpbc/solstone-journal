@@ -516,7 +516,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
     let transcript_path = seg1_dir.join("record_transcript.md");
     fs::write(&imported_path, "Untouched imported document").unwrap();
     fs::write(&transcript_path, "Untouched imported transcript").unwrap();
-    fs::write(seg1_dir.join("audio.jsonl"), "raw transcript input").unwrap();
+    fs::write(seg1_dir.join("screen.jsonl"), "raw screen input").unwrap();
 
     let nested_dir = seg1_talents.join("work");
     fs::create_dir_all(&nested_dir).unwrap();
@@ -643,7 +643,7 @@ fn segment_reassignment_refreshes_sibling_text_and_classification() {
             .count(),
         1
     );
-    assert!(!attempted_paths.iter().any(|p| p.ends_with("audio.jsonl")));
+    assert!(!attempted_paths.iter().any(|p| p.ends_with("screen.jsonl")));
     assert!(drain_and_chunk_text_contains(
         &context.journal,
         rel_activity,

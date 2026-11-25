@@ -957,7 +957,7 @@ mod tests {
             "work",
             "ada",
             "Prefers concise updates",
-            None,
+            Some("20260909"),
             None,
         )
         .unwrap();

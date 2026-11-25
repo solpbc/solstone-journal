@@ -18,7 +18,26 @@ struct Publication {
 }
 
 fn receipt_path(segment: &Path) -> PathBuf {
-    segment.join("talents/publication.json")
+    segment.join("talents").join("publication.json")
+}
+
+fn normalized_journal_relative(journal: &Path, path: &Path) -> Result<String, String> {
+    let stripped = path
+        .strip_prefix(journal)
+        .map_err(|error| error.to_string())?;
+    let mut parts = Vec::new();
+    for component in stripped.components() {
+        match component {
+            std::path::Component::Normal(part) => {
+                parts.push(part.to_str().ok_or("publication path is not UTF-8")?);
+            }
+            _ => return Err("publication path is not journal-relative".to_owned()),
+        }
+    }
+    if parts.is_empty() {
+        return Err("publication path is empty".to_owned());
+    }
+    Ok(parts.join("/"))
 }
 
 fn snapshot(
@@ -53,12 +72,7 @@ fn snapshot(
                 continue;
             }
             let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
-            let physical = path
-                .strip_prefix(journal)
-                .map_err(|error| error.to_string())?
-                .to_str()
-                .ok_or("publication path is not UTF-8")?
-                .to_owned();
+            let physical = normalized_journal_relative(journal, &path)?;
             files.insert(physical, format!("{:x}", Sha256::digest(bytes)));
         }
     }
@@ -75,10 +89,11 @@ pub fn is_current(
     source_mtime_ms: Option<i64>,
 ) -> Result<bool, String> {
     let root = solstone_core_journal_io::JournalRoot::open(journal).map_err(|e| e.to_string())?;
-    let relative = receipt_path(segment)
+    let relative: PathBuf = receipt_path(segment)
         .strip_prefix(journal)
         .map_err(|e| e.to_string())?
-        .to_path_buf();
+        .components()
+        .collect();
     let saved: Publication = match solstone_core_journal_io::read_relative_file_bounded(
         &root,
         &relative,
@@ -117,10 +132,11 @@ pub fn publish_checked(
     let before = snapshot(journal, segment, source_mtime_ms)?;
     for relative in before.files.keys() {
         checkpoint()?;
+        let target = relative
+            .split('/')
+            .fold(journal.to_path_buf(), |path, part| path.join(part));
         let attempt =
-            attempt_saved_publication(journal, &journal.join(relative), |journal, path| {
-                rescan(journal, path)
-            });
+            attempt_saved_publication(journal, &target, |journal, path| rescan(journal, path));
         if !matches!(
             attempt.outcome,
             SavedPublicationOutcome::Queued | SavedPublicationOutcome::Excluded
@@ -260,5 +276,53 @@ mod tests {
             );
             assert_eq!(std::fs::read_to_string(output).unwrap(), "saved summary");
         }
+    }
+
+    #[test]
+    fn publication_receipt_normalizes_mixed_separators() {
+        let journal = tempfile::tempdir().unwrap();
+        let native_segment = journal
+            .path()
+            .join("chronicle")
+            .join("20260101")
+            .join("notes")
+            .join("120000_60");
+        std::fs::create_dir_all(native_segment.join("talents")).unwrap();
+        std::fs::write(
+            native_segment.join("audio.jsonl"),
+            "{\"start\":\"00:00:01\",\"text\":\"A meeting about a garden.\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            native_segment.join("talents").join("activity.md"),
+            "summary",
+        )
+        .unwrap();
+
+        let mixed_segment = journal
+            .path()
+            .join("chronicle")
+            .join("20260101")
+            .join("notes/120000_60");
+        publish(journal.path(), &mixed_segment, Some(1), |_, _| Ok(())).unwrap();
+        assert!(is_current(journal.path(), &native_segment, Some(1)).unwrap());
+        assert!(is_current(journal.path(), &mixed_segment, Some(1)).unwrap());
+
+        let saved: Publication =
+            serde_json::from_slice(&std::fs::read(receipt_path(&native_segment)).unwrap()).unwrap();
+        assert!(
+            saved
+                .files
+                .contains_key("chronicle/20260101/notes/120000_60/audio.jsonl"),
+            "{:?}",
+            saved.files
+        );
+        assert!(
+            saved
+                .files
+                .contains_key("chronicle/20260101/notes/120000_60/talents/activity.md"),
+            "{:?}",
+            saved.files
+        );
     }
 }

@@ -271,7 +271,8 @@ mod tests {
 
     #[tokio::test]
     async fn shell_badges_reflects_incomplete_and_urgent_integrity_receipts() {
-        let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+        let dir = tempfile::TempDir::new_in(parent).expect("journal root");
         fs::create_dir_all(dir.path().join("config")).expect("config dir");
         fs::create_dir_all(dir.path().join("health")).expect("health dir");
         let now = jiff::Timestamp::now();

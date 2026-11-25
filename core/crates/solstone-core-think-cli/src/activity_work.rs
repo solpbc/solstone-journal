@@ -152,6 +152,34 @@ fn claim(context: &ThinkContext, identity: &ActivityRetry) -> Result<FileLock, S
     })
 }
 
+/// Acquire the per-activity work lock so durable-work checks and updates share one hold.
+pub(crate) fn claim_activity(
+    context: &ThinkContext,
+    facet: &str,
+    activity: &str,
+) -> Result<FileLock, String> {
+    let identity = ActivityRetry {
+        day: context.day.clone(),
+        facet: facet.into(),
+        activity: activity.into(),
+    };
+    claim(context, &identity)
+}
+
+/// Whether durable unfinished work is already recorded for this activity.
+pub(crate) fn has_work_record(
+    context: &ThinkContext,
+    facet: &str,
+    activity: &str,
+) -> Result<bool, String> {
+    let identity = ActivityRetry {
+        day: context.day.clone(),
+        facet: facet.into(),
+        activity: activity.into(),
+    };
+    Ok(read_in(context.locale(), &path(&context.journal, &identity)?)?.is_some())
+}
+
 /// Reconciliation starts only new work. A retained record, including an empty
 /// record between publication and cleanup, belongs to its ordinary retry owner.
 pub(crate) fn claim_drained(

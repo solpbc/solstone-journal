@@ -67,7 +67,9 @@ pub fn freeze(
                     Err(error) => return Err(error),
                 }
             }
-            if let Some(apply) = stage.prompt_override {
+            if !prepared.config.contains_key("skip_reason")
+                && let Some(apply) = stage.prompt_override
+            {
                 apply(&mut prepared, &state).map_err(RuntimeOutcome::StageFailed)?;
             }
         }

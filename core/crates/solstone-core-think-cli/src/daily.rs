@@ -14,6 +14,32 @@ use crate::dispatch::{
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
+fn skip_historical_entity_daily(
+    context: &ThinkContext,
+    talent_key: &str,
+    facet: &str,
+    from_scratch: bool,
+) -> bool {
+    solstone_core_system::daily_coverage::HISTORICAL_ENTITY_DAILY_TALENTS.contains(&talent_key)
+        && !from_scratch
+        && !context.retry.as_ref().is_some_and(|(unit, _)| {
+            matches!(
+                unit,
+                solstone_core_system::work_retry::Unit::Daily {
+                    talent,
+                    facet: unit_facet,
+                    ..
+                } if talent == talent_key && unit_facet.as_deref() == Some(facet)
+            )
+        })
+        && !solstone_core_system::daily_coverage::historical_entity_daily_applies(
+            &context.journal,
+            &context.day,
+            talent_key,
+            Some(facet),
+        )
+}
+
 /// Port of `thinking.py:2086-2556`.
 pub(crate) fn run(
     context: &ThinkContext,
@@ -111,6 +137,9 @@ pub(crate) fn run(
                     if config.metadata.get("always") == Some(&Value::Bool(true))
                         || active_facets.contains(facet)
                     {
+                        if skip_historical_entity_daily(context, &config.key, facet, from_scratch) {
+                            continue;
+                        }
                         rebuild_targets.push(solstone_core_journal_io::DailyUnitIdentity::new(
                             &context.day,
                             &config.key,
@@ -189,27 +218,7 @@ pub(crate) fn run(
                         log_skip(log, context, &config.key, "no_active_facets", Some(facet));
                         continue;
                     }
-                    if solstone_core_system::daily_coverage::HISTORICAL_ENTITY_DAILY_TALENTS
-                        .contains(&config.key.as_str())
-                        && !from_scratch
-                        && !context.retry.as_ref().is_some_and(|(unit, _)| {
-                            matches!(
-                                unit,
-                                solstone_core_system::work_retry::Unit::Daily {
-                                    talent,
-                                    facet: unit_facet,
-                                    ..
-                                } if talent == &config.key
-                                    && unit_facet.as_deref() == Some(facet.as_str())
-                            )
-                        })
-                        && !solstone_core_system::daily_coverage::historical_entity_daily_applies(
-                            &context.journal,
-                            &context.day,
-                            &config.key,
-                            Some(facet),
-                        )
-                    {
+                    if skip_historical_entity_daily(context, &config.key, facet, from_scratch) {
                         if !consolidated_backfill_span {
                             crate::segment::consolidate_historical_backfill_span(&context.journal);
                             consolidated_backfill_span = true;
@@ -2610,8 +2619,24 @@ cat "${0%/*}/response-$(cat "${0%/*}/response-mode").json"
         let apps = root.join("payload/apps");
         std::fs::create_dir_all(&talent).unwrap();
         std::fs::create_dir_all(&apps).unwrap();
-        std::fs::create_dir_all(root.join("facets/work")).unwrap();
-        std::fs::write(root.join("facets/work/facet.json"), "{}").unwrap();
+        solstone_core_facets::create_facet(root, "work", "Work", "", "", "", None).unwrap();
+        solstone_core_facets::attach_or_reactivate_entity(
+            root,
+            "work",
+            "Person",
+            "Ada",
+            "Mathematician",
+        )
+        .unwrap();
+        solstone_core_facets::save_detected_entity(
+            root,
+            "work",
+            day,
+            "Person",
+            "Ada",
+            "Discussed the meeting topic.",
+        )
+        .unwrap();
         let entities = apps.join("entities/talent");
         std::fs::create_dir_all(&entities).unwrap();
         std::fs::write(entities.join("entity_suggest.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"multi_facet\":true,\"output\":\"json\",\"schema\":\"entity_suggest-schema.json\",\"hook\":{\"pre\":\"entities:entity_suggest\",\"post\":\"entities:entity_suggest\"},\"load\":{\"transcripts\":true}\n}\nSuggest entity observations.").unwrap();
