@@ -424,6 +424,9 @@ fn read_daily_coverage_with_cache(
                 )?);
             }
         } else {
+            if config.key == "morning_briefing" && !morning_briefing_applies(journal, day) {
+                continue;
+            }
             units.push(read_unit_coverage_cached(
                 journal, day, &config, None, cache,
             )?);
@@ -455,6 +458,52 @@ fn read_daily_coverage_with_cache(
     })
 }
 
+/// Whether `morning_briefing` applies to `day` during automatic discovery and
+/// coverage checks.
+///
+/// Today (`age == 0`), yesterday (`age == 1`), and days holding live capture
+/// apply. Historical backfilled days (`age > 1` and `day_is_backfill_only`)
+/// skip automatic morning-briefing generation unless an accepted or on-disk
+/// briefing already exists (preserving frozen reuse and delete-rebuild
+/// scrubbing), the owner explicitly thawed the day, or a recovery-pinned unit
+/// record is open.
+pub fn morning_briefing_applies(journal: &Path, day: &str) -> bool {
+    let today = local_day(journal, Timestamp::now());
+    morning_briefing_applies_at(journal, day, &today)
+}
+
+pub fn morning_briefing_applies_at(journal: &Path, day: &str, today: &str) -> bool {
+    let Some(day_date) = solstone_core_time::parse_day(day) else {
+        return true;
+    };
+    let Some(today_date) = solstone_core_time::parse_day(today) else {
+        return true;
+    };
+    let age = today_date.duration_since(day_date).as_hours() / 24;
+    if age <= 1 || !solstone_core_segment::day_is_backfill_only(journal, day) {
+        return true;
+    }
+    if crate::owner_ask::thawed(journal, day) {
+        return true;
+    }
+    if journal
+        .join("chronicle")
+        .join(day)
+        .join("talents/morning_briefing.json")
+        .is_file()
+    {
+        return true;
+    }
+    let identity = DailyUnitIdentity::new(day, "morning_briefing", None);
+    matches!(
+        observe_daily_unit_record(journal, &identity),
+        Ok(Some(record))
+            if record.accepted.is_some()
+                || record.status == DailyUnitStatus::Conflicting
+                || record.has_uncommitted_started_receipt()
+    )
+}
+
 pub fn read_unit_coverage(
     journal: &Path,
     day: &str,
@@ -478,6 +527,17 @@ fn read_unit_coverage_cached(
     cache: &mut DayProjectionCache,
 ) -> Result<UnitCoverage, String> {
     let identity = DailyUnitIdentity::new(day, &config.key, facet.map(str::to_owned));
+    if config.key == "morning_briefing" && !morning_briefing_applies(journal, day) {
+        return Ok(UnitCoverage {
+            identity,
+            evidence_revision: String::new(),
+            contract_digest: String::new(),
+            state: CoverageState::Current,
+            reason_code: None,
+            earlier_version: None,
+            owed_by: None,
+        });
+    }
     let evidence = solstone_core_indexer::daily_evidence::compute_daily_evidence_cached(
         journal,
         day,
@@ -509,7 +569,29 @@ fn read_unit_coverage_cached(
     let mut reason = None;
     let mut earlier_version = None;
     let state = match &record {
-        None => CoverageState::Outstanding,
+        None => {
+            if identity.name == "morning_briefing"
+                && journal
+                    .join("chronicle")
+                    .join(day)
+                    .join("talents/morning_briefing.json")
+                    .is_file()
+                && !crate::owner_ask::thawed(journal, day)
+                && solstone_core_time::parse_day(day)
+                    .and_then(|d| d.tomorrow().ok())
+                    .zip(
+                        i8::try_from(BRIEFING_MORNING_ENDS_HOUR)
+                            .ok()
+                            .and_then(|hour| Time::new(hour, 0, 0, 0).ok()),
+                    )
+                    .is_some_and(|(next, noon)| now >= next.to_datetime(noon))
+            {
+                earlier_version = Some(AcceptedReuse::FrozenBriefing);
+                CoverageState::Current
+            } else {
+                CoverageState::Outstanding
+            }
+        }
         Some(record) => {
             if record.evidence_revision == e && record.contract_digest == contract {
                 reason = record.reason_code.clone();
@@ -1977,5 +2059,73 @@ mod tests {
                 "{d}"
             );
         }
+    }
+
+    #[test]
+    fn morning_briefing_skips_historical_backfill_days_while_preserving_yesterday_and_existing() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        utc_journal(root, serde_json::json!({}));
+        fs::write(
+            talent.join("morning_briefing.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
+        )
+        .unwrap();
+
+        let backfill_segment = |day: &str| {
+            let seg = root.join(format!("chronicle/{day}/import.email/100000_0"));
+            fs::create_dir_all(seg.join("talents")).unwrap();
+            fs::write(seg.join("transcript.md"), "Email thread body.").unwrap();
+            fs::write(seg.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+        };
+
+        let days = closed_days(root, 4);
+        let old_day = &days[0]; // D-4 (age 4 > 1)
+        let yesterday = &days[3]; // D-1 (age 1)
+        backfill_segment(old_day);
+        backfill_segment(yesterday);
+
+        // Historical backfill day (age > 1) never schedules automatic morning_briefing.
+        let old_cov = read_daily_coverage_with_roots(root, old_day, &talent, &apps).unwrap();
+        assert!(
+            !old_cov
+                .units
+                .iter()
+                .any(|u| u.identity.name == "morning_briefing"),
+            "historical backfill day should omit morning_briefing: {:?}",
+            old_cov.units
+        );
+
+        // Yesterday (age == 1) still schedules morning_briefing.
+        let yest_cov = read_daily_coverage_with_roots(root, yesterday, &talent, &apps).unwrap();
+        assert!(
+            yest_cov
+                .units
+                .iter()
+                .any(|u| u.identity.name == "morning_briefing")
+        );
+
+        // An existing on-disk morning_briefing.json on D-4 stays visible as frozen Current.
+        let mb_path = root.join(format!("chronicle/{old_day}/talents/morning_briefing.json"));
+        fs::create_dir_all(mb_path.parent().unwrap()).unwrap();
+        fs::write(&mb_path, r#"{"summary":"Existing"}"#).unwrap();
+        let frozen_cov = read_daily_coverage_with_roots(root, old_day, &talent, &apps).unwrap();
+        let mb_unit = frozen_cov
+            .units
+            .iter()
+            .find(|u| u.identity.name == "morning_briefing")
+            .expect("existing briefing stays visible");
+        assert_eq!(mb_unit.state, CoverageState::Current);
+        assert_eq!(mb_unit.earlier_version, Some(AcceptedReuse::FrozenBriefing));
+
+        // Explicit owner thaw re-opens it as Outstanding.
+        crate::owner_ask::record(root, old_day, &[], true, 1).unwrap();
+        let thawed_cov = read_daily_coverage_with_roots(root, old_day, &talent, &apps).unwrap();
+        let thawed_unit = thawed_cov
+            .units
+            .iter()
+            .find(|u| u.identity.name == "morning_briefing")
+            .expect("thawed briefing applies");
+        assert_eq!(thawed_unit.state, CoverageState::Outstanding);
     }
 }

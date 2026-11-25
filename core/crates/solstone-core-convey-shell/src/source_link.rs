@@ -443,6 +443,15 @@ fn resolve_landing(
                 }
                 Ok(LandingOutcome::Redirect(location))
             }
+            solstone_core_home::weekly::WeekJudgment::Absent
+                if solstone_core_home::weekly::has_factual_week_data(journal, day) =>
+            {
+                let location = format!("/app/home/week/{}", encode_path_component(day));
+                if !is_safe_location(&location) {
+                    return Ok(LandingOutcome::WontFollow);
+                }
+                Ok(LandingOutcome::Redirect(location))
+            }
             solstone_core_home::weekly::WeekJudgment::Absent => Ok(LandingOutcome::Absence),
             solstone_core_home::weekly::WeekJudgment::CantShow
             | solstone_core_home::weekly::WeekJudgment::Untrusted => Ok(LandingOutcome::CantShow),

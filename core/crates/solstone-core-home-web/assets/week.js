@@ -129,16 +129,18 @@
     }
     html += '</div>';
 
-    // Grid
-    html += `<div class="week-grid" role="group" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.days.of.the.week')}">`;
-    (model.cells || []).forEach(function (c) {
-      html += '<div class="week-cell ' + esc(c.state) + '" role="img" aria-label="' + esc(c.accessible_name) + '">';
-      html += '<span class="week-cell-weekday">' + esc(c.weekday) + '</span>';
-      html += '<span class="week-cell-day">' + esc(c.day_number) + '</span>';
-      html += '<span class="week-cell-mark ' + esc(c.state) + `" aria-hidden="true"></span>`;
+    // Grid (omitted on factual historical weeks that carry no reflection day states)
+    if (Array.isArray(model.cells) && model.cells.length > 0) {
+      html += `<div class="week-grid" role="group" aria-label="${window.JournalI18n.renderHtml('journal.window.home.accessible.name.days.of.the.week')}">`;
+      model.cells.forEach(function (c) {
+        html += '<div class="week-cell ' + esc(c.state) + '" role="img" aria-label="' + esc(c.accessible_name) + '">';
+        html += '<span class="week-cell-weekday">' + esc(c.weekday) + '</span>';
+        html += '<span class="week-cell-day">' + esc(c.day_number) + '</span>';
+        html += '<span class="week-cell-mark ' + esc(c.state) + `" aria-hidden="true"></span>`;
+        html += '</div>';
+      });
       html += '</div>';
-    });
-    html += '</div>';
+    }
 
     // Legend
     if (model.legend && model.legend.length > 0) {
@@ -178,7 +180,9 @@
         html += '<div class="week-menu-wrapper">';
         html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="' + window.JournalI18n.renderHtml('journal.window.home.week.menu.accessible.name', [['day', String(r.day_label)]]) + '">···</button>';
         html += '<div class="week-menu-dropdown" hidden style="display:none;">';
-        html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.leave.out.of.this.week')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.only.this.week.changes.the.memory')}</span></button>`;
+        if (r.key) {
+          html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.leave.out.of.this.week')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.only.this.week.changes.the.memory')}</span></button>`;
+        }
         html += '<a class="week-menu-item" href="' + esc(r.menu_href) + `"><span class="week-menu-item-label">${window.JournalI18n.renderHtml('journal.window.home.visible.text.this.isn.t.right')}</span><span class="week-menu-hint">${window.JournalI18n.renderHtml('journal.window.home.visible.text.opens.where.it.came.from.so')}</span></a>`;
         html += '</div>';
         html += '</div>'; // week-menu-wrapper
@@ -187,6 +191,8 @@
         html += '<div class="week-row-text">' + markdown(r.text) + '</div>';
         if (r.peek_caption) {
           html += '<div class="week-row-peek"><a href="' + esc(r.peek_href) + '">' + esc(r.peek_caption) + ' · ' + esc(r.peek_label) + '</a></div>';
+        } else if (r.peek_href && r.peek_label) {
+          html += '<div class="week-row-peek"><a href="' + esc(r.peek_href) + '">' + esc(r.peek_label) + '</a></div>';
         }
         html += '</div>'; // week-row
       }

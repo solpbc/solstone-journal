@@ -267,6 +267,33 @@ pub fn commit(
     }))
 }
 
+pub fn unavailable_before_generate(state: &PrePostState) -> Option<&'static str> {
+    match state {
+        PrePostState::EntitySuggest(suggest) if suggest.served_ids.is_empty() => {
+            Some("no_candidates")
+        }
+        _ => None,
+    }
+}
+
+pub fn unavailable_commit(
+    reason: &str,
+    talent: &PreparedTalent,
+    state: &PrePostState,
+) -> Result<CommitPlan, StageError> {
+    if reason != "no_candidates" {
+        return Err(stage_error(
+            "commit",
+            "entities:entity_suggest",
+            talent,
+            format!("unexpected unavailable reason: {reason}"),
+        ));
+    }
+    let empty_payload = serde_json::json!({ "entities": [] });
+    let rendered = parse(&empty_payload.to_string(), talent, state)?;
+    commit(rendered, talent, state)
+}
+
 struct SuggestContextAssembly {
     context: String,
     served_ids: BTreeSet<String>,
@@ -304,7 +331,15 @@ fn assemble_suggest_context_in(
                     .filter_map(Value::as_str)
                     .map(str::to_owned)
                     .collect(),
-                emails: Vec::new(),
+                emails: entity
+                    .identity
+                    .get("emails")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
             },
         )
         .collect::<Vec<_>>();
@@ -864,5 +899,43 @@ mod tests {
         // Must be capped at MAX_SUGGESTIONS_PER_ENTITY = 10
         let suggs = entities[0]["suggestions"].as_array().unwrap();
         assert_eq!(suggs.len(), 10);
+    }
+
+    #[test]
+    fn suggest_skips_generate_and_writes_empty_entities_when_no_candidates() {
+        let temp = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(temp.path(), "work", "Work", "", "", "", None).unwrap();
+
+        let talent = PreparedTalent::new(
+            "entities:entity_suggest".into(),
+            serde_json::json!({
+                "day": "20240512",
+                "facet": "work"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        );
+        let state = PrePostState::EntitySuggest(SuggestState {
+            context: None,
+            served_ids: BTreeSet::new(),
+        });
+
+        let reason = unavailable_before_generate(&state).expect("0 candidates skips generate");
+        assert_eq!(reason, "no_candidates");
+        let plan = unavailable_commit(reason, &talent, &state).unwrap();
+        let context = ExecutionContext {
+            journal: temp.path().to_path_buf(),
+        };
+        crate::writers::apply(plan, &context).unwrap();
+
+        let path = temp
+            .path()
+            .join("facets/work/entities/20240512_observer_suggestions.json");
+        let parsed_json: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(parsed_json["facet"], "work");
+        assert_eq!(parsed_json["day"], "20240512");
+        assert_eq!(parsed_json["entities"], serde_json::json!([]));
     }
 }

@@ -1374,6 +1374,17 @@ async function runTests() {
     assert.strictEqual(doc.activeElement, leaveOutBtn);
   }
 
+  // Factual fallback week (no weekly reflection JSON) renders activity rows cleanly without empty day grid or leave-out buttons.
+  if (realModels.factual) {
+    caseCount++;
+    const { surface } = render(realModels.factual);
+    assert.strictEqual(surface.querySelector('.week-grid'), null);
+    assert.strictEqual(surface.querySelector('.week-leave-out-btn'), null);
+    const rows = surface.querySelectorAll('.week-row');
+    assert.strictEqual(rows.length, 1);
+    assert.ok(surface.innerHTML.includes('Reviewed bridge drawings'));
+  }
+
   console.log(`DOM CASES: ${caseCount} passed`);
 }
 

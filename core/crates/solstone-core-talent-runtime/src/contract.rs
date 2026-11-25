@@ -308,7 +308,10 @@ pub static ENTITY_SUGGEST: StageSpec = StageSpec {
         commit: crate::entities::suggest::commit,
     }),
     unavailable_commit: None,
-    unavailable_before_generate: None,
+    unavailable_before_generate: Some(BeforeGenerateUnavailable {
+        select: crate::entities::suggest::unavailable_before_generate,
+        commit: crate::entities::suggest::unavailable_commit,
+    }),
     writes_as_intent: Some(crate::writers::apply_prepared),
     output_override: None,
 };

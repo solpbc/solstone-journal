@@ -350,12 +350,15 @@ pub(crate) fn execute_with_paths(
         .get("skip_reason")
         .and_then(Value::as_str)
         .is_some();
+    let pre_unavailable = stage
+        .as_ref()
+        .and_then(|(spec, state)| spec.unavailable_before_generate.and_then(|u| (u.select)(state)));
     let generated = if let Some(value) = record.generated_result.as_ref() {
         match retained_response(value) {
             Ok(value) => value,
             Err(error) => return RuntimeOutcome::StageFailed(failure(name, error)),
         }
-    } else if skip {
+    } else if skip || pre_unavailable.is_some() {
         (String::new(), None, None)
     } else {
         let talent_type = prepared
@@ -615,7 +618,13 @@ fn publish(
             let publication = if skip {
                 crate::writers::prepare_daily_publication(CommitPlan::NoOutput, prepared, context)?
             } else if let Some((spec, state)) = stage {
-                if let Some(commit) = spec.commit {
+                if let Some((ubg, reason)) = spec
+                    .unavailable_before_generate
+                    .and_then(|ubg| (ubg.select)(state).map(|r| (ubg, r)))
+                {
+                    let plan = (ubg.commit)(reason, prepared, state)?;
+                    crate::writers::prepare_daily_publication(plan, prepared, context)?
+                } else if let Some(commit) = spec.commit {
                     let parsed = (commit.parse)(&response, prepared, state)?;
                     let plan = (commit.commit)(parsed, prepared, state)?;
                     crate::writers::prepare_daily_publication(plan, prepared, context)?

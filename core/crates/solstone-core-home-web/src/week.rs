@@ -59,6 +59,16 @@ pub async fn week_shell(
                     .body(axum::body::Body::from(bytes.as_slice()))
                     .expect("shell response")
             }
+            WeekJudgment::Absent
+                if solstone_core_home::weekly::has_factual_week_data(&journal_root, &week) =>
+            {
+                let bytes =
+                    include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+                Response::builder()
+                    .header(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")
+                    .body(axum::body::Body::from(bytes.as_slice()))
+                    .expect("shell response")
+            }
             WeekJudgment::Absent => cant_open_response_for(
                 locale,
                 StatusCode::NOT_FOUND,

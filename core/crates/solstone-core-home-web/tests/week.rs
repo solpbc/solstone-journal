@@ -148,6 +148,46 @@ async fn week_api_serves_valid_page_model() {
 }
 
 #[tokio::test]
+async fn absent_weekly_reflection_serves_factual_fallback_when_activities_exist_and_404_when_empty()
+{
+    let journal = seeded_root();
+    let root = journal.path();
+    fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+    fs::write(
+        root.join("facets/work/facet.json"),
+        r#"{"name":"work","title":"Work"}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("facets/work/activities/20190416.jsonl"),
+        r#"{"id":"act_hist_1","start":"2019-04-16T10:00:00Z","end":"2019-04-16T10:30:00Z","title":"Reviewed bridge drawings","description":"Reviewed bridge drawings with Elena.","facet":"work","stream":"import.email","segments":["100000_0"]}"#,
+    )
+    .unwrap();
+    let seg_dir = root.join("chronicle/20190416/import.email/100000_0");
+    fs::create_dir_all(&seg_dir).unwrap();
+    fs::write(seg_dir.join("transcript.md"), "Bridge drawings attached.").unwrap();
+
+    let router = test_router(root);
+    let (status, content_type, _, _) = get(router.clone(), "/app/home/week/20190414").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "text/html; charset=utf-8");
+
+    let (status, content_type, _, body) = get(router.clone(), "/app/home/api/week/20190414").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type, "application/json");
+    let model: Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(model["day"], "20190414");
+    assert_eq!(model["cells"].as_array().expect("cells").len(), 0);
+    assert_eq!(model["rows"].as_array().expect("rows").len(), 1);
+    assert_eq!(model["rows"][0]["leave_out_key"], Value::Null);
+
+    let (status, _, _, _) = get(router.clone(), "/app/home/week/20190421").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _, _, _) = get(router, "/app/home/api/week/20190421").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn week_containment_and_absence_on_nonexistent_root() {
     let temp = TempDir::new().unwrap();
     let nonexistent_journal = temp.path().join("nonexistent_journal_root");
@@ -1504,11 +1544,48 @@ fn week_dom_contract() {
     )
     .unwrap();
 
+    // Historical week 20190414 with factual activities and no weekly reflection JSON.
+    fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+    fs::write(
+        root.join("facets/work/facet.json"),
+        r#"{"name":"work","title":"Work"}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("facets/work/activities/20190416.jsonl"),
+        r#"{"id":"act_hist_1","start":"2019-04-16T10:00:00Z","end":"2019-04-16T10:30:00Z","title":"Reviewed bridge drawings","description":"Reviewed bridge drawings with Elena.","facet":"work","stream":"import.email","segments":["100000_0"]}"#,
+    )
+    .unwrap();
+    let seg_dir = root.join("chronicle/20190416/import.email/100000_0");
+    fs::create_dir_all(&seg_dir).unwrap();
+    fs::write(seg_dir.join("transcript.md"), "Bridge drawings attached.").unwrap();
+
+    let model_factual = solstone_core_home::weekly::page_model(
+        root,
+        "20190414",
+        2026,
+        &solstone_core_convey_shell::source_link::reference_is_moment,
+    )
+    .expect("populated historical week builds factual fallback model");
+    assert!(
+        matches!(
+            solstone_core_home::weekly::page_model(
+                root,
+                "20190421",
+                2026,
+                &solstone_core_convey_shell::source_link::reference_is_moment,
+            ),
+            Err(solstone_core_home::weekly::WeekJudgment::Absent)
+        ),
+        "empty historical week returns Absent so routes stay 404"
+    );
+
     let models = json!({
         "primary": model_primary,
         "left_out": model_left_out,
         "all_states": model_all_states,
         "said": model_said,
+        "factual": model_factual,
     });
 
     let models_path = root.join("models.json");

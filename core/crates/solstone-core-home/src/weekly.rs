@@ -1109,6 +1109,9 @@ pub fn page_model_in(
 ) -> Result<Value, WeekJudgment> {
     let trusted = match judge(journal, day) {
         WeekJudgment::Page(t) => t,
+        WeekJudgment::Absent if has_factual_week_data(journal, day) => {
+            return factual_page_model_in(journal, day, current_year, locale);
+        }
         other => return Err(other),
     };
 
@@ -1369,6 +1372,218 @@ pub fn page_model_in(
         "prev_href": prev_href,
         "next_label": next_label,
         "next_href": next_href,
+        "end_line": text(locale, "journal.window.home.week.end"),
+    }))
+}
+
+/// Whether the Sunday-to-Saturday week starting at `sunday` (`YYYYMMDD`) holds
+/// any visible factual journal data (enabled-facet activities or non-trivial
+/// chronicle segments) when `reflections/weekly/{sunday}.json` is absent.
+pub fn has_factual_week_data(journal: &Path, sunday: &str) -> bool {
+    let Some(start_date) = week_day(sunday) else {
+        return false;
+    };
+    if !journal.is_dir() {
+        return false;
+    }
+    let enabled_facets = solstone_core_facets::observe_declared_facet_inventory(journal)
+        .map(|inv| inv.enabled)
+        .unwrap_or_default();
+    let hidden_body = solstone_core_format::content::body_hidden_days::read_hidden_days(journal);
+    for offset in 0..7_i64 {
+        let Ok(date) = start_date.checked_add(jiff::Span::new().days(offset)) else {
+            continue;
+        };
+        let d = solstone_core_time::day_key(date);
+        let body_hidden = hidden_body.hides(&d) != Some(false);
+        for facet in &enabled_facets {
+            if let Ok(rows) =
+                solstone_core_facets::load_activity_records_readable(journal, facet, &d, false)
+            {
+                if rows.iter().any(|row| {
+                    !(body_hidden && solstone_core_format::content::is_strava_reading(row))
+                        && factual_activity_has_live_source(journal, &d, row)
+                }) {
+                    return true;
+                }
+            }
+        }
+        if journal.join("chronicle").join(&d).is_dir()
+            && !solstone_core_segment::day_holds_nothing_the_owner_did(journal, &d)
+            && solstone_core_journal_io::iter_segments(
+                journal,
+                solstone_core_journal_io::PathOrDay::Day(&d),
+            )
+            .is_ok_and(|segs| !segs.is_empty())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn factual_activity_has_live_source(
+    journal: &Path,
+    day: &str,
+    row: &serde_json::Map<String, Value>,
+) -> bool {
+    let segs: Vec<&str> = row
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if segs.is_empty() {
+        return true;
+    }
+    let stream = row.get("stream").and_then(Value::as_str);
+    segs.into_iter().any(|seg| {
+        let seg_path = match stream {
+            Some(st) if !st.is_empty() && st != "_default" => {
+                journal.join("chronicle").join(day).join(st).join(seg)
+            }
+            _ => journal.join("chronicle").join(day).join(seg),
+        };
+        matches!(
+            solstone_core_segment::owner_deletion_state(&seg_path),
+            Ok(solstone_core_segment::OwnerDeletionState::Live)
+        )
+    })
+}
+
+fn factual_page_model_in(
+    journal: &Path,
+    day: &str,
+    current_year: i32,
+    locale: &str,
+) -> Result<Value, WeekJudgment> {
+    let start_date = week_day(day).ok_or(WeekJudgment::CouldntCheck)?;
+    let title = format_week_title(start_date, current_year, locale);
+    let enabled_facets = solstone_core_facets::observe_declared_facet_inventory(journal)
+        .map(|inv| inv.enabled)
+        .unwrap_or_default();
+    let hidden_body = solstone_core_format::content::body_hidden_days::read_hidden_days(journal);
+    let peek_label = text(locale, "journal.window.home.week.peek.moment");
+
+    let mut rows = Vec::new();
+    let mut memory_day_names = Vec::new();
+    let mut shown_days = 0_usize;
+
+    for offset in 0..7_i64 {
+        let Ok(date) = start_date.checked_add(jiff::Span::new().days(offset)) else {
+            continue;
+        };
+        let d = solstone_core_time::day_key(date);
+        let body_hidden = hidden_body.hides(&d) != Some(false);
+        let mut day_candidates: Vec<(String, serde_json::Map<String, Value>)> = Vec::new();
+        let mut seen_stretches = BTreeSet::new();
+
+        for facet in &enabled_facets {
+            let Ok(facet_rows) =
+                solstone_core_facets::load_activity_records_readable(journal, facet, &d, false)
+            else {
+                continue;
+            };
+            for row in facet_rows {
+                if body_hidden && solstone_core_format::content::is_strava_reading(&row) {
+                    continue;
+                }
+                if !factual_activity_has_live_source(journal, &d, &row) {
+                    continue;
+                }
+                let stream_key = record_string(&row, "stream");
+                let first_seg = row
+                    .get("segments")
+                    .and_then(Value::as_array)
+                    .and_then(|arr| arr.first())
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                let dedup_key = if first_seg.is_empty() {
+                    format!("{facet}:{}", record_string(&row, "id"))
+                } else {
+                    format!("{stream_key}:{first_seg}")
+                };
+                if seen_stretches.insert(dedup_key) {
+                    day_candidates.push((facet.clone(), row));
+                }
+            }
+        }
+
+        if day_candidates.is_empty() {
+            continue;
+        }
+        // Pick the richest/longest representative activity per populated day (up to 2 per day if <= 7 total).
+        day_candidates.sort_by(|a, b| {
+            let seg_len = |r: &serde_json::Map<String, Value>| {
+                r.get("segments")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len)
+            };
+            seg_len(&b.1)
+                .cmp(&seg_len(&a.1))
+                .then_with(|| record_string(&a.1, "id").cmp(&record_string(&b.1, "id")))
+        });
+        let (facet, chosen) = &day_candidates[0];
+        let id = record_string(chosen, "id");
+        let summary_text = {
+            let desc = record_string(chosen, "description");
+            let ttl = record_string(chosen, "title");
+            if !desc.trim().is_empty() {
+                desc
+            } else {
+                ttl
+            }
+        };
+        if summary_text.trim().is_empty() {
+            continue;
+        }
+        shown_days += 1;
+        memory_day_names.push(weekday_name(date, locale));
+        let day_label = short_day_label(date, locale);
+        let peek_href = activity_href(facet, &d, &id, false);
+        let menu_href = activity_href(facet, &d, &id, true);
+        rows.push(json!({
+            "key": Value::Null,
+            "text": summary_text,
+            "day_label": day_label,
+            "source_href": peek_href,
+            "peek_href": peek_href,
+            "peek_label": peek_label,
+            "peek_caption": Value::Null,
+            "menu_href": menu_href,
+            "left_out": false,
+        }));
+    }
+
+    let intro = format_week_intro_in(shown_days, 0, locale)
+        .map(Value::String)
+        .unwrap_or(Value::Null);
+    let from_line = if memory_day_names.is_empty() {
+        Value::Null
+    } else {
+        Value::String(strings(
+            locale,
+            "journal.window.home.week.days.from",
+            [("days", &format_days_conjunction(&memory_day_names, locale))],
+        ))
+    };
+
+    Ok(json!({
+        "title": title,
+        "day": day,
+        "intro": intro,
+        "cells": [],
+        "legend": [],
+        "from_line": from_line,
+        "rows": rows,
+        "said": Value::Null,
+        "left_out_notice": Value::Null,
+        "prev_label": Value::Null,
+        "prev_href": Value::Null,
+        "next_label": Value::Null,
+        "next_href": Value::Null,
         "end_line": text(locale, "journal.window.home.week.end"),
     }))
 }
