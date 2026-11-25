@@ -359,6 +359,24 @@ fn think(
         write_sense_and_change(context, log, segment, stream, &segment_dir, sense)?;
         return Ok(ModeResult::default());
     }
+    // Retry transiently failed / pending / thinking-off photo observations
+    // while the journal still holds the original pixels, before Sense runs.
+    if let Some(stream_name) = stream
+        && segment_dir
+            .join(solstone_core_format::content::PHOTO_OBSERVATION_FILENAME)
+            .is_file()
+        && solstone_core_segment::photo_observation::read_photo_observation(&segment_dir)
+            .is_some_and(|obs| obs.state.is_retryable())
+    {
+        let _ = solstone_core_import_sources::image::retry_photo_observation(
+            &context.journal,
+            &context.day,
+            stream_name,
+            segment,
+            &solstone_core_import_sources::image::SystemWireClient,
+            &solstone_core_import_sources::photo_faces::SystemPhotoFaceDetector,
+        );
+    }
     if solstone_core_talent_runtime::check_segment_has_no_input(
         &context.journal,
         &context.day,

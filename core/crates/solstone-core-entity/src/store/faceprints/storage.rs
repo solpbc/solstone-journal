@@ -398,7 +398,9 @@ pub(super) fn reconcile_in_dirs(
             .map(Vec::as_slice)
             .unwrap_or_default();
         for f in &mut archive.faces {
-            f.metadata.activities.remove(activity);
+            if f.metadata.source != Source::Photo {
+                f.metadata.activities.remove(activity);
+            }
         }
         for f in wanted {
             if let Some(old) = archive
@@ -421,12 +423,178 @@ pub(super) fn reconcile_in_dirs(
                 added += 1;
             }
         }
-        archive.faces.retain(|f| !f.metadata.activities.is_empty());
+        archive
+            .faces
+            .retain(|f| f.metadata.source == Source::Photo || !f.metadata.activities.is_empty());
         if before.as_ref() != Some(&archive) && (before.is_some() || !archive.faces.is_empty()) {
             save_archive(&dir, &binding, &archive)?;
         }
     }
     Ok(added)
+}
+
+/// Replace `Source::Photo` rows for one photo segment across live entities.
+///
+/// Only runs when both `faces.enabled` and `faces.photo_match_enabled` are on.
+/// Preserves all meeting rows (`Source::Anchored` and `Source::Box`) and any
+/// owner rejection state on matching keys.
+pub fn record_photo_faces(
+    journal: &Path,
+    segment_relative_path: &str,
+    encoder: &Encoder,
+    desired: &std::collections::BTreeMap<String, Vec<Face>>,
+) -> Result<usize> {
+    let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
+    if !photo_faces_active(journal)? {
+        return Ok(0);
+    }
+    let entities = crate::live_journal_entities(journal).map_err(err)?;
+    let mut active = Vec::new();
+    for (folder, entity) in &entities {
+        let dir = journal.join("entities").join(folder);
+        if desired.get(&entity.id).is_some_and(|v| !v.is_empty())
+            || solstone_core_journal_io::path_lexists(&dir.join(ARCHIVE)).map_err(err)?
+            || solstone_core_journal_io::path_lexists(&dir.join(STATE)).map_err(err)?
+        {
+            active.push((folder, entity));
+        }
+    }
+    for (folder, _) in &active {
+        let dir = journal.join("entities").join(folder);
+        if let Some(a) = read_archive(&dir)?
+            && a.envelope.encoder != *encoder
+        {
+            return Err("face encoder mismatch".into());
+        }
+        let state = read_state(&dir)?;
+        if state
+            .decision
+            .photo
+            .iter()
+            .chain(state.last.iter().filter_map(|u| u.decision.photo.as_ref()))
+            .any(|p| p.encoder != *encoder)
+        {
+            return Err("confirmed face encoder mismatch".into());
+        }
+    }
+    let mut added = 0;
+    for (folder, entity) in active {
+        let dir = journal.join("entities").join(folder);
+        if desired.get(&entity.id).is_none_or(Vec::is_empty)
+            && !solstone_core_journal_io::path_lexists(&dir.join(ARCHIVE)).map_err(err)?
+        {
+            continue;
+        }
+        let (binding, _lock) = hold_directory(&dir)?;
+        let before = read_archive(&dir)?;
+        let mut archive = before
+            .clone()
+            .unwrap_or_else(|| Archive::empty(encoder.clone()));
+        let state = read_state(&dir)?;
+        apply_rejections(&mut archive, &state);
+        let prior_photo_rows: Vec<Face> = archive
+            .faces
+            .iter()
+            .filter(|f| {
+                f.metadata.source == Source::Photo
+                    && segment_relative(&f.metadata.key).ok().as_deref()
+                        == Some(segment_relative_path)
+            })
+            .cloned()
+            .collect();
+        archive.faces.retain(|f| {
+            !(f.metadata.source == Source::Photo
+                && segment_relative(&f.metadata.key).ok().as_deref() == Some(segment_relative_path))
+        });
+        let wanted = desired
+            .get(&entity.id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        for f in wanted {
+            if f.metadata.source != Source::Photo
+                || segment_relative(&f.metadata.key).ok().as_deref() != Some(segment_relative_path)
+            {
+                return Err("photo face row does not match target photo segment".into());
+            }
+            if !valid_embedding(&f.embedding) {
+                return Err("invalid photo face embedding".into());
+            }
+            let mut row = f.clone();
+            if let Some(old) = prior_photo_rows
+                .iter()
+                .find(|o| o.metadata.key == row.metadata.key)
+            {
+                row.metadata.rejected |= old.metadata.rejected;
+                row.metadata.added_at = old.metadata.added_at.clone();
+                row.metadata
+                    .activities
+                    .extend(old.metadata.activities.iter().cloned());
+            }
+            if archive
+                .faces
+                .iter()
+                .any(|existing| existing.metadata.key == row.metadata.key)
+            {
+                continue;
+            }
+            archive.faces.push(row);
+            added += 1;
+        }
+        apply_rejections(&mut archive, &state);
+        if before.as_ref() != Some(&archive) && (before.is_some() || !archive.faces.is_empty()) {
+            save_archive(&dir, &binding, &archive)?;
+        }
+    }
+    Ok(added)
+}
+
+/// Sync settled facet activity coordinates for `facet` onto `Source::Photo` rows
+/// for a photo segment so facet-scoped MCP photo queries respect every settled
+/// facet without clobbering other facets' coordinates.
+pub fn sync_photo_face_activities(
+    journal: &Path,
+    facet: &str,
+    segment_relative_path: &str,
+    facet_activities: &BTreeSet<String>,
+) -> Result<usize> {
+    let _trust = crate::hold_entity_trust_lock(journal).map_err(err)?;
+    let mut updated = 0;
+    for (folder, _) in crate::live_journal_entities(journal).map_err(err)? {
+        let dir = journal.join("entities").join(folder);
+        if !solstone_core_journal_io::path_lexists(&dir.join(ARCHIVE)).map_err(err)? {
+            continue;
+        }
+        let (binding, _lock) = hold_directory(&dir)?;
+        if let Some(mut archive) = read_archive(&dir)? {
+            let mut changed = false;
+            for face in &mut archive.faces {
+                if face.metadata.source == Source::Photo
+                    && segment_relative(&face.metadata.key).ok().as_deref()
+                        == Some(segment_relative_path)
+                {
+                    let mut next: BTreeSet<String> = face
+                        .metadata
+                        .activities
+                        .iter()
+                        .filter(|coord| {
+                            serde_json::from_str::<[String; 3]>(coord).is_ok_and(|c| c[0] != facet)
+                        })
+                        .cloned()
+                        .collect();
+                    next.extend(facet_activities.iter().cloned());
+                    if face.metadata.activities != next {
+                        face.metadata.activities = next;
+                        changed = true;
+                        updated += 1;
+                    }
+                }
+            }
+            if changed {
+                save_archive(&dir, &binding, &archive)?;
+            }
+        }
+    }
+    Ok(updated)
 }
 
 /// Lifecycle cleanup runs even when recognition is disabled. Confirmed state

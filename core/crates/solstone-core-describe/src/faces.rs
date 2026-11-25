@@ -726,6 +726,159 @@ fn run_segment_with_ocr(
     Ok(pass.stats)
 }
 
+/// Encoder metadata returned alongside still-photo face embeddings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhotoFaceEncoderOut {
+    pub id: String,
+    pub sha256: String,
+    pub width: usize,
+}
+
+/// One detected face in a still photo returned by [`query_photo_faces`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PhotoFaceDetectionOut {
+    pub face_idx: usize,
+    #[serde(rename = "box")]
+    pub bbox: [f32; 4],
+    pub det_score: f32,
+    pub sharpness: f32,
+    pub quality: f32,
+    pub embedding: Vec<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop_jpeg_b64: Option<String>,
+}
+
+/// Read-only detection and embedding output for one still photo.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PhotoFacesQueryOutput {
+    pub encoder: PhotoFaceEncoderOut,
+    pub width: u32,
+    pub height: u32,
+    pub faces: Vec<PhotoFaceDetectionOut>,
+}
+
+/// One batch entry returned by [`query_photo_faces_batch`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PhotoFacesBatchEntry {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<PhotoFacesQueryOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+fn photo_face_encoder() -> PhotoFaceEncoderOut {
+    PhotoFaceEncoderOut {
+        id: "opencv-sface-2021dec".to_owned(),
+        sha256: solstone_core_transcribe::SFACE_SHA256.to_owned(),
+        width: WIDTH,
+    }
+}
+
+fn load_upright_rgb(path: &Path) -> PassResult<RgbImage> {
+    use image::{DynamicImage, ImageDecoder, ImageReader, metadata::Orientation};
+
+    let mut decoder = ImageReader::open(path)
+        .map_err(|e| e.to_string())?
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_decoder()
+        .map_err(|e| e.to_string())?;
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let mut dynamic = DynamicImage::from_decoder(decoder).map_err(|e| e.to_string())?;
+    dynamic.apply_orientation(orientation);
+    Ok(dynamic.to_rgb8())
+}
+
+fn run_photo_detection(
+    models: &mut dyn Inference,
+    path: &Path,
+    with_crops: bool,
+) -> PassResult<PhotoFacesQueryOutput> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    let image = load_upright_rgb(path)?;
+    let detected = models.detect(&image)?;
+    let mut faces = Vec::with_capacity(detected.len());
+    for (face_idx, face) in detected.iter().enumerate() {
+        let (emb, sharpness) = models.embed(&image, face)?;
+        let quality =
+            face.score * (face.bbox[2] / 110.).min(1.) * (sharpness / 400.).min(1.).sqrt();
+        let crop_jpeg_b64 = if with_crops {
+            Some(STANDARD.encode(crop_jpeg(&image, face.bbox)?))
+        } else {
+            None
+        };
+        faces.push(PhotoFaceDetectionOut {
+            face_idx,
+            bbox: face.bbox,
+            det_score: face.score,
+            sharpness,
+            quality,
+            embedding: emb.to_vec(),
+            crop_jpeg_b64,
+        });
+    }
+    Ok(PhotoFacesQueryOutput {
+        encoder: photo_face_encoder(),
+        width: image.width(),
+        height: image.height(),
+        faces,
+    })
+}
+
+/// Side-effect-free YuNet + SFace query on one still photo.
+///
+/// Writes nothing to the journal or disk. When `journal` is supplied, acquires
+/// the shared live model lease so concurrent backfill yields cleanly.
+pub fn query_photo_faces(
+    image_path: &Path,
+    journal: Option<&Path>,
+    with_crops: bool,
+) -> PassResult<PhotoFacesQueryOutput> {
+    let _lease = match journal {
+        Some(dir) => {
+            Some(solstone_core_segment::face_backfill::live_lease(dir).map_err(|e| e.to_string())?)
+        }
+        None => None,
+    };
+    let mut models = open_models()?;
+    run_photo_detection(&mut *models, image_path, with_crops)
+}
+
+/// Side-effect-free YuNet + SFace query over a batch of still photos, opening
+/// the ONNX sessions once for the whole batch.
+pub fn query_photo_faces_batch(
+    image_paths: &[PathBuf],
+    journal: Option<&Path>,
+    with_crops: bool,
+) -> PassResult<Vec<PhotoFacesBatchEntry>> {
+    let _lease = match journal {
+        Some(dir) => {
+            Some(solstone_core_segment::face_backfill::live_lease(dir).map_err(|e| e.to_string())?)
+        }
+        None => None,
+    };
+    let mut models = open_models()?;
+    let mut results = Vec::with_capacity(image_paths.len());
+    for path in image_paths {
+        let key = path.to_string_lossy().into_owned();
+        match run_photo_detection(&mut *models, path, with_crops) {
+            Ok(output) => results.push(PhotoFacesBatchEntry {
+                path: key,
+                output: Some(output),
+                error: None,
+            }),
+            Err(error) => results.push(PhotoFacesBatchEntry {
+                path: key,
+                output: None,
+                error: Some(error),
+            }),
+        }
+    }
+    Ok(results)
+}
+
 fn meeting_ocr(
     image: &RgbImage,
     parts: &[Value],

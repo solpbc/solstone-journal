@@ -855,7 +855,10 @@ fn imported_image_entry(
     context: &SegmentContext<'_>,
     files: &[std::path::PathBuf],
 ) -> bool {
-    if context.stream != "import.image" {
+    let is_photo_stream = context.stream == "import.image"
+        || context.stream == "photos"
+        || solstone_core_segment::is_photos_stream(context.root, context.stream);
+    if !is_photo_stream {
         return false;
     }
     let Some(raw) = files.iter().find(|path| {
@@ -879,6 +882,9 @@ fn imported_image_entry(
     }
     let dimensions = oriented_image_dimensions(raw);
     let is_screenshot = raw_name.starts_with("original.screenshot.");
+    let observation = (!is_screenshot)
+        .then(|| solstone_core_segment::photo_observation::read_photo_observation(context.dir))
+        .flatten();
     let meta = read_image_meta(context.root, context.dir);
 
     let transcript_path = [
@@ -892,30 +898,70 @@ fn imported_image_entry(
         Some(parse_imported_image_transcript(&text, context.root, path))
     });
 
-    let caption = meta
+    let caption = observation
         .as_ref()
-        .and_then(|value| non_empty_str(value.get("caption")))
+        .and_then(|obs| obs.owner_caption.as_ref().map(|c| c.text.clone()))
+        .or_else(|| {
+            meta.as_ref()
+                .and_then(|value| non_empty_str(value.get("caption")))
+        })
         .or_else(|| {
             parsed_transcript
                 .as_ref()
                 .and_then(|parsed| parsed.caption.clone())
         });
-    let time_source = meta
+    let time_source = observation
         .as_ref()
-        .and_then(|value| non_empty_str(value.get("time_source")));
-    let original_filename = meta
+        .map(|obs| obs.time.time_source.clone())
+        .or_else(|| {
+            meta.as_ref()
+                .and_then(|value| non_empty_str(value.get("time_source")))
+        });
+    let original_filename = observation
         .as_ref()
-        .and_then(|value| non_empty_str(value.get("original_filename")));
-    let (description, description_state) = match parsed_transcript {
-        Some(parsed) => (parsed.description, parsed.description_state),
-        None => (
-            None,
-            if processing_set_up(context.root) {
-                "unavailable"
-            } else {
-                "no_processing"
-            },
-        ),
+        .and_then(|obs| obs.source.original_filename.clone())
+        .or_else(|| {
+            meta.as_ref()
+                .and_then(|value| non_empty_str(value.get("original_filename")))
+        });
+    let visible_text = observation
+        .as_ref()
+        .and_then(|obs| obs.visible_text.as_ref().map(|t| t.text.clone()));
+    let belonging_class = observation
+        .as_ref()
+        .and_then(|obs| obs.belonging_class.map(|b| b.as_str()));
+    let faces: Vec<Value> = observation
+        .as_ref()
+        .map(|obs| {
+            obs.faces
+                .iter()
+                .map(|f| {
+                    json!({
+                        "entity_id": f.entity_id,
+                        "face_idx": f.face_idx,
+                        "similarity": f.similarity,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let (description, description_state) = if let Some(obs) = observation.as_ref() {
+        (
+            obs.description.as_ref().map(|d| d.text.clone()),
+            obs.state.dashboard_state(),
+        )
+    } else {
+        match parsed_transcript {
+            Some(parsed) => (parsed.description, parsed.description_state),
+            None => (
+                None,
+                if processing_set_up(context.root) {
+                    "unavailable"
+                } else {
+                    "no_processing"
+                },
+            ),
+        }
     };
     let legacy_markdown = match (&caption, &description) {
         (Some(cap), Some(desc)) => format!("{cap}\n\n{desc}"),
@@ -938,10 +984,13 @@ fn imported_image_entry(
             "height": dimensions.map(|(_, height)| height),
             "caption": caption,
             "description": description,
+            "visible_text": visible_text,
+            "belonging_class": belonging_class,
             "description_state": description_state,
             "time_source": time_source,
             "original_filename": original_filename,
             "is_screenshot": is_screenshot,
+            "faces": faces,
         },
     }));
     true

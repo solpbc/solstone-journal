@@ -1247,9 +1247,13 @@ fn journal_has_photos(root: &std::path::Path, days: &[String]) -> bool {
 
     let mut image_segments_checked = 0usize;
     for day in candidate_days.iter().take(400) {
-        for stream_dir in [
-            root.join("chronicle").join(day).join("import.image"),
-            root.join(day).join("import.image"),
+        for (stream_name, stream_dir) in [
+            (
+                "import.image",
+                root.join("chronicle").join(day).join("import.image"),
+            ),
+            ("import.image", root.join(day).join("import.image")),
+            ("photos", root.join("chronicle").join(day).join("photos")),
         ] {
             if !std::fs::symlink_metadata(&stream_dir).is_ok_and(|meta| meta.is_dir()) {
                 continue;
@@ -1271,7 +1275,7 @@ fn journal_has_photos(root: &std::path::Path, days: &[String]) -> bool {
                 if !crate::source_release::check_segment_transcript_release(
                     root,
                     day,
-                    "import.image",
+                    stream_name,
                     &seg_name,
                 ) {
                     continue;

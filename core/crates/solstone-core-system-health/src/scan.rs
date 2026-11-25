@@ -694,7 +694,12 @@ pub fn unclaimed_image_state(
     stream_parent_name: &str,
     now: Timestamp,
 ) -> Result<UnclaimedImageState, HealthError> {
-    if stream_parent_name.starts_with("import.") {
+    if stream_parent_name.starts_with("import.")
+        || stream_parent_name == "photos"
+        || segment_path
+            .join(solstone_core_format::content::PHOTO_OBSERVATION_FILENAME)
+            .is_file()
+    {
         return Ok(UnclaimedImageState {
             state: DataState::Absent,
             raw_paths: Vec::new(),

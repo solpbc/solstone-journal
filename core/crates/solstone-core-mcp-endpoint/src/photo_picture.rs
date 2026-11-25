@@ -105,12 +105,12 @@ pub(crate) enum PhotoDocumentPreview {
     Unstructured,
 }
 
-/// The folder of a photo import, when `path` is a photo's description.
+/// The folder of a photo import or synced library photo, when `path` is a photo's description.
 fn photo_folder(path: &str) -> Option<&str> {
     let folder = path.strip_suffix(PHOTO_DESCRIPTION)?;
     let mut parts = folder.trim_end_matches('/').rsplit('/');
     let _segment = parts.next().filter(|segment| !segment.is_empty())?;
-    (parts.next()? == IMAGE_IMPORT_STREAM).then_some(folder)
+    matches!(parts.next()?, IMAGE_IMPORT_STREAM | "photos").then_some(folder)
 }
 
 /// Whether `path` is an imported photo's description.
@@ -146,8 +146,13 @@ pub(crate) fn decode_model_text(text: &str) -> Option<String> {
                     .replace("&gt;", ">")
                     .replace("&amp;", "&"),
             );
+        } else if line == "> [visible text — model-derived]\n"
+            || line == "> [visible text — model-derived]"
+        {
+            in_model = true;
+            decoded.push_str(line);
         } else {
-            in_model &= line == ">\n";
+            in_model &= line == ">\n" || line == "\n";
             decoded.push_str(line);
         }
     }

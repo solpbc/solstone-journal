@@ -147,12 +147,24 @@ pub fn is_screenshots_stream(journal: &Path, stream: &str) -> bool {
         )
 }
 
+/// Syncing source name for synced photo-library copies.
+pub const PHOTOS_SOURCE: &str = "photos";
+
 /// Whether `stream` is bound to the email source.
 pub fn is_email_stream(journal: &Path, stream: &str) -> bool {
     is_safe_stream_component(stream)
         && matches!(
             read_typed_stream_record(&stream_record_path(journal, stream)),
             Ok(Some(record)) if record.source.as_deref() == Some("email")
+        )
+}
+
+/// Whether `stream` is bound to the syncing photos source (photo library copies).
+pub fn is_photos_stream(journal: &Path, stream: &str) -> bool {
+    is_safe_stream_component(stream)
+        && matches!(
+            read_typed_stream_record(&stream_record_path(journal, stream)),
+            Ok(Some(record)) if record.source.as_deref() == Some(PHOTOS_SOURCE)
         )
 }
 

@@ -17,6 +17,9 @@ pub const MIN_ANCHORED: usize = 2;
 pub const MIN_LOOKS: usize = 3;
 pub const SUGGESTED_LOOKS: usize = 5;
 pub const PANEL_SIZE: usize = 6;
+/// Maximum number of slots in a person's profile-pic panel reserved for matched
+/// still-photo faces when meeting evidence has already established the panel.
+pub const MAX_PHOTO_PANEL_SLOTS: usize = 2;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrossEntity {
@@ -104,15 +107,19 @@ pub fn looks<'a>(faces: &[&'a Face]) -> Vec<&'a Face> {
     out
 }
 
-/// The owner uses anchored evidence only, or box evidence if there are no anchors.
-/// Its consensus does not exclude itself or require anchored seeds / distinct looks.
+/// The owner uses anchored meeting evidence only, or box meeting evidence if
+/// there are no anchors. Still-photo rows (`Source::Photo`) are excluded so
+/// meeting centroids never drift from downstream matches.
 pub fn owner_centroid(faces: &[Face]) -> Option<Vec<f32>> {
     let mut pool: Vec<_> = faces
         .iter()
         .filter(|f| !f.metadata.rejected && f.metadata.source == Source::Anchored)
         .collect();
     if pool.is_empty() {
-        pool = faces.iter().filter(|f| !f.metadata.rejected).collect();
+        pool = faces
+            .iter()
+            .filter(|f| !f.metadata.rejected && f.metadata.source != Source::Photo)
+            .collect();
     }
     let kept = consensus(&pool, None, None);
     centroid(&kept)
@@ -138,6 +145,14 @@ pub fn centroid(faces: &[&Face]) -> Option<Vec<f32>> {
 }
 
 /// Pure. Inputs retain ingestion order: anchored picks first, then box fallback.
+///
+/// Meeting evidence (`Source::Anchored` and `Source::Box`) solely governs the
+/// `MIN_LOOKS` (>=3 -> `Possible`) and `SUGGESTED_LOOKS` (>=5 -> `Suggested`)
+/// gates and unconfirmed auto-default selection so photo matches cannot
+/// bootstrap a panel or cause circular centroid drift. Once meeting evidence
+/// establishes a visible panel (`Possible`, `Suggested`, or `Confirmed`),
+/// non-rejected `Source::Photo` matches are admitted as candidate profile-pic
+/// tiles alongside meeting tiles so the owner can confirm them.
 pub fn panel(
     faces: &[Face],
     state: &FacesState,
@@ -150,10 +165,42 @@ pub fn panel(
     let look_count = distinct.len();
     let cross = cross.unwrap_or_default();
     let photo = state.decision.photo.as_ref();
-    finish_panel(state, cross, photo, &mut distinct, look_count)
+    let photo_candidates = eligible_photo_candidates(faces, principal, owner);
+    finish_panel(
+        state,
+        cross,
+        photo,
+        &mut distinct,
+        &photo_candidates,
+        look_count,
+    )
+}
+
+/// Non-rejected `Source::Photo` faces eligible to appear as candidate profile
+/// pics on an already-established panel, sorted by quality descending.
+fn eligible_photo_candidates<'a>(
+    faces: &'a [Face],
+    principal: bool,
+    owner: Option<&[f32]>,
+) -> Vec<&'a Face> {
+    let rejected: Vec<_> = faces.iter().filter(|f| f.metadata.rejected).collect();
+    let mut photos: Vec<_> = faces
+        .iter()
+        .filter(|f| !f.metadata.rejected && f.metadata.source == Source::Photo)
+        .filter(|f| {
+            !rejected
+                .iter()
+                .any(|r| cosine(&r.embedding, &f.embedding) >= LOOK)
+        })
+        .filter(|f| principal || owner.is_none_or(|o| cosine(o, &f.embedding) < OWNER))
+        .collect();
+    photos.sort_by(|a, b| b.metadata.quality.total_cmp(&a.metadata.quality));
+    photos
 }
 
 /// Shared by the panel and the daily cross-person pass, before look collapse.
+/// Strictly meeting evidence (`Source::Anchored` and `Source::Box`); still
+/// photo rows (`Source::Photo`) never alter meeting consensus or cross rules.
 pub fn kept_evidence<'a>(
     faces: &'a [Face],
     state: &FacesState,
@@ -168,7 +215,7 @@ pub fn kept_evidence<'a>(
     let rejected: Vec<_> = faces.iter().filter(|f| f.metadata.rejected).collect();
     let mut pool: Vec<_> = faces
         .iter()
-        .filter(|f| !f.metadata.rejected)
+        .filter(|f| !f.metadata.rejected && f.metadata.source != Source::Photo)
         .filter(|f| {
             !rejected
                 .iter()
@@ -200,6 +247,7 @@ fn finish_panel(
     cross: CrossEntity,
     photo: Option<&super::ChosenPhoto>,
     distinct: &mut Vec<&Face>,
+    photo_candidates: &[&Face],
     look_count: usize,
 ) -> Panel {
     let result_state = if photo.is_some() {
@@ -230,15 +278,70 @@ fn finish_panel(
         };
     }
     distinct.sort_by(|a, b| b.metadata.quality.total_cmp(&a.metadata.quality));
+    // Pick diverse still-photo candidates first (up to MAX_PHOTO_PANEL_SLOTS) so
+    // crisp real photos appear in the owner's possible profile pics alongside
+    // meeting crops without pushing unconfirmed auto-default off a meeting face.
+    let mut picked_photos: Vec<&Face> = vec![];
+    let mut photo_segments = BTreeSet::new();
+    for f in photo_candidates {
+        if picked_photos.len() >= MAX_PHOTO_PANEL_SLOTS {
+            break;
+        }
+        if photo_segments.insert(segment(f))
+            && picked_photos
+                .iter()
+                .all(|g| cosine(&g.embedding, &f.embedding) < DIVERSITY)
+        {
+            picked_photos.push(f);
+        }
+    }
+    let meeting_budget = PANEL_SIZE.saturating_sub(picked_photos.len());
     let mut selected: Vec<&Face> = vec![];
     let mut segments = BTreeSet::new();
     for f in distinct.iter() {
-        if selected.len() < PANEL_SIZE && segments.insert(segment(f)) {
+        if selected.len() < meeting_budget && segments.insert(segment(f)) {
             selected.push(f);
         }
     }
     for f in distinct.iter() {
-        if selected.len() == PANEL_SIZE {
+        if selected.len() >= meeting_budget {
+            break;
+        }
+        if !selected.iter().any(|g| g.metadata.key == f.metadata.key)
+            && selected
+                .iter()
+                .all(|g| cosine(&g.embedding, &f.embedding) < DIVERSITY)
+        {
+            selected.push(f);
+        }
+    }
+    // Append picked still-photo faces directly: they were already deduplicated
+    // across segments and `DIVERSITY` among photo candidates, and a crisp real
+    // camera photo should never be suppressed because it closely matches a
+    // meeting webcam frame of the same person.
+    for f in picked_photos {
+        if selected.len() >= PANEL_SIZE {
+            break;
+        }
+        if !selected.iter().any(|g| g.metadata.key == f.metadata.key) {
+            selected.push(f);
+        }
+    }
+    for f in photo_candidates {
+        if selected.len() >= PANEL_SIZE {
+            break;
+        }
+        if !selected.iter().any(|g| g.metadata.key == f.metadata.key)
+            && selected
+                .iter()
+                .filter(|g| g.metadata.source == Source::Photo)
+                .all(|g| cosine(&g.embedding, &f.embedding) < DIVERSITY)
+        {
+            selected.push(f);
+        }
+    }
+    for f in distinct.iter() {
+        if selected.len() >= PANEL_SIZE {
             break;
         }
         if !selected.iter().any(|g| g.metadata.key == f.metadata.key)
@@ -251,7 +354,12 @@ fn finish_panel(
     }
     let default = photo.map(|p| p.face.metadata.key.clone()).or_else(|| {
         (result_state == State::Suggested)
-            .then(|| selected.first().map(|f| f.metadata.key.clone()))
+            .then(|| {
+                selected
+                    .iter()
+                    .find(|f| f.metadata.source != Source::Photo)
+                    .map(|f| f.metadata.key.clone())
+            })
             .flatten()
     });
     Panel {

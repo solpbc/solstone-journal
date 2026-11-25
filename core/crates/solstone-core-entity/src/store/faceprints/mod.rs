@@ -7,6 +7,7 @@ pub mod accumulation;
 mod codec;
 pub mod cross;
 pub mod panel;
+pub mod photo_match;
 mod storage;
 pub use storage::*;
 #[cfg(test)]
@@ -103,6 +104,7 @@ pub struct FaceKey {
 pub enum Source {
     Anchored,
     Box,
+    Photo,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -218,6 +220,26 @@ pub fn enabled(journal: &std::path::Path) -> Result<bool> {
             Some(value) => value == &serde_json::Value::Bool(true),
         },
     )
+}
+
+/// Matching faces in still photos against meeting faceprints is gated behind
+/// its own explicit opt-in switch (`faces.photo_match_enabled`), OFF by default
+/// when absent or anything other than `true`.
+pub fn photo_match_enabled(journal: &std::path::Path) -> Result<bool> {
+    let config =
+        solstone_core_journal_config::read_journal_config(journal).map_err(|e| e.to_string())?;
+    Ok(config
+        .config
+        .as_ref()
+        .and_then(|v| v.get("faces"))
+        .and_then(|v| v.get("photo_match_enabled"))
+        == Some(&serde_json::Value::Bool(true)))
+}
+
+/// Whether still-photo face matching is active for this journal: both the
+/// owner's face recognition switch and the photo-matching flag must be on.
+pub fn photo_faces_active(journal: &std::path::Path) -> Result<bool> {
+    Ok(enabled(journal)? && photo_match_enabled(journal)?)
 }
 
 pub(super) fn valid_embedding(e: &[f32]) -> bool {

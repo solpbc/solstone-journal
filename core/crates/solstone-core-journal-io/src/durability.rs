@@ -96,6 +96,7 @@ pub enum ArtifactId {
     SegmentOwnerLineLabels,
     SegmentStream,
     SegmentIngest,
+    SegmentPhotoObservation,
     TalentProvenance,
     OperationalLog,
     OffloadLedger,
@@ -549,6 +550,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "capture ingest provenance record",
+    },
+    DurableArtifact {
+        id: ArtifactId::SegmentPhotoObservation,
+        path: "chronicle/**/photo_observation.json",
+        class: DurabilityClass::Wipeable,
+        parser: ParserKind::WholeJson,
+        rationale: "per-photo source-bound observation (description, visible text, belonging class, time provenance, and matched faces); re-derivable while pixels remain",
     },
     DurableArtifact {
         id: ArtifactId::TalentProvenance,

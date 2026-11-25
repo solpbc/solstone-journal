@@ -30,6 +30,7 @@ pub mod image;
 mod nofollow_open;
 pub mod oura;
 pub mod oura_run;
+pub mod photo_faces;
 pub mod producer;
 pub mod registry;
 pub mod save;

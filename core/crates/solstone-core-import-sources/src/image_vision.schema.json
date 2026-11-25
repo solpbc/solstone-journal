@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["description", "visible_text", "belonging_class"],
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "Concise plain visual description of the image without Markdown links or image markup."
+    },
+    "visible_text": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "Verbatim transcription of all legible text in the image (including URLs only when visible), or null if none."
+    },
+    "belonging_class": {
+      "type": "string",
+      "enum": [
+        "lived_moment",
+        "reference_to_remember",
+        "errand_or_utilitarian",
+        "noise_or_accidental"
+      ],
+      "description": "Whether the photo captures a lived moment, reference to remember, errand/utilitarian note, or accidental noise."
+    }
+  }
+}

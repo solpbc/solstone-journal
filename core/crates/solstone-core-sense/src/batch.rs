@@ -575,7 +575,14 @@ pub fn scan_unprocessed(
             {
                 continue;
             }
-            if handler == "depict" && identity.stream.starts_with("import.") {
+            if handler == "depict"
+                && (identity.stream.starts_with("import.")
+                    || identity.stream == "photos"
+                    || segment
+                        .path()
+                        .join(solstone_core_format::content::PHOTO_OBSERVATION_FILENAME)
+                        .is_file())
+            {
                 continue;
             }
             work.push(BatchWork {

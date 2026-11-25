@@ -15,9 +15,8 @@ use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use jiff::civil::DateTime;
 use jiff::tz::{Offset, TimeZone};
 use jiff::{SignedDuration, ZonedDateTime};
-use solstone_core_depict::resize_for_vlm;
 use solstone_core_generate::{
-    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, RefusalReason,
 };
 use solstone_core_import::{
     CreatedSegment, ImportPreview, ManifestWriteRequest, PublicationOperations, hash_source,
@@ -28,6 +27,11 @@ use solstone_core_journal_io::{
     path_lexists, write_text,
 };
 use solstone_core_segment::SegmentDir;
+use solstone_core_segment::photo_observation::{
+    AttributedText, BelongingClass, PHOTO_OBSERVATION_SCHEMA, PhotoObservation,
+    PhotoObservationSource, PhotoObservationState, PhotoObservationTime, PhotoTimePrecision,
+    PhotoTimeProvenance, read_or_project_photo_observation, write_photo_observation,
+};
 use tempfile::NamedTempFile;
 
 /// The formats this source both decodes and can hand to a vision model. HEIC, HEIF and TIFF
@@ -42,13 +46,26 @@ use solstone_core_import::triage::{self, Kind as ContentKind, Verdict};
 const SCREENSHOT_TRANSCRIPT: &str = "screenshot_transcript.md";
 const TRANSCRIPT_FILENAME: &str = "image_transcript.md";
 const IMAGE_META_FILENAME: &str = "image_meta.json";
-const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Transcribe any legible text verbatim, including URLs only when they are visible in the image. Return plain text, without Markdown links or image markup. Never invent URLs or placeholder destinations.";
+const VISION_MAX_LONG_EDGE: u32 = 1024;
+const VISION_JPEG_QUALITY: u8 = 85;
+const VISION_SCHEMA_JSON: &str = include_str!("image_vision.schema.json");
+const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Return JSON:\n\
+- description: concise plain visual description (no Markdown links or image markup).\n\
+- visible_text: verbatim transcription of all legible text (include URLs only when visible; never invent URLs), or null if none.\n\
+- belonging_class: \"lived_moment\" (scene, people, selfie, place, meal, life), \"reference_to_remember\" (whiteboard, slides, book, document, sign, menu, receipt, note), \"errand_or_utilitarian\" (parking spot, shelf/price tag, serial/label, screen photo), or \"noise_or_accidental\" (pocket shot, accidental blur, blank/obstructed).";
 const VISION_CONTEXT: &str = "import.image.vision";
+const VISIBLE_TEXT_MARKER: &str = "> [visible text — model-derived]";
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
 const PRIVATE_IMPORT_DIR_MODE: u32 = 0o700;
 const MODEL_DERIVED_LINE_PREFIX: char = '>';
 const IMAGE_SEGMENT_PROBE_LIMIT: u32 = 60;
 const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
+
+/// Return the canonical JSON schema used for single-pass photo vision reads.
+#[must_use]
+pub fn vision_json_schema() -> serde_json::Value {
+    serde_json::from_str(VISION_SCHEMA_JSON).expect("embedded image vision schema is valid JSON")
+}
 
 /// Progress reported by one image import.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -81,12 +98,77 @@ impl PhotoTimeSource {
     }
 }
 
-/// Optional provenance passed when preparing a standalone imported image.
+/// Optional provenance passed when preparing a standalone imported image or
+/// synced library photo.
 #[derive(Debug, Clone, Default)]
 pub struct ImageImportOptions {
     pub caption: Option<String>,
     pub client_captured_at: Option<String>,
     pub original_filename: Option<String>,
+    pub asset_id: Option<String>,
+    pub time_provenance: Option<PhotoTimeProvenance>,
+    pub capture_location: Option<solstone_core_import::CaptureLocation>,
+    pub tz: Option<String>,
+}
+
+/// Structured single-pass vision output for a photo.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PhotoVisionReading {
+    pub description: String,
+    pub visible_text: Option<String>,
+    pub belonging_class: Option<BelongingClass>,
+}
+
+/// Rich vision outcome distinguishing ready, thinking-off, retryable transient
+/// failure, and non-retryable analysis unavailability.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum PhotoVisionOutcome {
+    Ready(PhotoVisionReading),
+    ThinkingOff { reason: String },
+    TransientFailure { reason: String },
+    AnalysisUnavailable { reason: String },
+}
+
+impl PhotoVisionOutcome {
+    #[must_use]
+    pub fn to_description_outcome(&self) -> DescriptionOutcome {
+        match self {
+            Self::Ready(reading) => DescriptionOutcome::Generated(reading.description.clone()),
+            Self::ThinkingOff { reason }
+            | Self::TransientFailure { reason }
+            | Self::AnalysisUnavailable { reason } => DescriptionOutcome::Unavailable {
+                reason: reason.clone(),
+            },
+        }
+    }
+
+    #[must_use]
+    pub const fn state(&self) -> PhotoObservationState {
+        match self {
+            Self::Ready(_) => PhotoObservationState::Ready,
+            Self::ThinkingOff { .. } => PhotoObservationState::ThinkingOff,
+            Self::TransientFailure { .. } => PhotoObservationState::TransientFailure,
+            Self::AnalysisUnavailable { .. } => PhotoObservationState::AnalysisUnavailable,
+        }
+    }
+
+    #[must_use]
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Ready(_) => None,
+            Self::ThinkingOff { reason }
+            | Self::TransientFailure { reason }
+            | Self::AnalysisUnavailable { reason } => Some(reason.as_str()),
+        }
+    }
+
+    #[must_use]
+    pub fn reading(&self) -> Option<&PhotoVisionReading> {
+        match self {
+            Self::Ready(reading) => Some(reading),
+            _ => None,
+        }
+    }
 }
 
 /// Description status retained with an imported image.
@@ -103,6 +185,7 @@ pub struct ImageImportResult {
     pub created_segment: CreatedSegment,
     pub days_affected: Vec<String>,
     pub description: DescriptionOutcome,
+    pub observation: Option<PhotoObservation>,
 }
 
 /// Errors raised while importing a source image.
@@ -282,6 +365,7 @@ struct PlacedImageMoment {
     utc_offset_seconds: Option<i32>,
     tz: Option<String>,
     time_source: PhotoTimeSource,
+    time_provenance: PhotoTimeProvenance,
 }
 
 fn place_image_moment(
@@ -300,6 +384,7 @@ fn place_image_moment(
             utc_offset_seconds: None,
             tz: None,
             time_source: PhotoTimeSource::Owner,
+            time_provenance: PhotoTimeProvenance::Owner,
         });
     }
     if let Some(moment) = solstone_core_import::detect_photo_capture_moment(path, zone, extra_exif)
@@ -309,6 +394,7 @@ fn place_image_moment(
             utc_offset_seconds: moment.utc_offset_seconds,
             tz: moment.tz,
             time_source: PhotoTimeSource::Capture,
+            time_provenance: PhotoTimeProvenance::Exif,
         });
     }
     if let Some(raw) = client_captured_at
@@ -319,6 +405,7 @@ fn place_image_moment(
             utc_offset_seconds: moment.utc_offset_seconds,
             tz: moment.tz,
             time_source: PhotoTimeSource::Capture,
+            time_provenance: PhotoTimeProvenance::ClientCapturedAt,
         });
     }
     if let Some(fallback) = fallback_timestamp
@@ -329,11 +416,35 @@ fn place_image_moment(
             utc_offset_seconds: None,
             tz: None,
             time_source: PhotoTimeSource::UploadFallback,
+            time_provenance: PhotoTimeProvenance::UploadFallback,
         });
     }
     Err(ImageImportError::CouldNotDetectTimestamp {
         path: path.to_path_buf(),
     })
+}
+
+fn format_capture_instant(
+    naive: DateTime,
+    utc_offset_seconds: Option<i32>,
+    time_source: PhotoTimeSource,
+) -> Option<String> {
+    if time_source == PhotoTimeSource::UploadFallback {
+        return None;
+    }
+    let civil = naive.strftime("%Y-%m-%dT%H:%M:%S").to_string();
+    match utc_offset_seconds {
+        Some(secs) => {
+            let sign = if secs < 0 { '-' } else { '+' };
+            let abs = secs.unsigned_abs();
+            Some(format!(
+                "{civil}{sign}{:02}:{:02}",
+                abs / 3600,
+                (abs % 3600) / 60
+            ))
+        }
+        None => Some(civil),
+    }
 }
 
 fn zoned_from_placed(
@@ -458,6 +569,7 @@ pub fn preview_size(
         .unwrap_or_default();
     let planned = allocate_image_segment(
         journal,
+        IMPORT_STREAM,
         timestamp.datetime(),
         path,
         &extension,
@@ -484,7 +596,10 @@ pub struct PreparedImage {
     pub format: ImageFormat,
     pub modified: SystemTime,
     pub description: DescriptionOutcome,
+    pub vision: PhotoVisionOutcome,
     pub timestamp: ZonedDateTime,
+    /// Original capture instant prior to any same-second segment collision bump.
+    pub captured_at: Option<String>,
     pub day: String,
     pub segment: String,
     pub format_name: &'static str,
@@ -492,10 +607,12 @@ pub struct PreparedImage {
     pub extension: String,
     pub title: String,
     pub time_source: PhotoTimeSource,
+    pub time_provenance: PhotoTimeProvenance,
     pub utc_offset_seconds: Option<i32>,
     pub tz: Option<String>,
     pub caption: Option<String>,
     pub original_filename: Option<String>,
+    pub asset_id: Option<String>,
     pub capture_location: Option<solstone_core_import::CaptureLocation>,
     triage: Option<Box<ImageTriage>>,
 }
@@ -625,30 +742,42 @@ fn prepare(
                 .filter(|value| !value.is_empty())
         });
 
-    let description = match vision_png(&image, orientation) {
-        Ok(_) if !solstone_core_import::work_continues() => DescriptionOutcome::Unavailable {
+    let time_provenance = options.time_provenance.unwrap_or(placed.time_provenance);
+    let captured_at = format_capture_instant(naive, placed.utc_offset_seconds, placed.time_source);
+    let tz = placed.tz.or(options.tz);
+    let asset_id = options
+        .asset_id
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+
+    let vision = match vision_jpeg(&image, orientation) {
+        Ok(_) if !solstone_core_import::work_continues() => PhotoVisionOutcome::TransientFailure {
             reason: "generate cancelled".to_owned(),
         },
-        Ok(png) => {
-            let described = interpret_generate(wire.execute(&build_generate_request(&png)));
+        Ok(jpeg) => {
+            let described = interpret_generate_vision(wire.execute(&build_generate_request(&jpeg)));
             if solstone_core_import::work_continues() {
                 described
             } else {
-                DescriptionOutcome::Unavailable {
+                PhotoVisionOutcome::TransientFailure {
                     reason: "generate cancelled".to_owned(),
                 }
             }
         }
-        Err(error) => DescriptionOutcome::Unavailable {
+        Err(error) => PhotoVisionOutcome::AnalysisUnavailable {
             reason: format!("cannot prepare image for vision: {error}"),
         },
     };
+    let description = vision.to_description_outcome();
 
     let capture_location = (placed.time_source == PhotoTimeSource::Capture
         && !triage
             .as_ref()
             .is_some_and(|t| t.verdict.kind == ContentKind::Screen))
-    .then(|| solstone_core_import::detect_photo_capture_location(path, exif.as_deref()))
+    .then(|| {
+        solstone_core_import::detect_photo_capture_location(path, exif.as_deref())
+            .or(options.capture_location)
+    })
     .flatten();
 
     Ok(PreparedImage {
@@ -657,7 +786,9 @@ fn prepare(
         format,
         modified,
         description,
+        vision,
         timestamp,
+        captured_at,
         day,
         segment,
         format_name,
@@ -665,10 +796,12 @@ fn prepare(
         extension,
         title,
         time_source: placed.time_source,
+        time_provenance,
         utc_offset_seconds: placed.utc_offset_seconds,
-        tz: placed.tz,
+        tz,
         caption,
         original_filename,
+        asset_id,
         capture_location,
         triage,
     })
@@ -684,6 +817,7 @@ struct ClaimedImageSegment {
 
 fn claim_image_segment(
     journal_root: &Path,
+    stream: &str,
     start: DateTime,
     source: &Path,
     extension: &str,
@@ -691,6 +825,7 @@ fn claim_image_segment(
 ) -> Result<ClaimedImageSegment, ImageImportError> {
     let planned = allocate_image_segment(
         journal_root,
+        stream,
         start,
         source,
         extension,
@@ -717,8 +852,10 @@ struct ImageAllocation {
     existing_original: Option<PathBuf>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn allocate_image_segment(
     journal_root: &Path,
+    stream: &str,
     start: DateTime,
     source: &Path,
     extension: &str,
@@ -739,10 +876,12 @@ fn allocate_image_segment(
     let source_len = source_meta.len();
 
     let day = start.strftime("%Y%m%d").to_string();
-    let parent = contained_path(journal_root, &format!("chronicle/{day}/{IMPORT_STREAM}"))
-        .map_err(|error| ImageImportError::JournalIo {
-            path: journal_root.to_path_buf(),
-            detail: error.to_string(),
+    let parent =
+        contained_path(journal_root, &format!("chronicle/{day}/{stream}")).map_err(|error| {
+            ImageImportError::JournalIo {
+                path: journal_root.to_path_buf(),
+                detail: error.to_string(),
+            }
         })?;
     if publish {
         fs::create_dir_all(&parent).map_err(|error| ImageImportError::JournalIo {
@@ -762,7 +901,7 @@ fn allocate_image_segment(
         if candidate_time.strftime("%Y%m%d").to_string() != day {
             return Err(ImageImportError::ImageSegmentDayOverflow {
                 day,
-                stream: IMPORT_STREAM.to_owned(),
+                stream: stream.to_owned(),
                 start: start.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
             });
         }
@@ -952,7 +1091,7 @@ fn allocate_image_segment(
             });
         }
         let resolved =
-            SegmentDir::resolve(journal_root, &day, &segment, IMPORT_STREAM).map_err(|error| {
+            SegmentDir::resolve(journal_root, &day, &segment, stream).map_err(|error| {
                 ImageImportError::JournalIo {
                     path: journal_root.to_path_buf(),
                     detail: error.to_string(),
@@ -982,7 +1121,7 @@ fn allocate_image_segment(
 
     Err(ImageImportError::ImageSegmentCollision {
         day,
-        stream: IMPORT_STREAM.to_owned(),
+        stream: stream.to_owned(),
         start: start.strftime("%Y-%m-%dT%H:%M:%S").to_string(),
         attempts: IMAGE_SEGMENT_PROBE_LIMIT,
     })
@@ -999,12 +1138,40 @@ pub fn install_image_at(
     publication: &dyn PublicationOperations,
     attachment: Option<(&str, &str)>,
 ) -> Result<ImageImportResult, ImageImportError> {
+    install_photo_in_stream_with_faces(
+        prepared,
+        journal_root,
+        IMPORT_STREAM,
+        start,
+        publication,
+        attachment,
+        None,
+        &crate::photo_faces::SystemPhotoFaceDetector,
+    )
+}
+
+/// Install one prepared photo into `stream` (such as `import.image` or a syncing
+/// `photos` stream), writing its original, `image_meta.json`, `image_transcript.md`,
+/// optional GPS sighting, optional desktop photo face pass, and canonical
+/// `photo_observation.json`.
+#[allow(clippy::too_many_arguments)]
+pub fn install_photo_in_stream_with_faces(
+    prepared: &PreparedImage,
+    journal_root: &Path,
+    stream: &str,
+    start: DateTime,
+    publication: &dyn PublicationOperations,
+    attachment: Option<(&str, &str)>,
+    import_id: Option<&str>,
+    face_detector: &dyn crate::photo_faces::PhotoFaceDetector,
+) -> Result<ImageImportResult, ImageImportError> {
     if !solstone_core_import::work_continues() {
         return Err(ImageImportError::Stopped);
     }
     let snapshot = prepared.triage.as_deref();
     let claimed = claim_image_segment(
         journal_root,
+        stream,
         start,
         &prepared.path,
         &prepared.extension,
@@ -1058,6 +1225,10 @@ pub fn install_image_at(
         &transcript_date,
         prepared.caption.as_deref(),
         &prepared.description,
+        prepared
+            .vision
+            .reading()
+            .and_then(|r| r.visible_text.as_deref()),
     );
     let claims = solstone_core_segment::output_attempt::OutputClaims::acquire(
         [transcript_path.with_extension("jsonl")],
@@ -1081,31 +1252,46 @@ pub fn install_image_at(
             path: transcript_path.clone(),
             detail: error.to_string(),
         })?;
-    if let Some((import_id, filename)) = attachment {
+    let source_selector_and_hash = if let Some((attach_import_id, filename)) = attachment {
         let hash = hash_source(&prepared.path).map_err(|error| ImageImportError::Manifest {
             detail: error.to_string(),
         })?;
         let reference = serde_json::json!({
-            "import_id": import_id,
+            "import_id": attach_import_id,
             "source_name": filename,
             "source_sha256": hash.as_str(),
             "source_timestamp": prepared.timestamp.timestamp().as_second(),
         });
         let path = claimed.directory.join("image_source.json");
+        let encoded = reference.to_string();
         atomic_replace(
             &path,
-            reference.to_string().as_bytes(),
+            encoded.as_bytes(),
             AtomicWriteOptions {
                 mode: Some(PRIVATE_IMPORT_FILE_MODE),
             },
         )
         .map_err(|error| ImageImportError::JournalIo {
-            path,
+            path: path.clone(),
             detail: error.to_string(),
         })?;
+        let selector_sha = format!("{:x}", Sha256::digest(encoded.as_bytes()));
+        ("image_source.json".to_owned(), Some(selector_sha))
     } else {
         write_image_meta(&claimed.directory, prepared)?;
-    }
+        let selector_name = original_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("{original_prefix}{}", prepared.extension));
+        let selector_sha = snapshot
+            .map(|t| t.source_hash.as_str().to_owned())
+            .or_else(|| {
+                hash_source(&original_path)
+                    .ok()
+                    .map(|h| h.as_str().to_owned())
+            });
+        (selector_name, selector_sha)
+    };
     let mut extra_created = Vec::new();
     if !screenshot
         && attachment.is_none()
@@ -1130,6 +1316,45 @@ pub fn install_image_at(
     })?;
     let _ = transcript.save_display_receipt_private(&transcript_path);
 
+    let observation = if !screenshot {
+        let face_outcome = if attachment.is_none() {
+            crate::photo_faces::apply_photo_face_pass(
+                journal_root,
+                &claimed.directory,
+                &claimed.day,
+                stream,
+                &claimed.segment,
+                &source_selector_and_hash.0,
+                face_detector,
+            )
+            .unwrap_or_default()
+        } else {
+            crate::photo_faces::PhotoFacePassOutcome::default()
+        };
+        let obs = build_photo_observation(
+            prepared,
+            &claimed.day,
+            stream,
+            &claimed.segment,
+            source_selector_and_hash.0,
+            source_selector_and_hash.1,
+            import_id,
+            face_outcome.links,
+            face_outcome.checked,
+        );
+        write_photo_observation(&claimed.directory, &obs).map_err(|error| {
+            ImageImportError::JournalIo {
+                path: claimed
+                    .directory
+                    .join(solstone_core_format::content::PHOTO_OBSERVATION_FILENAME),
+                detail: error.to_string(),
+            }
+        })?;
+        Some(obs)
+    } else {
+        None
+    };
+
     drop(commit);
     let days_affected = vec![claimed.day.clone()];
     let mut files_created = vec![transcript_path.clone()];
@@ -1139,12 +1364,89 @@ pub fn install_image_at(
         created_segment: CreatedSegment {
             day: claimed.day.clone(),
             segment: claimed.segment.clone(),
-            stream: IMPORT_STREAM.to_owned(),
+            stream: stream.to_owned(),
             hints: Default::default(),
         },
         days_affected,
         description: prepared.description.clone(),
+        observation,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_photo_observation(
+    prepared: &PreparedImage,
+    day: &str,
+    stream: &str,
+    segment: &str,
+    artifact_selector: String,
+    source_sha256: Option<String>,
+    import_id: Option<&str>,
+    faces: Vec<solstone_core_segment::photo_observation::PhotoFaceLink>,
+    faces_checked: bool,
+) -> PhotoObservation {
+    let clock = segment.split('_').next().unwrap_or("000000");
+    let placed_at = if day.len() == 8 && clock.len() >= 6 {
+        format!(
+            "{}-{}-{}T{}:{}:{}",
+            &day[0..4],
+            &day[4..6],
+            &day[6..8],
+            &clock[0..2],
+            &clock[2..4],
+            &clock[4..6]
+        )
+    } else {
+        prepared
+            .timestamp
+            .datetime()
+            .strftime("%Y-%m-%dT%H:%M:%S")
+            .to_string()
+    };
+    let precision = if prepared.time_source == PhotoTimeSource::UploadFallback {
+        PhotoTimePrecision::Unknown
+    } else {
+        PhotoTimePrecision::Second
+    };
+    let reading = prepared.vision.reading();
+    PhotoObservation {
+        schema: PHOTO_OBSERVATION_SCHEMA,
+        observation_revision: 1,
+        source: PhotoObservationSource {
+            day: day.to_owned(),
+            stream: stream.to_owned(),
+            segment: segment.to_owned(),
+            artifact_selector,
+            source_sha256,
+            asset_id: prepared.asset_id.clone(),
+            import_id: import_id.map(ToOwned::to_owned),
+            original_filename: prepared.original_filename.clone(),
+        },
+        width: Some(prepared.image.width()),
+        height: Some(prepared.image.height()),
+        format: Some(prepared.format_name.to_owned()),
+        time: PhotoObservationTime {
+            captured_at: prepared.captured_at.clone(),
+            placed_at,
+            utc_offset_seconds: prepared.utc_offset_seconds,
+            tz: prepared.tz.clone(),
+            precision,
+            provenance: prepared.time_provenance,
+            time_source: prepared.time_source.as_str().to_owned(),
+        },
+        state: prepared.vision.state(),
+        state_reason: prepared.vision.reason().map(ToOwned::to_owned),
+        retry_count: 0,
+        owner_caption: prepared.caption.as_deref().map(AttributedText::owner),
+        description: reading.map(|r| AttributedText::model(r.description.clone())),
+        visible_text: reading
+            .and_then(|r| r.visible_text.as_deref())
+            .map(AttributedText::model),
+        belonging_class: reading.and_then(|r| r.belonging_class),
+        faces,
+        faces_checked,
+        updated_at: solstone_core_time::utc_rfc3339(jiff::Timestamp::now()),
+    }
 }
 
 fn write_image_meta(directory: &Path, prepared: &PreparedImage) -> Result<(), ImageImportError> {
@@ -1289,8 +1591,11 @@ pub fn install_and_publish_image(
             .is_some_and(|v| !v.trim().is_empty())
         {
             effective_prepared.time_source = PhotoTimeSource::Owner;
+            effective_prepared.time_provenance = PhotoTimeProvenance::Owner;
             effective_prepared.utc_offset_seconds = None;
             effective_prepared.tz = None;
+            effective_prepared.captured_at =
+                Some(effective_start.strftime("%Y-%m-%dT%H:%M:%S").to_string());
             effective_prepared.capture_location = None;
         }
         if effective_prepared.caption.is_none() {
@@ -1310,12 +1615,15 @@ pub fn install_and_publish_image(
                 .map(ToOwned::to_owned);
         }
     }
-    let result = install_image_at(
+    let result = install_photo_in_stream_with_faces(
         &effective_prepared,
         journal_root,
+        IMPORT_STREAM,
         effective_start,
         publication,
         None,
+        Some(import_id),
+        &crate::photo_faces::SystemPhotoFaceDetector,
     )?;
     write_import_manifest(
         &prepared.path,
@@ -1417,19 +1725,29 @@ fn read_image(path: &Path, manual: bool) -> Result<DecodedImage, ImageImportErro
     Ok((image, format, modified, orientation, exif, triage))
 }
 
-/// The copy of an imported image that goes to the vision model: decoded pixels only, turned
-/// upright, held to the shared vision size bound and re-encoded as PNG. Nothing from the source
-/// container rides along, so a photo's embedded location, camera and capture time stay in the
-/// owner's journal. The installed original is not touched.
-fn vision_png(
+/// The copy of an imported image that goes to the vision model: decoded pixels
+/// only, turned upright, capped at 1024 px on the longest side (never upscaling
+/// smaller copies such as 512 px library photos), and encoded afresh as JPEG.
+/// Nothing from the source container rides along, so embedded EXIF location,
+/// camera, and capture time stay strictly in the owner's journal.
+fn vision_jpeg(
     image: &DynamicImage,
     orientation: Orientation,
 ) -> Result<Vec<u8>, image::ImageError> {
     let mut upright = image.clone();
     upright.apply_orientation(orientation);
-    let mut png = Cursor::new(Vec::new());
-    resize_for_vlm(upright).write_to(&mut png, ImageFormat::Png)?;
-    Ok(png.into_inner())
+    if upright.width().max(upright.height()) > VISION_MAX_LONG_EDGE {
+        upright = upright.resize(
+            VISION_MAX_LONG_EDGE,
+            VISION_MAX_LONG_EDGE,
+            image::imageops::FilterType::Triangle,
+        );
+    }
+    let rgb = upright.to_rgb8();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, VISION_JPEG_QUALITY)
+        .encode_image(&rgb)?;
+    Ok(jpeg)
 }
 
 fn degenerate_preview() -> ImportPreview {
@@ -1451,7 +1769,7 @@ fn format_details(format: ImageFormat) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn build_generate_request(png: &[u8]) -> GenerateRequest {
+fn build_generate_request(jpeg: &[u8]) -> GenerateRequest {
     GenerateRequest {
         id: None,
         context: VISION_CONTEXT.to_owned(),
@@ -1460,16 +1778,16 @@ fn build_generate_request(png: &[u8]) -> GenerateRequest {
                 text: VISION_PROMPT.to_owned(),
             },
             ContentPart::Image {
-                mime_type: "image/png".to_owned(),
-                data: base64::engine::general_purpose::STANDARD.encode(png),
+                mime_type: "image/jpeg".to_owned(),
+                data: base64::engine::general_purpose::STANDARD.encode(jpeg),
             },
         ],
         system_instruction: None,
         temperature: 0.3,
         max_output_tokens: 2_304,
         timeout_s: None,
-        json_output: false,
-        json_schema: None,
+        json_output: true,
+        json_schema: Some(vision_json_schema()),
         attempt_index: 0,
         exclusive_admission: false,
         overflow_text: None,
@@ -1477,39 +1795,100 @@ fn build_generate_request(png: &[u8]) -> GenerateRequest {
     }
 }
 
-fn interpret_generate(response: Result<GenerateResponse, ClientError>) -> DescriptionOutcome {
+fn parse_vision_json(raw: &str) -> Option<PhotoVisionReading> {
+    let trimmed = raw.trim();
+    let candidate = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .and_then(|rest| rest.strip_suffix("```"))
+        .map(str::trim)
+        .unwrap_or(trimmed);
+    let value: serde_json::Value = serde_json::from_str(candidate).ok()?;
+    let obj = value.as_object()?;
+    let description = obj
+        .get("description")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_owned();
+    let visible_text = obj
+        .get("visible_text")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned);
+    let belonging_class = obj
+        .get("belonging_class")
+        .and_then(serde_json::Value::as_str)
+        .and_then(BelongingClass::parse);
+    Some(PhotoVisionReading {
+        description,
+        visible_text,
+        belonging_class,
+    })
+}
+
+fn interpret_generate_vision(
+    response: Result<GenerateResponse, ClientError>,
+) -> PhotoVisionOutcome {
     match response {
         Ok(GenerateResponse::Generated(generated)) => {
-            let description = generated.text.trim();
-            if description.is_empty() {
-                DescriptionOutcome::Unavailable {
+            let trimmed = generated.text.trim();
+            if trimmed.is_empty() {
+                return PhotoVisionOutcome::AnalysisUnavailable {
                     reason: "Vision produced no description for image".to_owned(),
-                }
+                };
+            }
+            if let Some(reading) = parse_vision_json(trimmed) {
+                PhotoVisionOutcome::Ready(reading)
             } else {
-                DescriptionOutcome::Generated(description.to_owned())
+                // Shape-tolerant fallback if a provider/stub emits plain text.
+                PhotoVisionOutcome::Ready(PhotoVisionReading {
+                    description: trimmed.to_owned(),
+                    visible_text: None,
+                    belonging_class: None,
+                })
             }
         }
-        Ok(GenerateResponse::Refused(refusal)) => DescriptionOutcome::Unavailable {
-            reason: format!("{}: {}", refusal.reason.as_str(), refusal.detail),
-        },
-        Ok(GenerateResponse::Cancelled) => DescriptionOutcome::Unavailable {
+        Ok(GenerateResponse::Refused(refusal)) => {
+            let reason = format!("{}: {}", refusal.reason.as_str(), refusal.detail);
+            if refusal.reason == RefusalReason::NoEngineConfigured {
+                PhotoVisionOutcome::ThinkingOff { reason }
+            } else if refusal.retryable
+                || matches!(
+                    refusal.reason,
+                    RefusalReason::AttestationStale
+                        | RefusalReason::ConfidentialChannelClosed
+                        | RefusalReason::IncompleteJson
+                        | RefusalReason::IncompleteText
+                )
+            {
+                PhotoVisionOutcome::TransientFailure { reason }
+            } else {
+                PhotoVisionOutcome::AnalysisUnavailable { reason }
+            }
+        }
+        Ok(GenerateResponse::Cancelled) => PhotoVisionOutcome::TransientFailure {
             reason: "generate cancelled".to_owned(),
         },
-        Err(error @ ClientError::Protocol(_)) => DescriptionOutcome::Unavailable {
-            reason: error.to_string(),
-        },
-        Err(ClientError::Decode(detail) | ClientError::Resolve(detail)) => {
-            DescriptionOutcome::Unavailable { reason: detail }
-        }
         Err(
-            error @ (ClientError::Io { .. }
+            error @ (ClientError::Protocol(_)
+            | ClientError::Io { .. }
             | ClientError::ProcessIo(_)
             | ClientError::InvalidResponse(_)
             | ClientError::UnexpectedChild(_)),
-        ) => DescriptionOutcome::Unavailable {
+        ) => PhotoVisionOutcome::TransientFailure {
             reason: error.to_string(),
         },
+        Err(ClientError::Decode(detail) | ClientError::Resolve(detail)) => {
+            PhotoVisionOutcome::AnalysisUnavailable { reason: detail }
+        }
     }
+}
+
+#[cfg(test)]
+fn interpret_generate(response: Result<GenerateResponse, ClientError>) -> DescriptionOutcome {
+    interpret_generate_vision(response).to_description_outcome()
 }
 
 #[cfg(test)]
@@ -1522,9 +1901,20 @@ fn render_image_markdown(
     caption: Option<&str>,
     description: &DescriptionOutcome,
 ) -> String {
-    render_image_document(title, format, width, height, date, caption, description).into_text()
+    render_image_document(
+        title,
+        format,
+        width,
+        height,
+        date,
+        caption,
+        description,
+        None,
+    )
+    .into_text()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_image_document(
     title: &str,
     format: &str,
@@ -1533,6 +1923,7 @@ fn render_image_document(
     date: &str,
     caption: Option<&str>,
     description: &DescriptionOutcome,
+    visible_text: Option<&str>,
 ) -> solstone_core_format::stored_markdown::Document {
     use solstone_core_format::stored_markdown::{Document, imported::Copy};
 
@@ -1555,7 +1946,7 @@ fn render_image_document(
         doc.push_str(caption);
         doc.push_str("\n\n---\n\n");
     }
-    push_model_block(&mut doc, description);
+    push_model_block(&mut doc, description, visible_text);
     let trimmed_len = doc.trim_end().len();
     doc.truncate(trimmed_len);
     doc.push_str("\n");
@@ -1565,6 +1956,7 @@ fn render_image_document(
 fn push_model_block(
     doc: &mut solstone_core_format::stored_markdown::Document,
     description: &DescriptionOutcome,
+    visible_text: Option<&str>,
 ) {
     use solstone_core_format::stored_markdown::imported::Copy;
 
@@ -1579,6 +1971,19 @@ fn push_model_block(
                         "\n{MODEL_DERIVED_LINE_PREFIX} {}",
                         solstone_core_format::markdown::literal_text(line)
                     ));
+                }
+            }
+            if let Some(vtext) = visible_text.map(str::trim).filter(|s| !s.is_empty()) {
+                doc.push_str(&format!("\n\n{VISIBLE_TEXT_MARKER}"));
+                for line in vtext.split('\n') {
+                    if line.is_empty() {
+                        doc.push_str(&format!("\n{MODEL_DERIVED_LINE_PREFIX}"));
+                    } else {
+                        doc.push_str(&format!(
+                            "\n{MODEL_DERIVED_LINE_PREFIX} {}",
+                            solstone_core_format::markdown::literal_text(line)
+                        ));
+                    }
                 }
             }
         }
@@ -1601,6 +2006,212 @@ fn push_model_block(
             }
         }
     }
+}
+
+/// Result of attempting to retry a pending or transiently failed photo observation.
+#[derive(Debug, Clone)]
+pub struct PhotoRetryOutcome {
+    pub observation: PhotoObservation,
+    pub retried: bool,
+}
+
+/// Retry vision description (and optional photo face pass) for a live photo
+/// observation in a retryable state (`Pending`, `TransientFailure`, or
+/// `ThinkingOff`) while the journal still holds the original pixels.
+///
+/// Bumps `observation_revision` and `retry_count`, atomically updates
+/// `photo_observation.json` and `image_transcript.md` (with its `.display`
+/// receipt), and touches the day's stream health marker so `sense_static` and
+/// search re-index the updated observation.
+pub fn retry_photo_observation(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+    wire: &dyn WireClient,
+    face_detector: &dyn crate::photo_faces::PhotoFaceDetector,
+) -> Result<Option<PhotoRetryOutcome>, ImageImportError> {
+    let Some(mut obs) = read_or_project_photo_observation(journal_root, day, stream, segment)
+    else {
+        return Ok(None);
+    };
+    if !obs.state.is_retryable() {
+        return Ok(Some(PhotoRetryOutcome {
+            observation: obs,
+            retried: false,
+        }));
+    }
+    let seg_dir = contained_path(journal_root, &format!("chronicle/{day}/{stream}/{segment}"))
+        .map_err(|error| ImageImportError::JournalIo {
+            path: journal_root.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+    let pixel_path = seg_dir.join(&obs.source.artifact_selector);
+    if !pixel_path.is_file() || obs.source.artifact_selector == "image_source.json" {
+        return Ok(Some(PhotoRetryOutcome {
+            observation: obs,
+            retried: false,
+        }));
+    }
+    let (image, format, _, orientation, _, _) = read_image(&pixel_path, false)?;
+    let (format_name, _) =
+        format_details(format).ok_or_else(|| ImageImportError::UndecodableSource {
+            path: pixel_path.clone(),
+            detail: format!("unsupported image format {format:?}"),
+        })?;
+    let live_sha = hash_source(&pixel_path)
+        .map_err(|error| ImageImportError::JournalIo {
+            path: pixel_path.clone(),
+            detail: error.to_string(),
+        })?
+        .as_str()
+        .to_owned();
+    let vision = match vision_jpeg(&image, orientation) {
+        Ok(jpeg) => interpret_generate_vision(wire.execute(&build_generate_request(&jpeg))),
+        Err(error) => PhotoVisionOutcome::AnalysisUnavailable {
+            reason: format!("cannot prepare image for vision: {error}"),
+        },
+    };
+    let transcript_path = seg_dir.join(TRANSCRIPT_FILENAME);
+    let claims = solstone_core_segment::output_attempt::OutputClaims::acquire(
+        [transcript_path.with_extension("jsonl")],
+        solstone_core_journal_io::LockOptions::default(),
+    )
+    .map_err(|error| ImageImportError::JournalIo {
+        path: transcript_path.clone(),
+        detail: error.to_string(),
+    })?;
+    let commit = claims
+        .commit(&seg_dir)
+        .map_err(|error| ImageImportError::JournalIo {
+            path: transcript_path.clone(),
+            detail: error.to_string(),
+        })?;
+    if !matches!(
+        solstone_core_segment::owner_deletion_state(&seg_dir),
+        Ok(solstone_core_segment::OwnerDeletionState::Live)
+    ) {
+        return Ok(None);
+    }
+    obs.observation_revision = obs.observation_revision.saturating_add(1);
+    obs.retry_count = obs.retry_count.saturating_add(1);
+    obs.source.source_sha256 = Some(live_sha);
+    obs.width = Some(image.width());
+    obs.height = Some(image.height());
+    obs.format = Some(format_name.to_owned());
+    obs.state = vision.state();
+    obs.state_reason = vision.reason().map(ToOwned::to_owned);
+    if let Some(reading) = vision.reading() {
+        obs.description = Some(AttributedText::model(reading.description.clone()));
+        obs.visible_text = reading.visible_text.as_deref().map(AttributedText::model);
+        obs.belonging_class = reading.belonging_class;
+    }
+    if !obs.faces_checked
+        && let Ok(face_outcome) = crate::photo_faces::apply_photo_face_pass(
+            journal_root,
+            &seg_dir,
+            day,
+            stream,
+            segment,
+            &obs.source.artifact_selector,
+            face_detector,
+        )
+        && face_outcome.checked
+    {
+        obs.faces = face_outcome.links;
+        obs.faces_checked = true;
+    }
+    obs.updated_at = solstone_core_time::utc_rfc3339(jiff::Timestamp::now());
+
+    let title = obs
+        .source
+        .original_filename
+        .as_deref()
+        .and_then(|name| Path::new(name).file_stem().and_then(|s| s.to_str()))
+        .unwrap_or("photo");
+    let transcript_date = if day.len() == 8 {
+        format!("{}-{}-{}", &day[0..4], &day[4..6], &day[6..8])
+    } else {
+        day.to_owned()
+    };
+    let desc_outcome = vision.to_description_outcome();
+    let transcript = render_image_document(
+        title,
+        format_name,
+        image.width(),
+        image.height(),
+        &transcript_date,
+        obs.owner_caption.as_ref().map(|c| c.text.as_str()),
+        &desc_outcome,
+        obs.visible_text.as_ref().map(|v| v.text.as_str()),
+    );
+    let _ = solstone_core_format::stored_markdown::remove_display_receipt(&transcript_path);
+    write_text(
+        &transcript_path,
+        &transcript,
+        AtomicWriteOptions {
+            mode: Some(PRIVATE_IMPORT_FILE_MODE),
+        },
+    )
+    .map_err(|error| ImageImportError::JournalIo {
+        path: transcript_path.clone(),
+        detail: error.to_string(),
+    })?;
+    let _ = transcript.save_display_receipt_private(&transcript_path);
+    write_photo_observation(&seg_dir, &obs).map_err(|error| ImageImportError::JournalIo {
+        path: seg_dir.join(solstone_core_format::content::PHOTO_OBSERVATION_FILENAME),
+        detail: error.to_string(),
+    })?;
+    drop(commit);
+    let _ = solstone_core_journal_io::bump_stream_marker(journal_root, day);
+    Ok(Some(PhotoRetryOutcome {
+        observation: obs,
+        retried: true,
+    }))
+}
+
+/// Scan all live photo segments on `day` and retry any `Pending`,
+/// `TransientFailure`, or `ThinkingOff` observations whose pixels remain.
+pub fn retry_pending_photo_observations_for_day(
+    journal_root: &Path,
+    day: &str,
+    wire: &dyn WireClient,
+    face_detector: &dyn crate::photo_faces::PhotoFaceDetector,
+) -> Vec<PhotoRetryOutcome> {
+    let mut outcomes = Vec::new();
+    let Ok(segments) = solstone_core_journal_io::iter_segments(
+        journal_root,
+        solstone_core_journal_io::PathOrDay::Day(day),
+    ) else {
+        return outcomes;
+    };
+    for seg in segments {
+        let Some(stream) = seg
+            .stream()
+            .directory()
+            .and_then(|s| s.to_str())
+            .map(ToOwned::to_owned)
+        else {
+            continue;
+        };
+        let Some(seg_key) = seg.name().to_str().map(ToOwned::to_owned) else {
+            continue;
+        };
+        if !seg
+            .path()
+            .join(solstone_core_format::content::PHOTO_OBSERVATION_FILENAME)
+            .is_file()
+        {
+            continue;
+        }
+        if let Ok(Some(outcome)) =
+            retry_photo_observation(journal_root, day, &stream, &seg_key, wire, face_detector)
+            && outcome.retried
+        {
+            outcomes.push(outcome);
+        }
+    }
+    outcomes
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1880,7 +2491,7 @@ mod tests {
     }
 
     #[test]
-    fn request_carries_the_given_png_and_generate_defaults_without_a_process() {
+    fn request_carries_the_given_jpeg_and_generate_defaults_without_a_process() {
         let source = png_bytes();
         let request = build_generate_request(&source);
         let wire = RecordingWire {
@@ -1897,7 +2508,7 @@ mod tests {
         let ContentPart::Image { mime_type, data } = &request.contents[1] else {
             panic!("second content part must be an image");
         };
-        assert_eq!(mime_type, "image/png");
+        assert_eq!(mime_type, "image/jpeg");
         assert_eq!(
             base64::engine::general_purpose::STANDARD
                 .decode(data)
@@ -1906,6 +2517,8 @@ mod tests {
         );
         assert_eq!(request.temperature, 0.3);
         assert_eq!(request.max_output_tokens, 2_304);
+        assert!(request.json_output);
+        assert_eq!(request.json_schema, Some(vision_json_schema()));
         assert_eq!(request.attempt_index, 0);
         assert!(!request.exclusive_admission);
     }
@@ -1967,17 +2580,26 @@ mod tests {
         jpeg
     }
 
-    fn png_chunk_types(png: &[u8]) -> Vec<String> {
-        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-        let mut types = Vec::new();
-        let mut offset = 8;
-        while offset < png.len() {
-            let length = u32::from_be_bytes(png[offset..offset + 4].try_into().unwrap()) as usize;
-            types.push(String::from_utf8_lossy(&png[offset + 4..offset + 8]).into_owned());
-            offset += 12 + length;
+    fn jpeg_marker_types(jpeg: &[u8]) -> Vec<u8> {
+        assert_eq!(&jpeg[..2], [0xff, 0xd8]);
+        let mut markers = Vec::new();
+        let mut offset = 2;
+        while offset + 1 < jpeg.len() {
+            assert_eq!(jpeg[offset], 0xff);
+            while offset < jpeg.len() && jpeg[offset] == 0xff {
+                offset += 1;
+            }
+            let marker = jpeg[offset];
+            offset += 1;
+            markers.push(marker);
+            if marker == 0xd9 || marker == 0xda {
+                break;
+            }
+            let length = u16::from_be_bytes([jpeg[offset], jpeg[offset + 1]]) as usize;
+            assert!(length >= 2);
+            offset += length;
         }
-        assert_eq!(offset, png.len());
-        types
+        markers
     }
 
     fn vision_request_bytes(source: &[u8]) -> Vec<u8> {
@@ -2004,7 +2626,7 @@ mod tests {
         let ContentPart::Image { mime_type, data } = &request.contents[1] else {
             panic!("second content part must be an image");
         };
-        assert_eq!(mime_type, "image/png");
+        assert_eq!(mime_type, "image/jpeg");
         base64::engine::general_purpose::STANDARD
             .decode(data)
             .unwrap()
@@ -2013,10 +2635,12 @@ mod tests {
     #[test]
     fn imported_photo_reaches_the_model_as_pixels_without_its_exif() {
         for (width, height, orientation, expected) in [
-            // Stored sideways with orientation 6: sent upright, same pixel count.
+            // Stored sideways with orientation 6: sent upright, same pixel count (never upscaled).
             (40, 24, 6, (24, 40)),
-            // No rotation, larger than the shared vision bound: sent resized.
-            (3000, 16, 1, (1920, 10)),
+            // 512 px library copy: stays 512 px (never upscaled).
+            (512, 384, 1, (512, 384)),
+            // No rotation, larger than the 1024 px vision bound: sent resized.
+            (3000, 16, 1, (1024, 5)),
         ] {
             let source = jpeg_with_exif(width, height, orientation);
             let mut decoder = ImageReader::with_format(Cursor::new(&source), ImageFormat::Jpeg)
@@ -2039,19 +2663,16 @@ mod tests {
             assert!(source.windows(7).any(|window| window == b"TESTCAM"));
 
             let sent = vision_request_bytes(&source);
-            // Structural proof: the PNG holds only a header, pixel data and an end marker,
-            // so there is no eXIf, text or colour-profile chunk to carry metadata.
-            let chunks = png_chunk_types(&sent);
-            assert_eq!(chunks.first().map(String::as_str), Some("IHDR"));
-            assert_eq!(chunks.last().map(String::as_str), Some("IEND"));
-            assert!(
-                chunks[1..chunks.len() - 1]
-                    .iter()
-                    .all(|kind| kind == "IDAT")
-            );
+            // Structural proof: freshly encoded JPEG carries zero APP1 (EXIF),
+            // APP2 (ICC), APP13 (IPTC) or COM comment metadata segments.
+            let markers = jpeg_marker_types(&sent);
+            assert!(!markers.contains(&0xe1), "no APP1/EXIF segment");
+            assert!(!markers.contains(&0xe2), "no APP2/ICC segment");
+            assert!(!markers.contains(&0xed), "no APP13/IPTC segment");
+            assert!(!markers.contains(&0xfe), "no COM segment");
             assert!(!sent.windows(6).any(|window| window == b"Exif\0\0"));
             assert!(!sent.windows(7).any(|window| window == b"TESTCAM"));
-            let decoded = image::load_from_memory_with_format(&sent, ImageFormat::Png).unwrap();
+            let decoded = image::load_from_memory_with_format(&sent, ImageFormat::Jpeg).unwrap();
             assert_eq!(decoded.dimensions(), expected);
         }
     }
@@ -2256,6 +2877,7 @@ mod tests {
             fs::write(&source, b"synthetic image bytes").unwrap();
             let claimed = claim_image_segment(
                 root.path(),
+                IMPORT_STREAM,
                 jiff::civil::date(2026, 1, 2).at(12, 0, 0, 0),
                 &source,
                 ".png",
@@ -3751,6 +4373,7 @@ mod tests {
                 caption: Some("late night shinjuku".to_owned()),
                 client_captured_at: None,
                 original_filename: Some("20190304_120000.jpg".to_owned()),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -3823,5 +4446,599 @@ mod tests {
         .unwrap();
         assert_eq!(meta["time_source"], "upload_fallback");
         assert!(meta.get("utc_offset_seconds").is_none());
+    }
+
+    struct SequenceWire {
+        responses: RefCell<std::collections::VecDeque<Result<GenerateResponse, ClientError>>>,
+    }
+
+    impl SequenceWire {
+        fn new(responses: Vec<Result<GenerateResponse, ClientError>>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into()),
+            }
+        }
+    }
+
+    impl WireClient for SequenceWire {
+        fn execute(&self, _request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            self.responses
+                .borrow_mut()
+                .pop_front()
+                .expect("expected mock vision response")
+        }
+    }
+
+    struct MockPhotoFaceDetector {
+        encoder: solstone_core_entity::faceprints::Encoder,
+        faces: Vec<solstone_core_entity::faceprints::photo_match::PhotoFaceCandidate>,
+    }
+
+    impl crate::photo_faces::PhotoFaceDetector for MockPhotoFaceDetector {
+        fn detect_photo(
+            &self,
+            _image_path: &Path,
+            _journal: Option<&Path>,
+            with_crops: bool,
+        ) -> Result<crate::photo_faces::DetectedPhotoFaces, String> {
+            let faces = self
+                .faces
+                .iter()
+                .map(|f| {
+                    let mut c = f.clone();
+                    if !with_crops {
+                        c.crop_jpeg = None;
+                    }
+                    c
+                })
+                .collect();
+            Ok(crate::photo_faces::DetectedPhotoFaces {
+                encoder: self.encoder.clone(),
+                width: 640,
+                height: 480,
+                faces,
+            })
+        }
+    }
+
+    fn distinct_jpeg(seed: u8) -> Vec<u8> {
+        let pixels = ImageBuffer::from_fn(64, 48, |x, y| {
+            Rgb([
+                ((x as u8).wrapping_add(seed)),
+                ((y as u8).wrapping_mul(3).wrapping_add(seed)),
+                seed.wrapping_mul(17),
+            ])
+        });
+        let mut out = Vec::new();
+        JpegEncoder::new_with_quality(&mut out, 85)
+            .encode_image(&DynamicImage::ImageRgb8(pixels))
+            .unwrap();
+        out
+    }
+
+    fn unit_face_vec(dim: usize) -> Vec<f32> {
+        let mut v = vec![0.0_f32; solstone_core_entity::faceprints::WIDTH];
+        v[dim] = 1.0;
+        v
+    }
+
+    fn seed_meeting_person_with_looks(
+        journal: &Path,
+        entity_id: &str,
+        name: &str,
+        dim: usize,
+        looks: usize,
+    ) -> solstone_core_entity::faceprints::Encoder {
+        use solstone_core_entity::faceprints::{self, Encoder, Face, FaceKey, Metadata, Source};
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let folder = entity_id.to_owned();
+        let ent_dir = journal.join("entities").join(&folder);
+        fs::create_dir_all(&ent_dir).unwrap();
+        let entity_json = serde_json::json!({
+            "id": entity_id,
+            "name": name,
+            "type": "Person",
+        });
+        fs::write(
+            ent_dir.join("entity.json"),
+            serde_json::to_vec(&entity_json).unwrap(),
+        )
+        .unwrap();
+
+        let encoder = Encoder {
+            id: "opencv-sface-2021dec".to_owned(),
+            sha256: "test-sface-sha256".to_owned(),
+            width: faceprints::WIDTH,
+        };
+        let mut desired: BTreeMap<String, Vec<Face>> = BTreeMap::new();
+        let mut meeting_faces = Vec::new();
+        for i in 0..looks {
+            let mut emb = unit_face_vec(dim);
+            emb[20 + i] = 0.42; // distinct looks across segments (cos < 0.93) while staying in consensus
+            let norm = emb.iter().map(|x| x * x).sum::<f32>().sqrt();
+            for x in &mut emb {
+                *x /= norm;
+            }
+            let day = format!("202611{:02}", 10 + i);
+            let seg_dir = journal
+                .join("chronicle")
+                .join(&day)
+                .join("screen")
+                .join("100000_300");
+            fs::create_dir_all(&seg_dir).unwrap();
+            let prefix = faceprints::accumulation::source_prefix("screen.webm");
+            let crops_dir = seg_dir.join(format!("{prefix}-crops"));
+            fs::create_dir_all(&crops_dir).unwrap();
+            let crop_name = format!("0-{i}-meeting.jpg");
+            fs::write(crops_dir.join(&crop_name), distinct_jpeg(i as u8)).unwrap();
+            let key = FaceKey {
+                day: day.clone(),
+                stream: "screen".to_owned(),
+                stream_layout: "named".to_owned(),
+                segment_key: "100000_300".to_owned(),
+                source_name: "screen.webm".to_owned(),
+                frame_id: i as u64,
+                face_idx: 0,
+            };
+            meeting_faces.push(Face {
+                embedding: emb,
+                metadata: Metadata {
+                    schema_version: 1,
+                    key,
+                    activities: BTreeSet::from([format!("[\"work\",\"{day}\",\"act-{i}\"]")]),
+                    source: Source::Anchored,
+                    label_text: Some(name.to_owned()),
+                    quality: 0.70,
+                    det_score: 0.95,
+                    face_w: 80.0,
+                    category: "meeting".to_owned(),
+                    crop: Some(format!("{prefix}-crops/{crop_name}")),
+                    added_at: "2026-11-10T10:00:00Z".to_owned(),
+                    rejected: false,
+                },
+            });
+        }
+        desired.insert(entity_id.to_owned(), meeting_faces);
+        faceprints::reconcile(
+            journal,
+            "[\"work\",\"20261110\",\"act-0\"]",
+            &encoder,
+            &desired,
+        )
+        .unwrap();
+        encoder
+    }
+
+    #[test]
+    fn photo_observations_pass_all_four_closure_tests_and_preserve_same_second_capture() {
+        use solstone_core_segment::photo_observation::{
+            PhotoObservationResolution, TextAttribution, resolve_photo_observation,
+        };
+
+        let journal = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let p1 = src_dir.path().join("burst_1.jpg");
+        let p2 = src_dir.path().join("burst_2.jpg");
+        let p3 = src_dir.path().join("undated_noise.jpg");
+        fs::write(&p1, distinct_jpeg(1)).unwrap();
+        fs::write(&p2, distinct_jpeg(2)).unwrap();
+        fs::write(&p3, distinct_jpeg(3)).unwrap();
+
+        let wire = SequenceWire::new(vec![
+            Ok(generated(
+                r#"{"description":"Two people standing by a trailhead sign.","visible_text":"SOUTH MESA TRAIL 7,200 FT","belonging_class":"lived_moment"}"#,
+            )),
+            Ok(generated(
+                r#"{"description":"Close-up of a handwritten coffee menu on a chalkboard.","visible_text":"ESPRESSO $4 / CORTADO $5","belonging_class":"reference_to_remember"}"#,
+            )),
+            Ok(generated(
+                r#"{"description":"Dark blurry inside of a coat pocket.","visible_text":null,"belonging_class":"noise_or_accidental"}"#,
+            )),
+        ]);
+        let publication = TestPublication::new();
+
+        // Closure 1 & 2: Two distinct photos captured in the EXACT SAME SECOND with offset,
+        // plus one metadata-free hand-shared noise photo (must STILL be kept!).
+        let prep1 = prepare_manual_image_with_options(
+            &p1,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            None,
+            ImageImportOptions {
+                caption: Some("Early hike".to_owned()),
+                client_captured_at: Some("2026-11-19T12:00:00-07:00".to_owned()),
+                original_filename: Some("IMG_1001.JPG".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let prep2 = prepare_manual_image_with_options(
+            &p2,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            None,
+            ImageImportOptions {
+                caption: Some("Coffee stop".to_owned()),
+                client_captured_at: Some("2026-11-19T12:00:00-07:00".to_owned()),
+                original_filename: Some("IMG_1002.JPG".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let prep3 = prepare_manual_image(&p3, &wire, &TimeZone::UTC, None, Some("20261119_153000"))
+            .unwrap();
+
+        let res1 =
+            install_and_publish_image(&prep1, journal.path(), "imp-burst-1", &publication, None)
+                .unwrap();
+        let res2 =
+            install_and_publish_image(&prep2, journal.path(), "imp-burst-2", &publication, None)
+                .unwrap();
+        let res3 =
+            install_and_publish_image(&prep3, journal.path(), "imp-noise-3", &publication, None)
+                .unwrap();
+
+        let obs1 = res1.observation.expect("photo 1 observation");
+        let obs2 = res2.observation.expect("photo 2 observation");
+        let obs3 = res3.observation.expect("hand-shared noise photo kept");
+
+        // Same-second collision yields distinct segment coordinates while BOTH preserve true capture instant!
+        assert_eq!(obs1.source.segment, "120000_0");
+        assert_eq!(obs2.source.segment, "120001_0");
+        assert_ne!(obs1.source.source_sha256, obs2.source.source_sha256);
+        assert_eq!(
+            obs1.time.captured_at.as_deref(),
+            Some("2026-11-19T12:00:00-07:00")
+        );
+        assert_eq!(
+            obs2.time.captured_at.as_deref(),
+            Some("2026-11-19T12:00:00-07:00")
+        );
+        assert_eq!(obs1.time.utc_offset_seconds, Some(-25200));
+        assert_eq!(obs2.time.utc_offset_seconds, Some(-25200));
+        assert_eq!(obs1.time.precision, PhotoTimePrecision::Second);
+        assert_eq!(obs1.time.provenance, PhotoTimeProvenance::ClientCapturedAt);
+        assert_eq!(obs1.time.time_source, "capture");
+
+        // Attribution separation: owner caption, model visual description, model visible text.
+        assert_eq!(
+            obs1.owner_caption,
+            Some(AttributedText {
+                text: "Early hike".to_owned(),
+                attribution: TextAttribution::Owner
+            })
+        );
+        assert_eq!(
+            obs1.description,
+            Some(AttributedText {
+                text: "Two people standing by a trailhead sign.".to_owned(),
+                attribution: TextAttribution::Model
+            })
+        );
+        assert_eq!(
+            obs1.visible_text,
+            Some(AttributedText {
+                text: "SOUTH MESA TRAIL 7,200 FT".to_owned(),
+                attribution: TextAttribution::Model
+            })
+        );
+        assert_eq!(obs1.belonging_class, Some(BelongingClass::LivedMoment));
+        assert_eq!(
+            obs2.belonging_class,
+            Some(BelongingClass::ReferenceToRemember)
+        );
+        // Transcript contains all three separated for single-pass sense_static consumption.
+        let md1 = fs::read_to_string(&res1.files_created[0]).unwrap();
+        assert!(md1.contains("**Caption:**\nEarly hike"));
+        assert!(md1.contains("> [image description — model-derived]"));
+        assert!(md1.contains("> [visible text — model-derived]"));
+        assert!(md1.contains("SOUTH MESA TRAIL"));
+
+        // Hand-shared noise photo is kept with upload_fallback provenance and NoiseOrAccidental class.
+        assert_eq!(
+            obs3.belonging_class,
+            Some(BelongingClass::NoiseOrAccidental)
+        );
+        assert_eq!(obs3.time.time_source, "upload_fallback");
+        assert_eq!(obs3.time.captured_at, None);
+        assert_eq!(obs3.time.precision, PhotoTimePrecision::Unknown);
+        assert_eq!(obs3.time.provenance, PhotoTimeProvenance::UploadFallback);
+
+        // Closure 4: Downstream resolution lifecycle (live -> trash -> restore -> replace).
+        let ref1 = obs1.reference();
+        assert_eq!(
+            resolve_photo_observation(journal.path(), &ref1),
+            PhotoObservationResolution::Resolved(Box::new(obs1.clone()))
+        );
+        let seg1_dir = journal
+            .path()
+            .join("chronicle/20261119/import.image/120000_0");
+        fs::write(
+            seg1_dir.join("tombstone.json"),
+            r#"{"trashed_at":"2026-11-20T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_photo_observation(journal.path(), &ref1),
+            PhotoObservationResolution::NotFound
+        );
+        fs::remove_file(seg1_dir.join("tombstone.json")).unwrap();
+        assert_eq!(
+            resolve_photo_observation(journal.path(), &ref1),
+            PhotoObservationResolution::Resolved(Box::new(obs1))
+        );
+        fs::write(seg1_dir.join("original.jpg"), distinct_jpeg(99)).unwrap();
+        assert_eq!(
+            resolve_photo_observation(journal.path(), &ref1),
+            PhotoObservationResolution::Replaced
+        );
+    }
+
+    #[test]
+    fn failure_states_are_distinct_and_transient_failure_retries_while_pixels_exist() {
+        let journal = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let p = src_dir.path().join("sunset.jpg");
+        fs::write(&p, distinct_jpeg(42)).unwrap();
+
+        // 1. Thinking off (`NoEngineConfigured`) vs transient failure (`retryable: true`) vs non-retryable.
+        let thinking_off =
+            interpret_generate_vision(Ok(refused(RefusalReason::NoEngineConfigured)));
+        assert_eq!(thinking_off.state(), PhotoObservationState::ThinkingOff);
+
+        let transient = interpret_generate_vision(Ok(GenerateResponse::Refused(RefusedResponse {
+            id: None,
+            reason: RefusalReason::Unknown,
+            reason_code: None,
+            retryable: true,
+            blocking: false,
+            reset_at_ms: None,
+            provider: None,
+            detail: "rate limited".to_owned(),
+        })));
+        assert_eq!(transient.state(), PhotoObservationState::TransientFailure);
+
+        let unavailable =
+            interpret_generate_vision(Ok(refused(RefusalReason::SchemaValidationFailed)));
+        assert_eq!(
+            unavailable.state(),
+            PhotoObservationState::AnalysisUnavailable
+        );
+
+        // 2. Import with transient failure -> retry succeeds and bumps observation_revision.
+        let wire = SequenceWire::new(vec![
+            Ok(GenerateResponse::Refused(RefusedResponse {
+                id: None,
+                reason: RefusalReason::AttestationStale,
+                reason_code: None,
+                retryable: true,
+                blocking: false,
+                reset_at_ms: None,
+                provider: None,
+                detail: "temporary hiccup".to_owned(),
+            })),
+            Ok(generated(
+                r#"{"description":"Orange sky over the Flatirons at dusk.","visible_text":null,"belonging_class":"lived_moment"}"#,
+            )),
+        ]);
+        let prep = prepare_manual_image_with_options(
+            &p,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            None,
+            ImageImportOptions {
+                caption: Some("Evening view".to_owned()),
+                client_captured_at: Some("2026-11-19T17:45:00-07:00".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let publication = TestPublication::new();
+        let installed =
+            install_and_publish_image(&prep, journal.path(), "imp-retry", &publication, None)
+                .unwrap();
+        let obs_v1 = installed.observation.unwrap();
+        assert_eq!(obs_v1.state, PhotoObservationState::TransientFailure);
+        assert_eq!(obs_v1.observation_revision, 1);
+        assert_eq!(obs_v1.retry_count, 0);
+
+        let retried = retry_photo_observation(
+            journal.path(),
+            "20261119",
+            "import.image",
+            &obs_v1.source.segment,
+            &wire,
+            &crate::photo_faces::SystemPhotoFaceDetector,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(retried.retried);
+        assert_eq!(retried.observation.state, PhotoObservationState::Ready);
+        assert_eq!(retried.observation.observation_revision, 2);
+        assert_eq!(retried.observation.retry_count, 1);
+        assert_eq!(
+            retried
+                .observation
+                .owner_caption
+                .as_ref()
+                .map(|c| c.text.as_str()),
+            Some("Evening view")
+        );
+        assert_eq!(
+            retried
+                .observation
+                .description
+                .as_ref()
+                .map(|d| d.text.as_str()),
+            Some("Orange sky over the Flatirons at dusk.")
+        );
+        assert_eq!(
+            retried.observation.belonging_class,
+            Some(BelongingClass::LivedMoment)
+        );
+    }
+
+    #[test]
+    fn photo_face_pass_honors_flags_links_profile_pics_without_altering_meeting_thresholds_and_query_is_side_effect_free()
+     {
+        use solstone_core_entity::faceprints::{self, Source, panel, photo_match};
+
+        let journal = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let photo_path = src_dir.path().join("portrait.jpg");
+        fs::write(&photo_path, distinct_jpeg(7)).unwrap();
+
+        // Seed Alice with 3 meeting looks -> State::Possible (below SUGGESTED_LOOKS=5).
+        let encoder = seed_meeting_person_with_looks(journal.path(), "ent-alice", "Alice", 1, 3);
+        let detector = MockPhotoFaceDetector {
+            encoder,
+            faces: vec![photo_match::PhotoFaceCandidate {
+                face_idx: 0,
+                bbox: [100.0, 80.0, 96.0, 96.0],
+                det_score: 0.96,
+                sharpness: 380.0,
+                quality: 0.92,
+                embedding: unit_face_vec(1),
+                crop_jpeg: Some(distinct_jpeg(55)),
+            }],
+        };
+
+        // 1. Side-effect-free query matches Alice without touching entities or disk.
+        let before_archive = faceprints::load(journal.path(), "ent-alice")
+            .unwrap()
+            .0
+            .unwrap();
+        let query_matches = crate::photo_faces::query_photo_faces_against_journal(
+            journal.path(),
+            &photo_path,
+            &detector,
+        )
+        .unwrap();
+        assert_eq!(query_matches.len(), 1);
+        assert_eq!(query_matches[0].entity_id, "ent-alice");
+        assert!(query_matches[0].similarity >= photo_match::PHOTO_MATCH_COSINE_MIN);
+        let after_query_archive = faceprints::load(journal.path(), "ent-alice")
+            .unwrap()
+            .0
+            .unwrap();
+        assert_eq!(before_archive, after_query_archive);
+
+        // 2. Default config (photo_match_enabled absent -> OFF by default): photo pass does NOT run!
+        let wire = SequenceWire::new(vec![
+            Ok(generated(
+                r#"{"description":"Alice smiling outdoors.","visible_text":null,"belonging_class":"lived_moment"}"#,
+            )),
+            Ok(generated(
+                r#"{"description":"Alice smiling outdoors.","visible_text":null,"belonging_class":"lived_moment"}"#,
+            )),
+        ]);
+        let publication = TestPublication::new();
+        let prep_off = prepare_manual_image_with_options(
+            &photo_path,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            None,
+            ImageImportOptions {
+                client_captured_at: Some("2026-11-19T14:00:00Z".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let res_off = install_photo_in_stream_with_faces(
+            &prep_off,
+            journal.path(),
+            IMPORT_STREAM,
+            prep_off.timestamp.datetime(),
+            &publication,
+            None,
+            None,
+            &detector,
+        )
+        .unwrap();
+        let obs_off = res_off.observation.unwrap();
+        assert!(!obs_off.faces_checked);
+        assert!(obs_off.faces.is_empty());
+        assert_eq!(
+            faceprints::load(journal.path(), "ent-alice")
+                .unwrap()
+                .0
+                .unwrap()
+                .faces
+                .len(),
+            3
+        );
+
+        // 3. Turn ON faces.photo_match_enabled (while faces.enabled is true) -> links Alice & adds photo tile!
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"faces":{"enabled":true,"photo_match_enabled":true}}"#,
+        )
+        .unwrap();
+        let photo_path_2 = src_dir.path().join("portrait2.jpg");
+        fs::write(&photo_path_2, distinct_jpeg(8)).unwrap();
+        let prep_on = prepare_manual_image_with_options(
+            &photo_path_2,
+            &wire,
+            &TimeZone::UTC,
+            None,
+            None,
+            ImageImportOptions {
+                client_captured_at: Some("2026-11-19T14:05:00Z".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let res_on = install_photo_in_stream_with_faces(
+            &prep_on,
+            journal.path(),
+            IMPORT_STREAM,
+            prep_on.timestamp.datetime(),
+            &publication,
+            None,
+            None,
+            &detector,
+        )
+        .unwrap();
+        let obs_on = res_on.observation.unwrap();
+        assert!(obs_on.faces_checked);
+        assert_eq!(obs_on.faces.len(), 1);
+        assert_eq!(obs_on.faces[0].entity_id, "ent-alice");
+        assert!(obs_on.faces[0].crop.is_some());
+
+        // Check Alice's panel: stays Possible (3 meeting looks, NOT promoted to Suggested),
+        // includes the new Source::Photo face as a candidate profile pic, and auto-default stays None!
+        let (archive, state) = faceprints::load(journal.path(), "ent-alice").unwrap();
+        let archive = archive.unwrap();
+        assert_eq!(archive.faces.len(), 4);
+        assert!(
+            archive
+                .faces
+                .iter()
+                .any(|f| f.metadata.source == Source::Photo)
+        );
+        let p = panel::panel(&archive.faces, &state, false, None, None);
+        assert_eq!(p.state, panel::State::Possible);
+        assert_eq!(p.looks, 3);
+        assert_eq!(p.default, None);
+        let photo_key = archive
+            .faces
+            .iter()
+            .find(|f| f.metadata.source == Source::Photo)
+            .unwrap()
+            .metadata
+            .key
+            .clone();
+        assert!(p.faces.contains(&photo_key));
+
+        // Choosing the photo face confirms it as Alice's profile pic!
+        faceprints::choose(journal.path(), "ent-alice", &photo_key).unwrap();
+        let confirmed = faceprints::confirmed_photo(journal.path(), "ent-alice").unwrap();
+        assert_eq!(confirmed, Some(distinct_jpeg(55)));
     }
 }

@@ -132,7 +132,9 @@ pub(crate) fn normalize_markdown_only_segments(
                 || name.ends_with("screen.jsonl")
                 || name.ends_with("_transcript.jsonl")
         });
-        let has_imported_image = segment.stream == "import.image"
+        let has_imported_image = (segment.stream == "import.image"
+            || segment.stream == "photos"
+            || solstone_core_segment::is_photos_stream(journal_root, &segment.stream))
             && names
                 .iter()
                 .any(|name| crate::segment_media::is_imported_image_original(name));

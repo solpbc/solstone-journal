@@ -2,6 +2,10 @@
 // Copyright (c) 2026 sol pbc
 //! Private describe-helper protocol shared by maintenance and the producer.
 pub const OPTION: &str = "--backfill-faces";
+pub const PHOTO_QUERY_OPTION: &str = "--photo-faces-query";
+pub const PHOTO_QUERY_BATCH_OPTION: &str = "--photo-faces-query-batch";
+pub const PHOTO_WITH_CROPS_FLAG: &str = "--with-crops";
+pub const PHOTO_JOURNAL_FLAG: &str = "--journal";
 pub const UNSUPPORTED: i32 = 65;
 pub const YIELDED: i32 = 75;
 pub const MAX_SECONDS: u64 = 30 * 60;

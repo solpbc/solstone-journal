@@ -78,6 +78,10 @@ pub const IMPORT_KIND_FILENAME: &str = "import_kind.json";
 /// Imported image metadata (capture zone, time source, owner caption). Not a content input.
 pub const IMAGE_META_FILENAME: &str = "image_meta.json";
 
+/// Canonical per-photo source-bound observation sidecar. Not a direct content input;
+/// indexed prose stays in `image_transcript.md`.
+pub const PHOTO_OBSERVATION_FILENAME: &str = "photo_observation.json";
+
 /// Optional tmux capture metadata, retained on disk but not yet used by talents.
 pub const TMUX_PANE_CAPTURE_FIELDS: [&str; 5] = [
     "cursor_x",
@@ -402,6 +406,21 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
     },
     FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/image_transcript.md",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        kind: KindAssignment::Settled(Kind::Photos),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/photos/*/image_transcript.md",
         root: PatternRoot::DayRooted,
         format: FileFormat::Content(Family::Markdown),
         classification: ContentResolution::Indexed(Family::Markdown),
@@ -1294,6 +1313,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         segment: None,
     },
     FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/photos/*/original.*",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::Original,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::Settled(Kind::Photos),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.document/*/original.*",
         root: PatternRoot::DayRooted,
         format: FileFormat::Original,
@@ -1331,6 +1362,30 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
     },
     FilePattern {
         pattern: "*/import.image/*/image_meta.json",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::NotContent,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::NotContent,
+        unit: ContentUnit::Record,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/photos/*/image_meta.json",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::NotContent,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::NotContent,
+        unit: ContentUnit::Record,
+        offered_to: OfferedTo::NONE,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/photo_observation.json",
         root: PatternRoot::DayRooted,
         format: FileFormat::NotContent,
         classification: ContentResolution::Unrecognized,

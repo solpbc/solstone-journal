@@ -753,8 +753,53 @@ pub(super) fn locked_modify_day_records<T>(
                 log::warn!("face activity reconciliation deferred: {error}");
             }
         }
+        sync_photo_segment_facets_for_day(root, facet, day, &path);
     }
     Ok(result)
+}
+
+/// Propagate settled facet activity coordinates onto any `Source::Photo` face
+/// rows originating from photo segments referenced by `facet`'s records on `day`.
+fn sync_photo_segment_facets_for_day(root: &Path, facet: &str, day: &str, day_file: &Path) {
+    let Ok(lines) = read_day_lines(day_file) else {
+        return;
+    };
+    let mut by_segment: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    for row in &lines.rows {
+        if hidden(row) {
+            continue;
+        }
+        let Some(stream) = row.get("stream").and_then(Value::as_str) else {
+            continue;
+        };
+        if stream != "import.image"
+            && stream != "photos"
+            && !solstone_core_segment::is_photos_stream(root, stream)
+        {
+            continue;
+        }
+        let record_id = id(row);
+        if record_id.is_empty() {
+            continue;
+        }
+        let Ok(coord) = serde_json::to_string(&[facet, day, record_id]) else {
+            continue;
+        };
+        if let Some(segments) = row.get("segments").and_then(Value::as_array) {
+            for seg in segments.iter().filter_map(Value::as_str) {
+                let rel = format!("chronicle/{day}/{stream}/{seg}");
+                by_segment.entry(rel).or_default().insert(coord.clone());
+            }
+        }
+    }
+    for (seg_rel, coords) in by_segment {
+        if let Err(error) = solstone_core_entity::faceprints::sync_photo_face_activities(
+            root, facet, &seg_rel, &coords,
+        ) {
+            log::warn!("photo face facet sync deferred: {error}");
+        }
+    }
 }
 
 /// A day file [`write_day_records`] wrote, with the rows whose hidden it

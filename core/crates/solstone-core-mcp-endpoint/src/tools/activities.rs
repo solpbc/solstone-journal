@@ -309,7 +309,12 @@ pub(crate) enum ImageSegmentKind {
     Other,
 }
 
-fn classify_image_segment(journal_root: &Path, day: &str, segment: &str) -> ImageSegmentKind {
+fn classify_image_segment(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+) -> ImageSegmentKind {
     if !solstone_core_journal_io::is_day_key(day)
         || segment.is_empty()
         || segment.contains('/')
@@ -320,7 +325,7 @@ fn classify_image_segment(journal_root: &Path, day: &str, segment: &str) -> Imag
         return ImageSegmentKind::Other;
     }
     for prefix in ["chronicle/", ""] {
-        let rel = format!("{prefix}{day}/import.image/{segment}");
+        let rel = format!("{prefix}{day}/{stream}/{segment}");
         let Ok(dir) = solstone_core_journal_io::contained_path(journal_root, &rel) else {
             continue;
         };
@@ -349,16 +354,22 @@ fn classify_image_segment(journal_root: &Path, day: &str, segment: &str) -> Imag
     ImageSegmentKind::Other
 }
 
-/// True when `record` comes from `import.image` and every segment it names on
-/// `day` is a real photo segment (`image_transcript.md` present and no
-/// `screenshot_transcript.md`). Never infers from activity IDs.
+/// True when `record` comes from `import.image` or `photos` and every segment
+/// it names on `day` is a real photo segment (`image_transcript.md` present and
+/// no `screenshot_transcript.md`). Never infers from activity IDs.
 pub(crate) fn is_real_photo_record(
     journal_root: &Path,
     day: &str,
     record: &Map<String, Value>,
     cache: &mut BTreeMap<(String, String), ImageSegmentKind>,
 ) -> bool {
-    if record.get("stream").and_then(Value::as_str) != Some("import.image") {
+    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+        return false;
+    };
+    if stream != "import.image"
+        && stream != "photos"
+        && !solstone_core_segment::is_photos_stream(journal_root, stream)
+    {
         return false;
     }
     let Some(segments) = record.get("segments").and_then(Value::as_array) else {
@@ -374,10 +385,10 @@ pub(crate) fn is_real_photo_record(
         return false;
     }
     seg_names.into_iter().all(|seg| {
-        let key = (day.to_owned(), seg.to_owned());
+        let key = (day.to_owned(), format!("{stream}/{seg}"));
         let kind = *cache
             .entry(key)
-            .or_insert_with(|| classify_image_segment(journal_root, day, seg));
+            .or_insert_with(|| classify_image_segment(journal_root, day, stream, seg));
         kind == ImageSegmentKind::Photo
     })
 }

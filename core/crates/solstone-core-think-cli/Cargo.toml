@@ -37,6 +37,7 @@ solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-home.workspace = true
 solstone-core-import.workspace = true
+solstone-core-import-sources.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-indexer.workspace = true
 solstone-core-journal.workspace = true

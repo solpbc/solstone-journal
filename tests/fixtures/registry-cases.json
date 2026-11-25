@@ -753,5 +753,25 @@
     "path": "20260107/transactions/120000_0/transaction_transcript.md",
     "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/transaction_transcript.md",
     "condition": "Path"
+  },
+  {
+    "path": "20260107/photos/120000_0/image_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/photos/*/image_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/photos/120000_0/original.jpg",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/photos/*/original.*",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/photos/120000_0/image_meta.json",
+    "pattern": "*/photos/*/image_meta.json",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/photos/120000_0/photo_observation.json",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/photo_observation.json",
+    "condition": "Path"
   }
 ]

@@ -312,6 +312,7 @@ pub fn run_native_producer(
                         caption: str_field("caption"),
                         client_captured_at: str_field("captured_at"),
                         original_filename: str_field("original_filename"),
+                        ..Default::default()
                     };
                     match image::prepare_manual_image_with_options(
                         request.source_path,

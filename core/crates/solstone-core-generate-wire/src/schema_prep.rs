@@ -327,6 +327,7 @@ mod tests {
             root.join("core/crates/solstone-core-describe/assets"),
             root.join("core/crates/solstone-core-describe-categories/assets/categories"),
             root.join("core/crates/solstone-core-import/src/text_assets"),
+            root.join("core/crates/solstone-core-import-sources/src"),
         ];
         for app in std::fs::read_dir(root.join("core/payload/solstone/apps"))
             .expect("apps directory")

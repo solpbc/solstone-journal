@@ -86,6 +86,24 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         return Err(usage("journal.cli.describe.usage.backfill.desktop"));
     }
+    if arguments
+        .first()
+        .is_some_and(|a| a == solstone_core_segment::face_backfill::PHOTO_QUERY_OPTION)
+    {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        return run_photo_faces_query(&arguments[1..], false);
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        return Err(usage("journal.cli.describe.usage.backfill.desktop"));
+    }
+    if arguments
+        .first()
+        .is_some_and(|a| a == solstone_core_segment::face_backfill::PHOTO_QUERY_BATCH_OPTION)
+    {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        return run_photo_faces_query(&arguments[1..], true);
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        return Err(usage("journal.cli.describe.usage.backfill.desktop"));
+    }
     solstone_core_cli_copy::begin_terminal_output();
     let locale = invocation_locale();
     match parse_arguments(arguments)? {
@@ -254,6 +272,68 @@ fn run_face_backfill(args: &[OsString]) -> Result<(), CliError> {
         Ok(_) => Ok(()),
         Err(_) if stop() => Err(CliError::FaceExit(face_backfill::YIELDED as u8)),
         Err(e) => Err(CliError::Internal(e)),
+    }
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn run_photo_faces_query(args: &[OsString], batch: bool) -> Result<(), CliError> {
+    use io::BufRead;
+    use solstone_core_describe::faces;
+    use solstone_core_segment::face_backfill;
+
+    let mut with_crops = false;
+    let mut journal: Option<PathBuf> = None;
+    let mut image_path: Option<PathBuf> = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == face_backfill::PHOTO_WITH_CROPS_FLAG {
+            with_crops = true;
+        } else if arg == face_backfill::PHOTO_JOURNAL_FLAG {
+            let Some(path) = iter.next() else {
+                return Err(CliError::Usage(
+                    "--journal requires a path argument".to_owned(),
+                ));
+            };
+            journal = Some(PathBuf::from(path));
+        } else if !batch && image_path.is_none() {
+            image_path = Some(PathBuf::from(arg));
+        } else {
+            return Err(CliError::Usage(format!(
+                "unexpected argument for photo face query: {}",
+                arg.to_string_lossy()
+            )));
+        }
+    }
+    if batch {
+        let mut paths = Vec::new();
+        for line in io::stdin().lock().lines() {
+            let line = line.map_err(|e| CliError::Internal(e.to_string()))?;
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                paths.push(PathBuf::from(trimmed));
+            }
+        }
+        let entries = faces::query_photo_faces_batch(&paths, journal.as_deref(), with_crops)
+            .map_err(CliError::Internal)?;
+        let mut stdout = io::stdout().lock();
+        for entry in entries {
+            let encoded =
+                serde_json::to_string(&entry).map_err(|e| CliError::Internal(e.to_string()))?;
+            writeln!(stdout, "{encoded}").map_err(|e| CliError::Internal(e.to_string()))?;
+        }
+        Ok(())
+    } else {
+        let Some(path) = image_path else {
+            return Err(CliError::Usage(
+                "photo face query requires an image path".to_owned(),
+            ));
+        };
+        let output = faces::query_photo_faces(&path, journal.as_deref(), with_crops)
+            .map_err(CliError::Internal)?;
+        let encoded =
+            serde_json::to_string(&output).map_err(|e| CliError::Internal(e.to_string()))?;
+        println!("{encoded}");
+        Ok(())
     }
 }
 
