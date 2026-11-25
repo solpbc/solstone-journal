@@ -1,0 +1,21 @@
+{
+  "description": "Live transfer strip heading when a paired-device transfer is paused.",
+  "context": "Journal window, import view. Shown when no new pieces have arrived recently from a paired device (for example, 'paused \u00b7 from your mac').",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f3c4a3c232e328f90af5f6d6386024156d8c37b9ca2ce712ed9a923b5f15dd9d",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

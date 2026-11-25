@@ -1,0 +1,29 @@
+{
+  "description": "Live transfer strip detail when a paired-device transfer without a device noun is paused.",
+  "context": "Journal window, import view. Fallback detail line when a paused paired-device transfer has no specific device noun.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    },
+    {
+      "name": "sent",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fdaae8c763a288d5123f473ff447ecdf99f85a279c385a8b4321f0656aaf7119",
+  "max_length": 280,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

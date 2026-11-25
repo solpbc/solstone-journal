@@ -1,0 +1,33 @@
+{
+  "description": "Confirmed byte progress line on the live transfer strip.",
+  "context": "Journal window, import view. Shows filename, formatted sent and total sizes, and integer percent (for example, 'export.zip \u00b7 1.2 GB of 4.0 GB (30%)').",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    },
+    {
+      "name": "sent",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "percent",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "61744101f6a31a65232327571f49e67a5a574096ca3c30cbe0e1afa7287b253f",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

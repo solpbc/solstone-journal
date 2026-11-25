@@ -1,0 +1,16 @@
+{
+  "description": "Action button on the live transfer strip to abort an active or paused transfer.",
+  "context": "Journal window, import view. Button label that cancels an unfinished transfer and removes partial bytes on the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2fb1b0b4511f744f1f8617c9484ba0385da245221e9a958f185c1f0a1c255879",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

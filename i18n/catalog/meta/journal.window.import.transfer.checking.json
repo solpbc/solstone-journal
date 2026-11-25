@@ -1,0 +1,21 @@
+{
+  "description": "Live transfer strip status while verifying whole-file integrity before staging.",
+  "context": "Journal window, import view. Shown briefly when all pieces have arrived and the journal is verifying the complete file.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e72fe5cc799a3652afda05ca3b1c4daaeada3edc2bdace86b0c6d41994b5da06",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

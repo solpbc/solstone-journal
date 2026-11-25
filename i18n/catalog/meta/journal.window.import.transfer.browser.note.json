@@ -1,0 +1,16 @@
+{
+  "description": "Guidance note shown on the live transfer strip during a large browser file import.",
+  "context": "Journal window, import view. Explains that leaving this page pauses a browser transfer and choosing the same file again in that browser resumes from the saved offset.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af6ff07115e84a2b7e010e7223c3427068166d509545039acd29726a3deaf253",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

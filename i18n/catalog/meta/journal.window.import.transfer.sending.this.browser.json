@@ -1,0 +1,16 @@
+{
+  "description": "Live transfer strip heading in the browser tab actively sending a large file import.",
+  "context": "Journal window, import view. Shown only in the browser tab currently sending a large file import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "634fdcf47eb4bf6da79232c63e2c4de2b5fde976cb90aecea3d035eeaee1bac1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

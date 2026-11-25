@@ -1,0 +1,33 @@
+{
+  "description": "Live transfer strip detail when a paired-device transfer is paused.",
+  "context": "Journal window, import view. Explains how much arrived and that the transfer will continue from that point when the paired device resumes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    },
+    {
+      "name": "sent",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bebab1782fed052e01c270b5b4dc63016308f7756e3c3fc4b441e7c2b7eef1c8",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -614,7 +614,7 @@ function journal(overrides = {}) {
 
 const HOME_MARKUP = '<section id="home"><h1>home</h1><p id="home-text">home as it was</p><a id="to-import" href="/app/import/">import</a></section>';
 
-function makePage(env, address = '/app/import/', { answers, folders = false } = {}) {
+function makePage(env, address = '/app/import/', { answers, folders = false, localStore = new Map() } = {}) {
   let current = new URL(address, ORIGIN);
   const loads = [];
   const location = {
@@ -683,6 +683,11 @@ function makePage(env, address = '/app/import/', { answers, folders = false } = 
     setItem: (key, value) => { storage.set(key, String(value)); },
     removeItem: (key) => { storage.delete(key); },
   };
+  window.localStorage = {
+    getItem: (key) => (localStore.has(key) ? localStore.get(key) : null),
+    setItem: (key, value) => { localStore.set(key, String(value)); },
+    removeItem: (key) => { localStore.delete(key); },
+  };
   const escapeHtml = (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   window.AppServices = {
     escapeHtml,
@@ -738,6 +743,7 @@ function makePage(env, address = '/app/import/', { answers, folders = false } = 
     const call = {
       url: u.pathname + u.search,
       method: String(opts?.method || 'GET').toUpperCase(),
+      headers: opts?.headers || {},
       body: opts?.body,
       kind, aborted: false, settled: false,
       answer(body, status = 200, extra = {}) {
@@ -849,7 +855,7 @@ function makePage(env, address = '/app/import/', { answers, folders = false } = 
     append(key, value) { this.entries.push([key, value]); }
   }
   const context = vm.createContext({
-    window, document: doc, location, history: window.history, sessionStorage: window.sessionStorage,
+    window, document: doc, location, history: window.history, sessionStorage: window.sessionStorage, localStorage: window.localStorage,
     URL, URLSearchParams, AbortController, AbortSignal, DOMException, WeakMap, WeakRef, Map, Set, Promise, FormData,
     console, Math, Number, String, Object, Array, Boolean, Date, Intl, JSON, Error, TypeError, RegExp, Symbol, Infinity, CustomEvent: class {},
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
@@ -2218,6 +2224,350 @@ module.exports = async function importContractCases(crateDir) {
 
     const pBad = await bootStatus('/app/import/not-a-timestamp', '/app/import/api/not-a-timestamp', 404);
     assert.ok(!pBad.q('.import-expired-card'), '404 on non-timestamp id must NOT render expired recovery card');
+  });
+
+  await test('resumable live transfer strip: hidden when idle, deduplicates paired-app SSE bytes_received + handoff by client_item_id, renders paused/checking, and cancels via DELETE', async () => {
+    const listData = {
+      value: {
+        ...listAnswer([importRow(DONE, 'success')]),
+        active_uploads: [],
+      },
+    };
+    const p = makePage(env, '/app/import/', {
+      answers: journal({
+        'GET /app/import/api/list': () => listData.value,
+        'DELETE /app/import/api/uploads/up-1': () => ({ deleted: true }),
+      }),
+    });
+    p.window.solstoneImportContract = { capability: 'solstoneJournalHost', version: 2, pick: 'import.pick', drop: 'solstone:drop', event: 'solstone:handoff' };
+    p.window.solstoneJournalHost = { version: 2, types: ['import.pick'], send: async () => ({ outcome: 'queued', items: [] }) };
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    await settle();
+
+    const switcher = p.byId('importModeSwitcher');
+    const strip = p.byId('importTransferStrip');
+    const tray = p.byId('handoffStatus');
+    assert.ok(switcher && strip, 'switcher and transfer strip exist');
+    assert.strictEqual(
+      switcher.parentNode.children[switcher.parentNode.children.indexOf(switcher) + 1],
+      strip,
+      'strip mounts directly beneath #importModeSwitcher'
+    );
+    assert.ok(strip.hidden, 'strip stays hidden when idle');
+
+    // Paired-app resumable handoff + SSE progress (bytes_received) deduplicate by client_item_id and suppress duplicate #handoffStatus row.
+    const fireHandoff = detail => p.window.fire({ type: 'solstone:handoff', detail });
+    fireHandoff({
+      item: 'resumable-item-1',
+      state: 'uploading',
+      name: 'export.zip',
+      device_noun: 'iphone',
+      bytes_sent: 10485760,
+      bytes_total: 41943040,
+      resumable: true,
+      phase: 'sending',
+    });
+    assert.ok(!strip.hidden, 'strip reveals on active resumable transfer');
+    assert.strictEqual(strip.querySelectorAll('[data-transfer-item]').length, 1);
+    assert.ok(tray.hidden, 'handoff tray suppresses duplicate uploading row while strip owns it');
+
+    listen(p).fn({
+      event: 'upload_progress',
+      upload_id: 'up-1',
+      client_item_id: 'resumable-item-1',
+      filename: 'export.zip',
+      bytes_received: 20971520,
+      total_bytes: 41943040,
+      phase: 'sending',
+      imported_via: 'ios',
+      device_noun: 'iphone',
+    });
+    await settle();
+    assert.strictEqual(strip.querySelectorAll('[data-transfer-item]').length, 1, 'SSE + host merge into one row');
+    assert.strictEqual(strip.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow'), '50');
+
+    // Paused & checking transitions.
+    fireHandoff({
+      item: 'resumable-item-1',
+      state: 'uploading',
+      name: 'export.zip',
+      device_noun: 'iphone',
+      bytes_sent: 20971520,
+      bytes_total: 41943040,
+      resumable: true,
+      phase: 'paused',
+    });
+    assert.ok(strip.querySelector('[data-transfer-item="resumable-item-1"]')?.classList.contains('is-paused'));
+
+    // Cancel sends DELETE /app/import/api/uploads/up-1 and hides strip when empty.
+    const cancelBtn = strip.querySelector('[data-transfer-cancel]');
+    assert.ok(cancelBtn, 'cancel button rendered once upload_id is known');
+    cancelBtn.click();
+    await settle();
+    assert.ok(p.calls.some(c => c.method === 'DELETE' && c.url === '/app/import/api/uploads/up-1'), 'cancel calls DELETE');
+    assert.ok(strip.hidden, 'strip hides again after cancel');
+  });
+
+  await test('resumable browser File.slice() uploader: streams chunks with X-Chunk-Sha256, handles bodyless 409 resync, resumes from localStorage midstate without re-sending completed chunks, and unwraps already_staged', async () => {
+    const nodeCrypto = require('crypto');
+    const sharedLocalStore = new Map();
+    const threshold = 64 * 1024;
+    const chunkSize = 32 * 1024;
+    const rawBytes = nodeCrypto.randomBytes(chunkSize * 2 + 5123);
+    const expectedWholeSha = nodeCrypto.createHash('sha256').update(rawBytes).digest('hex');
+    const expectedChunk0Sha = nodeCrypto.createHash('sha256').update(rawBytes.subarray(0, chunkSize)).digest('hex');
+
+    function makeMockFile() {
+      return {
+        name: 'big-notes.md',
+        size: rawBytes.length,
+        type: 'text/markdown',
+        lastModified: 1767225600000,
+        slice(start = 0, end = rawBytes.length) {
+          const sub = rawBytes.subarray(start, end);
+          return {
+            size: sub.length,
+            async arrayBuffer() {
+              return sub.buffer.slice(sub.byteOffset, sub.byteOffset + sub.byteLength);
+            },
+          };
+        },
+      };
+    }
+
+    // Run 1: upload chunk 0 (200 OK), then fail chunk 1 with journal_busy (409) to simulate interruption.
+    let serverOffset = 0;
+    const putOffsetsRun1 = [];
+    const p1 = makePage(env, '/app/import/#guide/quick', {
+      localStore: sharedLocalStore,
+      answers: journal({
+        'GET /app/import/api/sources': () => ({
+          ...sourcesAnswer(),
+          resumable: { threshold_bytes: threshold, chunk_bytes: chunkSize, max_file_bytes: 1024 * 1024 * 1024 },
+        }),
+        'POST /app/import/api/uploads': () => ({
+          upload_id: 'browser-up-1',
+          client_item_id: 'uuid-1',
+          next_offset: 0,
+          total_bytes: rawBytes.length,
+          chunk_bytes: chunkSize,
+          expires_at: '2026-12-01T00:00:00Z',
+        }),
+        'PUT /app/import/api/uploads/browser-up-1': (_url, opts) => {
+          const u = new URL(_url, 'http://localhost');
+          const off = Number(u.searchParams.get('offset'));
+          putOffsetsRun1.push({ offset: off, sha: opts?.headers?.['X-Chunk-Sha256'], len: opts?.body?.byteLength });
+          if (off === 0) {
+            serverOffset = chunkSize;
+            return { upload_id: 'browser-up-1', next_offset: serverOffset, total_bytes: rawBytes.length, complete: false };
+          }
+          return { error: 'simulated stop', reason_code: 'journal_busy' };
+        },
+      }),
+    });
+    p1.statuses.push([c => c.method === 'PUT' && c.url.includes('offset=32768'), 409]);
+    p1.loadScripts();
+    p1.place();
+    await p1.mount();
+    await settle();
+
+    const fileInput1 = p1.byId('fileInput');
+    fileInput1.files = [makeMockFile()];
+    fileInput1.onchange({ target: fileInput1 });
+    p1.byId('importForm').onsubmit({ preventDefault() {} });
+    await settle();
+
+    assert.strictEqual(putOffsetsRun1[0].offset, 0);
+    assert.strictEqual(putOffsetsRun1[0].sha, expectedChunk0Sha, 'chunk 0 carries exact X-Chunk-Sha256');
+    assert.strictEqual(serverOffset, chunkSize, 'chunk 0 persisted before interruption');
+
+    // Run 2 (new page mount sharing localStore): re-selecting the same file resyncs GET /uploads/browser-up-1,
+    // skips chunk 0 completely, recovers from a bodyless 409 on chunk 1 via GET fallback, uploads chunks 1 & 2,
+    // and commits with exact whole-file SHA-256!
+    const putOffsetsRun2 = [];
+    let bodyless409Injected = false;
+    let committedBody = null;
+    const p2 = makePage(env, '/app/import/#guide/quick', {
+      localStore: sharedLocalStore,
+      answers: journal({
+        'GET /app/import/api/sources': () => ({
+          ...sourcesAnswer(),
+          resumable: { threshold_bytes: threshold, chunk_bytes: chunkSize, max_file_bytes: 1024 * 1024 * 1024 },
+        }),
+        'GET /app/import/api/list': () => ({
+          ...listAnswer([]),
+          active_uploads: [{
+            upload_id: 'browser-up-1',
+            client_item_id: JSON.parse([...sharedLocalStore.entries()].find(([k]) => k.startsWith('solstone.resumableUpload.v1:'))[1]).clientItemId,
+            filename: 'big-notes.md',
+            next_offset: serverOffset,
+            total_bytes: rawBytes.length,
+            phase: 'sending',
+            imported_via: 'browser',
+            device_noun: 'browser',
+          }],
+        }),
+        'GET /app/import/api/uploads/browser-up-1': () => ({
+          upload_id: 'browser-up-1',
+          next_offset: serverOffset,
+          total_bytes: rawBytes.length,
+          chunk_bytes: chunkSize,
+          phase: 'paused',
+        }),
+        'PUT /app/import/api/uploads/browser-up-1': (_url, opts) => {
+          const u = new URL(_url, 'http://localhost');
+          const off = Number(u.searchParams.get('offset'));
+          if (off === chunkSize && !bodyless409Injected) {
+            bodyless409Injected = true;
+            return {};
+          }
+          putOffsetsRun2.push(off);
+          serverOffset = off + opts.body.byteLength;
+          return {
+            upload_id: 'browser-up-1',
+            next_offset: serverOffset,
+            total_bytes: rawBytes.length,
+            complete: serverOffset === rawBytes.length,
+          };
+        },
+        'POST /app/import/api/uploads/browser-up-1/commit': (_url, opts) => {
+          committedBody = JSON.parse(opts.body);
+          return {
+            status: 'staged',
+            path: '/journal/imports/20261124_180000/big-notes.md',
+            timestamp: '20261124_180000',
+            source_timestamp: '20261124_180000',
+            recommended_action: 'start',
+            detected: { source: 'text', timestamp: '20261124_180000' },
+          };
+        },
+      }),
+    });
+    let firstPut32kSeen = false;
+    p2.statuses.push([c => {
+      if (c.method === 'PUT' && c.url.includes('offset=32768') && !firstPut32kSeen) {
+        firstPut32kSeen = true;
+        return true;
+      }
+      return false;
+    }, 409]);
+    p2.loadScripts();
+    p2.place();
+    await p2.mount();
+    await settle();
+
+    // Before re-selecting the file, strip shows paused-from-this-browser state hydrated from active_uploads + localStore.
+    const strip2 = p2.byId('importTransferStrip');
+    assert.ok(!strip2.hidden && strip2.querySelector('.import-transfer-row.is-paused'), 'reopened browser shows paused state from localStorage');
+
+    const fileInput2 = p2.byId('fileInput');
+    fileInput2.files = [makeMockFile()];
+    fileInput2.onchange({ target: fileInput2 });
+    p2.byId('importForm').onsubmit({ preventDefault() {} });
+    await settle();
+    await settle();
+    await settle();
+
+    assert.strictEqual(bodyless409Injected, true, 'exercised bodyless 409 GET resync fallback');
+    assert.deepStrictEqual(putOffsetsRun2, [chunkSize, chunkSize * 2], 'zero completed chunks re-sent on resume');
+    assert.ok(committedBody && committedBody.sha256 === expectedWholeSha, 'commit submitted exact streaming JsSha256 whole-file digest');
+    assert.strictEqual(p2.byId('savedPath')?.value, '/journal/imports/20261124_180000/big-notes.md', 'commit handed off seamlessly to showDetect');
+    assert.ok(strip2.hidden, 'strip hides once browser upload commits');
+
+    // Run 3: already_staged response from POST /uploads unwraps save_response directly into showDetect.
+    const p3 = makePage(env, '/app/import/#guide/quick', {
+      answers: journal({
+        'GET /app/import/api/sources': () => ({
+          ...sourcesAnswer(),
+          resumable: { threshold_bytes: threshold, chunk_bytes: chunkSize, max_file_bytes: 1024 * 1024 * 1024 },
+        }),
+        'POST /app/import/api/uploads': () => ({
+          status: 'already_staged',
+          replay: true,
+          save_response: {
+            status: 'staged',
+            path: '/journal/imports/20261124_190000/big-notes.md',
+            timestamp: '20261124_190000',
+            source_timestamp: '20261124_190000',
+            recommended_action: 'start',
+          },
+        }),
+      }),
+    });
+    p3.loadScripts();
+    p3.place();
+    await p3.mount();
+    await settle();
+
+    const fileInput3 = p3.byId('fileInput');
+    fileInput3.files = [makeMockFile()];
+    fileInput3.onchange({ target: fileInput3 });
+    p3.byId('importForm').onsubmit({ preventDefault() {} });
+    await settle();
+    assert.strictEqual(p3.byId('savedPath')?.value, '/journal/imports/20261124_190000/big-notes.md', 'already_staged unwraps save_response');
+  });
+
+  await test('resumable browser upload: cross-tab upload_aborted SSE stops active sending tab silently without error toast', async () => {
+    const nodeCrypto = require('crypto');
+    const threshold = 64 * 1024;
+    const chunkSize = 32 * 1024;
+    const rawBytes = nodeCrypto.randomBytes(chunkSize * 2);
+    const mockFile = {
+      name: 'cancel-me.zip',
+      size: rawBytes.length,
+      type: 'application/zip',
+      lastModified: 1767225600000,
+      slice(start = 0, end = rawBytes.length) {
+        const sub = rawBytes.subarray(start, end);
+        return {
+          size: sub.length,
+          async arrayBuffer() {
+            return sub.buffer.slice(sub.byteOffset, sub.byteOffset + sub.byteLength);
+          },
+        };
+      },
+    };
+    const p = makePage(env, '/app/import/#guide/quick', {
+      answers: journal({
+        'GET /app/import/api/sources': () => ({
+          ...sourcesAnswer(),
+          resumable: { threshold_bytes: threshold, chunk_bytes: chunkSize, max_file_bytes: 1024 * 1024 * 1024 },
+        }),
+        'POST /app/import/api/uploads': (_url, opts) => ({
+          upload_id: 'browser-up-cancel',
+          client_item_id: JSON.parse(opts.body).client_item_id,
+          next_offset: 0,
+          total_bytes: rawBytes.length,
+          chunk_bytes: chunkSize,
+          expires_at: '2026-12-01T00:00:00Z',
+        }),
+      }),
+    });
+    p.holds.push(c => c.method === 'PUT' && c.url.includes('/browser-up-cancel'));
+    p.loadScripts();
+    p.place();
+    await p.mount();
+    await settle();
+
+    const fileInput = p.byId('fileInput');
+    fileInput.files = [mockFile];
+    fileInput.onchange({ target: fileInput });
+    p.byId('importForm').onsubmit({ preventDefault() {} });
+    await settle();
+
+    const heldPut = p.held().find(c => c.method === 'PUT');
+    assert.ok(heldPut, 'chunk PUT is in flight');
+    const createCall = p.calls.find(c => c.method === 'POST' && c.url === '/app/import/api/uploads');
+    const cid = JSON.parse(createCall.body).client_item_id;
+
+    listen(p).fn({ event: 'upload_aborted', upload_id: 'browser-up-cancel', client_item_id: cid });
+    await settle();
+
+    assert.strictEqual(heldPut.aborted, true, 'upload_aborted SSE aborts in-flight browser PUT');
+    assert.strictEqual(p.errors.length, 0, 'cross-tab cancel surfaces zero error toasts');
+    assert.ok(p.byId('importTransferStrip').hidden, 'strip hides after upload_aborted');
   });
 
   return cases;

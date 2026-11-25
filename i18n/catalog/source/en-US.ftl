@@ -23851,3 +23851,43 @@ journal.window.entities.detail.last.message.date = Last message: { $day }
 journal.window.facets.activities.calendar.standalone.title = on your calendar: { $meeting_title }
 
 journal.window.facets.activities.calendar.standalone.untitled = on your calendar
+
+journal.window.import.transfer.receiving.device = receiving from your { $device }
+
+journal.window.import.transfer.receiving.generic = receiving from a paired device
+
+journal.window.import.transfer.sending.this.browser = sending from this browser
+
+journal.window.import.transfer.receiving.browser = receiving from a browser
+
+journal.window.import.transfer.detail.progress = { $filename } · { $sent } of { $total } ({ $percent }%)
+
+journal.window.import.transfer.browser.note = keep this page open until it finishes. if it stops, choosing the same file again in this browser picks up where it left off.
+
+journal.window.import.transfer.checking = { $filename } · checking the complete file
+
+journal.window.import.transfer.paused.device.heading = paused · from your { $device }
+
+journal.window.import.transfer.paused.device.detail = { $filename } · { $sent } of { $total } · will pick up from here when sending resumes from your { $device }
+
+journal.window.import.transfer.paused.generic.heading = paused · from a paired device
+
+journal.window.import.transfer.paused.generic.detail = { $filename } · { $sent } of { $total } · will pick up from here when sending resumes
+
+journal.window.import.transfer.paused.this.browser.heading = paused · from this browser
+
+journal.window.import.transfer.paused.this.browser.detail = { $filename } · { $sent } of { $total } · choose the same file again in this browser to pick up from here
+
+journal.window.import.transfer.paused.retrying.detail = { $filename } · { $sent } of { $total } · will keep trying while this page stays open
+
+journal.window.import.transfer.paused.other.browser.heading = paused · from a browser
+
+journal.window.import.transfer.paused.other.browser.detail = { $filename } · { $sent } of { $total } · choose the same file again in that browser to pick up from here
+
+journal.window.import.transfer.action.cancel = cancel
+
+journal.window.import.transfer.error.no.space = not enough space for this { $total } file right now. free up space where your journal lives or cancel unfinished imports, and try again.
+
+journal.window.import.transfer.error.integrity = the file didn't arrive intact. try sending it again.
+
+journal.window.import.transfer.error.expired = this unfinished import is no longer open. try again to start over.

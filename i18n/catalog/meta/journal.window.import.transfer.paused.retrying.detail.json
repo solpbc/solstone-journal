@@ -1,0 +1,29 @@
+{
+  "description": "Live transfer strip detail when an active browser transfer on this page pauses briefly and retries automatically.",
+  "context": "Journal window, import view. Shown while the current import page stays open and is retrying after a transient disconnect or gateway interruption.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    },
+    {
+      "name": "sent",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "449f3f946f088e5a9a41a8bc3bf4b4d5e8fb5e75e717db6c831c578a648f314a",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

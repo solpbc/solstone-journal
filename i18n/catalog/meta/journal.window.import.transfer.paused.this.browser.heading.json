@@ -1,0 +1,16 @@
+{
+  "description": "Live transfer strip heading when an interrupted transfer originated in this browser profile.",
+  "context": "Journal window, import view. Shown when this browser holds the local resume state for a paused large file import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36a42a819524cf5e2f4aca0551632fa672bcd24083afeb1445bedaf2c039e348",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

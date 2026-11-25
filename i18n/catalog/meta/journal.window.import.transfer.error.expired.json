@@ -1,0 +1,16 @@
+{
+  "description": "Error message when an unfinished import session is no longer open on the journal.",
+  "context": "Journal window, import view. Shown when resuming or finishing an upload returns 404 because the unfinished upload expired or was removed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3511efe24f9a84300f882a1b3b6d62277aa282cf9893f5a28e666b4da79890c4",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

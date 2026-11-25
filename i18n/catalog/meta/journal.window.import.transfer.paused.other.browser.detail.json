@@ -1,0 +1,29 @@
+{
+  "description": "Live transfer strip detail when viewing a paused browser transfer from a different browser or device.",
+  "context": "Journal window, import view. Explains that choosing the same file again in the originating browser resumes from the saved point.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    },
+    {
+      "name": "sent",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aa4919aa19a5958c73d02093b56159dccfd3ae1df4d0d02e57dd9caae0695d61",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -859,6 +859,84 @@
   color: var(--ink);
 }
 
+.import-transfer-strip {
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.import-transfer-strip[hidden] {
+  display: none;
+}
+.import-transfer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 0.95rem;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+}
+.import-transfer-row.is-paused {
+  background: var(--cream);
+}
+.import-transfer-main {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.import-transfer-heading {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.import-transfer-row.is-paused .import-transfer-heading {
+  color: var(--ink-soft);
+}
+.import-transfer-detail {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.import-transfer-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cream);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+  margin-top: 0.15rem;
+}
+.import-transfer-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--orange);
+  transition: width 0.2s ease;
+}
+.import-transfer-row.is-paused .import-transfer-progress-bar {
+  opacity: 0.6;
+}
+.import-transfer-note {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  margin-top: 0.15rem;
+}
+.import-transfer-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .import-table tbody tr:active {
   background: var(--hairline);
 }
@@ -1005,6 +1083,7 @@
     </div>
     <p class="intake-switcher-lede">{{journal.window.import.switcher.lede}}</p>
   </header>
+  <section id="importTransferStrip" class="import-transfer-strip" hidden aria-live="polite"></section>
   <div id="importGrid" class="import-source-grid"></div>
 
   <div id="importGuide" class="import-guided-flow" style="display:none">
@@ -1806,10 +1885,19 @@ function focusShownPart(view, leftSource = null) {
   target.focus({ preventScroll: true });
 }
 
+let resumableUploadConfig = null;
+
 async function loadSourceGrid() {
   if (!cachedSources.length) {
     const payload = await ctx.read('/app/import/api/sources');
     cachedSources = payload.items || [];
+    if (typeof resumableUploadConfig !== 'undefined' && payload.resumable && typeof payload.resumable.threshold_bytes === 'number') {
+      resumableUploadConfig = {
+        thresholdBytes: payload.resumable.threshold_bytes,
+        chunkBytes: typeof payload.resumable.chunk_bytes === 'number' ? payload.resumable.chunk_bytes : 4 * 1024 * 1024,
+        maxFileBytes: typeof payload.resumable.max_file_bytes === 'number' ? payload.resumable.max_file_bytes : 4 * 1024 * 1024 * 1024,
+      };
+    }
     sourceMetadataByName = Object.fromEntries(cachedSources.map(source => [source.name, source]));
     sourceIconSvgByName = Object.fromEntries(cachedSources.map(source => [source.name, source.icon_svg || '']));
   }
@@ -3088,6 +3176,9 @@ async function loadImports() {
     totalImports = data.total;
     const container = document.getElementById('importListContent');
     clearImportListErrors();
+    if (typeof syncTransferStripFromList === 'function') {
+      syncTransferStripFromList(Array.isArray(data.active_uploads) ? data.active_uploads : []);
+    }
     if (!currentSourceFilter && typeof updateImportReviewPill === 'function') {
       updateImportReviewPill(importsCache);
     }
@@ -3836,10 +3927,431 @@ function formatHandoffSize(bytes) {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function formatTransferSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  return formatHandoffSize(n);
+}
+
+const RESUMABLE_STORAGE_PREFIX = 'solstone.resumableUpload.v1:';
+const RESUMABLE_ITEM_INDEX_KEY = 'solstone.resumableUpload.items.v1';
+const TRANSFER_PAUSE_MS = 20000;
+const RESUMABLE_RETRY_MS = [1000, 2000, 5000, 10000, 30000, 60000];
+const transferStripItems = new Map();
+const transferPauseTimers = new Map();
+const localBrowserUploads = new Map();
+
+function readLocalResumeIndex() {
+  try {
+    const raw = window.localStorage?.getItem(RESUMABLE_ITEM_INDEX_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeLocalResumeIndex(index) {
+  try {
+    window.localStorage?.setItem(RESUMABLE_ITEM_INDEX_KEY, JSON.stringify(index));
+  } catch (_) {}
+}
+
+function saveLocalResumeState(fingerprintKey, record) {
+  try {
+    window.localStorage?.setItem(fingerprintKey, JSON.stringify(record));
+    const index = readLocalResumeIndex();
+    index[record.clientItemId] = {
+      fingerprintKey,
+      uploadId: record.uploadId || null,
+      activeTabBeatAt: record.activeTabBeatAt || 0,
+    };
+    writeLocalResumeIndex(index);
+  } catch (_) {}
+}
+
+function readLocalResumeState(fingerprintKey) {
+  try {
+    const raw = window.localStorage?.getItem(fingerprintKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function markLocalResumePaused(clientItemId) {
+  if (!clientItemId) return;
+  const index = readLocalResumeIndex();
+  const hit = index[clientItemId];
+  if (!hit) return;
+  hit.activeTabBeatAt = 0;
+  writeLocalResumeIndex(index);
+  const rec = hit.fingerprintKey ? readLocalResumeState(hit.fingerprintKey) : null;
+  if (rec) {
+    rec.activeTabBeatAt = 0;
+    try { window.localStorage?.setItem(hit.fingerprintKey, JSON.stringify(rec)); } catch (_) {}
+  }
+}
+
+function clearLocalResumeByClientItem(clientItemId) {
+  if (!clientItemId) return;
+  const index = readLocalResumeIndex();
+  const hit = index[clientItemId];
+  if (hit) {
+    if (hit.fingerprintKey) {
+      try { window.localStorage?.removeItem(hit.fingerprintKey); } catch (_) {}
+    }
+    delete index[clientItemId];
+    writeLocalResumeIndex(index);
+  }
+}
+
+function inspectLocalBrowserProfile(clientItemId) {
+  if (!clientItemId) return { hasResume: false, otherTabActive: false };
+  const index = readLocalResumeIndex();
+  const hit = index[clientItemId];
+  if (!hit) return { hasResume: false, otherTabActive: false };
+  const beat = Number(hit.activeTabBeatAt || 0);
+  return {
+    hasResume: true,
+    otherTabActive: beat > 0 && Date.now() - beat < 12000,
+  };
+}
+
+function clearTransferPauseTimer(clientItemId) {
+  const timer = transferPauseTimers.get(clientItemId);
+  if (timer) {
+    window.clearTimeout(timer);
+    transferPauseTimers.delete(clientItemId);
+  }
+}
+
+function armTransferPauseTimer(clientItemId) {
+  clearTransferPauseTimer(clientItemId);
+  const entry = transferStripItems.get(clientItemId);
+  if (!entry || entry.localTab || entry.phase !== 'sending') return;
+  const timer = window.setTimeout(() => {
+    transferPauseTimers.delete(clientItemId);
+    const current = transferStripItems.get(clientItemId);
+    if (current && !current.localTab && current.phase === 'sending') {
+      current.phase = 'paused';
+      renderTransferStrip();
+    }
+  }, TRANSFER_PAUSE_MS);
+  transferPauseTimers.set(clientItemId, timer);
+}
+
+function shouldSuppressHandoffRowForStrip(entry) {
+  return Boolean(entry && (entry.state === 'uploading' || entry.state === 'waiting') && transferStripItems.has(entry.item));
+}
+
+function isBrowserTransferOrigin(entry) {
+  return Boolean(
+    entry.localTab
+    || entry.importedVia === 'browser'
+    || entry.importedVia === 'web_dashboard'
+    || entry.deviceNoun === 'browser'
+  );
+}
+
+function transferCopy(key, args = []) {
+  return window.JournalI18n.render('journal.window.import.transfer.' + key, args);
+}
+
+function renderTransferStrip() {
+  const strip = document.getElementById('importTransferStrip');
+  if (!strip) return;
+  const entries = [...transferStripItems.values()];
+  writeHidden(strip, entries.length === 0);
+  if (!entries.length) {
+    if (strip.childNodes.length) strip.replaceChildren();
+    return;
+  }
+  const activeClientId = document.activeElement?.closest?.('[data-transfer-item]')?.getAttribute('data-transfer-item') || null;
+  const activeCancel = Boolean(document.activeElement?.hasAttribute?.('data-transfer-cancel'));
+  const nodes = [];
+
+  for (const entry of entries) {
+    const filename = entry.filename || '';
+    const total = Math.max(0, Number(entry.bytesTotal) || 0);
+    const sent = Math.min(total || Infinity, Math.max(0, Number(entry.bytesSent) || 0));
+    const percent = total > 0 ? Math.min(100, Math.floor((sent / total) * 100)) : 0;
+    const sentStr = formatTransferSize(sent);
+    const totalStr = formatTransferSize(total);
+    const profile = inspectLocalBrowserProfile(entry.clientItemId);
+    const browserOrigin = isBrowserTransferOrigin(entry) || profile.hasResume;
+    let phase = entry.phase || 'sending';
+    if (!entry.localTab && browserOrigin && profile.hasResume && !profile.otherTabActive && phase === 'sending') {
+      phase = 'paused';
+    }
+    const deviceNoun = entry.deviceNoun && HANDOFF_DEVICE_NOUNS.has(entry.deviceNoun) ? entry.deviceNoun : null;
+
+    const row = document.createElement('div');
+    row.className = 'import-transfer-row' + (phase === 'paused' ? ' is-paused' : phase === 'checking' ? ' is-checking' : ' is-sending');
+    row.setAttribute('data-transfer-item', entry.clientItemId);
+
+    const main = document.createElement('div');
+    main.className = 'import-transfer-main';
+
+    if (phase === 'checking') {
+      const detail = document.createElement('div');
+      detail.className = 'import-transfer-heading';
+      detail.textContent = transferCopy('checking', [['filename', filename]]);
+      main.appendChild(detail);
+    } else if (phase === 'paused') {
+      const heading = document.createElement('div');
+      heading.className = 'import-transfer-heading';
+      const detail = document.createElement('div');
+      detail.className = 'import-transfer-detail';
+      if (browserOrigin) {
+        if (entry.localTab) {
+          heading.textContent = transferCopy('paused.this.browser.heading');
+          detail.textContent = transferCopy('paused.retrying.detail', [['filename', filename], ['sent', sentStr], ['total', totalStr]]);
+        } else if (profile.hasResume) {
+          heading.textContent = transferCopy('paused.this.browser.heading');
+          detail.textContent = transferCopy('paused.this.browser.detail', [['filename', filename], ['sent', sentStr], ['total', totalStr]]);
+        } else {
+          heading.textContent = transferCopy('paused.other.browser.heading');
+          detail.textContent = transferCopy('paused.other.browser.detail', [['filename', filename], ['sent', sentStr], ['total', totalStr]]);
+        }
+      } else if (deviceNoun) {
+        heading.textContent = transferCopy('paused.device.heading', [['device', deviceNoun]]);
+        detail.textContent = transferCopy(
+          'paused.device.detail',
+          [['filename', filename], ['sent', sentStr], ['total', totalStr], ['device', deviceNoun]]
+        );
+      } else {
+        heading.textContent = transferCopy('paused.generic.heading');
+        detail.textContent = transferCopy(
+          'paused.generic.detail',
+          [['filename', filename], ['sent', sentStr], ['total', totalStr]]
+        );
+      }
+      main.appendChild(heading);
+      main.appendChild(detail);
+    } else {
+      const heading = document.createElement('div');
+      heading.className = 'import-transfer-heading';
+      if (entry.localTab) {
+        heading.textContent = transferCopy('sending.this.browser');
+      } else if (browserOrigin) {
+        heading.textContent = transferCopy('receiving.browser');
+      } else if (deviceNoun) {
+        heading.textContent = transferCopy('receiving.device', [['device', deviceNoun]]);
+      } else {
+        heading.textContent = transferCopy('receiving.generic');
+      }
+      const detail = document.createElement('div');
+      detail.className = 'import-transfer-detail';
+      detail.textContent = transferCopy(
+        'detail.progress',
+        [['filename', filename], ['sent', sentStr], ['total', totalStr], ['percent', String(percent)]]
+      );
+      main.appendChild(heading);
+      main.appendChild(detail);
+    }
+
+    if (total > 0) {
+      const barTrack = document.createElement('div');
+      barTrack.className = 'import-transfer-progress';
+      barTrack.setAttribute('role', 'progressbar');
+      barTrack.setAttribute('aria-valuemin', '0');
+      barTrack.setAttribute('aria-valuemax', '100');
+      barTrack.setAttribute('aria-valuenow', String(phase === 'checking' ? 100 : percent));
+      const barFill = document.createElement('div');
+      barFill.className = 'import-transfer-progress-bar';
+      barFill.style.width = `${phase === 'checking' ? 100 : percent}%`;
+      barTrack.appendChild(barFill);
+      main.appendChild(barTrack);
+    }
+
+    if (entry.localTab && phase === 'sending') {
+      const note = document.createElement('div');
+      note.className = 'import-transfer-note';
+      note.textContent = transferCopy('browser.note');
+      main.appendChild(note);
+    }
+
+    row.appendChild(main);
+
+    if ((entry.uploadId || localBrowserUploads.has(entry.clientItemId)) && phase !== 'checking') {
+      const actions = document.createElement('div');
+      actions.className = 'import-transfer-actions';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'import-secondary-btn';
+      cancelBtn.setAttribute('data-transfer-cancel', 'true');
+      cancelBtn.textContent = transferCopy('action.cancel');
+      if (entry.cancelling) writeAttr(cancelBtn, 'aria-disabled', 'true');
+      cancelBtn.onclick = () => cancelTransferItem(entry.clientItemId, cancelBtn);
+      actions.appendChild(cancelBtn);
+      row.appendChild(actions);
+    }
+
+    nodes.push(row);
+  }
+
+  strip.replaceChildren(...nodes);
+  if (activeClientId && activeCancel) {
+    const esc = val => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(val) : String(val).replace(/["\\]/g, '\\$&'));
+    const restore = strip.querySelector(`[data-transfer-item="${esc(activeClientId)}"] [data-transfer-cancel]`);
+    if (restore && restore.focus) restore.focus();
+  }
+}
+
+async function cancelTransferItem(clientItemId, pressedBtn = null) {
+  const entry = transferStripItems.get(clientItemId);
+  if (!entry || entry.cancelling) return;
+  entry.cancelling = true;
+  if (pressedBtn) window.SolFocus.setBusy(pressedBtn, true);
+
+  const localCtl = localBrowserUploads.get(clientItemId);
+  if (localCtl) {
+    localCtl.cancelled = true;
+    localCtl.abort();
+  }
+  clearLocalResumeByClientItem(clientItemId);
+  const uploadId = entry.uploadId;
+  if (uploadId) {
+    try {
+      await importWrite(`/app/import/api/uploads/${encodeURIComponent(uploadId)}`, { method: 'DELETE' });
+    } catch (_) {}
+  }
+  clearTransferPauseTimer(clientItemId);
+  transferStripItems.delete(clientItemId);
+  renderTransferStrip();
+  renderHandoffTray();
+  if (pressedBtn) {
+    const fallback = document.querySelector('#importTransferStrip [data-transfer-cancel]')
+      || document.getElementById('importCurrentLink')
+      || document.querySelector('#importGrid .import-source-card');
+    if (fallback && fallback.focus) fallback.focus();
+  }
+}
+
+function syncTransferStripFromList(activeUploads) {
+  const seenServerIds = new Set();
+  for (const u of activeUploads) {
+    if (!u || typeof u.client_item_id !== 'string' || !u.client_item_id) continue;
+    const key = u.client_item_id;
+    seenServerIds.add(key);
+    const existing = transferStripItems.get(key) || { clientItemId: key };
+    const nextSent = Math.max(Number(existing.bytesSent) || 0, Number(u.next_offset) || 0);
+    const next = {
+      ...existing,
+      clientItemId: key,
+      uploadId: u.upload_id || existing.uploadId || null,
+      filename: u.original_filename || u.filename || existing.filename || '',
+      bytesSent: nextSent,
+      bytesTotal: Number(u.total_bytes) || existing.bytesTotal || 0,
+      phase: existing.localTab ? existing.phase : (u.phase || existing.phase || 'sending'),
+      importedVia: u.imported_via || existing.importedVia || '',
+      deviceNoun: u.device_noun || existing.deviceNoun || null,
+      serverBacked: true,
+    };
+    transferStripItems.set(key, next);
+    if (next.phase === 'sending' && !next.localTab) armTransferPauseTimer(key);
+  }
+  for (const [key, entry] of [...transferStripItems.entries()]) {
+    if (entry.serverBacked && !seenServerIds.has(key) && !entry.localTab && !entry.hostActive) {
+      clearTransferPauseTimer(key);
+      transferStripItems.delete(key);
+    }
+  }
+  renderTransferStrip();
+  renderHandoffTray();
+}
+
+function handleUploadImporterEvent(eventData) {
+  const ev = eventData?.event;
+  if (ev !== 'upload_progress' && ev !== 'upload_committed' && ev !== 'upload_aborted') {
+    return false;
+  }
+  const key = typeof eventData.client_item_id === 'string' ? eventData.client_item_id : '';
+  if (!key) return true;
+
+  if (ev === 'upload_committed' || ev === 'upload_aborted') {
+    if (ev === 'upload_aborted') {
+      const localCtl = localBrowserUploads.get(key);
+      if (localCtl) {
+        localCtl.cancelled = true;
+        localCtl.abort();
+      }
+    }
+    clearLocalResumeByClientItem(key);
+    clearTransferPauseTimer(key);
+    if (transferStripItems.delete(key)) {
+      renderTransferStrip();
+      renderHandoffTray();
+    }
+    if (ev === 'upload_committed') {
+      loadImports();
+    }
+    return true;
+  }
+
+  const existing = transferStripItems.get(key) || { clientItemId: key };
+  const serverSent = typeof eventData.bytes_received === 'number' && Number.isFinite(eventData.bytes_received)
+    ? eventData.bytes_received
+    : (typeof eventData.next_offset === 'number' && Number.isFinite(eventData.next_offset) ? eventData.next_offset : 0);
+  const nextSent = Math.max(Number(existing.bytesSent) || 0, serverSent);
+  const next = {
+    ...existing,
+    clientItemId: key,
+    uploadId: eventData.upload_id || existing.uploadId || null,
+    filename: eventData.filename || existing.filename || '',
+    bytesSent: nextSent,
+    bytesTotal: Number(eventData.total_bytes) || existing.bytesTotal || 0,
+    phase: existing.localTab ? existing.phase : (eventData.phase || 'sending'),
+    importedVia: eventData.imported_via || existing.importedVia || '',
+    deviceNoun: eventData.device_noun || existing.deviceNoun || null,
+    serverBacked: true,
+  };
+  transferStripItems.set(key, next);
+  armTransferPauseTimer(key);
+  renderTransferStrip();
+  renderHandoffTray();
+  return true;
+}
+
+function upsertTransferFromHostStatus(state) {
+  const key = String(state.item);
+  const existing = transferStripItems.get(key) || { clientItemId: key };
+  const hostSent = typeof state.bytes_sent === 'number' && Number.isFinite(state.bytes_sent) ? state.bytes_sent : 0;
+  const hostTotal = typeof state.bytes_total === 'number' && Number.isFinite(state.bytes_total)
+    ? state.bytes_total
+    : (typeof state.size_bytes === 'number' && Number.isFinite(state.size_bytes) ? state.size_bytes : 0);
+  const next = {
+    ...existing,
+    clientItemId: key,
+    filename: state.name || existing.filename || '',
+    bytesSent: Math.max(Number(existing.bytesSent) || 0, hostSent),
+    bytesTotal: hostTotal || existing.bytesTotal || 0,
+    phase: state.phase === 'paused' || state.phase === 'checking' ? state.phase : 'sending',
+    importedVia: existing.importedVia || 'app_handoff',
+    deviceNoun: typeof state.device_noun === 'string' ? state.device_noun : existing.deviceNoun,
+    hostActive: true,
+  };
+  transferStripItems.set(key, next);
+  if (next.phase === 'sending') armTransferPauseTimer(key);
+  else clearTransferPauseTimer(key);
+  renderTransferStrip();
+}
+
+function completeTransferFromHostStatus(key) {
+  const existing = transferStripItems.get(key);
+  if (!existing) return;
+  clearTransferPauseTimer(key);
+  transferStripItems.delete(key);
+  renderTransferStrip();
+}
+
 function renderHandoffTray() {
   const tray = document.getElementById('handoffStatus');
   if (!tray) return;
-  const entries = [...handoffItems.values()];
+  const entries = [...handoffItems.values()].filter(
+    entry => !(typeof shouldSuppressHandoffRowForStrip === 'function' && shouldSuppressHandoffRowForStrip(entry))
+  );
   writeHidden(tray, entries.length === 0);
   const list = tray.querySelector('.import-handoff-list') || tray;
   if (!entries.length) {
@@ -4004,6 +4516,7 @@ function updateHandoffEvent(state) {
   if (!state?.item) return;
   const key = String(state.item);
   if (state.state === 'gone') {
+    if (typeof completeTransferFromHostStatus === 'function') completeTransferFromHostStatus(key);
     if (handoffItems.delete(key)) renderHandoffTray();
     return;
   }
@@ -4030,6 +4543,16 @@ function updateHandoffEvent(state) {
   if (next.state !== 'delivered') {
     next.liveStage = '';
     next.liveCompleted = '';
+  }
+  const hasHostBytes = typeof state.bytes_sent === 'number' && Number.isFinite(state.bytes_sent)
+    && typeof state.bytes_total === 'number' && state.bytes_total > 0;
+  const isResumableHost = state.resumable === true
+    || hasHostBytes
+    || (typeof transferStripItems !== 'undefined' && transferStripItems.has(key));
+  if ((next.state === 'uploading' || next.state === 'waiting') && isResumableHost && typeof upsertTransferFromHostStatus === 'function') {
+    upsertTransferFromHostStatus(state);
+  } else if ((next.state === 'delivered' || next.state === 'attention') && typeof completeTransferFromHostStatus === 'function') {
+    completeTransferFromHostStatus(key);
   }
   handoffItems.set(key, next);
   renderHandoffTray();
@@ -4342,25 +4865,34 @@ function setupQuickImportForm() {
     validateBtn.innerHTML = `${window.JournalI18n.renderHtml('journal.window.import.visible.text.validating')}<span class="spinner"></span>`;
 
     try {
-      const fd = new FormData();
-      fd.append('imported_via', 'browser');
-      if (hasFile) {
-        fd.append('file', currentFile);
-      } else {
-        fd.append('text', pasteText.value);
-      }
-      fd.append(
-        'client_item_id',
-        importDraft.quickClientItemId || (importDraft.quickClientItemId = crypto.randomUUID())
-      );
-
       const settingValue = quickSettingInput ? quickSettingInput.value.trim() : '';
-      if (settingValue) {
-        fd.append('setting', settingValue);
+      let response;
+      let data;
+      if (hasFile && typeof shouldUseResumableWebUpload === 'function' && shouldUseResumableWebUpload(currentFile)) {
+        const res = await uploadBrowserFileResumable(currentFile, {
+          clientItemIdKey: 'quickClientItemId',
+          setting: settingValue,
+        });
+        response = res.response;
+        data = res.data;
+      } else {
+        const fd = new FormData();
+        fd.append('imported_via', 'browser');
+        if (hasFile) {
+          fd.append('file', currentFile);
+        } else {
+          fd.append('text', pasteText.value);
+        }
+        fd.append(
+          'client_item_id',
+          importDraft.quickClientItemId || (importDraft.quickClientItemId = crypto.randomUUID())
+        );
+        if (settingValue) {
+          fd.append('setting', settingValue);
+        }
+        response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true, fileUpload: hasFile });
+        data = await response.json();
       }
-
-      const response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true, fileUpload: hasFile });
-      const data = await response.json();
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
 
@@ -4384,11 +4916,608 @@ function setupQuickImportForm() {
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
       await loadImports();
+      if (_err && _err.cancelled === true) return;
       if (window.showError) {
-        showError(window.JournalI18n.render('journal.window.import.status.text.validation.failed'));
+        showError(_err instanceof Error && _err.message
+          ? _err.message
+          : window.JournalI18n.render('journal.window.import.status.text.validation.failed'));
       }
     }
   };
+}
+
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+class JsSha256 {
+  constructor() {
+    this.h = new Uint32Array([
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]);
+    this.tail = new Uint8Array(64);
+    this.tailLen = 0;
+    this.totalBytes = 0;
+    this.w = new Uint32Array(64);
+  }
+  static restore(snap) {
+    const inst = new JsSha256();
+    if (!snap || !Array.isArray(snap.h) || snap.h.length !== 8 || typeof snap.totalBytes !== 'number') {
+      return null;
+    }
+    for (let i = 0; i < 8; i += 1) inst.h[i] = snap.h[i] >>> 0;
+    inst.totalBytes = snap.totalBytes;
+    const hex = typeof snap.tailHex === 'string' ? snap.tailHex : '';
+    if (hex.length % 2 !== 0 || hex.length > 126) return null;
+    inst.tailLen = hex.length / 2;
+    for (let i = 0; i < inst.tailLen; i += 1) {
+      inst.tail[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    }
+    return inst;
+  }
+  snapshot() {
+    let tailHex = '';
+    for (let i = 0; i < this.tailLen; i += 1) {
+      tailHex += this.tail[i].toString(16).padStart(2, '0');
+    }
+    return { h: Array.from(this.h), tailHex, totalBytes: this.totalBytes };
+  }
+  compressBlock(buf, offset) {
+    const w = this.w;
+    for (let i = 0; i < 16; i += 1) {
+      const j = offset + i * 4;
+      w[i] = ((buf[j] << 24) | (buf[j + 1] << 16) | (buf[j + 2] << 8) | buf[j + 3]) >>> 0;
+    }
+    for (let i = 16; i < 64; i += 1) {
+      const v0 = w[i - 15];
+      const s0 = (((v0 >>> 7) | (v0 << 25)) ^ ((v0 >>> 18) | (v0 << 14)) ^ (v0 >>> 3)) >>> 0;
+      const v1 = w[i - 2];
+      const s1 = (((v1 >>> 17) | (v1 << 15)) ^ ((v1 >>> 19) | (v1 << 13)) ^ (v1 >>> 10)) >>> 0;
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = this.h;
+    for (let i = 0; i < 64; i += 1) {
+      const S1 = (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7))) >>> 0;
+      const ch = ((e & f) ^ ((~e) & g)) >>> 0;
+      const t1 = (h + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
+      const S0 = (((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10))) >>> 0;
+      const maj = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    this.h[0] = (this.h[0] + a) >>> 0;
+    this.h[1] = (this.h[1] + b) >>> 0;
+    this.h[2] = (this.h[2] + c) >>> 0;
+    this.h[3] = (this.h[3] + d) >>> 0;
+    this.h[4] = (this.h[4] + e) >>> 0;
+    this.h[5] = (this.h[5] + f) >>> 0;
+    this.h[6] = (this.h[6] + g) >>> 0;
+    this.h[7] = (this.h[7] + h) >>> 0;
+  }
+  update(bytes) {
+    const input = ArrayBuffer.isView(bytes)
+      ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      : new Uint8Array(bytes);
+    let pos = 0;
+    const len = input.length;
+    this.totalBytes += len;
+    if (this.tailLen > 0) {
+      const need = 64 - this.tailLen;
+      if (len < need) {
+        this.tail.set(input, this.tailLen);
+        this.tailLen += len;
+        return this;
+      }
+      this.tail.set(input.subarray(0, need), this.tailLen);
+      this.compressBlock(this.tail, 0);
+      this.tailLen = 0;
+      pos = need;
+    }
+    while (pos + 64 <= len) {
+      this.compressBlock(input, pos);
+      pos += 64;
+    }
+    if (pos < len) {
+      this.tailLen = len - pos;
+      this.tail.set(input.subarray(pos), 0);
+    }
+    return this;
+  }
+  finalizeHex() {
+    const copy = JsSha256.restore(this.snapshot());
+    const pad = new Uint8Array(128);
+    pad.set(copy.tail.subarray(0, copy.tailLen), 0);
+    pad[copy.tailLen] = 0x80;
+    const blocks = copy.tailLen >= 56 ? 128 : 64;
+    const totalBits = copy.totalBytes * 8;
+    const bitHi = Math.floor(totalBits / 0x100000000) >>> 0;
+    const bitLo = (totalBits % 0x100000000) >>> 0;
+    const view = new DataView(pad.buffer);
+    view.setUint32(blocks - 8, bitHi, false);
+    view.setUint32(blocks - 4, bitLo, false);
+    copy.compressBlock(pad, 0);
+    if (blocks === 128) copy.compressBlock(pad, 64);
+    return Array.from(copy.h).map(v => v.toString(16).padStart(8, '0')).join('');
+  }
+}
+
+async function sha256HexForChunk(chunkBytes) {
+  if (window.crypto?.subtle?.digest) {
+    const digest = await window.crypto.subtle.digest('SHA-256', chunkBytes);
+    const view = new Uint8Array(digest);
+    let hex = '';
+    for (let i = 0; i < view.length; i += 1) hex += view[i].toString(16).padStart(2, '0');
+    return hex;
+  }
+  return new JsSha256().update(chunkBytes).finalizeHex();
+}
+
+function shouldUseResumableWebUpload(file) {
+  return Boolean(
+    file
+    && resumableUploadConfig
+    && typeof file.slice === 'function'
+    && Number(file.size) >= resumableUploadConfig.thresholdBytes
+  );
+}
+
+async function computeFileFingerprintKey(file) {
+  const headBuf = await file.slice(0, Math.min(65536, file.size)).arrayBuffer();
+  const headHex = await sha256HexForChunk(new Uint8Array(headBuf));
+  return `${RESUMABLE_STORAGE_PREFIX}${file.name}:${file.size}:${Number(file.lastModified || 0)}:${headHex}`;
+}
+
+function resumableUploadError(status, body, fileSize) {
+  const code = body?.reason_code || '';
+  if (status === 507 || code === 'insufficient_journal_space') {
+    return new Error(transferCopy('error.no.space', [['total', formatTransferSize(fileSize)]]));
+  }
+  if (status === 422 && code === 'whole_file_checksum_mismatch') {
+    return new Error(transferCopy('error.integrity'));
+  }
+  if (status === 404 && code === 'upload_not_found') {
+    return new Error(transferCopy('error.expired'));
+  }
+  return new Error(importErrorMessage(body, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.save.import')));
+}
+
+function sleepAbortable(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function advanceHasherOverFileRange(hasher, file, fromOffset, toOffset, chunkBytes) {
+  let cursor = fromOffset;
+  while (cursor < toOffset) {
+    const end = Math.min(cursor + chunkBytes, toOffset);
+    const buf = await file.slice(cursor, end).arrayBuffer();
+    hasher.update(new Uint8Array(buf));
+    cursor = end;
+  }
+}
+
+async function reconcileHasherToOffset(hasher, file, targetOffset, chunkBytes) {
+  if (targetOffset > hasher.totalBytes) {
+    await advanceHasherOverFileRange(hasher, file, hasher.totalBytes, targetOffset, chunkBytes);
+    return hasher;
+  }
+  if (targetOffset < hasher.totalBytes) {
+    const fresh = new JsSha256();
+    await advanceHasherOverFileRange(fresh, file, 0, targetOffset, chunkBytes);
+    return fresh;
+  }
+  return hasher;
+}
+
+async function resyncBrowserUploadStatus(uploadId, file, hasher, currentOffset, chunkBytes, fingerprintKey, clientItemId, abortCtl) {
+  const syncResp = await importWrite(
+    `/app/import/api/uploads/${encodeURIComponent(uploadId)}`,
+    { method: 'GET', signal: abortCtl.signal },
+    { upload: true }
+  );
+  if (syncResp.status === 404) {
+    const errDoc = await syncResp.json().catch(() => ({ reason_code: 'upload_not_found' }));
+    return { expired: true, errDoc };
+  }
+  if (!syncResp.ok) {
+    return { ok: false, nextOffset: currentOffset, hasher, advanced: false };
+  }
+  const syncDoc = await syncResp.json().catch(() => null);
+  const srvOff = Number(syncDoc?.next_offset);
+  if (!Number.isFinite(srvOff) || srvOff < 0 || srvOff > file.size) {
+    return { ok: false, nextOffset: currentOffset, hasher, advanced: false };
+  }
+  const syncedHasher = await reconcileHasherToOffset(hasher, file, srvOff, chunkBytes);
+  const advanced = srvOff > currentOffset;
+  if (srvOff !== currentOffset) {
+    saveLocalResumeState(fingerprintKey, {
+      uploadId,
+      clientItemId,
+      nextOffset: srvOff,
+      shaState: syncedHasher.snapshot(),
+      activeTabBeatAt: Date.now(),
+    });
+  }
+  return { ok: true, nextOffset: srvOff, hasher: syncedHasher, advanced };
+}
+
+async function uploadBrowserFileResumable(file, options = {}) {
+  const cfg = resumableUploadConfig || {
+    thresholdBytes: 16 * 1024 * 1024,
+    chunkBytes: 4 * 1024 * 1024,
+    maxFileBytes: 4 * 1024 * 1024 * 1024,
+  };
+  if (file.size > cfg.maxFileBytes) {
+    throw new Error(window.JournalI18n.render('journal.window.import.response.error.that.file.is.too.large.to'));
+  }
+
+  const fingerprintKey = await computeFileFingerprintKey(file);
+  const stored = readLocalResumeState(fingerprintKey);
+  let clientItemId = stored?.clientItemId
+    || importDraft[options.clientItemIdKey]
+    || crypto.randomUUID();
+  if (options.clientItemIdKey) {
+    importDraft[options.clientItemIdKey] = clientItemId;
+  }
+
+  const abortCtl = new AbortController();
+  const ctlRecord = {
+    cancelled: false,
+    abort() { abortCtl.abort(); },
+  };
+  localBrowserUploads.set(clientItemId, ctlRecord);
+
+  const statusNode = document.getElementById('importUploadStatus');
+  pendingFileUploads += 1;
+  if (statusNode) {
+    statusNode.textContent = window.JournalI18n.render('journal.window.import.visible.text.uploading.your.file.keep.this.page');
+  }
+
+  const updateLocalStrip = (uploadId, sent, phase) => {
+    transferStripItems.set(clientItemId, {
+      clientItemId,
+      uploadId: uploadId || null,
+      filename: file.name,
+      bytesSent: sent,
+      bytesTotal: file.size,
+      phase,
+      importedVia: 'browser',
+      deviceNoun: 'browser',
+      localTab: true,
+      serverBacked: Boolean(uploadId),
+    });
+    renderTransferStrip();
+    renderHandoffTray();
+  };
+
+  try {
+    let uploadId = null;
+    let nextOffset = 0;
+    let chunkBytes = cfg.chunkBytes;
+    let hasher = new JsSha256();
+
+    if (stored && stored.uploadId && typeof stored.nextOffset === 'number' && stored.nextOffset <= file.size) {
+      try {
+        const resyncResp = await importWrite(
+          `/app/import/api/uploads/${encodeURIComponent(stored.uploadId)}`,
+          { method: 'GET', signal: abortCtl.signal },
+          { upload: true }
+        );
+        if (resyncResp.ok) {
+          const statusDoc = await resyncResp.json().catch(() => null);
+          const serverOffset = Number(statusDoc?.next_offset);
+          if (Number.isFinite(serverOffset) && serverOffset >= 0 && serverOffset <= file.size) {
+            uploadId = stored.uploadId;
+            if (Number.isFinite(Number(statusDoc?.chunk_bytes)) && statusDoc.chunk_bytes > 0) {
+              chunkBytes = Number(statusDoc.chunk_bytes);
+            }
+            const restoredHasher = JsSha256.restore(stored.shaState);
+            if (restoredHasher && restoredHasher.totalBytes <= serverOffset) {
+              hasher = await reconcileHasherToOffset(restoredHasher, file, serverOffset, chunkBytes);
+            } else {
+              hasher = await reconcileHasherToOffset(new JsSha256(), file, serverOffset, chunkBytes);
+            }
+            nextOffset = serverOffset;
+          }
+        } else if (resyncResp.status === 404) {
+          clearLocalResumeByClientItem(clientItemId);
+          clientItemId = crypto.randomUUID();
+          if (options.clientItemIdKey) importDraft[options.clientItemIdKey] = clientItemId;
+          localBrowserUploads.delete(stored.clientItemId);
+          localBrowserUploads.set(clientItemId, ctlRecord);
+        }
+      } catch (_err) {
+        if (ctlRecord.cancelled) throw { cancelled: true };
+      }
+    }
+
+    if (!uploadId) {
+      const createPayload = {
+        client_item_id: clientItemId,
+        filename: file.name,
+        mime_type: file.type || 'application/octet-stream',
+        total_bytes: file.size,
+        imported_via: 'browser',
+        device_noun: 'browser',
+      };
+      if (options.sourceHint) createPayload.source_hint = options.sourceHint;
+      if (options.setting) createPayload.setting = options.setting;
+
+      const createResp = await importWrite('/app/import/api/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createPayload),
+        signal: abortCtl.signal,
+      }, { upload: true });
+
+      if (createResp.status === 404 || createResp.status === 405) {
+        // Unprobed older-journal fallback to single-request /save.
+        const fd = new FormData();
+        fd.append('imported_via', 'browser');
+        fd.append('file', file);
+        fd.append('client_item_id', clientItemId);
+        if (options.sourceHint) fd.append('source_hint', options.sourceHint);
+        if (options.setting) fd.append('setting', options.setting);
+        const saveResp = await importWrite('/app/import/api/save', {
+          method: 'POST',
+          body: fd,
+          signal: abortCtl.signal,
+        }, { upload: true });
+        const saveData = await saveResp.json();
+        return { response: saveResp, data: saveData };
+      }
+
+      const createData = await createResp.json().catch(() => ({}));
+      if (!createResp.ok) {
+        throw resumableUploadError(createResp.status, createData, file.size);
+      }
+      if (createData.status === 'already_staged') {
+        clearLocalResumeByClientItem(clientItemId);
+        return { response: createResp, data: createData.save_response || createData };
+      }
+      if (createData.status === 'already_imported') {
+        clearLocalResumeByClientItem(clientItemId);
+        return {
+          response: createResp,
+          data: createData.save_response || {
+            status: 'duplicate',
+            recommended_action: 'do_not_start',
+            duplicate: { import_id: createData.import_id || null },
+          },
+        };
+      }
+      uploadId = createData.upload_id;
+      const serverOffset = Number(createData.next_offset || 0);
+      if (Number.isFinite(Number(createData.chunk_bytes)) && createData.chunk_bytes > 0) {
+        chunkBytes = Number(createData.chunk_bytes);
+      }
+      if (serverOffset > 0) {
+        hasher = await reconcileHasherToOffset(new JsSha256(), file, serverOffset, chunkBytes);
+        nextOffset = serverOffset;
+      }
+    }
+
+    updateLocalStrip(uploadId, nextOffset, 'sending');
+    saveLocalResumeState(fingerprintKey, {
+      uploadId,
+      clientItemId,
+      nextOffset,
+      shaState: hasher.snapshot(),
+      activeTabBeatAt: Date.now(),
+    });
+
+    let retryIndex = 0;
+    let checksumRetries = 0;
+    while (nextOffset < file.size) {
+      if (ctlRecord.cancelled) throw { cancelled: true };
+      const end = Math.min(nextOffset + chunkBytes, file.size);
+      const chunkBuf = await file.slice(nextOffset, end).arrayBuffer();
+      const chunkArr = new Uint8Array(chunkBuf);
+      const chunkShaHex = await sha256HexForChunk(chunkArr);
+
+      let putResp;
+      try {
+        putResp = await importWrite(
+          `/app/import/api/uploads/${encodeURIComponent(uploadId)}?offset=${nextOffset}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'X-Chunk-Sha256': chunkShaHex,
+            },
+            body: chunkArr,
+            signal: abortCtl.signal,
+          },
+          { upload: true }
+        );
+      } catch (_netErr) {
+        if (ctlRecord.cancelled) throw { cancelled: true };
+        if (ctx.disposed) return never();
+        updateLocalStrip(uploadId, nextOffset, 'paused');
+        const baseMs = RESUMABLE_RETRY_MS[Math.min(retryIndex, RESUMABLE_RETRY_MS.length - 1)];
+        retryIndex += 1;
+        await sleepAbortable(Math.round(baseMs * (0.85 + Math.random() * 0.3)), abortCtl.signal);
+        try {
+          const synced = await resyncBrowserUploadStatus(uploadId, file, hasher, nextOffset, chunkBytes, fingerprintKey, clientItemId, abortCtl);
+          if (synced.expired) {
+            clearLocalResumeByClientItem(clientItemId);
+            throw resumableUploadError(404, synced.errDoc, file.size);
+          }
+          if (synced.ok) {
+            nextOffset = synced.nextOffset;
+            hasher = synced.hasher;
+            if (synced.advanced) retryIndex = 0;
+          }
+        } catch (syncErr) {
+          if (syncErr instanceof Error && syncErr.message) throw syncErr;
+          if (ctlRecord.cancelled) throw { cancelled: true };
+        }
+        updateLocalStrip(uploadId, nextOffset, 'sending');
+        continue;
+      }
+
+      if (putResp.status === 502 || putResp.status === 503 || putResp.status === 504) {
+        updateLocalStrip(uploadId, nextOffset, 'paused');
+        const baseMs = RESUMABLE_RETRY_MS[Math.min(retryIndex, RESUMABLE_RETRY_MS.length - 1)];
+        retryIndex += 1;
+        await sleepAbortable(Math.round(baseMs * (0.85 + Math.random() * 0.3)), abortCtl.signal);
+        try {
+          const synced = await resyncBrowserUploadStatus(uploadId, file, hasher, nextOffset, chunkBytes, fingerprintKey, clientItemId, abortCtl);
+          if (synced.expired) {
+            clearLocalResumeByClientItem(clientItemId);
+            throw resumableUploadError(404, synced.errDoc, file.size);
+          }
+          if (synced.ok) {
+            nextOffset = synced.nextOffset;
+            hasher = synced.hasher;
+            if (synced.advanced) retryIndex = 0;
+          }
+        } catch (syncErr) {
+          if (syncErr instanceof Error && syncErr.message) throw syncErr;
+          if (ctlRecord.cancelled) throw { cancelled: true };
+        }
+        updateLocalStrip(uploadId, nextOffset, 'sending');
+        continue;
+      }
+
+      const putData = await putResp.json().catch(() => ({}));
+      if (putResp.status === 409 && putData?.reason_code === 'offset_mismatch') {
+        const srvOff = Number(putData.next_offset);
+        if (Number.isFinite(srvOff) && srvOff >= 0 && srvOff <= file.size) {
+          hasher = await reconcileHasherToOffset(hasher, file, srvOff, chunkBytes);
+          nextOffset = srvOff;
+          saveLocalResumeState(fingerprintKey, {
+            uploadId,
+            clientItemId,
+            nextOffset,
+            shaState: hasher.snapshot(),
+            activeTabBeatAt: Date.now(),
+          });
+          updateLocalStrip(uploadId, nextOffset, 'sending');
+          continue;
+        }
+      }
+      if (putResp.status === 409 && !putData?.reason_code) {
+        // Fallback resync if a proxy or bridge ever stripped the 409 JSON body.
+        const synced = await resyncBrowserUploadStatus(uploadId, file, hasher, nextOffset, chunkBytes, fingerprintKey, clientItemId, abortCtl);
+        if (synced.expired) {
+          clearLocalResumeByClientItem(clientItemId);
+          throw resumableUploadError(404, synced.errDoc, file.size);
+        }
+        if (synced.ok) {
+          nextOffset = synced.nextOffset;
+          hasher = synced.hasher;
+          updateLocalStrip(uploadId, nextOffset, 'sending');
+          continue;
+        }
+      }
+      if (putResp.status === 422 && putData?.reason_code === 'chunk_checksum_mismatch' && checksumRetries < 2) {
+        checksumRetries += 1;
+        continue;
+      }
+      if (!putResp.ok) {
+        if (putResp.status === 404) clearLocalResumeByClientItem(clientItemId);
+        throw resumableUploadError(putResp.status, putData, file.size);
+      }
+
+      retryIndex = 0;
+      checksumRetries = 0;
+      hasher.update(chunkArr);
+      nextOffset = Number.isFinite(Number(putData.next_offset)) ? Number(putData.next_offset) : end;
+      updateLocalStrip(uploadId, nextOffset, 'sending');
+      saveLocalResumeState(fingerprintKey, {
+        uploadId,
+        clientItemId,
+        nextOffset,
+        shaState: hasher.snapshot(),
+        activeTabBeatAt: Date.now(),
+      });
+    }
+
+    updateLocalStrip(uploadId, file.size, 'checking');
+    const finalSha256 = hasher.finalizeHex();
+    let commitResp = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        commitResp = await importWrite(
+          `/app/import/api/uploads/${encodeURIComponent(uploadId)}/commit`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sha256: finalSha256 }),
+            signal: abortCtl.signal,
+          },
+          { upload: true }
+        );
+      } catch (netErr) {
+        if (ctlRecord.cancelled) throw { cancelled: true };
+        if (ctx.disposed) return never();
+        if (attempt === 3) throw netErr;
+        await sleepAbortable(RESUMABLE_RETRY_MS[attempt], abortCtl.signal);
+        continue;
+      }
+      if ((commitResp.status === 502 || commitResp.status === 503 || commitResp.status === 504) && attempt < 3) {
+        await sleepAbortable(RESUMABLE_RETRY_MS[attempt], abortCtl.signal);
+        continue;
+      }
+      break;
+    }
+    const commitData = await commitResp.json().catch(() => ({}));
+    if (!commitResp.ok) {
+      if (commitResp.status === 422 || commitResp.status === 404) {
+        clearLocalResumeByClientItem(clientItemId);
+      }
+      throw resumableUploadError(commitResp.status, commitData, file.size);
+    }
+
+    clearLocalResumeByClientItem(clientItemId);
+    transferStripItems.delete(clientItemId);
+    renderTransferStrip();
+    renderHandoffTray();
+    return { response: commitResp, data: commitData };
+  } catch (err) {
+    if (ctlRecord.cancelled || (err && err.cancelled === true)) {
+      clearLocalResumeByClientItem(clientItemId);
+      transferStripItems.delete(clientItemId);
+      renderTransferStrip();
+      renderHandoffTray();
+      throw { cancelled: true };
+    }
+    markLocalResumePaused(clientItemId);
+    const held = transferStripItems.get(clientItemId);
+    if (held) {
+      held.localTab = false;
+      held.phase = 'paused';
+      renderTransferStrip();
+    }
+    throw err;
+  } finally {
+    localBrowserUploads.delete(clientItemId);
+    pendingFileUploads -= 1;
+    if (statusNode && !ctx.disposed) statusNode.textContent = '';
+  }
 }
 
 async function uploadGuidedSourceFile(source) {
@@ -4398,25 +5527,40 @@ async function uploadGuidedSourceFile(source) {
   }
 
   const guidedSettingInput = document.getElementById('guidedSettingInput');
-  const fd = new FormData();
-  fd.append('imported_via', 'browser');
-  fd.append('file', currentGuidedFile);
-  fd.append(
-    'client_item_id',
-    importDraft.guidedClientItemId || (importDraft.guidedClientItemId = crypto.randomUUID())
-  );
-  if (source && source.name !== 'recording') {
-    fd.append('source_hint', source.name);
-  }
-  if (guidedSettingInput && guidedSettingInput.value.trim()) {
-    fd.append('setting', guidedSettingInput.value.trim());
-  }
+  const settingValue = guidedSettingInput ? guidedSettingInput.value.trim() : '';
+  const sourceHint = source && source.name !== 'recording' ? source.name : '';
 
-  const response = await importWrite('/app/import/api/save', {
-    method: 'POST',
-    body: fd,
-  }, { upload: true, fileUpload: true });
-  const data = await response.json();
+  let response;
+  let data;
+  if (typeof shouldUseResumableWebUpload === 'function' && shouldUseResumableWebUpload(currentGuidedFile)) {
+    const res = await uploadBrowserFileResumable(currentGuidedFile, {
+      clientItemIdKey: 'guidedClientItemId',
+      sourceHint: sourceHint || undefined,
+      setting: settingValue || undefined,
+    });
+    response = res.response;
+    data = res.data;
+  } else {
+    const fd = new FormData();
+    fd.append('imported_via', 'browser');
+    fd.append('file', currentGuidedFile);
+    fd.append(
+      'client_item_id',
+      importDraft.guidedClientItemId || (importDraft.guidedClientItemId = crypto.randomUUID())
+    );
+    if (sourceHint) {
+      fd.append('source_hint', sourceHint);
+    }
+    if (settingValue) {
+      fd.append('setting', settingValue);
+    }
+
+    response = await importWrite('/app/import/api/save', {
+      method: 'POST',
+      body: fd,
+    }, { upload: true, fileUpload: true });
+    data = await response.json();
+  }
   if (!response.ok) {
     throw new Error(importErrorMessage(data, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.save.import')));
   }
@@ -4903,6 +6047,7 @@ async function startGuidedImport(source) {
   } catch (err) {
     invalidateImportPreview('guided');
     await loadImports();
+    if (err && err.cancelled === true) return;
     if (window.showError && err instanceof Error) {
       showError(err.message);
     }
@@ -5539,6 +6684,9 @@ function importMove(href) {
 // One live importer event: track or release the pending timer, update the row and panel, and
 // after a terminal event read the durable record once (see below).
 function handleImporterEvent(eventData) {
+  if (typeof handleUploadImporterEvent === 'function' && handleUploadImporterEvent(eventData)) {
+    return;
+  }
   if (!IMPORT_ROW_EVENTS.has(eventData.event)) {
     return;
   }
@@ -5600,6 +6748,9 @@ function initImportWorkspace() {
   {
     connectionStateCleanup = ctx.onConnectionState(({ connected }) => {
       if (connected) {
+        if (typeof transferStripItems !== 'undefined' && transferStripItems.size > 0 && typeof loadImports === 'function') {
+          loadImports();
+        }
         const hash = window.location.hash.slice(1);
         if (hash.startsWith('progress/')) {
           const importId = hash.split('/')[1];
@@ -6134,6 +7285,17 @@ let importDetailHooks = null;
 // has open, the Apple Health preview, the saved-start flows, and the
 // receipts' way back into this list.
 function disposeImport() {
+  if (typeof transferPauseTimers !== 'undefined') {
+    for (const timer of transferPauseTimers.values()) window.clearTimeout(timer);
+    transferPauseTimers.clear();
+  }
+  if (typeof localBrowserUploads !== 'undefined') {
+    for (const [clientItemId, ctl] of localBrowserUploads.entries()) {
+      if (typeof markLocalResumePaused === 'function') markLocalResumePaused(clientItemId);
+      ctl.abort();
+    }
+    localBrowserUploads.clear();
+  }
   if (importListHooks?.ctx === ctx) importListHooks = null;
   if (importDialog) closeImportDeleteDialog(false);
   const detect = document.getElementById('detectModal');

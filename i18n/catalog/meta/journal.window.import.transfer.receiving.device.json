@@ -1,0 +1,21 @@
+{
+  "description": "Live transfer strip heading when a paired app is sending a large file import.",
+  "context": "Journal window, import view. Shown on the live transfer strip while receiving chunks from a paired device (for example, 'receiving from your iphone').",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71a92eb9ff009b6a67aef4a490678c85f97e2f5555a1867e395f112d6bd4e0f9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error message when whole-file verification fails at the end of a resumable transfer.",
+  "context": "Journal window, import view. Shown when the assembled file fails whole-file checksum verification and is discarded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90d7865d6707f67e9009e71d0e5249f7aa9ed0affdaf82b95a062153d19ed921",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Live transfer strip heading when a paired-device transfer without a device noun is paused.",
+  "context": "Journal window, import view. Fallback heading when a paused paired-device transfer has no specific device noun.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "16943be8f6658c6ee927156c2b4f0cdafcded1b9fe299d79b01c184f9b2747d2",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

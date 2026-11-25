@@ -101313,6 +101313,424 @@
       "selector": null
     },
     {
+      "id": "journal.window.import.transfer.action.cancel",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+      "namespace": "journal.window.import.transfer.action",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.browser.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+      "namespace": "journal.window.import.transfer.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.checking",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+      "namespace": "journal.window.import.transfer",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.detail.progress",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+      "namespace": "journal.window.import.transfer.detail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "percent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.error.expired",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+      "namespace": "journal.window.import.transfer.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.error.integrity",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+      "namespace": "journal.window.import.transfer.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.error.no.space",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+      "namespace": "journal.window.import.transfer.error.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.device.detail",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+      "namespace": "journal.window.import.transfer.paused.device",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.device.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+      "namespace": "journal.window.import.transfer.paused.device",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.generic.detail",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+      "namespace": "journal.window.import.transfer.paused.generic",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.generic.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+      "namespace": "journal.window.import.transfer.paused.generic",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.other.browser.detail",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+      "namespace": "journal.window.import.transfer.paused.other.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.other.browser.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+      "namespace": "journal.window.import.transfer.paused.other.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.retrying.detail",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+      "namespace": "journal.window.import.transfer.paused.retrying",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.this.browser.detail",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+      "namespace": "journal.window.import.transfer.paused.this.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "filename",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "sent",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.paused.this.browser.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+      "namespace": "journal.window.import.transfer.paused.this.browser",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.receiving.browser",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+      "namespace": "journal.window.import.transfer.receiving",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.receiving.device",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+      "namespace": "journal.window.import.transfer.receiving",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.receiving.generic",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+      "namespace": "journal.window.import.transfer.receiving",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.import.transfer.sending.this.browser",
+      "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
+      "namespace": "journal.window.import.transfer.sending.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.import.unit.night",
       "resource": "m6a6f75726e616c2e77696e646f772e696d706f72742e756e69742e6e69676874",
       "namespace": "journal.window.import.unit",

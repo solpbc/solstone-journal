@@ -1,0 +1,16 @@
+{
+  "description": "Live transfer strip heading when a paired app is sending a large file import without a device noun.",
+  "context": "Journal window, import view. Fallback heading on the live transfer strip when the sending paired device did not include a device noun.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3b93175d110572aa9e976195a3b64b9e147fa0ca0b6620398cef5e4e5bbaaca1",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

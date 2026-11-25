@@ -168312,6 +168312,770 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.action.cancel\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.action.cancel",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "cancel",
+      "message_id": "journal.window.import.transfer.action.cancel",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.action.cancel\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.browser.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.browser.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "keep this page open until it finishes. if it stops, choosing the same file again in this browser picks up where it left off.",
+      "message_id": "journal.window.import.transfer.browser.note",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.browser.note\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.checking\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.checking",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "filename": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · checking the complete file",
+      "message_id": "journal.window.import.transfer.checking",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.checking\", [[\"filename\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "percent",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.detail.progress\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.detail.progress",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "percent": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ (⁨sample⁩%)",
+      "message_id": "journal.window.import.transfer.detail.progress",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.detail.progress\", [[\"filename\", \"sample\"], [\"percent\", \"sample\"], [\"sent\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.error.expired\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.error.expired",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this unfinished import is no longer open. try again to start over.",
+      "message_id": "journal.window.import.transfer.error.expired",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.error.expired\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.error.integrity\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.error.integrity",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the file didn't arrive intact. try sending it again.",
+      "message_id": "journal.window.import.transfer.error.integrity",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.error.integrity\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.error.no.space\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.error.no.space",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "not enough space for this ⁨sample⁩ file right now. free up space where your journal lives or cancel unfinished imports, and try again.",
+      "message_id": "journal.window.import.transfer.error.no.space",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.error.no.space\", [[\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.device.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.device.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "device": "sample",
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will pick up from here when sending resumes from your ⁨sample⁩",
+      "message_id": "journal.window.import.transfer.paused.device.detail",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.device.detail\", [[\"device\", \"sample\"], [\"filename\", \"sample\"], [\"sent\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.device.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.device.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "device": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "paused · from your ⁨sample⁩",
+      "message_id": "journal.window.import.transfer.paused.device.heading",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.device.heading\", [[\"device\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.generic.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.generic.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will pick up from here when sending resumes",
+      "message_id": "journal.window.import.transfer.paused.generic.detail",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.generic.detail\", [[\"filename\", \"sample\"], [\"sent\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.generic.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.generic.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused · from a paired device",
+      "message_id": "journal.window.import.transfer.paused.generic.heading",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.generic.heading\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.other.browser.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.other.browser.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · choose the same file again in that browser to pick up from here",
+      "message_id": "journal.window.import.transfer.paused.other.browser.detail",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.other.browser.detail\", [[\"filename\", \"sample\"], [\"sent\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.other.browser.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.other.browser.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused · from a browser",
+      "message_id": "journal.window.import.transfer.paused.other.browser.heading",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.other.browser.heading\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.retrying.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.retrying.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will keep trying while this page stays open",
+      "message_id": "journal.window.import.transfer.paused.retrying.detail",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.retrying.detail\", [[\"filename\", \"sample\"], [\"sent\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.this.browser.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.this.browser.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · choose the same file again in this browser to pick up from here",
+      "message_id": "journal.window.import.transfer.paused.this.browser.detail",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.this.browser.detail\", [[\"filename\", \"sample\"], [\"sent\", \"sample\"], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.this.browser.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.this.browser.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused · from this browser",
+      "message_id": "journal.window.import.transfer.paused.this.browser.heading",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.this.browser.heading\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.receiving.browser\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.receiving.browser",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "receiving from a browser",
+      "message_id": "journal.window.import.transfer.receiving.browser",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.receiving.browser\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.receiving.device\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.receiving.device",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "device": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "receiving from your ⁨sample⁩",
+      "message_id": "journal.window.import.transfer.receiving.device",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.receiving.device\", [[\"device\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.receiving.generic\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.receiving.generic",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "receiving from a paired device",
+      "message_id": "journal.window.import.transfer.receiving.generic",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.receiving.generic\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.sending.this.browser\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.sending.this.browser",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "sending from this browser",
+      "message_id": "journal.window.import.transfer.sending.this.browser",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.sending.this.browser\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.import.unit.record\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e756e69742e7265636f7264",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e756e69742e7265636f7264_plural",
         "gettext_unsigned_quantity": null,
@@ -500538,6 +501302,770 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.import.switcher.review.sr\", &[(\"count\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e73776974636865722e7265766965772e7372",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.action.cancel\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.action.cancel",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "cancel",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "cancel",
+      "message_id": "journal.window.import.transfer.action.cancel",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.action.cancel\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e616374696f6e2e63616e63656c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.browser.note\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.browser.note",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "keep this page open until it finishes. if it stops, choosing the same file again in this browser picks up where it left off.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "keep this page open until it finishes. if it stops, choosing the same file again in this browser picks up where it left off.",
+      "message_id": "journal.window.import.transfer.browser.note",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.browser.note\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e62726f777365722e6e6f7465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.checking\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.checking",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · checking the complete file",
+      "folder": null,
+      "inputs": {
+        "filename": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · checking the complete file",
+      "message_id": "journal.window.import.transfer.checking",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.checking\", &[(\"filename\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e636865636b696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "percent",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.detail.progress\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.detail.progress",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ (⁨sample⁩%)",
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "percent": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ (⁨sample⁩%)",
+      "message_id": "journal.window.import.transfer.detail.progress",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.detail.progress\", &[(\"filename\", Value::String(\"sample\")), (\"percent\", Value::String(\"sample\")), (\"sent\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e64657461696c2e70726f6772657373",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.error.expired\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.error.expired",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "this unfinished import is no longer open. try again to start over.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this unfinished import is no longer open. try again to start over.",
+      "message_id": "journal.window.import.transfer.error.expired",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.error.expired\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e65787069726564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.error.integrity\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.error.integrity",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the file didn't arrive intact. try sending it again.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the file didn't arrive intact. try sending it again.",
+      "message_id": "journal.window.import.transfer.error.integrity",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.error.integrity\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e696e74656772697479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.error.no.space\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.error.no.space",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "not enough space for this ⁨sample⁩ file right now. free up space where your journal lives or cancel unfinished imports, and try again.",
+      "folder": null,
+      "inputs": {
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "not enough space for this ⁨sample⁩ file right now. free up space where your journal lives or cancel unfinished imports, and try again.",
+      "message_id": "journal.window.import.transfer.error.no.space",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.error.no.space\", &[(\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e6572726f722e6e6f2e7370616365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.device.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.device.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will pick up from here when sending resumes from your ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "device": "sample",
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will pick up from here when sending resumes from your ⁨sample⁩",
+      "message_id": "journal.window.import.transfer.paused.device.detail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.device.detail\", &[(\"device\", Value::String(\"sample\")), (\"filename\", Value::String(\"sample\")), (\"sent\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e64657461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.device.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.device.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused · from your ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "device": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "paused · from your ⁨sample⁩",
+      "message_id": "journal.window.import.transfer.paused.device.heading",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.device.heading\", &[(\"device\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6465766963652e68656164696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.generic.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.generic.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will pick up from here when sending resumes",
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will pick up from here when sending resumes",
+      "message_id": "journal.window.import.transfer.paused.generic.detail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.generic.detail\", &[(\"filename\", Value::String(\"sample\")), (\"sent\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e64657461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.generic.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.generic.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused · from a paired device",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused · from a paired device",
+      "message_id": "journal.window.import.transfer.paused.generic.heading",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.generic.heading\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e67656e657269632e68656164696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.other.browser.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.other.browser.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · choose the same file again in that browser to pick up from here",
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · choose the same file again in that browser to pick up from here",
+      "message_id": "journal.window.import.transfer.paused.other.browser.detail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.other.browser.detail\", &[(\"filename\", Value::String(\"sample\")), (\"sent\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e64657461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.other.browser.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.other.browser.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused · from a browser",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused · from a browser",
+      "message_id": "journal.window.import.transfer.paused.other.browser.heading",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.other.browser.heading\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e6f746865722e62726f777365722e68656164696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.retrying.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.retrying.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will keep trying while this page stays open",
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · will keep trying while this page stays open",
+      "message_id": "journal.window.import.transfer.paused.retrying.detail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.retrying.detail\", &[(\"filename\", Value::String(\"sample\")), (\"sent\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e7265747279696e672e64657461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "filename",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "sent",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.this.browser.detail\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.this.browser.detail",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · choose the same file again in this browser to pick up from here",
+      "folder": null,
+      "inputs": {
+        "filename": "sample",
+        "sent": "sample",
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ · ⁨sample⁩ of ⁨sample⁩ · choose the same file again in this browser to pick up from here",
+      "message_id": "journal.window.import.transfer.paused.this.browser.detail",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.this.browser.detail\", &[(\"filename\", Value::String(\"sample\")), (\"sent\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e64657461696c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.paused.this.browser.heading\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.paused.this.browser.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused · from this browser",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused · from this browser",
+      "message_id": "journal.window.import.transfer.paused.this.browser.heading",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.paused.this.browser.heading\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e7061757365642e746869732e62726f777365722e68656164696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.receiving.browser\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.receiving.browser",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "receiving from a browser",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "receiving from a browser",
+      "message_id": "journal.window.import.transfer.receiving.browser",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.receiving.browser\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e62726f77736572",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "device",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.receiving.device\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.receiving.device",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "receiving from your ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "device": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "receiving from your ⁨sample⁩",
+      "message_id": "journal.window.import.transfer.receiving.device",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.receiving.device\", &[(\"device\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e646576696365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.receiving.generic\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.receiving.generic",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "receiving from a paired device",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "receiving from a paired device",
+      "message_id": "journal.window.import.transfer.receiving.generic",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.receiving.generic\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e726563656976696e672e67656e65726963",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.import.transfer.sending.this.browser\u0004m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.import.transfer.sending.this.browser",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "sending from this browser",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "sending from this browser",
+      "message_id": "journal.window.import.transfer.sending.this.browser",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.import.transfer.sending.this.browser\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e696d706f72742e7472616e736665722e73656e64696e672e746869732e62726f77736572",
       "target": "rust"
     },
     {

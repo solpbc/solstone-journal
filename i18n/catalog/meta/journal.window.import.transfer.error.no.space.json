@@ -1,0 +1,21 @@
+{
+  "description": "Error message when the journal lacks sufficient free space or staging headroom for a large file import.",
+  "context": "Journal window, import view. Shown when a resumable file import is refused with 507 because free disk space is too low or unfinished uploads reached the staging limit.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "f520e0c42d56e5f137930fe1af9cbf1d5452fe4607146a5e6413aa7e809d4bb8",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

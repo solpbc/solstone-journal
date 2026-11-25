@@ -1,0 +1,16 @@
+{
+  "description": "Live transfer strip heading when viewing a paused browser transfer from a different browser or device.",
+  "context": "Journal window, import view. Shown when another browser started a large file import that is currently paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "652dfc88fe4ec52da1edf86e2e945b3ed73eed2994c909aee77fd959d5c73640",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

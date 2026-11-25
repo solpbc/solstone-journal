@@ -1,0 +1,29 @@
+{
+  "description": "Live transfer strip detail when an interrupted transfer originated in this browser profile.",
+  "context": "Journal window, import view. Tells the owner how to resume a paused browser transfer in the same browser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "filename",
+      "type": "string"
+    },
+    {
+      "name": "sent",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "28f382a7103eeb7161ffd4235641b40e5f6a3e41f5c958b1784fb3030fe95e66",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
