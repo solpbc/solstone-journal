@@ -34,7 +34,13 @@ pub(crate) fn enqueue(
     else {
         return Ok(None);
     };
-    let Some((configs, input_hash)) = selected_work(context, &record)? else {
+    let Some((configs, input_hash)) = selected_work_with_refresh(
+        context,
+        facet,
+        activity_id,
+        &record,
+        refresh,
+    )? else {
         return Ok(None);
     };
     if configs.is_empty() {
@@ -83,7 +89,9 @@ pub(crate) fn seed_refresh(
         Ok(None) => return Ok(Seeded::Dropped("activity_missing")),
         Err(_) => return Ok(Seeded::Dropped("inputs_unreadable")),
     };
-    if selected_configs(context, &record)?.is_none_or(|configs| configs.is_empty()) {
+    if selected_configs_with_refresh(context, facet, activity_id, &record, true)?
+        .is_none_or(|configs| configs.is_empty())
+    {
         return Ok(Seeded::Dropped("no_activity_talents"));
     }
     if crate::segment::compute_activity_input_hash(context, &context.day, &record).is_none() {
@@ -105,11 +113,16 @@ pub(crate) fn seed_refresh(
 /// The talents a stored activity record selects, and the fingerprint of the
 /// input they read. A synthetic record, or one with no input span, selects
 /// none and succeeds without running anything.
-fn selected_work(
+fn selected_work_with_refresh(
     context: &ThinkContext,
+    facet: &str,
+    activity_id: &str,
     record: &solstone_core_facets::ActivityRecord,
+    refresh: bool,
 ) -> Result<Option<(Vec<TalentConfig>, String)>, String> {
-    let Some(configs) = selected_configs(context, record)? else {
+    let Some(configs) =
+        selected_configs_with_refresh(context, facet, activity_id, record, refresh)?
+    else {
         return Ok(None);
     };
     let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, record)
@@ -127,11 +140,148 @@ fn selected_configs(
     context: &ThinkContext,
     record: &solstone_core_facets::ActivityRecord,
 ) -> Result<Option<Vec<TalentConfig>>, String> {
+    let facet = record.get("facet").and_then(Value::as_str).unwrap_or_default();
+    let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
+    selected_configs_with_refresh(context, facet, id, record, false)
+}
+
+fn owner_asked_activity(journal: &std::path::Path, day: &str, facet: &str, id: &str) -> bool {
+    if facet.is_empty() || id.is_empty() {
+        return false;
+    }
+    let target = solstone_core_system::owner_ask::AskedActivity {
+        facet: facet.to_owned(),
+        activity: id.to_owned(),
+    };
+    solstone_core_system::owner_ask::read(journal).is_ok_and(|asks| {
+        asks.values().any(|ask| {
+            ask.day == day && (ask.to_seed.contains(&target) || ask.seeded.contains(&target))
+        })
+    })
+}
+
+fn historical_backfill_merits_synthesis(
+    journal: &std::path::Path,
+    day: &str,
+    record: &solstone_core_facets::ActivityRecord,
+) -> bool {
+    let Some(segments) = record.get("segments").and_then(Value::as_array) else {
+        return false;
+    };
+    let stream = record.get("stream").and_then(Value::as_str);
+    let mut has_spoken_audio =
+        stream.is_some_and(|s| s == "import.audio" || s.starts_with("import.audio."));
+    let mut total_duration_secs = 0_u64;
+    let mut turn_count = 0_usize;
+    let mut exchange_like = false;
+    let mut char_count = 0_usize;
+
+    for seg in segments.iter().filter_map(Value::as_str) {
+        if let Some((_, dur)) = seg.rsplit_once('_')
+            && let Ok(secs) = dur.parse::<u64>()
+        {
+            total_duration_secs = total_duration_secs.saturating_add(secs);
+        }
+        let Some(seg_dir) = solstone_core_system_health::find_segment_dir(journal, day, seg, stream)
+        else {
+            continue;
+        };
+        let Ok(entries) = std::fs::read_dir(&seg_dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(fname) = name.to_str() else {
+                continue;
+            };
+            if fname == "audio.jsonl"
+                || fname.ends_with("_audio.jsonl")
+                || fname == "imported_audio.jsonl"
+                || fname.starts_with("audio.")
+            {
+                has_spoken_audio = true;
+            }
+            if fname == "conversation_transcript.jsonl" {
+                exchange_like = true;
+                if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                        if let Ok(val) = serde_json::from_str::<Value>(line) {
+                            if val.get("schema").is_some() {
+                                continue;
+                            }
+                            turn_count += 1;
+                            if let Some(body) = val
+                                .get("content")
+                                .or_else(|| val.get("text"))
+                                .and_then(Value::as_str)
+                            {
+                                char_count += body.chars().count();
+                            }
+                        }
+                    }
+                }
+            } else if fname.ends_with("_transcript.md") || fname == "transcript.md" {
+                if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                    char_count += text.chars().count();
+                    let msg_turns = text
+                        .lines()
+                        .filter(|line| {
+                            let trimmed = line.trim_start();
+                            trimmed.starts_with("From:")
+                                || trimmed.starts_with("### Message ")
+                                || trimmed.starts_with("### Turn ")
+                                || (trimmed.starts_with('[') && trimmed.contains("] "))
+                        })
+                        .count();
+                    if msg_turns > 0 {
+                        exchange_like = true;
+                        turn_count += msg_turns;
+                    }
+                }
+            }
+        }
+    }
+
+    if has_spoken_audio && (segments.len() >= 2 || total_duration_secs >= 180) {
+        return true;
+    }
+    if turn_count >= 3 {
+        return true;
+    }
+    if (exchange_like || has_spoken_audio) && char_count >= 1_500 {
+        return true;
+    }
+    false
+}
+
+fn selected_configs_with_refresh(
+    context: &ThinkContext,
+    facet: &str,
+    activity_id: &str,
+    record: &solstone_core_facets::ActivityRecord,
+    refresh: bool,
+) -> Result<Option<Vec<TalentConfig>>, String> {
     if activity_contract::is_synthetic(record) || !activity_contract::has_nonempty_span(record) {
         return Ok(None);
     }
     // A Strava activity is a reading of body data: it selects no talent.
     if crate::activity_work::is_body_data_activity(record) {
+        return Ok(Some(Vec::new()));
+    }
+    let now = jiff::Timestamp::from_millisecond(context.now_ms)
+        .unwrap_or_else(|_| jiff::Timestamp::now());
+    let today = solstone_core_system::daily_coverage::local_day(&context.journal, now);
+    let is_historical_backfill = context.day < today
+        && record.get("source").and_then(Value::as_str) != Some("user")
+        && record
+            .get("stream")
+            .and_then(Value::as_str)
+            .is_some_and(|s| solstone_core_segment::is_backfill_stream(&context.journal, s));
+    if is_historical_backfill
+        && !refresh
+        && !owner_asked_activity(&context.journal, &context.day, facet, activity_id)
+        && !historical_backfill_merits_synthesis(&context.journal, &context.day, record)
+    {
         return Ok(Some(Vec::new()));
     }
     let kind = record
@@ -318,7 +468,13 @@ pub(crate) fn run_held(
     if crate::activity_work::is_body_data_activity(&record) {
         return settle_body_data(context, log, activity_id, facet, held);
     }
-    let Some((configs, input_hash)) = selected_work(context, &record)? else {
+    let Some((configs, input_hash)) = selected_work_with_refresh(
+        context,
+        facet,
+        activity_id,
+        &record,
+        refresh,
+    )? else {
         return Ok(ModeResult::default());
     };
     run_selected(

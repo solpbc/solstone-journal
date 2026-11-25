@@ -7,9 +7,9 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     ActivityRecord, PlacedRecord, ScheduledEvent, activity_field_held, activity_value_truthy,
-    calendar_beside, calendar_on_day, edit_removable, edit_removed, list_activity_day_stems,
-    list_declared_facet_names, load_activity_records_readable, observe_facet_declaration,
-    place_activity_records, read_activity_definitions,
+    calendar_beside, calendar_day_counts_between, calendar_on_day, edit_removable, edit_removed,
+    list_activity_day_stems, list_declared_facet_names, load_activity_records_readable,
+    observe_facet_declaration, place_activity_records, read_activity_definitions,
 };
 
 type Faces = BTreeMap<String, Vec<solstone_core_location::body_records::Face>>;
@@ -32,6 +32,27 @@ fn shown_on(faces: &Faces, day: &str) -> usize {
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
     let counter = DayCounter::new(root, query);
     counter.counts(&counter.days.iter().collect::<Vec<_>>())
+}
+
+/// Like [`compute_day_counts`], including standalone non-declined scheduled
+/// calendar events in the `/app/activities/` date navigator when no facet
+/// filter is active.
+pub fn compute_day_counts_with_calendar(
+    root: &Path,
+    query: Option<&str>,
+) -> BTreeMap<String, usize> {
+    let mut counts = compute_day_counts(root, query);
+    if query_value(query, "facet")
+        .filter(|f| !f.is_empty())
+        .is_none()
+    {
+        for (day, cal_count) in calendar_day_counts_between(root, "00000000", "99999999") {
+            if cal_count > 0 {
+                counts.entry(day).or_insert(cal_count);
+            }
+        }
+    }
+    counts
 }
 
 /// [`compute_day_counts`] for the days from `from` to `to`: each the same
@@ -242,6 +263,7 @@ pub fn build_view_in(
     }
 
     let query_facet = query_value(query, "facet").filter(|f| !f.is_empty());
+    let unfiltered_facet = query_facet.is_none();
     let scope: Vec<String> = match query_facet {
         Some(f) => {
             if declared.contains(&f) {
@@ -472,11 +494,56 @@ pub fn build_view_in(
         }
     }
 
-    Ok(json!({
+    let mut standalone_calendar = Vec::new();
+    if unfiltered_facet {
+        let mut attached_spans = Vec::new();
+        for ((_, row), course) in scoped_rows.iter().zip(place_activity_records(root, day, &placed_records)) {
+            let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
+            if is_hidden && !include_hidden {
+                continue;
+            }
+            if let Some(span) = course.span {
+                attached_spans.push(span);
+            }
+        }
+        for (idx, event) in calendar.iter().enumerate() {
+            if event.declined {
+                continue;
+            }
+            if attached_spans
+                .iter()
+                .any(|span| event.scheduled_during(day, *span))
+            {
+                continue;
+            }
+            let start_min = event
+                .start
+                .map(|at| u32::from(at.hour() as u8) * 60 + u32::from(at.minute() as u8));
+            let end_min = event
+                .end
+                .map(|at| u32::from(at.hour() as u8) * 60 + u32::from(at.minute() as u8));
+            standalone_calendar.push(json!({
+                "id": format!("scheduled_{idx}"),
+                "title": event.title,
+                "all_day": event.all_day,
+                "start": event.start.map(|at| at.strftime("%H:%M").to_string()),
+                "end": event.end.map(|at| at.strftime("%H:%M").to_string()),
+                "start_min": if event.all_day { None } else { start_min },
+                "end_min": if event.all_day { None } else { end_min },
+                "people": event.people.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            }));
+        }
+    }
+
+    let mut payload = json!({
         "items": items,
         "facets": facet_entries,
         "hidden_count": hidden_count,
-    }))
+    });
+    if !standalone_calendar.is_empty() {
+        payload["calendar"] = Value::Array(standalone_calendar);
+    }
+    Ok(payload)
 }
 
 /// Whether a pending owner ask names the activity, still to hand to its work

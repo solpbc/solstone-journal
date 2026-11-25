@@ -120,16 +120,14 @@ pub(crate) fn run(
                 }
             } else {
                 if config.key == "morning_briefing"
-                    && (context.daily_only
-                        || context.rebuild.is_some()
-                        || solstone_core_segment::day_is_backfill_only(
-                            &context.journal,
-                            &context.day,
-                        ))
-                    && !context
-                        .retry
-                        .as_ref()
-                        .is_some_and(|r| r.identity.name == "morning_briefing")
+                    && !from_scratch
+                    && !context.retry.as_ref().is_some_and(|(unit, _)| {
+                        matches!(
+                            unit,
+                            solstone_core_system::work_retry::Unit::Daily { talent, .. }
+                                if talent == "morning_briefing"
+                        )
+                    })
                     && !solstone_core_system::daily_coverage::morning_briefing_applies(
                         &context.journal,
                         &context.day,
@@ -218,16 +216,14 @@ pub(crate) fn run(
                 }
             } else {
                 if config.key == "morning_briefing"
-                    && (context.daily_only
-                        || context.rebuild.is_some()
-                        || solstone_core_segment::day_is_backfill_only(
-                            &context.journal,
-                            &context.day,
-                        ))
-                    && !context
-                        .retry
-                        .as_ref()
-                        .is_some_and(|r| r.identity.name == "morning_briefing")
+                    && !from_scratch
+                    && !context.retry.as_ref().is_some_and(|(unit, _)| {
+                        matches!(
+                            unit,
+                            solstone_core_system::work_retry::Unit::Daily { talent, .. }
+                                if talent == "morning_briefing"
+                        )
+                    })
                     && !solstone_core_system::daily_coverage::morning_briefing_applies(
                         &context.journal,
                         &context.day,

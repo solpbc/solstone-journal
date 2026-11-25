@@ -2138,12 +2138,14 @@ fn replay_activity_state_selected(
             routing_unreadable = filtered.1;
             obj.insert("facets".to_owned(), filtered.0);
         }
-        let changes = machine.update(
+        let scope = segment_coalesce_scope(&context.journal, &segment_dir, stream.as_deref());
+        let changes = machine.update_with_scope(
             &filtered_sense,
             &segment,
             &context.day,
             None,
             context.now_ms,
+            &scope,
         );
         // Publish what ended before saving state that no longer holds it: a
         // run stopped in between leaves the activity open in the snapshot, so
@@ -2151,13 +2153,15 @@ fn replay_activity_state_selected(
         // finds it already there.
         // A live stream's activities are written once its evidence settles,
         // from its day's capture-order rebuild; here the days are only marked.
-        let published = if crate::settle::defers(stream.as_deref(), refresh) {
-            crate::settle::note(
-                context,
-                stream.as_deref().unwrap_or(DEFAULT_STREAM),
-                &[routing_day.as_str(), context.day.as_str()],
-            )
-        } else {
+        let published =
+            if crate::settle::defers_in(&context.journal, &routing_day, stream.as_deref(), refresh)
+            {
+                crate::settle::note(
+                    context,
+                    stream.as_deref().unwrap_or(DEFAULT_STREAM),
+                    &[routing_day.as_str(), context.day.as_str()],
+                )
+            } else {
             publish_ended_activities(
                 context,
                 log,
@@ -2377,10 +2381,11 @@ fn flush_replay_machines(
         let Some(last_segment) = machine.last_segment_key().map(ToOwned::to_owned) else {
             continue;
         };
-        let import_stream = stream
-            .as_deref()
-            .is_some_and(|name| name.starts_with("import."));
-        if !import_stream && context.day >= today {
+        let backfill_stream = stream.as_deref().is_some_and(|name| {
+            name.starts_with("import.")
+                || solstone_core_segment::is_backfill_stream(&context.journal, name)
+        });
+        if !backfill_stream && context.day >= today {
             continue;
         }
         let routing_day = machine
@@ -2388,26 +2393,28 @@ fn flush_replay_machines(
             .unwrap_or(&context.day)
             .to_owned();
         let changes = machine.close_active(&last_segment, context.now_ms);
-        let published = if crate::settle::defers(stream.as_deref(), refresh) {
-            crate::settle::note(
-                context,
-                stream.as_deref().unwrap_or(DEFAULT_STREAM),
-                &[routing_day.as_str()],
-            )
-        } else {
-            publish_ended_activities(
-                context,
-                log,
-                &last_segment,
-                &routing_day,
-                stream.as_deref().filter(|stream| *stream != DEFAULT_STREAM),
-                changes,
-                &selected_completed(machine, stream.as_deref(), selected),
-                refresh,
-                skip_activity_prompts,
-                talents,
-            )
-        };
+        let published =
+            if crate::settle::defers_in(&context.journal, &routing_day, stream.as_deref(), refresh)
+            {
+                crate::settle::note(
+                    context,
+                    stream.as_deref().unwrap_or(DEFAULT_STREAM),
+                    &[routing_day.as_str()],
+                )
+            } else {
+                publish_ended_activities(
+                    context,
+                    log,
+                    &last_segment,
+                    &routing_day,
+                    stream.as_deref().filter(|stream| *stream != DEFAULT_STREAM),
+                    changes,
+                    &selected_completed(machine, stream.as_deref(), selected),
+                    refresh,
+                    skip_activity_prompts,
+                    talents,
+                )
+            };
         if let Err(error) = published {
             errors.push(error);
         }
@@ -2417,6 +2424,640 @@ fn flush_replay_machines(
     } else {
         Err(errors.join("; "))
     }
+}
+
+fn segment_coalesce_scope(
+    journal: &std::path::Path,
+    segment_dir: &std::path::Path,
+    stream: Option<&str>,
+) -> solstone_core_system::activity_state::CoalesceScope {
+    use solstone_core_system::activity_state::CoalesceScope;
+    let Some(stream_name) = stream else {
+        return CoalesceScope::ContinuousStream;
+    };
+    if !solstone_core_segment::is_backfill_stream(journal, stream_name) {
+        return CoalesceScope::ContinuousStream;
+    }
+    let Ok(entries) = std::fs::read_dir(segment_dir) else {
+        return CoalesceScope::DiscreteItem;
+    };
+    let mut has_spoken_audio = false;
+    let mut group_key: Option<String> = None;
+    for entry in entries.flatten() {
+        let fname_os = entry.file_name();
+        let Some(fname) = fname_os.to_str() else {
+            continue;
+        };
+        if fname == "audio.jsonl"
+            || fname.ends_with("_audio.jsonl")
+            || fname == "imported_audio.jsonl"
+            || fname.starts_with("audio.")
+        {
+            has_spoken_audio = true;
+        }
+        if (fname == "import_kind.json" || fname == "meta.json")
+            && group_key.is_none()
+            && let Ok(bytes) = std::fs::read(entry.path())
+            && let Ok(val) = serde_json::from_slice::<Value>(&bytes)
+        {
+            if let Some(tid) = val
+                .get("thread_id")
+                .or_else(|| val.get("conversation_id"))
+                .or_else(|| val.get("group_id"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                group_key = Some(format!("thread:{tid}"));
+            } else if val
+                .get("tile_count")
+                .and_then(Value::as_u64)
+                .is_some_and(|n| n > 1)
+                && let Some(imp) = val.get("import_id").and_then(Value::as_str)
+            {
+                let src = val
+                    .get("source_path")
+                    .or_else(|| val.get("original_name"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                group_key = Some(format!("tile:{imp}:{src}"));
+            }
+        }
+        if fname == "conversation_transcript.jsonl"
+            && group_key.is_none()
+            && let Ok(text) = std::fs::read_to_string(entry.path())
+            && let Some(first_line) = text.lines().find(|l| !l.trim().is_empty())
+            && let Ok(val) = serde_json::from_str::<Value>(first_line)
+            && let Some(cid) = val
+                .get("thread_id")
+                .or_else(|| val.get("conversation_id"))
+                .or_else(|| val.get("id"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        {
+            group_key = Some(format!("conv:{cid}"));
+        }
+    }
+    if has_spoken_audio {
+        CoalesceScope::ContinuousStream
+    } else if let Some(key) = group_key {
+        CoalesceScope::GroupedItem(key)
+    } else {
+        CoalesceScope::DiscreteItem
+    }
+}
+
+fn parse_header_people(line: &str) -> Vec<(String, Option<String>)> {
+    let mut out = Vec::new();
+    for raw_part in line.split([',', ';']) {
+        let part = raw_part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>'))
+            && lt < gt
+        {
+            let name_part = part[..lt].trim().trim_matches('"').trim();
+            let email_part = part[lt + 1..gt].trim().to_lowercase();
+            let display = if !name_part.is_empty() {
+                name_part.to_owned()
+            } else {
+                email_part.clone()
+            };
+            if !display.is_empty() {
+                out.push((
+                    display,
+                    (!email_part.is_empty() && email_part.contains('@')).then_some(email_part),
+                ));
+            }
+        } else if part.contains('@') && !part.contains(' ') {
+            let email_part = part.trim_matches(['<', '>', '"']).to_lowercase();
+            if !email_part.is_empty() {
+                out.push((email_part.clone(), Some(email_part)));
+            }
+        } else {
+            let clean = part.trim_matches('"').trim();
+            if !clean.is_empty() && clean.chars().any(char::is_alphabetic) {
+                out.push((clean.to_owned(), None));
+            }
+        }
+    }
+    out
+}
+
+fn populate_backfill_activity_defaults(
+    journal: &std::path::Path,
+    day: &str,
+    facet: &str,
+    stream: &str,
+    record: &mut Map<String, Value>,
+) {
+    let Some(segments) = record
+        .get("segments")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+    else {
+        return;
+    };
+    if segments.is_empty() {
+        return;
+    }
+
+    let needs_title = record
+        .get("title")
+        .and_then(Value::as_str)
+        .is_none_or(|t| t.trim().is_empty());
+    if needs_title {
+        let fallback_desc = record
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.chars().take(120).collect::<String>())
+            .unwrap_or_default();
+        if !fallback_desc.is_empty() {
+            record.insert("title".to_owned(), Value::String(fallback_desc));
+        }
+    }
+
+    if record.contains_key("participation") {
+        return;
+    }
+
+    let mut owner_names = std::collections::BTreeSet::new();
+    let mut owner_emails = std::collections::BTreeSet::new();
+    owner_names.insert("you".to_owned());
+    owner_names.insert("me".to_owned());
+    owner_names.insert("self".to_owned());
+    owner_names.insert("user".to_owned());
+    owner_names.insert("assistant".to_owned());
+    owner_names.insert("system".to_owned());
+    owner_names.insert("your agent".to_owned());
+    if let Ok(Some(principal)) = solstone_core_entity::read_journal_principal(journal) {
+        if let Some(name) = principal.get("name").and_then(Value::as_str) {
+            owner_names.insert(name.trim().to_lowercase());
+        }
+        if let Some(aka) = principal.get("aka").and_then(Value::as_array) {
+            for a in aka.iter().filter_map(Value::as_str) {
+                owner_names.insert(a.trim().to_lowercase());
+            }
+        }
+        if let Some(emails) = principal.get("emails").and_then(Value::as_array) {
+            for e in emails.iter().filter_map(Value::as_str) {
+                owner_emails.insert(e.trim().to_lowercase());
+            }
+        }
+    }
+
+    let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true)
+        .unwrap_or_default();
+    let candidates: Vec<solstone_core_entity_matching::EntityNameCandidate> = scoped
+        .iter()
+        .map(|e| solstone_core_entity_matching::EntityNameCandidate {
+            id: Some(e.entity_id.clone()),
+            name: e
+                .identity
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            aka: e
+                .identity
+                .get("aka")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
+            emails: e
+                .identity
+                .get("emails")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(|s| s.trim().to_lowercase())
+                .collect(),
+        })
+        .collect();
+
+    let resolve_id = |name: &str, email: Option<&str>| -> Option<String> {
+        if let Some(em) = email {
+            let em_low = em.trim().to_lowercase();
+            if let Some(cand) = candidates
+                .iter()
+                .find(|c| c.emails.iter().any(|ce| ce == &em_low))
+            {
+                return cand.id.clone();
+            }
+        }
+        solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0)
+            .and_then(|m| candidates[m.candidate_index].id.clone())
+    };
+
+    let is_owner = |name: &str, email: Option<&str>| -> bool {
+        let low = name.trim().to_lowercase();
+        if low.is_empty() || owner_names.contains(&low) {
+            return true;
+        }
+        if let Some(em) = email
+            && owner_emails.contains(&em.trim().to_lowercase())
+        {
+            return true;
+        }
+        false
+    };
+
+    let mut participants: BTreeMap<
+        String,
+        (
+            String,
+            &'static str,
+            &'static str,
+            f64,
+            String,
+            Option<String>,
+            u8,
+        ),
+    > = BTreeMap::new();
+    let has_corresponded = std::cell::Cell::new(false);
+    let mut upsert = |display: String,
+                      email: Option<String>,
+                      role: &'static str,
+                      src: &'static str,
+                      conf: f64,
+                      ctx: String| {
+        if is_owner(&display, email.as_deref()) {
+            return;
+        }
+        if role == "corresponded" {
+            has_corresponded.set(true);
+        }
+        let rank = match role {
+            "attendee" => 5,
+            "heard" => 4,
+            "corresponded" => 3,
+            "visible" => 2,
+            _ => 1,
+        };
+        let key = display.trim().to_lowercase();
+        if key.is_empty() {
+            return;
+        }
+        let eid = resolve_id(&display, email.as_deref());
+        match participants.get_mut(&key) {
+            Some(existing) => {
+                if rank > existing.6 {
+                    *existing = (
+                        display,
+                        role,
+                        src,
+                        conf,
+                        ctx,
+                        eid.or(existing.5.clone()),
+                        rank,
+                    );
+                } else if existing.5.is_none() && eid.is_some() {
+                    existing.5 = eid;
+                }
+            }
+            None => {
+                participants.insert(key, (display, role, src, conf, ctx, eid, rank));
+            }
+        }
+    };
+
+    let is_email_stream = stream == "email"
+        || stream.starts_with("import.email")
+        || stream.starts_with("import.mbox")
+        || stream.starts_with("import.eml")
+        || solstone_core_segment::is_email_stream(journal, stream);
+
+    for seg in &segments {
+        let Some(seg_dir) = find_segment_dir(journal, day, seg, Some(stream)) else {
+            continue;
+        };
+        let has_image = seg_dir.join("image_transcript.md").is_file();
+        let has_screenshot = seg_dir.join("screenshot_transcript.md").is_file();
+        let is_real_photo = has_image && !has_screenshot;
+        let mut is_written_exchange = is_email_stream;
+        let mut is_spoken = false;
+
+        if let Ok(bytes) = std::fs::read(seg_dir.join("import_kind.json"))
+            && let Ok(val) = serde_json::from_slice::<Value>(&bytes)
+            && matches!(
+                val.get("kind").and_then(Value::as_str),
+                Some("messages" | "email" | "chat")
+            )
+        {
+            is_written_exchange = true;
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&seg_dir) {
+            let mut speaker_counts: BTreeMap<String, usize> = BTreeMap::new();
+            for entry in entries.flatten() {
+                let fname_os = entry.file_name();
+                let Some(fname) = fname_os.to_str() else {
+                    continue;
+                };
+                if fname == "audio.jsonl"
+                    || fname.ends_with("_audio.jsonl")
+                    || fname == "imported_audio.jsonl"
+                {
+                    is_spoken = true;
+                    if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                            if let Ok(val) = serde_json::from_str::<Value>(line)
+                                && let Some(spk) = val
+                                    .get("speaker")
+                                    .and_then(Value::as_str)
+                                    .map(str::trim)
+                                    .filter(|s| !s.is_empty())
+                            {
+                                *speaker_counts.entry(spk.to_owned()).or_default() += 1;
+                            }
+                        }
+                    }
+                } else if fname == "conversation_transcript.jsonl"
+                    && !stream.starts_with("import.chatgpt")
+                    && !stream.starts_with("import.claude")
+                    && !stream.starts_with("import.gemini")
+                {
+                    is_written_exchange = true;
+                    if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                            if let Ok(val) = serde_json::from_str::<Value>(line) {
+                                if val.get("schema").is_some() {
+                                    continue;
+                                }
+                                if let Some(sender) = val
+                                    .get("sender")
+                                    .or_else(|| val.get("author"))
+                                    .or_else(|| val.get("speaker"))
+                                    .and_then(Value::as_str)
+                                    .map(str::trim)
+                                    .filter(|s| !s.is_empty())
+                                {
+                                    let email = val
+                                        .get("email")
+                                        .and_then(Value::as_str)
+                                        .map(|s| s.trim().to_lowercase());
+                                    upsert(
+                                        sender.to_owned(),
+                                        email,
+                                        "corresponded",
+                                        "transcript",
+                                        1.0,
+                                        "Corresponded in written exchange.".to_owned(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                } else if fname.ends_with("_transcript.md") || fname == "transcript.md" {
+                    if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                        for line in text.lines().take(40) {
+                            let trimmed = line.trim();
+                            for prefix in ["From:", "To:", "**From:**", "**To:**"] {
+                                if let Some(rest) = trimmed.strip_prefix(prefix) {
+                                    is_written_exchange = true;
+                                    for (person_name, email) in parse_header_people(rest) {
+                                        upsert(
+                                            person_name,
+                                            email,
+                                            "corresponded",
+                                            "transcript",
+                                            1.0,
+                                            "Corresponded in message.".to_owned(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (spk, count) in speaker_counts {
+                let role = if count >= 2 { "attendee" } else { "heard" };
+                let conf = if count >= 2 { 0.95 } else { 0.9 };
+                upsert(
+                    spk,
+                    None,
+                    role,
+                    "speaker_label",
+                    conf,
+                    "Spoke in recorded conversation.".to_owned(),
+                );
+            }
+        }
+
+        if let Ok(bytes) = std::fs::read(seg_dir.join("talents/sense.json"))
+            && let Ok(sense) = serde_json::from_slice::<Value>(&bytes)
+            && let Some(entities) = sense.get("entities").and_then(Value::as_array)
+        {
+            for ent in entities.iter().filter_map(Value::as_object) {
+                if ent.get("type").and_then(Value::as_str) != Some("Person") {
+                    continue;
+                }
+                let Some(name) = ent
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                else {
+                    continue;
+                };
+                let level = ent
+                    .get("level")
+                    .and_then(Value::as_str)
+                    .unwrap_or("medium");
+                let ctx = ent
+                    .get("context")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                if is_real_photo && level != "low" {
+                    upsert(name.to_owned(), None, "visible", "screen", 0.9, ctx);
+                } else if is_written_exchange
+                    && is_email_stream
+                    && level == "high"
+                    && !has_corresponded.get()
+                {
+                    upsert(name.to_owned(), None, "corresponded", "transcript", 0.9, ctx);
+                } else if !is_spoken {
+                    let src = if has_screenshot || is_real_photo {
+                        "screen"
+                    } else {
+                        "transcript"
+                    };
+                    upsert(name.to_owned(), None, "mentioned", src, 0.8, ctx);
+                }
+            }
+        }
+    }
+
+    if !participants.is_empty() {
+        let rows: Vec<Value> = participants
+            .into_values()
+            .map(|(name, role, source, confidence, context, entity_id, _)| {
+                serde_json::json!({
+                    "name": name,
+                    "role": role,
+                    "source": source,
+                    "confidence": confidence,
+                    "context": context,
+                    "entity_id": entity_id,
+                })
+            })
+            .collect();
+        record.insert("participation".to_owned(), Value::Array(rows));
+    }
+}
+
+pub(crate) fn ensure_historical_day_activities(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+) -> Result<(), String> {
+    let inventory =
+        observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
+    let declared_facets: std::collections::BTreeSet<String> = inventory
+        .enabled
+        .iter()
+        .chain(&inventory.muted)
+        .cloned()
+        .collect();
+    let mut covered_segments: std::collections::BTreeSet<(Option<String>, String)> =
+        std::collections::BTreeSet::new();
+    for facet in &declared_facets {
+        if let Ok(rows) = solstone_core_facets::load_activity_records_readable(
+            &context.journal,
+            facet,
+            &context.day,
+            true,
+        ) {
+            for row in rows {
+                let row_stream = row
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty() && *s != DEFAULT_STREAM)
+                    .map(str::to_owned);
+                if let Some(segs) = row.get("segments").and_then(Value::as_array) {
+                    for seg in segs.iter().filter_map(Value::as_str) {
+                        covered_segments.insert((row_stream.clone(), seg.to_owned()));
+                    }
+                }
+            }
+        }
+    }
+
+    let segments = iter_segments(&context.journal, PathOrDay::Day(&context.day))
+        .map_err(|e| e.to_string())?;
+    let mut streams_with_unmaterialized = std::collections::BTreeSet::new();
+    let mut by_stream: BTreeMap<Option<String>, Vec<String>> = BTreeMap::new();
+
+    for seg in segments {
+        if solstone_core_segment::is_body_only_segment(&seg)
+            || solstone_core_segment::is_calendar_segment(&context.journal, &seg)
+            || solstone_core_segment::is_transactions_segment(&seg)
+            || is_deleted_segment(seg.path())
+        {
+            continue;
+        }
+        let stream_opt = seg
+            .stream()
+            .directory()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty() && *s != DEFAULT_STREAM)
+            .map(str::to_owned);
+        if stream_opt.as_deref() == Some(STRAVA_STREAM)
+            || crate::planner::is_mcp_audit_segment(stream_opt.as_deref())
+        {
+            continue;
+        }
+        let Some(seg_key) = seg.name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        by_stream
+            .entry(stream_opt.clone())
+            .or_default()
+            .push(seg_key.clone());
+
+        let sense_path = seg.path().join("talents/sense.json");
+        let Ok(solstone_core_journal_io::durability::DurableRead::Present(sense)) =
+            solstone_core_journal_io::durability::read_json_durable::<Value>(
+                solstone_core_journal_io::durability::ArtifactId::SegmentSense,
+                &sense_path,
+            )
+        else {
+            continue;
+        };
+        if !valid_activity_sense(&sense)
+            || sense.get("density").and_then(Value::as_str) == Some("idle")
+        {
+            continue;
+        }
+        let has_declared_active_facet = sense
+            .get("facets")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| {
+                arr.iter().filter_map(Value::as_object).any(|obj| {
+                    obj.get("level").and_then(Value::as_str) != Some("low")
+                        && obj
+                            .get("facet")
+                            .and_then(Value::as_str)
+                            .is_some_and(|f| declared_facets.contains(f))
+                })
+            });
+        if has_declared_active_facet && !covered_segments.contains(&(stream_opt.clone(), seg_key)) {
+            streams_with_unmaterialized.insert(stream_opt);
+        }
+    }
+
+    if streams_with_unmaterialized.is_empty() {
+        return Ok(());
+    }
+
+    let mut to_replay = Vec::new();
+    for stream_opt in streams_with_unmaterialized {
+        let settle_name = stream_opt.as_deref().unwrap_or(DEFAULT_STREAM);
+        if context
+            .journal
+            .join("awareness/activity_settle")
+            .join(format!("{settle_name}.json"))
+            .is_file()
+        {
+            continue;
+        }
+        if let Some(mut keys) = by_stream.remove(&stream_opt) {
+            keys.sort();
+            for key in keys {
+                to_replay.push((key, stream_opt.clone()));
+            }
+        }
+    }
+    if to_replay.is_empty() {
+        return Ok(());
+    }
+
+    replay_activity_state_selected(
+        context,
+        log,
+        &to_replay,
+        false,
+        max_concurrency,
+        skip_activity_prompts,
+        false,
+        None,
+    )
 }
 
 /// End a stream's live activities after the supervisor's idle window.
@@ -2720,6 +3361,15 @@ fn publish_ended_activities(
         // them later finds this stream's and never another's with the same key.
         if let Some(stream) = stream {
             record.insert("stream".to_owned(), Value::String(stream.to_owned()));
+            if solstone_core_segment::is_backfill_stream(&context.journal, stream) {
+                populate_backfill_activity_defaults(
+                    &context.journal,
+                    routing_day,
+                    facet,
+                    stream,
+                    &mut record,
+                );
+            }
         }
         let written = match append_own_activity(context, facet, routing_day, &mut record) {
             Ok(OwnAppend::Written) => true,

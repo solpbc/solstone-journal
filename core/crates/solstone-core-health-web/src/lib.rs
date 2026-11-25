@@ -65,6 +65,7 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
     let brain_root = journal_root.clone();
     let retry_root = journal_root.clone();
     let work_retry_root = journal_root.clone();
+    let pause_backfill_root = journal_root.clone();
     let speech_root = journal_root.clone();
     let speech_clock = clock.clone();
     let router = Router::new();
@@ -126,6 +127,16 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
             "/app/health/api/retry-work",
             post(move |locale, body| {
                 actions::retry_work(work_retry_root.clone(), body, response_locale(locale))
+            }),
+        )
+        .route(
+            "/app/health/api/work/pause-backfill",
+            post(move |locale, body| {
+                actions::pause_backfill(
+                    pause_backfill_root.clone(),
+                    body,
+                    response_locale(locale),
+                )
             }),
         )
         .merge(integrity::routes(journal_root.clone()))
@@ -194,7 +205,7 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
         let policy = solstone_core_system::work_policy::WorkPolicy::read(&root);
         let work_error = work.as_ref().err().cloned();
         let (retry_records, retry_errors) = solstone_core_system::work_retry::list(&root);
-        let (history_confirmed, confirmation_available) = policy
+        let (history_confirmed, confirmation_available, backfill_paused) = policy
             .map(|p| {
                 (
                     p.history_confirmed,
@@ -202,9 +213,14 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
                         p.lane,
                         solstone_core_system::work_policy::ThinkingLane::OwnKeys
                     ),
+                    p.backfill_paused,
                 )
             })
-            .unwrap_or((false, false));
+            .unwrap_or((false, false, false));
+        let work_ok = work.ok().flatten();
+        let index_pending = search_index.index.pending as u64;
+        let backfill_view =
+            work_view::backfill_summary(work_ok.as_ref(), backfill_paused, index_pending);
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
         #[cfg(any(unix, windows))]
@@ -218,12 +234,13 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
             .or_else(|| solstone_core_system_health::read_journal_disk_status(&root));
         let mut payload = json!({
             "work": {
-                "inventory": work.ok().flatten().map(work_view::summarize),
+                "inventory": work_ok.map(work_view::summarize),
                 "error": work_error,
                 "retry_records": retry_records.into_iter().filter_map(|record| record.unit.id().ok().map(|id| json!({"id": id, "unit": record.unit, "reason": record.reason, "attempt": record.attempt}))).collect::<Vec<_>>(),
                 "retry_errors": retry_errors,
                 "history_confirmed": history_confirmed,
                 "confirmation_available": confirmation_available,
+                "backfill": backfill_view,
             },
             "backlog": {
                 "verdict": eval.verdict,

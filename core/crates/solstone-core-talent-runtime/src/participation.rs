@@ -479,6 +479,35 @@ pub(crate) fn apply_result_cancellable(
             }
         }
     }
+    if let Some(prior_entries) = stored.get("participation").and_then(Value::as_array) {
+        for prior in prior_entries.iter().filter_map(Value::as_object) {
+            if prior.get("role").and_then(Value::as_str) != Some("corresponded") {
+                continue;
+            }
+            let Some(prior_name) = prior.get("name").and_then(Value::as_str).map(str::trim) else {
+                continue;
+            };
+            if prior_name.is_empty() {
+                continue;
+            }
+            let prior_eid = prior.get("entity_id").and_then(Value::as_str);
+            if let Some(existing) = resolved.iter_mut().find(|r| {
+                (prior_eid.is_some() && r.get("entity_id").and_then(Value::as_str) == prior_eid)
+                    || r.get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|n| n.trim().eq_ignore_ascii_case(prior_name))
+            }) {
+                if matches!(
+                    existing.get("role").and_then(Value::as_str),
+                    Some("mentioned" | "visible")
+                ) {
+                    existing.insert("role".to_owned(), Value::String("corresponded".to_owned()));
+                }
+            } else {
+                resolved.push(prior.clone());
+            }
+        }
+    }
     let mut patch = Map::from_iter([(
         "participation".to_owned(),
         Value::Array(resolved.into_iter().map(Value::Object).collect()),

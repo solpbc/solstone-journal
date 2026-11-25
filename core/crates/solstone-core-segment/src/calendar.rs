@@ -68,14 +68,19 @@ pub fn is_backfill_stream(journal: &Path, stream: &str) -> bool {
 #[must_use]
 pub fn day_is_backfill_only(journal: &Path, day: &str) -> bool {
     iter_segments(journal, PathOrDay::Day(day)).is_ok_and(|segments| {
-        !segments.is_empty()
-            && segments.iter().all(|segment| {
+        let mut saw_live = false;
+        segments
+            .iter()
+            .filter(|segment| !segment.path().join("tombstone.json").is_file())
+            .all(|segment| {
+                saw_live = true;
                 segment
                     .stream()
                     .directory()
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| is_backfill_stream(journal, name))
             })
+            && saw_live
     })
 }
 
@@ -139,6 +144,15 @@ pub fn is_screenshots_stream(journal: &Path, stream: &str) -> bool {
         && matches!(
             read_typed_stream_record(&stream_record_path(journal, stream)),
             Ok(Some(record)) if record.source.as_deref() == Some(SCREENSHOTS_SOURCE)
+        )
+}
+
+/// Whether `stream` is bound to the email source.
+pub fn is_email_stream(journal: &Path, stream: &str) -> bool {
+    is_safe_stream_component(stream)
+        && matches!(
+            read_typed_stream_record(&stream_record_path(journal, stream)),
+            Ok(Some(record)) if record.source.as_deref() == Some("email")
         )
 }
 

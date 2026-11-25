@@ -20,6 +20,7 @@ pub enum ThinkingLane {
 pub struct WorkPolicy {
     pub lane: ThinkingLane,
     pub history_confirmed: bool,
+    pub backfill_paused: bool,
 }
 
 impl WorkPolicy {
@@ -68,21 +69,43 @@ impl WorkPolicy {
             _ => ThinkingLane::Unavailable,
         };
         let processing = config.get("processing");
+        if processing
+            .and_then(|v| v.get("backfill_paused"))
+            .is_some_and(|v| !v.is_boolean())
+        {
+            return Err("processing.backfill_paused must be a boolean".to_owned());
+        }
         let history_confirmed = processing
             .and_then(|v| v.get("history_confirmed"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let backfill_paused = processing
+            .and_then(|v| v.get("backfill_paused"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
         Ok(Self {
             lane,
             history_confirmed,
+            backfill_paused,
         })
     }
 
     pub fn permits(self, band: WorkBand) -> bool {
+        if self.backfill_paused && band >= WorkBand::Import {
+            return false;
+        }
         match self.lane {
             ThinkingLane::Bundled | ThinkingLane::Confidential => true,
             ThinkingLane::OwnKeys => band <= WorkBand::Import || self.history_confirmed,
             ThinkingLane::Unavailable => false,
+        }
+    }
+
+    pub fn hold_reason(self, band: WorkBand) -> &'static str {
+        if self.backfill_paused && band >= WorkBand::Import {
+            "backfill_paused"
+        } else {
+            "spending_confirmation"
         }
     }
 }
@@ -181,5 +204,21 @@ mod tests {
                 .unwrap()
                 .permits(WorkBand::Now)
         );
+    }
+
+    #[test]
+    fn backfill_paused_holds_band_4_and_below_while_leaving_bands_1_to_3_live() {
+        let cfg = json!({
+            "providers": {"active": {"provider": "local"}},
+            "processing": {"backfill_paused": true}
+        });
+        let policy = WorkPolicy::from_config(cfg.as_object().unwrap()).unwrap();
+        assert!(policy.backfill_paused);
+        assert!(policy.permits(WorkBand::Now));
+        assert!(policy.permits(WorkBand::Waiting));
+        assert!(policy.permits(WorkBand::Recent));
+        assert!(!policy.permits(WorkBand::Import));
+        assert!(!policy.permits(WorkBand::Completing));
+        assert_eq!(policy.hold_reason(WorkBand::Import), "backfill_paused");
     }
 }

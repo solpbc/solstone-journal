@@ -327,7 +327,7 @@ async fn activities_index(
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::ActivitiesIndex,
         move || {
-            let counts = view::compute_day_counts(&root, query.as_deref());
+            let counts = view::compute_day_counts_with_calendar(&root, query.as_deref());
             Json(crate::date_nav::date_nav_index(&counts)).into_response()
         },
     )
@@ -352,7 +352,7 @@ async fn activities_stats(
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::ActivitiesMonthStats,
         move || {
-            let counts = view::compute_day_counts(&root, query.as_deref());
+            let counts = view::compute_day_counts_with_calendar(&root, query.as_deref());
             let filtered: std::collections::BTreeMap<String, usize> = counts
                 .into_iter()
                 .filter(|(day, _)| day.starts_with(&month))

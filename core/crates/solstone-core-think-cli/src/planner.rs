@@ -1100,15 +1100,18 @@ fn inspect_day(
     let mut recorded_seconds = 0_u64;
     let mut set_aside_seconds = 0_u64;
     let mut owed_segments = Vec::new();
-    // A vault's notes from before the last week, and screenshots from before
-    // today, are history arriving, and take the ladder's import place, as an
-    // equally large import would.
+    // A vault's notes from before the last week, and other syncing sources
+    // (screenshots, granola, email, photos) from before today, are history
+    // arriving, and take the ladder's import place (Band 4), as an equally
+    // large import would.
     let age_days = solstone_core_time::parse_day(day)
         .map(|date| today.duration_since(date).as_hours() / 24)
         .unwrap_or(0);
     let is_note_stream = |stream: &str| {
         (age_days > 7 && solstone_core_segment::is_obsidian_stream(journal, stream))
-            || (age_days > 0 && solstone_core_segment::is_screenshots_stream(journal, stream))
+            || (age_days > 0
+                && !solstone_core_segment::is_obsidian_stream(journal, stream)
+                && solstone_core_segment::is_syncing_source_stream(journal, stream))
     };
     let mut day_holds_note_history = false;
     for segment in &segments {
@@ -1332,7 +1335,7 @@ fn inspect_day(
                 day,
                 Some((&segment.key, &segment.stream)),
                 p.band,
-                "spending_confirmation",
+                policy.hold_reason(p.band),
             );
         }
     }
@@ -1418,7 +1421,7 @@ fn queue_daily(
         held(report, day, None, p.band, "segment_prerequisites");
     } else if !policy.permits(p.band) {
         report.band(p.band).permission_held += owed;
-        held(report, day, None, p.band, "spending_confirmation");
+        held(report, day, None, p.band, policy.hold_reason(p.band));
     } else if !solstone_core_system::catchup::eligible_since_ask_or_fail_open(
         journal,
         day,
@@ -2238,7 +2241,13 @@ fn reconcile_pass_with_roots(
             day_report.band(p.band).activities_owed += 1;
             if !policy.permits(p.band) {
                 day_report.band(p.band).permission_held += 1;
-                held(&mut day_report, &day, None, p.band, "spending_confirmation");
+                held(
+                    &mut day_report,
+                    &day,
+                    None,
+                    p.band,
+                    policy.hold_reason(p.band),
+                );
                 continue;
             }
             day_report.band(p.band).eligible += 1;
@@ -3457,14 +3466,17 @@ mod tests {
         let local = WorkPolicy {
             lane: ThinkingLane::Bundled,
             history_confirmed: false,
+            backfill_paused: false,
         };
         let own_keys = WorkPolicy {
             lane: ThinkingLane::OwnKeys,
             history_confirmed: false,
+            backfill_paused: false,
         };
         let confidential = WorkPolicy {
             lane: ThinkingLane::Confidential,
             history_confirmed: false,
+            backfill_paused: false,
         };
         let mut selected = Vec::new();
         for (day, expected) in [

@@ -97,6 +97,21 @@ pub(crate) fn defers(stream: Option<&str>, refresh: bool) -> bool {
     !refresh && !stream.is_some_and(|stream| stream.starts_with("import."))
 }
 
+/// Like [`defers`], also settling immediately (`0` min wait) for historical
+/// (`day < today`) syncing-source backfills.
+pub(crate) fn defers_in(journal: &Path, day: &str, stream: Option<&str>, refresh: bool) -> bool {
+    if !defers(stream, refresh) {
+        return false;
+    }
+    let today = solstone_core_system::daily_coverage::local_day(journal, jiff::Timestamp::now());
+    if day < today.as_str()
+        && stream.is_some_and(|name| solstone_core_segment::is_backfill_stream(journal, name))
+    {
+        return false;
+    }
+    true
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Pending {
     #[serde(default)]

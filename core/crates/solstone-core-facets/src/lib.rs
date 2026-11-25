@@ -22,7 +22,9 @@ pub use action_log::{
     ActionLogScan, append_action_log, append_action_log_checked, append_action_log_for_day,
     append_journal_action_log_at_root_checked, read_journal_action_rows,
 };
-pub use activity_calendar::{InvitedPerson, ScheduledEvent, calendar_beside, calendar_on_day};
+pub use activity_calendar::{
+    InvitedPerson, ScheduledEvent, calendar_beside, calendar_day_counts_between, calendar_on_day,
+};
 pub use activity_placement::{
     ActivityCourse, PlacedRecord, ResolvedSegment, activity_span, place_activity_records,
 };

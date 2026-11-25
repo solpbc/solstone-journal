@@ -174,6 +174,8 @@ struct PersonStats {
     display_name: String,
     present_days: BTreeSet<String>,
     activities: usize,
+    corresponded_days: BTreeSet<String>,
+    corresponded_activities: usize,
     in_photo_days: BTreeSet<String>,
     in_photo_activities: usize,
     facet_counts: BTreeMap<String, usize>,
@@ -403,8 +405,9 @@ pub(crate) fn build_people_range_summary(
                         .and_then(Value::as_str)
                         .unwrap_or_default();
                     let rank = match role {
-                        "attendee" => 4,
-                        "heard" => 3,
+                        "attendee" => 5,
+                        "heard" => 4,
+                        "corresponded" => 3,
                         "visible" if photo_rec => 2,
                         "visible" => 0,
                         _ => 1,
@@ -439,10 +442,13 @@ pub(crate) fn build_people_range_summary(
                         *entry.facet_counts.entry(fid.clone()).or_default() += 1;
                     }
                 }
-                if rank >= 3 {
+                if rank >= 4 {
                     entry.present_days.insert(day.clone());
                     entry.activities += 1;
                     present_keys.push(key);
+                } else if rank == 3 {
+                    entry.corresponded_days.insert(day.clone());
+                    entry.corresponded_activities += 1;
                 } else {
                     entry.in_photo_days.insert(day.clone());
                     entry.in_photo_activities += 1;
@@ -469,6 +475,8 @@ pub(crate) fn build_people_range_summary(
         Reverse(a.present_days.len())
             .cmp(&Reverse(b.present_days.len()))
             .then_with(|| Reverse(a.activities).cmp(&Reverse(b.activities)))
+            .then_with(|| Reverse(a.corresponded_days.len()).cmp(&Reverse(b.corresponded_days.len())))
+            .then_with(|| Reverse(a.corresponded_activities).cmp(&Reverse(b.corresponded_activities)))
             .then_with(|| Reverse(a.in_photo_days.len()).cmp(&Reverse(b.in_photo_days.len())))
             .then_with(|| Reverse(a.in_photo_activities).cmp(&Reverse(b.in_photo_activities)))
             .then_with(|| {
@@ -565,6 +573,16 @@ pub(crate) fn build_people_range_summary(
         row.insert("has_photo".to_owned(), json!(has_photo));
         row.insert("days".to_owned(), json!(st.present_days.len()));
         row.insert("activities".to_owned(), json!(st.activities));
+        if st.corresponded_activities > 0 {
+            row.insert(
+                "corresponded_days".to_owned(),
+                json!(st.corresponded_days.len()),
+            );
+            row.insert(
+                "corresponded_activities".to_owned(),
+                json!(st.corresponded_activities),
+            );
+        }
         if st.in_photo_activities > 0 {
             row.insert("in_photo_days".to_owned(), json!(st.in_photo_days.len()));
             row.insert(
@@ -572,10 +590,14 @@ pub(crate) fn build_people_range_summary(
                 json!(st.in_photo_activities),
             );
         }
-        let span_days = if !st.present_days.is_empty() {
+        let mut all_days = BTreeSet::new();
+        all_days.extend(st.present_days.iter().cloned());
+        all_days.extend(st.corresponded_days.iter().cloned());
+        all_days.extend(st.in_photo_days.iter().cloned());
+        let span_days = if !st.present_days.is_empty() && st.corresponded_days.is_empty() {
             &st.present_days
         } else {
-            &st.in_photo_days
+            &all_days
         };
         if let Some(first) = span_days.first() {
             row.insert("first_day".to_owned(), json!(first));

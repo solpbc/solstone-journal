@@ -2960,6 +2960,7 @@ fn matches_find_filters(
                     .participants
                     .iter()
                     .chain(&people.heard)
+                    .chain(&people.corresponded)
                     .chain(&people.in_photo)
                     .chain(&people.mentioned)
                     .chain(&people.on_screen)

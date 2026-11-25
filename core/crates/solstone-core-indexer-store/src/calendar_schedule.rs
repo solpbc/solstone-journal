@@ -163,6 +163,53 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
     Ok(events)
 }
 
+/// Non-declined scheduled calendar event counts per day across `[from, to]`.
+pub fn scheduled_day_counts_between(
+    journal: &Path,
+    from: &str,
+    to: &str,
+) -> Result<BTreeMap<String, usize>, StoreError> {
+    if !db_path(journal).is_file() {
+        return Ok(BTreeMap::new());
+    }
+    let conn = open_index_reader(journal)?;
+    let rows = {
+        let mut statement = conn.prepare(
+            "SELECT DISTINCT c.day, n.event, n.occurrence, n.record FROM calendar_hits h \
+             JOIN chunks c ON c.rowid=h.rowid AND c.path=h.path \
+             JOIN calendar_notes n ON n.path=h.path AND n.line=(h.idx - ?1) / ?2 \
+             WHERE h.version='latest' AND c.day>=?3 AND c.day<=?4",
+        )?;
+        statement
+            .query_map(
+                params![LISTING_IDX_BASE, LISTING_IDX_STRIDE, from, to],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    if rows.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let zone = listing_zone(journal)?;
+    let owner = owner_addresses(journal)?;
+    let mut counts = BTreeMap::new();
+    for (day, event_id, record) in rows {
+        let owner_for_event = event_owner(&conn, &owner, &event_id)?;
+        if let Some(ev) = scheduled_event(&record, &zone, &owner_for_event)
+            && !ev.declined
+        {
+            *counts.entry(day).or_insert(0) += 1;
+        }
+    }
+    Ok(counts)
+}
+
 /// A person as the journal names them now. One since blocked, merged away or
 /// removed is no longer named.
 fn named_now(journal: &Path, entity_id: String) -> Option<InvitedPerson> {

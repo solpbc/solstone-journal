@@ -27,7 +27,6 @@ use solstone_core_format::calendar::{
 use solstone_core_format::obsidian::{
     NOTE_TRANSCRIPT_FILE, NoteChange, OBSIDIAN_SOURCE, names_obsidian_file, validate_obsidian_file,
 };
-use solstone_core_format::screenshots::SCREENSHOTS_SOURCE;
 use solstone_core_ingest_contract::{
     CONNECTION_BODY_LIMIT, MAX_PART_BYTES, validate_browser_jsonl,
 };
@@ -97,13 +96,14 @@ impl IngestNotifier for CallosumIngestNotifier {
             "files".to_owned(),
             Value::Array(notice.files.iter().cloned().map(Value::String).collect()),
         );
-        // A note or a screenshot from an earlier day is history arriving, not
-        // something happening now: the daily catch-up takes it, as it does an
-        // import's.
+        // A syncing-source arrival from an earlier day is history arriving, not
+        // something happening now: the daily catch-up takes it in Band 4, as it
+        // does an import's. Calendar notes reach search only and stay `false`.
         extra.insert(
             "batch".to_owned(),
             Value::Bool(
-                (notice.source == OBSIDIAN_SOURCE || notice.source == SCREENSHOTS_SOURCE)
+                solstone_core_segment::is_syncing_source_name(notice.source)
+                    && notice.source != solstone_core_format::calendar::CALENDAR_SOURCE
                     && notice.day < today(&self.journal, now_ms()).as_str(),
             ),
         );

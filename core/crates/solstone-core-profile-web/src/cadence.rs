@@ -10,7 +10,8 @@ use jiff::civil::Date;
 use jiff::{Span, ZonedDateTime};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
-    activity_value_or_empty, list_declared_facet_names, load_activity_records,
+    activity_value_or_empty, list_activity_day_stems, list_declared_facet_names,
+    load_activity_records,
 };
 
 use crate::error::{ProfileError, ProfileResult};
@@ -52,15 +53,31 @@ pub(crate) fn compute_cadence(
         }
     }
 
+    let (last_corresponded, recent_correspondence_count_30d, corr_sources) =
+        compute_correspondence(journal_root, entity_id, now)?;
+    sources.extend(corr_sources);
+
     if interaction_days.is_empty() {
+        sources.sort_by(|left, right| {
+            (&left.day, &left.facet, &left.activity_id).cmp(&(
+                &right.day,
+                &right.facet,
+                &right.activity_id,
+            ))
+        });
+        sources.dedup_by(|a, b| {
+            a.day == b.day && a.facet == b.facet && a.activity_id == b.activity_id
+        });
         return Ok((
             Cadence {
                 recent_interactions_count_30d: 0,
                 last_seen: None,
                 avg_interval_days: None,
                 gone_quiet_since: None,
+                last_corresponded,
+                recent_correspondence_count_30d,
             },
-            Vec::new(),
+            sources,
         ));
     }
 
@@ -102,15 +119,75 @@ pub(crate) fn compute_cadence(
             &right.activity_id,
         ))
     });
+    sources.dedup_by(|a, b| {
+        a.day == b.day && a.facet == b.facet && a.activity_id == b.activity_id
+    });
     Ok((
         Cadence {
             recent_interactions_count_30d,
             last_seen: Some(last_seen),
             avg_interval_days,
             gone_quiet_since,
+            last_corresponded,
+            recent_correspondence_count_30d,
         },
         sources,
     ))
+}
+
+fn compute_correspondence(
+    journal_root: &Path,
+    entity_id: &str,
+    now: &ZonedDateTime,
+) -> ProfileResult<(Option<String>, Option<i64>, Vec<ActivitySourceRef>)> {
+    let facets = list_declared_facet_names(journal_root).map_err(ProfileError::internal)?;
+    let today = today_day(now);
+    let recent_since = day_minus(now, RECENT_WINDOW_DAYS);
+    let mut latest_day: Option<String> = None;
+    let mut recent_count = 0_i64;
+    let mut sources = Vec::new();
+
+    for facet in facets {
+        let Ok(stems) = list_activity_day_stems(journal_root, &facet) else {
+            continue;
+        };
+        for day in stems.into_iter().rev() {
+            if day > today {
+                continue;
+            }
+            if latest_day.as_ref().is_some_and(|best| day < *best)
+                && day.as_str() < recent_since.as_str()
+            {
+                break;
+            }
+            let records = load_activity_records(journal_root, &facet, &day, false)
+                .map_err(ProfileError::internal)?;
+            for record in records {
+                let record_id = activity_value_or_empty(record.get("id")).trim().to_owned();
+                if record_id.is_empty()
+                    || !matches_participation(&record, entity_id, &["corresponded"])
+                {
+                    continue;
+                }
+                if latest_day.as_ref().is_none_or(|best| &day > best) {
+                    latest_day = Some(day.clone());
+                }
+                if day.as_str() >= recent_since.as_str() {
+                    recent_count += 1;
+                }
+                sources.push(ActivitySourceRef {
+                    facet: facet.clone(),
+                    day: day.clone(),
+                    activity_id: record_id,
+                    field: "participation".to_owned(),
+                    created_at: record_created_at(&record),
+                });
+            }
+        }
+    }
+
+    let recent_opt = latest_day.is_some().then_some(recent_count);
+    Ok((latest_day, recent_opt, sources))
 }
 
 pub(crate) fn list_active_entity_ids(
@@ -476,5 +553,41 @@ mod tests {
             compute_cadence(temporary.path(), "vis", true, &now()).expect("cadence");
         assert_eq!(vis_without.recent_interactions_count_30d, 0);
         assert_eq!(vis_with.recent_interactions_count_30d, 0);
+    }
+
+    #[test]
+    fn cadence_tracks_corresponded_separately_across_multi_year_history_without_inflating_last_seen()
+    {
+        let temporary = journal();
+        facet(temporary.path(), "work", false);
+        records(
+            temporary.path(),
+            "work",
+            "20210914",
+            &[
+                interaction("old_mail", 1, "elena", "corresponded"),
+                interaction("old_only", 2, "marco", "corresponded"),
+            ],
+        );
+        records(
+            temporary.path(),
+            "work",
+            "20260409",
+            &[interaction("recent_mail", 3, "elena", "corresponded")],
+        );
+        let (cadence, sources) =
+            compute_cadence(temporary.path(), "elena", false, &now()).expect("cadence");
+        assert_eq!(cadence.last_seen, None);
+        assert_eq!(cadence.recent_interactions_count_30d, 0);
+        assert_eq!(cadence.last_corresponded.as_deref(), Some("20260409"));
+        assert_eq!(cadence.recent_correspondence_count_30d, Some(1));
+        assert_eq!(sources.len(), 1);
+
+        let (marco_cadence, marco_sources) =
+            compute_cadence(temporary.path(), "marco", false, &now()).expect("marco cadence");
+        assert_eq!(marco_cadence.last_seen, None);
+        assert_eq!(marco_cadence.last_corresponded.as_deref(), Some("20210914"));
+        assert_eq!(marco_cadence.recent_correspondence_count_30d, Some(0));
+        assert_eq!(marco_sources.len(), 1);
     }
 }

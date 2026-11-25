@@ -292,3 +292,69 @@ fn retry_work_blocking(
         Err(error) => (StatusCode::CONFLICT, Json(json!({"status":"held", "message":error}))).into_response(),
     }
 }
+
+pub async fn pause_backfill(
+    root: std::path::PathBuf,
+    body: Option<Json<Value>>,
+    locale: &'static str,
+) -> axum::response::Response {
+    let body = body.map(|v| v.0).unwrap_or_default();
+    let Some(paused) = body.get("paused").and_then(Value::as_bool) else {
+        return missing(locale, "paused".to_owned());
+    };
+    match tokio::task::spawn_blocking(move || {
+        let mutated = solstone_core_journal_config_write::mutate_journal_config(
+            &root,
+            Default::default(),
+            |config| {
+                let processing = config
+                    .entry("processing".to_owned())
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                if !processing.is_object() {
+                    *processing = Value::Object(serde_json::Map::new());
+                }
+                let obj = processing.as_object_mut().expect("processing object");
+                let prior = obj.get("backfill_paused").and_then(Value::as_bool) == Some(true);
+                obj.insert("backfill_paused".to_owned(), Value::Bool(paused));
+                solstone_core_journal_config_write::JournalConfigMutation {
+                    changed: prior != paused,
+                    value: paused,
+                }
+            },
+        );
+        match mutated {
+            Ok(_) => {
+                if !paused {
+                    let _ = send(
+                        &root,
+                        &solstone_core_callosum::CallosumEnvelope {
+                            tract: "supervisor".into(),
+                            event: "drain".into(),
+                            ts: None,
+                            extra: serde_json::Map::new(),
+                        },
+                    );
+                }
+                Json(json!({"ok": true, "paused": paused})).into_response()
+            }
+            Err(error) => error_envelope(
+                "config_save_failed",
+                error.to_string(),
+                "",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response(),
+        }
+    })
+    .await
+    {
+        Ok(resp) => resp,
+        Err(error) => error_envelope(
+            "config_save_failed",
+            error.to_string(),
+            "",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response(),
+    }
+}

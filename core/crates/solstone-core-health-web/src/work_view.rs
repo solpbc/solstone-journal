@@ -28,6 +28,43 @@ pub(crate) fn summarize(mut inventory: WorkInventory) -> Value {
     view
 }
 
+/// Additive Band-4 (`WorkBand::Import` = index 3) backfill progress summary for
+/// `/app/health/api/state` (`work.backfill`), keeping calm backfill progress
+/// distinct from live capture or repair failure counts.
+pub(crate) fn backfill_summary(
+    inventory: Option<&WorkInventory>,
+    paused: bool,
+    index_pending: u64,
+) -> Value {
+    let band = inventory.map(|inv| &inv.bands[3]).cloned().unwrap_or_default();
+    let landed_segments = band.segments_complete + band.segments_owed;
+    let indexed_segments = landed_segments.saturating_sub(index_pending);
+    let mut backfill_days = BTreeMap::<&str, ()>::new();
+    if let Some(inv) = inventory {
+        for hold in &inv.holds {
+            if hold.band == solstone_core_journal_config::work_priority::WorkBand::Import {
+                backfill_days.insert(hold.day.as_str(), ());
+            }
+        }
+    }
+    let oldest_held_day = backfill_days.keys().next().map(|s| (*s).to_owned());
+    let newest_held_day = backfill_days.keys().next_back().map(|s| (*s).to_owned());
+    json!({
+        "paused": paused,
+        "landed_segments": landed_segments,
+        "indexed_segments": indexed_segments,
+        "interpreted_segments": band.segments_complete,
+        "owed_segments": band.segments_owed,
+        "daily_units_complete": band.daily_units_complete,
+        "daily_units_owed": band.daily_units_owed,
+        "activities_owed": band.activities_owed,
+        "eligible": band.eligible,
+        "permission_held": band.permission_held,
+        "oldest_held_day": oldest_held_day,
+        "newest_held_day": newest_held_day,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

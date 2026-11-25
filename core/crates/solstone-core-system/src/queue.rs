@@ -3648,6 +3648,7 @@ fn read_work_policy(inner: &QueueInner) -> WorkPolicy {
     WorkPolicy::read(&inner.options.journal_root).unwrap_or(WorkPolicy {
         lane: ThinkingLane::Unavailable,
         history_confirmed: false,
+        backfill_paused: false,
     })
 }
 
@@ -6501,6 +6502,7 @@ mod tests {
         WorkPolicy {
             lane: ThinkingLane::Bundled,
             history_confirmed: false,
+            backfill_paused: false,
         }
     }
 
@@ -7387,6 +7389,7 @@ mod tests {
                 spending: WorkPolicy {
                     lane,
                     history_confirmed: true,
+                    backfill_paused: false,
                 },
             },
         )
@@ -7540,6 +7543,7 @@ mod tests {
                 WorkPolicy {
                     lane: ThinkingLane::Confidential,
                     history_confirmed: false,
+                    backfill_paused: false,
                 },
             ),
         );

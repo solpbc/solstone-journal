@@ -20,6 +20,10 @@ pub struct Cadence {
     pub last_seen: Option<String>,
     pub avg_interval_days: Option<f64>,
     pub gone_quiet_since: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_corresponded: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_correspondence_count_30d: Option<i64>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]

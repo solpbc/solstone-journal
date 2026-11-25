@@ -1447,8 +1447,23 @@
     const gridLines = document.querySelector('[data-grid-lines]');
     const nowLine = document.querySelector('[data-now-line]');
 
-    const untimed = items.filter(it => it.start_min == null);
-    const timed = items.filter(it => it.start_min != null);
+    const scheduledItems = (!state.facet && Array.isArray(state.view.calendar))
+      ? state.view.calendar.map((ev, idx) => ({
+          id: ev.id || `scheduled_${idx}`,
+          facet: '',
+          title: ev.title ? activityText('calendar.scheduled.title', [['meeting_title', String(ev.title)]]) : STRINGS['calendar-then-untitled'],
+          activity_label: '',
+          kind: 'scheduled',
+          start: ev.start || null,
+          end: ev.end || null,
+          start_min: ev.all_day ? null : ev.start_min,
+          end_min: ev.all_day ? null : ev.end_min,
+          _scheduled: true,
+        }))
+      : [];
+    const displayItems = items.concat(scheduledItems);
+    const untimed = displayItems.filter(it => it.start_min == null);
+    const timed = displayItems.filter(it => it.start_min != null);
     // A record just hidden keeps its place as an outline, laid out like any block,
     // so the records beside it keep their lanes until the owner moves on.
     const outlineItem = state.outlineBlock && state.justHidden && !state.includeHidden
@@ -1460,9 +1475,9 @@
 
     // Empty state check. An empty today still draws its column and now line
     // under the message, so the morning reads as today's timeline.
-    const emptyToday = !items.length && !outlineItem && computeDayContext() === 'today';
+    const emptyToday = !displayItems.length && !outlineItem && computeDayContext() === 'today';
     if (emptyArea) emptyArea.classList.toggle('act-empty--above-column', emptyToday);
-    if (!items.length && !outlineItem) {
+    if (!displayItems.length && !outlineItem) {
       if (timelineWrap) timelineWrap.hidden = !emptyToday;
       if (untimedArea) untimedArea.hidden = true;
       if (emptyArea) {
@@ -1498,6 +1513,10 @@
       untimedArea.hidden = false;
       let uhtml = '';
       untimed.forEach(it => {
+        if (it._scheduled) {
+          uhtml += `<div class="act-untimed-row act-untimed-row--scheduled"><span class="act-untimed-title">${esc(it.title)}</span></div>`;
+          return;
+        }
         const fObj = (state.view.facets || []).find(f => f.name === it.facet);
         const fColor = fObj && fObj.color ? fObj.color : '';
         const dot = !state.facet
@@ -1652,6 +1671,11 @@
       if (item._outline) {
         const undoIcon = window.ConveyIcons ? window.ConveyIcons.svg('undo-2') : '';
         bhtml += `<div class="act-block-outline" data-copy-key="hidden-outline" style="top: ${top}px; height: ${height}px; left: ${leftPct}%; width: ${widthPct}%;"><span>${esc(STRINGS['hidden-outline'])}</span><button type="button" class="act-unhide-btn" data-copy-key="unhide" data-outline-unhide="${esc(item.id)}" data-facet="${esc(item.facet)}">${undoIcon} ${esc(STRINGS['unhide'])}</button></div>`;
+        return;
+      }
+      if (item._scheduled) {
+        const timeRange = item.end_min != null ? `${item.start}–${item.end}` : item.start;
+        bhtml += `<div class="act-block act-block--scheduled" data-lane="${item.lane}" data-width="${item.fraction}" style="top: ${top}px; height: ${height}px; left: ${leftPct}%; width: ${widthPct}%;"><div class="act-block-line1"><span class="act-block-time">${esc(timeRange)}</span></div><div class="act-block-line2"><span class="act-block-title">${esc(item.title)}</span></div></div>`;
         return;
       }
 

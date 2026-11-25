@@ -386,6 +386,7 @@ pub(crate) fn is_real_photo_record(
 pub(crate) struct ActivityPeople {
     pub participants: Vec<String>,
     pub heard: Vec<String>,
+    pub corresponded: Vec<String>,
     pub in_photo: Vec<String>,
     pub mentioned: Vec<String>,
     pub on_screen: Vec<String>,
@@ -408,8 +409,9 @@ pub(crate) fn is_unnamed_voice(name: &str) -> bool {
 /// two roles is listed under the stronger.
 fn role_rank(role: &str, photo_record: bool) -> u8 {
     match role {
-        "attendee" => 4,
-        "heard" => 3,
+        "attendee" => 5,
+        "heard" => 4,
+        "corresponded" => 3,
         "visible" if photo_record => 2,
         "visible" => 0,
         _ => 1,
@@ -473,7 +475,7 @@ pub(crate) fn activity_people_in_context<'a>(
                 .unwrap_or_default();
             if is_unnamed_voice(trimmed) {
                 // Counted only where it was heard: an attendee or a heard voice.
-                if role_rank(role, false) >= 3 {
+                if role_rank(role, false) >= 4 {
                     voices += 1;
                 }
                 continue;
@@ -502,8 +504,9 @@ pub(crate) fn activity_people_in_context<'a>(
     }
     for (name, rank) in named {
         match rank {
-            4 => people.participants.push(name),
-            3 => people.heard.push(name),
+            5 => people.participants.push(name),
+            4 => people.heard.push(name),
+            3 => people.corresponded.push(name),
             2 => people.in_photo.push(name),
             0 => people.on_screen.push(name),
             _ => people.mentioned.push(name),
@@ -1032,7 +1035,23 @@ pub(crate) fn execute_list(
                     }
                     continue;
                 }
-                let entities = activity_entities(&record);
+                let mut entities = activity_entities(&record);
+                if let Some(part) = record.get("participation").and_then(Value::as_array) {
+                    for entry in part.iter().filter_map(Value::as_object) {
+                        if let Some(name) = entry.get("name").and_then(Value::as_str) {
+                            let trimmed = name.trim();
+                            if !trimmed.is_empty() && !entities.iter().any(|e| e == trimmed) {
+                                entities.push(trimmed.to_owned());
+                            }
+                        }
+                        if let Some(eid) = entry.get("entity_id").and_then(Value::as_str) {
+                            let trimmed = eid.trim();
+                            if !trimmed.is_empty() && !entities.iter().any(|e| e == trimmed) {
+                                entities.push(trimmed.to_owned());
+                            }
+                        }
+                    }
+                }
                 // A copy that doesn't match is kept until the moment is
                 // folded: another facet's copy of it may.
                 let matched = entity_filter.as_ref().is_none_or(|filter| match filter {
@@ -1294,6 +1313,9 @@ pub(crate) fn execute_list(
             "reference": reference,
             "zone": zone_str,
         });
+        if !people.corresponded.is_empty() {
+            activity["corresponded"] = json!(people.corresponded);
+        }
         crate::journal_links::activity(
             journal_root,
             &mut activity,

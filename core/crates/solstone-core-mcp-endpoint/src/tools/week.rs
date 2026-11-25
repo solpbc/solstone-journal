@@ -624,6 +624,9 @@ fn project_sunday(
             "reference": reference.clone(),
             "zone": zone_str,
         });
+        if !people.corresponded.is_empty() {
+            activity["corresponded"] = json!(people.corresponded);
+        }
         crate::journal_links::activity(
             journal,
             &mut activity,

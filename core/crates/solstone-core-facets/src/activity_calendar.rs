@@ -5,12 +5,20 @@
 //! beside the activity and never changes it: an activity keeps its own title,
 //! and a meeting on the calendar says nothing about who was there.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::{Value, json};
-use solstone_core_indexer_store::calendar_schedule::scheduled_on_day;
+use solstone_core_indexer_store::calendar_schedule::{
+    scheduled_day_counts_between, scheduled_on_day,
+};
 
 pub use solstone_core_indexer_store::calendar_schedule::{InvitedPerson, ScheduledEvent};
+
+/// Non-declined scheduled calendar event counts per day across `[from, to]`.
+pub fn calendar_day_counts_between(journal: &Path, from: &str, to: &str) -> BTreeMap<String, usize> {
+    scheduled_day_counts_between(journal, from, to).unwrap_or_default()
+}
 
 /// The events the owner's calendar has on `day`, or none when the index
 /// can't say. Read once per day and match each activity against them.
