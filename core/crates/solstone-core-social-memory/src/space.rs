@@ -77,17 +77,21 @@ pub fn space_authority(space: &str) -> Result<&str, SpaceError> {
         (Some(did), Some(space_type), Some(key), None)
             if solstone_core_oauth::atproto_client::is_atproto_did(did)
                 && space_type.contains('.')
-                && [space_type, key].iter().all(|part| {
-                    !part.is_empty()
-                        && part.bytes().all(|b| {
-                            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b':' | b'~')
-                        })
-                }) =>
+                && is_ref_part(space_type)
+                && is_ref_part(key) =>
         {
             Ok(did)
         }
         _ => Err(SpaceError::BadSpaceRef),
     }
+}
+
+/// A space type or key: non-empty, in the characters NSIDs and record keys use.
+fn is_ref_part(part: &str) -> bool {
+    !part.is_empty()
+        && part
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b':' | b'~'))
 }
 
 /// A signed-in account on its own PDS.
