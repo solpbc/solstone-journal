@@ -164,9 +164,14 @@ mod tests {
             .expect("multipart")
     }
 
+    fn temp_dir() -> TempDir {
+        let parent = std::fs::canonicalize(std::env::temp_dir()).expect("temp");
+        TempDir::new_in(parent).expect("temp")
+    }
+
     #[tokio::test]
     async fn exact_fit_succeeds() {
-        let directory = TempDir::new_in("/var/tmp").expect("temp");
+        let directory = temp_dir();
         let mut multipart = multipart_from(b"12345678").await;
         let field = multipart
             .next_field()
@@ -189,7 +194,7 @@ mod tests {
 
     #[tokio::test]
     async fn one_byte_over_refuses_and_removes_temp() {
-        let directory = TempDir::new_in("/var/tmp").expect("temp");
+        let directory = temp_dir();
         let mut multipart = multipart_from(b"123456789").await;
         let field = multipart
             .next_field()
@@ -233,7 +238,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_save_past_64_mib_fits_under_the_evernote_ceiling() {
-        let directory = TempDir::new_in("/var/tmp").expect("temp");
+        let directory = temp_dir();
         let payload = vec![b'x'; 64 * 1024 * 1024 + 1];
         let (content_type, body) = multipart_body(&payload);
         let mut request = Request::builder()

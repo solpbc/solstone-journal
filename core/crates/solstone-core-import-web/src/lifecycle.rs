@@ -25,6 +25,7 @@ use solstone_core_import::{
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
+    install_retained_file,
 };
 use solstone_core_processing_record::MediaKind;
 use tempfile::NamedTempFile;
@@ -1024,6 +1025,21 @@ pub(crate) struct StagedCommitOutcome {
 }
 
 #[cfg(test)]
+pub(crate) fn block_next_commit_install_for_root(root: &Path) {
+    let set =
+        BLOCK_COMMIT_INSTALL_ROOTS.get_or_init(|| Mutex::new(std::collections::BTreeSet::new()));
+    let mut guard = match set.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.insert(root.to_path_buf());
+}
+
+#[cfg(test)]
+static BLOCK_COMMIT_INSTALL_ROOTS: OnceLock<Mutex<std::collections::BTreeSet<PathBuf>>> =
+    OnceLock::new();
+
+#[cfg(test)]
 pub(crate) fn fail_next_commit_metadata_write_for_root(root: &Path) {
     let set =
         FAIL_COMMIT_METADATA_ROOTS.get_or_init(|| Mutex::new(std::collections::BTreeSet::new()));
@@ -1269,7 +1285,17 @@ pub(crate) fn stage_verified_upload_file(
             }
         }
         VerifiedSourceFile::UploadPart(part_path) => {
-            if let Err(error) = install_file(
+            #[cfg(test)]
+            if BLOCK_COMMIT_INSTALL_ROOTS.get().is_some_and(|set| {
+                let mut guard = match set.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                guard.remove(&state.root)
+            }) {
+                let _ = std::fs::create_dir_all(&target);
+            }
+            if let Err(error) = install_retained_file(
                 &part_path,
                 &target,
                 AtomicWriteOptions { mode: Some(0o600) },
@@ -1360,7 +1386,8 @@ pub(crate) fn stage_verified_upload_file(
     );
     let rollback_on_metadata_failure = |detail: String| -> StagedCommitOutcome {
         if let Some(ref part_path) = restore_upload_part_to {
-            let _ = install_file(&target, part_path, AtomicWriteOptions { mode: Some(0o600) });
+            let _ =
+                install_retained_file(&target, part_path, AtomicWriteOptions { mode: Some(0o600) });
         }
         let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
         StagedCommitOutcome {

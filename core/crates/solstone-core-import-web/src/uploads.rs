@@ -2231,7 +2231,8 @@ mod tests {
     }
 
     fn setup_journal() -> TempDir {
-        let dir = TempDir::new_in("/var/tmp").expect("tempdir");
+        let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+        let dir = TempDir::new_in(parent).expect("tempdir");
         fs::create_dir_all(dir.path().join("config")).expect("config dir");
         fs::write(
             dir.path().join("config/journal.json"),
@@ -2934,6 +2935,31 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
 
+        // 1a. Real install failure inside install_retained_file keeps payload.part intact.
+        crate::lifecycle::block_next_commit_install_for_root(journal.path());
+        let (status, failed_install) = send_req(
+            journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(format!("{UPLOAD_COLLECTION_PATH}/{upload_id}/commit"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{failed_install}"
+        );
+        assert!(
+            uploads_root(journal.path())
+                .join(&upload_id)
+                .join(PAYLOAD_PART_FILE)
+                .is_file(),
+            "payload.part must remain intact when install_retained_file fails"
+        );
+
+        // 1b. Post-install metadata write failure rolls target back to payload.part.
         crate::lifecycle::fail_next_commit_metadata_write_for_root(journal.path());
         let (status, failed_commit) = send_req(
             journal.path(),

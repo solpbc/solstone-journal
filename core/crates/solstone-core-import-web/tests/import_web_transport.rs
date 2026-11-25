@@ -81,7 +81,8 @@ async fn raw_post_declared(
 }
 
 fn established_journal() -> tempfile::TempDir {
-    let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal");
+    let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+    let journal = tempfile::TempDir::new_in(parent).expect("journal");
     fs::create_dir(journal.path().join("config")).expect("config");
     fs::write(
         journal.path().join("config/journal.json"),
