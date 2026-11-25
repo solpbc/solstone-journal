@@ -12,10 +12,22 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
 }
 
 pub(super) fn render_for_locale(rel: &str, records: &[JsonObject], locale: &str) -> ProducedChunks {
-    let live_records: Vec<_> = records
+    let mut live_records: Vec<_> = records
         .iter()
         .filter(|record| !json_truthy(record.get("retired")))
         .collect();
+    live_records.sort_by(|a, b| {
+        let key = |rec: &JsonObject| {
+            let sd = rec
+                .get("source_day")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .replace('-', "");
+            let obs = rec.get("observed_at").and_then(Value::as_i64).unwrap_or(0);
+            (sd, obs)
+        };
+        key(b).cmp(&key(a))
+    });
     ProducedChunks {
         chunks: live_records
             .iter()

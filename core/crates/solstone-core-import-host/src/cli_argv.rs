@@ -1035,10 +1035,9 @@ fn run_import_resolved(
                     imported(run, &import_id, options.dry_run)
                 }
                 None => {
-                    let wire = solstone_core_import::text::SystemWireClient::sibling();
+                    let wire = solstone_core_import::text::DeferredToSenseWire;
                     let (run, import_id) =
                         run_text(media, options, journal_path, &timestamp, &stream, &wire);
-                    wire.finish();
                     imported(run, &import_id, options.dry_run)
                 }
             }

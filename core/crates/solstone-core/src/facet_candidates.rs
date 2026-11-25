@@ -92,7 +92,7 @@ pub(crate) fn run(journal_path: &Path) -> ExitCode {
         .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal_path))
         .date();
     let day = solstone_core_time::day_key(today);
-    let candidates = match solstone_core_facets::aggregate_speculative_facets(
+    let candidates = match solstone_core_facets::aggregate_speculative_facets_with_backfill(
         journal_path,
         today,
         solstone_core_facets::FACET_CANDIDATE_MIN_SEGMENTS,

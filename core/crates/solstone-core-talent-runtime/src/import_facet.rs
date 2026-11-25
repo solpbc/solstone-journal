@@ -15,6 +15,7 @@ use solstone_core_transcripts::EntrySource;
 const FACET_ENUM: &str = "/properties/facets/items/properties/facet/enum";
 const FACET_LEVEL: &str = "/properties/facets/items/properties/level/enum";
 const FACET_LIMIT: &str = "/properties/facets/maxItems";
+const ENTITY_FACET_ENUM: &str = "/properties/entities/items/properties/facet/enum";
 
 /// The facet this segment's transcripts name, where all of them agree on one that is
 /// still declared. A facet deleted or renamed since the import names nothing, so the
@@ -91,6 +92,7 @@ pub(crate) fn narrow_schema(composed: &mut Map<String, Value>, facet: &str) {
         (FACET_ENUM, json!([facet])),
         (FACET_LEVEL, json!(["high"])),
         (FACET_LIMIT, json!(1)),
+        (ENTITY_FACET_ENUM, json!([facet, null])),
     ] {
         if let Some(value) = schema.pointer_mut(pointer) {
             *value = narrowed;

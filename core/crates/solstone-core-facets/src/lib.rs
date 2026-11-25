@@ -39,8 +39,10 @@ pub use solstone_core_entity::hidden_names;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};
 pub use solstone_core_journal_io::AppendError;
 pub use speculative_facets::{
+    BACKFILL_FACET_CANDIDATE_CAP, BACKFILL_FACET_CANDIDATE_MIN_SEGMENTS,
     FACET_CANDIDATE_MIN_SEGMENTS, FACET_CANDIDATE_WINDOW_DAYS, SpeculativeFacetCandidate,
     SpeculativeFacetSample, aggregate_speculative_facets,
+    aggregate_speculative_facets_with_backfill,
 };
 pub use store::stretch;
 pub use store::{

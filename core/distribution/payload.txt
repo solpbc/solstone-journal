@@ -44,6 +44,7 @@ solstone/talent/screen.md
 solstone/talent/screen.schema.json
 solstone/talent/sense.md
 solstone/talent/sense.schema.json
+solstone/talent/sense_static.schema.json
 solstone/talent/solstone/SKILL.md
 solstone/talent/speaker_attribution.md
 solstone/talent/speaker_attribution.schema.json
@@ -60,3 +61,4 @@ solstone/think/services/spp_attest/roots/amd/Turin/ask.pem
 solstone/think/templates/activity_preamble.md
 solstone/think/templates/daily_preamble.md
 solstone/think/templates/segment_preamble.md
+solstone/think/templates/sense_static.md

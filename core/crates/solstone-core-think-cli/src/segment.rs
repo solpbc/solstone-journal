@@ -3023,6 +3023,9 @@ pub(crate) fn ensure_historical_day_activities(
     }
 
     if streams_with_unmaterialized.is_empty() {
+        if solstone_core_segment::day_is_backfill_only(&context.journal, &context.day) {
+            consolidate_historical_backfill_span(&context.journal);
+        }
         return Ok(());
     }
 
@@ -3057,7 +3060,537 @@ pub(crate) fn ensure_historical_day_activities(
         skip_activity_prompts,
         false,
         None,
-    )
+    )?;
+    if solstone_core_segment::day_is_backfill_only(&context.journal, &context.day) {
+        consolidate_historical_backfill_span(&context.journal);
+    }
+    Ok(())
+}
+
+fn is_bulk_or_automated_actor(name: &str, email: Option<&str>) -> bool {
+    let lower_name = name.trim().to_ascii_lowercase();
+    if lower_name.is_empty()
+        || matches!(
+            lower_name.as_str(),
+            "substack" | "no-reply" | "noreply" | "mailer-daemon" | "notifications"
+        )
+        || lower_name.contains("newsletter")
+        || lower_name.contains("do not reply")
+    {
+        return true;
+    }
+    if let Some(em) = email.map(|e| e.trim().to_ascii_lowercase()) {
+        for needle in [
+            "noreply",
+            "no-reply",
+            "donotreply",
+            "mailer-daemon",
+            "postmaster@",
+            "notifications@",
+            "newsletter@",
+            "substack.com",
+            "receipts@",
+            "billing@",
+            "automated@",
+        ] {
+            if em.contains(needle) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Deterministic span-aware entity promotion, dated observation seeding, and
+/// speculative-facet aggregation across historical backfill days (`day < today`
+/// and `day_is_backfill_only`).
+pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let now_zdt = jiff::Timestamp::now().to_zoned_datetime(zone.clone());
+    let today_date = now_zdt.date();
+    let today_str = solstone_core_time::day_key(today_date);
+
+    let Ok(all_day_dirs) = solstone_core_journal_io::day_dirs(journal) else {
+        return;
+    };
+    let backfill_days: Vec<String> = all_day_dirs
+        .into_keys()
+        .filter(|day| day < &today_str && solstone_core_segment::day_is_backfill_only(journal, day))
+        .collect();
+    if backfill_days.is_empty() {
+        return;
+    }
+
+    if let Ok(candidates) = solstone_core_facets::aggregate_speculative_facets_with_backfill(
+        journal,
+        today_date,
+        solstone_core_facets::FACET_CANDIDATE_MIN_SEGMENTS,
+    ) && !candidates.is_empty()
+    {
+        let _ = solstone_core_facets::record_facet_candidates(journal, &today_str, &candidates);
+    }
+
+    let Ok(inventory) = observe_declared_facet_inventory(journal) else {
+        return;
+    };
+    if inventory.enabled.is_empty() {
+        return;
+    }
+
+    let mut owner_or_blocked = solstone_core_entity_matching::ExclusionKeys::default();
+    if let Ok(bytes) = std::fs::read(journal.join("config/journal.json"))
+        && let Ok(cfg) = serde_json::from_slice::<Value>(&bytes)
+        && let Some(ident) = cfg.get("identity").and_then(Value::as_object)
+    {
+        for k in ["name", "preferred"] {
+            if let Some(s) = ident.get(k).and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                owner_or_blocked.add_candidate(
+                    &solstone_core_entity_matching::EntityNameCandidate {
+                        id: None,
+                        name: s.trim().to_owned(),
+                        aka: Vec::new(),
+                        emails: Vec::new(),
+                    },
+                );
+            }
+        }
+    }
+    if let Ok(entities) = solstone_core_entity::every_journal_entity(journal) {
+        for entity in entities {
+            if entity.is_principal() || entity.is_blocked() {
+                let res = entity.resolution_entity();
+                owner_or_blocked.add_candidate(
+                    &solstone_core_entity_matching::EntityNameCandidate {
+                        id: res.id,
+                        name: res.name,
+                        aka: res.aka,
+                        emails: res.emails,
+                    },
+                );
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct SpanCandidate {
+        entity_type: String,
+        names: BTreeMap<String, usize>,
+        emails: BTreeSet<String>,
+        active_episodes: BTreeSet<(String, String)>,
+        days: BTreeSet<String>,
+        day_notes: BTreeMap<String, String>,
+    }
+
+    for facet in &inventory.enabled {
+        let Ok(hides) = solstone_core_facets::hidden_names::facet_hidden_keys(journal, facet)
+        else {
+            continue;
+        };
+        let Ok(scoped) =
+            solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true)
+        else {
+            continue;
+        };
+        let mut detached_or_blocked = solstone_core_entity_matching::ExclusionKeys::default();
+        let mut already_attached = solstone_core_entity_matching::ExclusionKeys::default();
+        for item in &scoped {
+            let name = item
+                .identity
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let aka: Vec<String> = item
+                .identity
+                .get("aka")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let emails: Vec<String> = item
+                .identity
+                .get("emails")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let cand = solstone_core_entity_matching::EntityNameCandidate {
+                id: Some(item.entity_id.clone()),
+                name,
+                aka,
+                emails,
+            };
+            if item.detached || item.blocked {
+                detached_or_blocked.add_candidate(&cand);
+            } else {
+                already_attached.add_candidate(&cand);
+            }
+        }
+
+        let mut raw_groups: BTreeMap<(String, String), SpanCandidate> = BTreeMap::new();
+        let mut email_to_key: BTreeMap<String, (String, String)> = BTreeMap::new();
+
+        for day in &backfill_days {
+            let mut day_emails: BTreeMap<String, String> = BTreeMap::new();
+            if let Ok(segs) = iter_segments(journal, PathOrDay::Day(day)) {
+                for seg in segs {
+                    if solstone_core_segment::is_transactions_segment(&seg)
+                        || is_deleted_segment(seg.path())
+                    {
+                        continue;
+                    }
+                    if let Ok(entries) = std::fs::read_dir(seg.path()) {
+                        for entry in entries.flatten() {
+                            let fname_os = entry.file_name();
+                            let Some(fname) = fname_os.to_str() else {
+                                continue;
+                            };
+                            if fname.ends_with("_transcript.md") || fname == "transcript.md" {
+                                if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                                    for line in text.lines().take(30) {
+                                        let trimmed = line.trim();
+                                        for prefix in ["From:", "To:", "**From:**", "**To:**"] {
+                                            if let Some(rest) = trimmed.strip_prefix(prefix) {
+                                                for (pname, pemail) in parse_header_people(rest) {
+                                                    if let Some(em) = pemail {
+                                                        day_emails.insert(
+                                                            solstone_core_facets::hidden_names::hidden_name_key(&pname),
+                                                            em,
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Ok(activities) =
+                solstone_core_facets::load_activity_records_readable(journal, facet, day, false)
+            {
+                for act in activities {
+                    let act_id = act
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("act")
+                        .to_owned();
+                    let act_summary = act
+                        .get("summary")
+                        .or_else(|| act.get("title"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_owned();
+                    let Some(parts) = act.get("participation").and_then(Value::as_array) else {
+                        continue;
+                    };
+                    for part in parts.iter().filter_map(Value::as_object) {
+                        let Some(name) = part
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                        else {
+                            continue;
+                        };
+                        let role = part
+                            .get("role")
+                            .and_then(Value::as_str)
+                            .unwrap_or("mentioned");
+                        if !matches!(role, "corresponded" | "attendee" | "heard" | "visible") {
+                            continue;
+                        }
+                        let name_key = solstone_core_facets::hidden_names::hidden_name_key(name);
+                        let email = day_emails.get(&name_key).cloned();
+                        if owner_or_blocked.contains(name)
+                            || hides.is_hidden(name)
+                            || detached_or_blocked.contains(name)
+                            || is_bulk_or_automated_actor(name, email.as_deref())
+                        {
+                            continue;
+                        }
+                        let group_key = if let Some(ref em) = email
+                            && let Some(existing_key) = email_to_key.get(em)
+                        {
+                            existing_key.clone()
+                        } else {
+                            let gk = ("person".to_owned(), name_key.clone());
+                            if let Some(ref em) = email {
+                                email_to_key.insert(em.clone(), gk.clone());
+                            }
+                            gk
+                        };
+                        let entry = raw_groups.entry(group_key).or_insert_with(|| SpanCandidate {
+                            entity_type: "Person".to_owned(),
+                            ..Default::default()
+                        });
+                        *entry.names.entry(name.to_owned()).or_default() += 1;
+                        if let Some(em) = email {
+                            entry.emails.insert(em);
+                        }
+                        entry.active_episodes.insert((day.clone(), act_id.clone()));
+                        entry.days.insert(day.clone());
+                        let note = part
+                            .get("context")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty() && *s != "Corresponded in message.")
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| act_summary.clone());
+                        if !note.is_empty() {
+                            entry.day_notes.entry(day.clone()).or_insert(note);
+                        }
+                    }
+                }
+            }
+
+            if let Ok(detections) = solstone_core_facets::read_detected_entities(journal, facet, day)
+            {
+                for (idx, det) in detections.iter().enumerate() {
+                    let Some(name) = det
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                    else {
+                        continue;
+                    };
+                    let etype = det
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Person");
+                    if !matches!(etype, "Person" | "Company" | "Project" | "Tool") {
+                        continue;
+                    }
+                    let centrality = det
+                        .get("centrality")
+                        .or_else(|| det.get("level"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("medium");
+                    let qualifies_episode = match etype {
+                        "Person" => centrality == "high",
+                        "Company" | "Project" => matches!(centrality, "high" | "medium"),
+                        "Tool" => centrality == "high",
+                        _ => false,
+                    };
+                    let name_key = solstone_core_facets::hidden_names::hidden_name_key(name);
+                    let email = (etype == "Person")
+                        .then(|| day_emails.get(&name_key).cloned())
+                        .flatten();
+                    if owner_or_blocked.contains(name)
+                        || hides.is_hidden(name)
+                        || detached_or_blocked.contains(name)
+                        || is_bulk_or_automated_actor(name, email.as_deref())
+                    {
+                        continue;
+                    }
+                    let type_lower = etype.to_ascii_lowercase();
+                    let group_key = if let Some(ref em) = email
+                        && let Some(existing_key) = email_to_key.get(em)
+                    {
+                        existing_key.clone()
+                    } else {
+                        let gk = (type_lower, name_key);
+                        if let Some(ref em) = email {
+                            email_to_key.insert(em.clone(), gk.clone());
+                        }
+                        gk
+                    };
+                    let entry = raw_groups.entry(group_key).or_insert_with(|| SpanCandidate {
+                        entity_type: etype.to_owned(),
+                        ..Default::default()
+                    });
+                    *entry.names.entry(name.to_owned()).or_default() += 1;
+                    if let Some(em) = email {
+                        entry.emails.insert(em);
+                    }
+                    if qualifies_episode {
+                        entry
+                            .active_episodes
+                            .insert((day.clone(), format!("det_{idx}")));
+                        entry.days.insert(day.clone());
+                    }
+                    if let Some(desc) = det
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                    {
+                        entry.day_notes.insert(day.clone(), desc.to_owned());
+                    }
+                }
+            }
+        }
+
+        for cand in raw_groups.into_values() {
+            let Some(canonical_name) = cand
+                .names
+                .iter()
+                .max_by_key(|(n, count)| (n.split_whitespace().count(), **count, n.len()))
+                .map(|(n, _)| n.clone())
+            else {
+                continue;
+            };
+            let is_existing = already_attached.contains(&canonical_name);
+            let meets_promotion = match cand.entity_type.as_str() {
+                "Person" => cand.active_episodes.len() >= 2,
+                "Company" | "Project" => cand.active_episodes.len() >= 3 && cand.days.len() >= 2,
+                "Tool" => cand.active_episodes.len() >= 5 && cand.days.len() >= 3,
+                _ => false,
+            };
+            if !is_existing && !meets_promotion {
+                continue;
+            }
+            let latest_desc = cand
+                .day_notes
+                .values()
+                .next_back()
+                .cloned()
+                .unwrap_or_else(|| format!("Recurring {} across journal history.", cand.entity_type.to_ascii_lowercase()));
+
+            if !is_existing {
+                match solstone_core_facets::create_facet_entity_if_absent(
+                    journal,
+                    facet,
+                    &cand.entity_type,
+                    &canonical_name,
+                    &latest_desc,
+                ) {
+                    Ok(_) => {}
+                    Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }) => {
+                        if !detached_or_blocked.contains(&canonical_name) {
+                            let _ = solstone_core_facets::attach_or_reactivate_entity(
+                                journal,
+                                facet,
+                                &cand.entity_type,
+                                &canonical_name,
+                                &latest_desc,
+                            );
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+
+            let Ok(solstone_core_facets::ObservationEntityResolution::Resolved { entity_dir }) =
+                solstone_core_facets::resolve_observation_entity_dir(journal, facet, &canonical_name)
+            else {
+                continue;
+            };
+
+            let obs_path =
+                solstone_core_entity::facet_entity_observations_path(journal, facet, &entity_dir);
+            let mut existing_obs: BTreeSet<(String, String)> = BTreeSet::new();
+            if let Ok(obs_path) = obs_path
+                && let Ok(text) = std::fs::read_to_string(&obs_path)
+                && let Ok(parsed) = solstone_core_facets::parse_observation_file(
+                    &text,
+                    solstone_core_facets::ObservationParseSource::Path(&obs_path),
+                )
+            {
+                for row in parsed.live_rows() {
+                    if let Some(ref sd) = row.source_day {
+                        existing_obs.insert((
+                            solstone_core_facets::normalize_observation_content(&row.content),
+                            sd.replace('-', ""),
+                        ));
+                    }
+                }
+            }
+
+            let mut incoming = Vec::new();
+            for (day, note) in cand.day_notes.iter().rev().take(24).collect::<Vec<_>>().into_iter().rev() {
+                let norm = solstone_core_facets::normalize_observation_content(note);
+                if norm.is_empty() || existing_obs.contains(&(norm.clone(), day.clone())) {
+                    continue;
+                }
+                existing_obs.insert((norm, day.clone()));
+                let obs_ms = solstone_core_entity::journal_day_start_ms(day, &zone)
+                    .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
+                incoming.push(solstone_core_facets::IncomingObservationRow {
+                    content: note.clone(),
+                    observed_at: obs_ms,
+                    source_day: Some(day.clone()),
+                    relation: None,
+                });
+            }
+            if !incoming.is_empty() {
+                let _ = solstone_core_facets::apply_observation_change(
+                    journal,
+                    facet,
+                    &entity_dir,
+                    solstone_core_facets::ObservationChange::AppendMany {
+                        rows: incoming,
+                        actor: "model",
+                    },
+                );
+            }
+
+            if let Ok(scoped_now) =
+                solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
+                && let Some(ent) = scoped_now.iter().find(|e| {
+                    e.identity.get("name").and_then(Value::as_str) == Some(canonical_name.as_str())
+                })
+            {
+                let canonical_slug = solstone_core_entity_matching::entity_slug(&canonical_name);
+                for alias in cand.names.keys() {
+                    if alias != &canonical_name
+                        && alias.split_whitespace().count() >= 2
+                        && solstone_core_entity_matching::entity_slug(alias) != canonical_slug
+                    {
+                        let _ = solstone_core_facets::add_entity_aka(
+                            journal,
+                            facet,
+                            &ent.entity_id,
+                            alias,
+                            serde_json::json!({}),
+                            |_| Ok(()),
+                        );
+                    }
+                }
+                if !cand.emails.is_empty()
+                    && let Ok(Some(snapshot)) =
+                        solstone_core_entity::read_entity_identity(journal, &ent.entity_dir)
+                {
+                    let mut updated = snapshot.value().clone();
+                    if let Some(obj) = updated.as_object_mut() {
+                        let mut emails: BTreeSet<String> = obj
+                            .get("emails")
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .map(|s| s.trim().to_lowercase())
+                            .collect();
+                        let before_len = emails.len();
+                        for em in &cand.emails {
+                            emails.insert(em.clone());
+                        }
+                        if emails.len() > before_len {
+                            obj.insert(
+                                "emails".to_owned(),
+                                Value::Array(emails.into_iter().map(Value::String).collect()),
+                            );
+                            let _ = solstone_core_entity::save_entity_identity(
+                                journal,
+                                &ent.entity_dir,
+                                &updated,
+                                None,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// End a stream's live activities after the supervisor's idle window.
@@ -5123,4 +5656,96 @@ fn a_held_talent_runs_only_in_its_own_retry() {
             .unwrap()
             .is_none()
     );
+}
+
+#[cfg(test)]
+#[test]
+fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seeds_dated_observations()
+{
+    let root = tempfile::tempdir().unwrap();
+    let journal = root.path();
+    std::fs::create_dir_all(journal.join("config")).unwrap();
+    std::fs::write(
+        journal.join("config/journal.json"),
+        r#"{"identity":{"name":"Jordan Hale","preferred":"Jordan","timezone":"UTC"}}"#,
+    )
+    .unwrap();
+    solstone_core_facets::create_facet(journal, "work", "Work", "Engineering", "", "", None)
+        .unwrap();
+
+    for (day, act_id, summary, extra_person) in [
+        (
+            "20210510",
+            "act_1",
+            "Reviewed storage lease PR with Samira Patel.",
+            ("Newsletter Bot", "noreply@substack.com"),
+        ),
+        (
+            "20210819",
+            "act_2",
+            "Planned v1.2 chaos benchmark with Samira Patel.",
+            ("One Off Bystander", "bystander@example.com"),
+        ),
+    ] {
+        let seg = journal
+            .join("chronicle")
+            .join(day)
+            .join("import.email/100000_0");
+        std::fs::create_dir_all(&seg).unwrap();
+        std::fs::write(
+            seg.join("email_transcript.md"),
+            format!(
+                "From: Samira Patel <samira@acme.example>\nTo: Jordan Hale <jordan@hale.example>, {} <{}>\n\nBody\n",
+                extra_person.0, extra_person.1
+            ),
+        )
+        .unwrap();
+
+        let act_dir = journal.join("facets/work/activities");
+        std::fs::create_dir_all(&act_dir).unwrap();
+        std::fs::write(
+            act_dir.join(format!("{day}.jsonl")),
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "id": act_id,
+                    "facet": "work",
+                    "activity": "email",
+                    "stream": "import.email",
+                    "segments": ["100000_0"],
+                    "summary": summary,
+                    "participation": [
+                        {"name": "Samira Patel", "role": "corresponded", "source": "transcript", "confidence": 1.0, "context": summary},
+                        {"name": extra_person.0, "role": "mentioned", "source": "transcript", "confidence": 0.8, "context": "CC bystander"}
+                    ]
+                })
+            ),
+        )
+        .unwrap();
+    }
+
+    consolidate_historical_backfill_span(journal);
+
+    let scoped = solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false)
+        .expect("scoped entities");
+    let names: Vec<&str> = scoped
+        .iter()
+        .filter_map(|e| e.identity.get("name").and_then(Value::as_str))
+        .collect();
+    assert_eq!(names, vec!["Samira Patel"]);
+    assert_eq!(
+        scoped[0].identity["emails"],
+        serde_json::json!(["samira@acme.example"])
+    );
+
+    let obs = solstone_core_facets::read_live_observations(
+        journal,
+        "work",
+        &scoped[0].entity_dir,
+        solstone_core_facets::ObservationReadQuery::default(),
+    )
+    .expect("observations");
+    assert_eq!(obs.items.len(), 2);
+    assert_eq!(obs.items[0].source_day.as_deref(), Some("20210819"));
+    assert_eq!(obs.items[1].source_day.as_deref(), Some("20210510"));
 }

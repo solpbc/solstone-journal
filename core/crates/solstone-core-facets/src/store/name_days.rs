@@ -54,15 +54,19 @@ pub fn detected_name_days(
     // a blocked entity: nothing is listed until it can be.
     require_readable_identities(journal_root)?;
     let mut left_out = ExclusionKeys::default();
+    let mut promoted = ExclusionKeys::default();
     for entity in solstone_core_entity::every_journal_entity(journal_root)? {
+        let names = entity.resolution_entity();
+        let candidate = EntityNameCandidate {
+            id: names.id,
+            name: names.name,
+            aka: names.aka,
+            emails: names.emails,
+        };
         if entity.is_blocked() || entity.is_principal() {
-            let names = entity.resolution_entity();
-            left_out.add_candidate(&EntityNameCandidate {
-                id: names.id,
-                name: names.name,
-                aka: names.aka,
-                emails: names.emails,
-            });
+            left_out.add_candidate(&candidate);
+        } else {
+            promoted.add_candidate(&candidate);
         }
     }
     for name in also_left_out {
@@ -123,12 +127,29 @@ pub fn detected_name_days(
             }
         }
     }
+    let mut backfill_only_cache: HashMap<String, bool> = HashMap::new();
+    let mut is_backfill_day = |day: &str| -> bool {
+        *backfill_only_cache
+            .entry(day.to_owned())
+            .or_insert_with(|| solstone_core_segment::day_is_backfill_only(journal_root, day))
+    };
+
     Ok(found
         .into_iter()
-        .map(|(_, (entity_type, name, days))| DetectedNameDays {
-            entity_type,
-            name,
-            days: days.into_iter().collect(),
+        .filter_map(|(_, (entity_type, name, days))| {
+            let min_backfill_days = if entity_type.eq_ignore_ascii_case("tool") {
+                3
+            } else {
+                2
+            };
+            let keep = days.len() >= min_backfill_days
+                || promoted.contains(&name)
+                || days.iter().any(|d| !is_backfill_day(d));
+            keep.then(|| DetectedNameDays {
+                entity_type,
+                name,
+                days: days.into_iter().collect(),
+            })
         })
         .collect())
 }
@@ -385,6 +406,67 @@ mod tests {
                 "Ben Okri".to_owned(),
                 vec!["20250310".to_owned(), "20250311".to_owned()]
             )]
+        );
+    }
+
+    #[test]
+    fn one_off_unpromoted_backfill_names_are_suppressed_while_promoted_recurring_and_live_survive()
+    {
+        let root = tempfile::tempdir().unwrap();
+        facet(root.path(), "work");
+        for d in ["20250401", "20250402"] {
+            let seg = root
+                .path()
+                .join("chronicle")
+                .join(d)
+                .join("import.email/100000_0");
+            fs::create_dir_all(&seg).unwrap();
+            fs::write(seg.join("conversation_transcript.jsonl"), "{}\n").unwrap();
+        }
+        let live_seg = root.path().join("chronicle/20250403/default/100000_60");
+        fs::create_dir_all(&live_seg).unwrap();
+        fs::write(live_seg.join("audio.jsonl"), "{}\n").unwrap();
+
+        entity(
+            root.path(),
+            "promoted_co",
+            serde_json::json!({"id":"promoted_co","name":"Promoted Co","type":"Company"}),
+        );
+
+        detect(
+            root.path(),
+            "work",
+            "20250401",
+            &[
+                ("Person", "One Off Newsletter Author"),
+                ("Person", "Recurring Correspondent"),
+                ("Company", "Promoted Co"),
+            ],
+        );
+        detect(
+            root.path(),
+            "work",
+            "20250402",
+            &[("Person", "Recurring Correspondent")],
+        );
+        detect(
+            root.path(),
+            "work",
+            "20250403",
+            &[("Person", "Live Day Guest")],
+        );
+
+        let got = names(root.path());
+        assert_eq!(
+            got,
+            vec![
+                ("Promoted Co".to_owned(), vec!["20250401".to_owned()]),
+                ("Live Day Guest".to_owned(), vec!["20250403".to_owned()]),
+                (
+                    "Recurring Correspondent".to_owned(),
+                    vec!["20250401".to_owned(), "20250402".to_owned()]
+                ),
+            ]
         );
     }
 }

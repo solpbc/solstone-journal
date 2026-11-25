@@ -20,7 +20,8 @@ mod schema;
 mod templates;
 
 pub use compose::{
-    compose_talent, compose_talent_in, compose_talent_instruction, compose_talent_instruction_in,
+    compose_prompt_body_with_facets_in, compose_talent, compose_talent_in,
+    compose_talent_instruction, compose_talent_instruction_in, compose_talent_schema_in,
 };
 pub use preview::{
     PassageRun, PreviewRequest, PromptPreview, PromptPreviewRefusal, PromptPreviewer,

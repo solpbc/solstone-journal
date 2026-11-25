@@ -51,27 +51,33 @@ pub(crate) fn substitute_runtime_facets(
 pub(crate) fn substitute_runtime_facets_with(schema: &mut Value, names: &[String]) {
     match schema {
         Value::Object(object) => {
-            let placeholder = object
+            let (placeholder, has_null) = object
                 .get("enum")
                 .and_then(Value::as_array)
-                .is_some_and(|values| {
-                    values
-                        .iter()
-                        .any(|value| value.as_str() == Some(RUNTIME_FACETS_PLACEHOLDER))
+                .map_or((false, false), |values| {
+                    (
+                        values
+                            .iter()
+                            .any(|value| value.as_str() == Some(RUNTIME_FACETS_PLACEHOLDER)),
+                        values.iter().any(Value::is_null),
+                    )
                 });
             if placeholder {
                 if names.is_empty() {
-                    object.remove("enum");
+                    if has_null {
+                        object.insert("enum".to_owned(), Value::Array(vec![Value::Null]));
+                    } else {
+                        object.remove("enum");
+                    }
                 } else {
-                    object.insert(
-                        "enum".to_owned(),
-                        Value::Array(
-                            names
-                                .iter()
-                                .map(|name| Value::String(name.clone()))
-                                .collect(),
-                        ),
-                    );
+                    let mut choices: Vec<Value> = names
+                        .iter()
+                        .map(|name| Value::String(name.clone()))
+                        .collect();
+                    if has_null {
+                        choices.push(Value::Null);
+                    }
+                    object.insert("enum".to_owned(), Value::Array(choices));
                 }
             }
             for value in object.values_mut() {

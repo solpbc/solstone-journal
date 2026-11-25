@@ -504,6 +504,56 @@ pub fn morning_briefing_applies_at(journal: &Path, day: &str, today: &str) -> bo
     )
 }
 
+pub const HISTORICAL_ENTITY_DAILY_TALENTS: [&str; 3] = [
+    "entities:entities_review",
+    "entities:entity_suggest",
+    "entities:entity_observer",
+];
+
+#[must_use]
+pub fn historical_entity_daily_applies(
+    journal: &Path,
+    day: &str,
+    talent: &str,
+    facet: Option<&str>,
+) -> bool {
+    historical_entity_daily_applies_at(journal, day, talent, facet, Timestamp::now())
+}
+
+#[must_use]
+pub fn historical_entity_daily_applies_at(
+    journal: &Path,
+    day: &str,
+    talent: &str,
+    facet: Option<&str>,
+    now: Timestamp,
+) -> bool {
+    if !HISTORICAL_ENTITY_DAILY_TALENTS.contains(&talent) {
+        return true;
+    }
+    let Some(day_date) = solstone_core_time::parse_day(day) else {
+        return true;
+    };
+    let today_str = local_day(journal, now);
+    let Some(today_date) = solstone_core_time::parse_day(&today_str) else {
+        return true;
+    };
+    let age = today_date.duration_since(day_date).as_hours() / 24;
+    if age <= 7 || !solstone_core_segment::day_is_backfill_only(journal, day) {
+        return true;
+    }
+    if crate::owner_ask::thawed(journal, day) {
+        return true;
+    }
+    let identity = DailyUnitIdentity::new(day, talent, facet.map(str::to_owned));
+    matches!(
+        observe_daily_unit_record(journal, &identity),
+        Ok(Some(record))
+            if record.status == DailyUnitStatus::Conflicting
+                || record.has_uncommitted_started_receipt()
+    )
+}
+
 pub fn read_unit_coverage(
     journal: &Path,
     day: &str,
@@ -532,6 +582,19 @@ fn read_unit_coverage_cached(
             identity,
             evidence_revision: String::new(),
             contract_digest: String::new(),
+            state: CoverageState::Current,
+            reason_code: None,
+            earlier_version: None,
+            owed_by: None,
+        });
+    }
+    if HISTORICAL_ENTITY_DAILY_TALENTS.contains(&config.key.as_str())
+        && !historical_entity_daily_applies(journal, day, &config.key, facet)
+    {
+        return Ok(UnitCoverage {
+            identity,
+            evidence_revision: "historical_backfill".to_owned(),
+            contract_digest: "historical_backfill".to_owned(),
             state: CoverageState::Current,
             reason_code: None,
             earlier_version: None,

@@ -164,6 +164,7 @@ pub(crate) fn run(
     }
     let mut total = ModeResult::default();
     let runtime = runtime()?;
+    let mut consolidated_backfill_span = false;
     for (priority, group) in grouped(configs) {
         let mut fields = Map::new();
         fields.insert("mode".to_owned(), Value::String("daily".to_owned()));
@@ -183,6 +184,40 @@ pub(crate) fn run(
                         && !active_facets.contains(facet)
                     {
                         log_skip(log, context, &config.key, "no_active_facets", Some(facet));
+                        continue;
+                    }
+                    if solstone_core_system::daily_coverage::HISTORICAL_ENTITY_DAILY_TALENTS
+                        .contains(&config.key.as_str())
+                        && !from_scratch
+                        && !context.retry.as_ref().is_some_and(|(unit, _)| {
+                            matches!(
+                                unit,
+                                solstone_core_system::work_retry::Unit::Daily {
+                                    talent,
+                                    facet: unit_facet,
+                                    ..
+                                } if talent == &config.key
+                                    && unit_facet.as_deref() == Some(facet.as_str())
+                            )
+                        })
+                        && !solstone_core_system::daily_coverage::historical_entity_daily_applies(
+                            &context.journal,
+                            &context.day,
+                            &config.key,
+                            Some(facet),
+                        )
+                    {
+                        if !consolidated_backfill_span {
+                            crate::segment::consolidate_historical_backfill_span(&context.journal);
+                            consolidated_backfill_span = true;
+                        }
+                        log_skip(
+                            log,
+                            context,
+                            &config.key,
+                            "historical_backfill_span",
+                            Some(facet),
+                        );
                         continue;
                     }
                     let queued = queue_daily(

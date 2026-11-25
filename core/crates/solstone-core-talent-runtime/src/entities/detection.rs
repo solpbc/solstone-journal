@@ -27,6 +27,7 @@ pub const CENTRALITY_LABELS: [(&str, &str); 3] = [
 #[derive(Clone, Debug, PartialEq)]
 pub struct DetectionState {
     packet: String,
+    inline_output: Option<String>,
 }
 fn segment(prepared: &PreparedTalent, journal: &std::path::Path) -> Option<std::path::PathBuf> {
     find_segment_dir(
@@ -359,6 +360,95 @@ pub(crate) fn no_candidates_input_binding(
         Sha256::digest(serde_json::to_vec(&binding).map_err(|e| e.to_string())?)
     )))
 }
+fn build_inline_detection_output(
+    facets: &[Map<String, Value>],
+    candidates: &[Map<String, Value>],
+) -> Option<String> {
+    if candidates.is_empty() || !candidates.iter().any(|c| c.contains_key("facet")) {
+        return None;
+    }
+    let active_facets: BTreeSet<&str> = facets
+        .iter()
+        .filter_map(|row| row.get("facet").and_then(Value::as_str))
+        .filter(|f| !f.is_empty())
+        .collect();
+    let mut detections = Vec::new();
+    for candidate in candidates {
+        let Some(facet) = candidate
+            .get("facet")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|f| !f.is_empty() && active_facets.contains(f))
+        else {
+            continue;
+        };
+        let Some(name) = candidate
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        else {
+            continue;
+        };
+        let context = candidate
+            .get("context")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .unwrap_or("Involved in this segment.");
+        let centrality = candidate
+            .get("level")
+            .and_then(Value::as_str)
+            .filter(|l| matches!(*l, "high" | "medium" | "low"))
+            .unwrap_or("medium");
+        detections.push(serde_json::json!({
+            "name": name,
+            "facet": facet,
+            "description": context,
+            "centrality": centrality,
+        }));
+    }
+    let any_high_med = candidates.iter().any(|c| {
+        matches!(
+            c.get("level").and_then(Value::as_str),
+            Some("high" | "medium")
+        )
+    });
+    if !detections.is_empty() || !any_high_med {
+        Some(serde_json::json!({ "detections": detections }).to_string())
+    } else {
+        None
+    }
+}
+
+pub fn unavailable_before_generate(state: &PrePostState) -> Option<&'static str> {
+    match state {
+        PrePostState::EntityDetection(state) if state.inline_output.is_some() => {
+            Some("inline_sense_detection")
+        }
+        _ => None,
+    }
+}
+
+pub fn unavailable_commit(
+    _: &str,
+    prepared: &PreparedTalent,
+    state: &PrePostState,
+) -> Result<CommitPlan, StageError> {
+    let PrePostState::EntityDetection(state) = state else {
+        return Err(stage_error(
+            "unavailable_commit",
+            "entities:detection",
+            prepared,
+            "missing detection state",
+        ));
+    };
+    let Some(output) = state.inline_output.clone() else {
+        return Ok(CommitPlan::NoOutput);
+    };
+    commit(ParsedOutput::Text(output), prepared, &PrePostState::None)
+}
+
 pub fn build(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -369,6 +459,9 @@ pub fn build(
         reason: "no_sense".to_owned(),
     })?;
     let value = read_sense(&path).unwrap_or(Value::Null);
+    let facets = segment_facets(&value);
+    let candidates = candidate_rows(&value);
+    let inline_output = build_inline_detection_output(&facets, &candidates);
     Ok(PrePostState::EntityDetection(DetectionState {
         packet: build_packet(
             &context.journal,
@@ -377,9 +470,10 @@ pub fn build(
                 .get("day")
                 .and_then(Value::as_str)
                 .unwrap_or_default(),
-            &segment_facets(&value),
-            &candidate_rows(&value),
+            &facets,
+            &candidates,
         ),
+        inline_output,
     }))
 }
 pub fn apply_prompt_override(
@@ -853,5 +947,77 @@ mod tests {
         assert!(
             matches!(gate(&prepared(config), &context).unwrap(), GateDecision::Skip(reason) if reason == "no_candidates")
         );
+    }
+
+    #[test]
+    fn inline_sense_detection_projects_involved_entities_and_falls_back_on_all_null_high_med() {
+        let facets = vec![Map::from_iter([(
+            "facet".to_owned(),
+            Value::String("work".to_owned()),
+        )])];
+        // Case 1: active inline facet + passive null scenery -> projects at 0 LLM calls.
+        let candidates = vec![
+            serde_json::json!({
+                "name": "Samira Patel",
+                "type": "Person",
+                "role": "mentioned",
+                "context": "Replied about Q3 storage roadmap.",
+                "level": "high",
+                "facet": "work"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            serde_json::json!({
+                "name": "Substack",
+                "type": "Company",
+                "role": "mentioned",
+                "context": "Newsletter footer.",
+                "level": "low",
+                "facet": null
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ];
+        let inline = build_inline_detection_output(&facets, &candidates).expect("inline output");
+        let parsed: Value = serde_json::from_str(&inline).unwrap();
+        assert_eq!(parsed["detections"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["detections"][0]["name"], "Samira Patel");
+        assert_eq!(parsed["detections"][0]["facet"], "work");
+
+        // Case 2: all inline facets null despite high-level candidate -> fallback None (runs LLM).
+        let fallback_candidates = vec![
+            serde_json::json!({
+                "name": "Samira Patel",
+                "type": "Person",
+                "role": "mentioned",
+                "context": "Replied about Q3 storage roadmap.",
+                "level": "high",
+                "facet": null
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ];
+        assert!(build_inline_detection_output(&facets, &fallback_candidates).is_none());
+
+        // Case 3: all inline facets null and only low-level scenery -> empty detections at 0 LLM calls.
+        let low_only = vec![
+            serde_json::json!({
+                "name": "Substack",
+                "type": "Company",
+                "role": "mentioned",
+                "context": "Newsletter footer.",
+                "level": "low",
+                "facet": null
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ];
+        let empty_inline = build_inline_detection_output(&facets, &low_only).expect("low inline");
+        let empty_parsed: Value = serde_json::from_str(&empty_inline).unwrap();
+        assert!(empty_parsed["detections"].as_array().unwrap().is_empty());
     }
 }

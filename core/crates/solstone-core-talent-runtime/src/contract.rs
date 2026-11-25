@@ -280,7 +280,10 @@ pub static ENTITY_DETECTION: StageSpec = StageSpec {
         commit: crate::entities::detection::commit,
     }),
     unavailable_commit: None,
-    unavailable_before_generate: None,
+    unavailable_before_generate: Some(BeforeGenerateUnavailable {
+        select: crate::entities::detection::unavailable_before_generate,
+        commit: crate::entities::detection::unavailable_commit,
+    }),
     writes_as_intent: Some(crate::writers::apply_prepared),
     output_override: None,
 };

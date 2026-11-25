@@ -88,6 +88,10 @@ pub(crate) fn prepare_in(
     // Only native source admission below may supply this runtime-owned body.
     composed.remove(crate::story::SOURCE_BODY_KEY);
     let talent_schema = composed.get("json_schema").cloned();
+    let request_has_schema = request.get("json_schema").is_some_and(|v| !v.is_null());
+    let request_has_max_tokens = request
+        .get("max_output_tokens")
+        .is_some_and(|v| !v.is_null());
     for (key, value) in request {
         if !value.is_null()
             && !matches!(
@@ -302,19 +306,66 @@ pub(crate) fn prepare_in(
         });
         let prompt_context =
             crate::prompt_context::build(&context.journal, &composed, binding.as_ref());
-        let focused_facet = composed
+        let focused_facet_owned = composed
             .get("facet")
             .and_then(Value::as_str)
-            .or(import_facet.as_deref());
-        let instruction = solstone_core_talent_cli::compose_talent_instruction_in(
-            locale,
-            &config,
-            &context.journal,
-            &paths.templates_dir,
-            focused_facet,
-            &prompt_context,
-        )
-        .map_err(PrepareFailure::Refusal)?;
+            .or(import_facet.as_deref())
+            .map(str::to_owned);
+        let focused_facet = focused_facet_owned.as_deref();
+        let use_static_sense = name == "sense"
+            && !request_has_schema
+            && talent_overrides(&context.journal)
+                .as_ref()
+                .is_none_or(|overrides| !overrides.contains_key("sense"))
+            && composed
+                .get("source_counts")
+                .and_then(|c| c.get("percepts"))
+                .and_then(Value::as_u64)
+                == Some(0)
+            && topic_input_kinds.as_ref().is_some_and(|kinds| {
+                !kinds.is_empty()
+                    && !kinds.contains(&solstone_core_format::content::AdmittedCategory::Transcripts)
+                    && !kinds.contains(&solstone_core_format::content::AdmittedCategory::ScreenText)
+            })
+            && paths.templates_dir.join("sense_static.md").is_file()
+            && paths.talent_root.join("sense_static.schema.json").is_file();
+
+        let instruction = if use_static_sense {
+            let static_body = fs::read_to_string(paths.templates_dir.join("sense_static.md"))
+                .map_err(|e| PrepareFailure::Refusal(e.to_string()))?;
+            let static_schema = solstone_core_talent_cli::compose_talent_schema_in(
+                locale,
+                &name,
+                &paths.talent_root,
+                "sense_static.schema.json",
+                &context.journal,
+            )
+            .map_err(PrepareFailure::Refusal)?;
+            composed.insert("json_schema".to_owned(), static_schema);
+            composed.insert("_sense_static".to_owned(), Value::Bool(true));
+            if !request_has_max_tokens {
+                composed.insert("max_output_tokens".to_owned(), Value::from(2048_u64));
+            }
+            solstone_core_talent_cli::compose_prompt_body_with_facets_in(
+                locale,
+                &static_body,
+                &context.journal,
+                &paths.templates_dir,
+                focused_facet,
+                &prompt_context,
+            )
+            .map_err(PrepareFailure::Refusal)?
+        } else {
+            solstone_core_talent_cli::compose_talent_instruction_in(
+                locale,
+                &config,
+                &context.journal,
+                &paths.templates_dir,
+                focused_facet,
+                &prompt_context,
+            )
+            .map_err(PrepareFailure::Refusal)?
+        };
         // Conversation reads who spoke as a counted fact, not an inference:
         // the owner is usually a minor speaker in their own conversations.
         let instruction = match speaker_count {
@@ -1789,7 +1840,7 @@ mod tests {
         for &(name, text) in additional_files {
             fs::write(segment.join(name), text).expect("additional input");
         }
-        for name in ["sense.md", "sense.schema.json"] {
+        for name in ["sense.md", "sense.schema.json", "sense_static.schema.json"] {
             fs::copy(payload.join("talent").join(name), talent_root.join(name))
                 .expect("talent copy");
         }

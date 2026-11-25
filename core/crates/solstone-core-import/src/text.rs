@@ -250,13 +250,25 @@ impl WireClient for SystemWireClient {
     }
 }
 
+/// Non-LLM wire boundary used when per-segment topic synthesis is owned by `sense`
+/// (`talents/topics.md`), avoiding duplicate `observe.detect.topics` calls during import.
+pub struct DeferredToSenseWire;
+
+impl WireClient for DeferredToSenseWire {
+    fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        Err(ClientError::Io {
+            primary: "topics deferred to segment sense".to_owned(),
+            cleanup: None,
+        })
+    }
+}
+
 /// Process a generic transcript using the production generate boundary.
 ///
 /// `start_time` is the import's start as a `HH:MM:SS` clock on `day_dir`'s day. Turn
 /// times, speakers and words are read from the file alone, so the import is the same
-/// with any model or none. The model is asked only for each segment's topics and setting:
-/// a refusal, an unreadable reply or a failed call leaves those out and changes nothing
-/// else, and once the model is unavailable it is not asked again in this import.
+/// with any model or none. Topic extraction is deferred to segment `sense`
+/// (`talents/topics.md`), avoiding redundant per-tile LLM calls at import time.
 #[allow(clippy::too_many_arguments)]
 pub fn process_transcript(
     path: &Path,
@@ -268,8 +280,8 @@ pub fn process_transcript(
     setting: Option<&str>,
     source_instant: Option<Timestamp>,
 ) -> TextImportOutcome {
-    let wire = SystemWireClient::sibling();
-    let outcome = process_transcript_with_wire(
+    let wire = DeferredToSenseWire;
+    process_transcript_with_wire(
         path,
         day_dir,
         start_time,
@@ -279,9 +291,7 @@ pub fn process_transcript(
         setting,
         &wire,
         source_instant,
-    );
-    wire.finish();
-    outcome
+    )
 }
 
 /// Process a generic transcript with an injected generate-boundary client.

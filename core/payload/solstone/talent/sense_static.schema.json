@@ -1,0 +1,155 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "density",
+    "content_type",
+    "activity_summary",
+    "facets",
+    "speculative_facet",
+    "entities",
+    "topics"
+  ],
+  "properties": {
+    "density": {
+      "type": "string",
+      "enum": [
+        "active",
+        "low_change",
+        "idle"
+      ]
+    },
+    "content_type": {
+      "type": "string",
+      "enum": [
+        "meeting",
+        "coding",
+        "browsing",
+        "email",
+        "messaging",
+        "ai_conversation",
+        "writing",
+        "reading",
+        "video",
+        "media",
+        "gaming",
+        "social",
+        "planning",
+        "productivity",
+        "terminal",
+        "design",
+        "music",
+        "idle"
+      ]
+    },
+    "activity_summary": {
+      "type": "string"
+    },
+    "facets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "facet",
+          "activity",
+          "level"
+        ],
+        "properties": {
+          "facet": {
+            "type": "string",
+            "enum": [
+              "__RUNTIME_FACETS__"
+            ]
+          },
+          "activity": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        }
+      }
+    },
+    "speculative_facet": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "entities": {
+      "type": "array",
+      "maxItems": 40,
+      "x-truncate": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "name",
+          "role",
+          "context",
+          "level",
+          "facet"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Person",
+              "Company",
+              "Project",
+              "Tool"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "attendee",
+              "mentioned"
+            ]
+          },
+          "context": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "facet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "__RUNTIME_FACETS__",
+              null
+            ]
+          }
+        }
+      }
+    },
+    "topics": {
+      "type": "array",
+      "maxItems": 12,
+      "x-truncate": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

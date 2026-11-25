@@ -1325,7 +1325,10 @@ fn finish_unavailable(
     }
     if !matches!(
         reason,
-        "zero_slots" | "no_candidates" | crate::weekly_reflection::ALL_KEPT
+        "zero_slots"
+            | "no_candidates"
+            | "inline_sense_detection"
+            | crate::weekly_reflection::ALL_KEPT
     ) {
         emit(
             writer,

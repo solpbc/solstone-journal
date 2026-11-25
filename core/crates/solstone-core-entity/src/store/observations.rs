@@ -808,12 +808,13 @@ pub fn apply_observation_change(
             if content.is_empty() {
                 return Err(ObservationWriteError::EmptyContent);
             }
+            let clean_day = source_day.filter(|s| !s.trim().is_empty());
             let normalized = normalize_observation_content(content);
-            if parsed
-                .full_rows
-                .iter()
-                .any(|r| normalize_observation_content(&r.content) == normalized)
-            {
+            if parsed.full_rows.iter().any(|r| {
+                r.retired.is_none()
+                    && normalize_observation_content(&r.content) == normalized
+                    && (clean_day.is_none() || r.source_day.is_none() || r.source_day == clean_day)
+            }) {
                 return Ok(ObservationWriteOutcome::AlreadyPresent {
                     count: parsed.live_count(),
                 });
@@ -825,7 +826,7 @@ pub fn apply_observation_change(
                 id: next_id,
                 content: content.to_owned(),
                 observed_at: Timestamp::now().as_millisecond(),
-                source_day: source_day.filter(|s| !s.trim().is_empty()),
+                source_day: clean_day,
                 relation: relation.filter(|v| !v.is_null()),
                 by: Some(actor.to_owned()),
                 history: Vec::new(),
@@ -948,24 +949,17 @@ pub fn read_live_observations(
         });
     }
 
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let mut live: Vec<&ObservationRow> = parsed.live_rows().collect();
 
     match query.order {
         ObservationReadOrder::Newest => {
-            live.sort_by(|a, b| {
-                b.observed_at
-                    .cmp(&a.observed_at)
-                    .then_with(|| b.id.cmp(&a.id))
-            });
+            live.sort_by(|a, b| temporal_sort_key(b, &zone).cmp(&temporal_sort_key(a, &zone)));
         }
         ObservationReadOrder::Oldest => {
-            live.sort_by(|a, b| {
-                a.observed_at
-                    .cmp(&b.observed_at)
-                    .then_with(|| a.id.cmp(&b.id))
-            });
+            live.sort_by(|a, b| temporal_sort_key(a, &zone).cmp(&temporal_sort_key(b, &zone)));
         }
     }
 
@@ -1059,6 +1053,14 @@ fn observation_day(row: &ObservationRow, zone: &TimeZone) -> Option<String> {
                     solstone_core_time::day_key(value.to_zoned_datetime(zone.clone()).date())
                 })
         })
+}
+
+fn temporal_sort_key(row: &ObservationRow, zone: &TimeZone) -> (String, i64, u64) {
+    (
+        observation_day(row, zone).unwrap_or_default(),
+        row.observed_at,
+        row.id,
+    )
 }
 
 /// Compute live observation metrics for an attached entity.
@@ -1252,14 +1254,11 @@ pub fn load_observations_for_query(
         });
     }
 
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let mut live: Vec<&ObservationRow> = parsed.live_rows().collect();
-    live.sort_by(|a, b| {
-        b.observed_at
-            .cmp(&a.observed_at)
-            .then_with(|| b.id.cmp(&a.id))
-    });
+    live.sort_by(|a, b| temporal_sort_key(b, &zone).cmp(&temporal_sort_key(a, &zone)));
 
     let observations = live
         .into_iter()
@@ -1596,6 +1595,11 @@ pub fn apply_ops_to_parsed(
             continue;
         }
 
+        let older_than_target = source_day
+            .and_then(normalize_day)
+            .zip(candidate.source_day.as_deref().and_then(normalize_day))
+            .is_some_and(|(op_date, target_date)| op_date < target_date);
+
         match op_type {
             "replace" | "update" => {
                 let content = op_obj
@@ -1606,6 +1610,35 @@ pub fn apply_ops_to_parsed(
                 if content.is_empty() {
                     counts.refused += 1;
                     counts.skipped += 1;
+                    continue;
+                }
+                if older_than_target {
+                    let rel_val = op_obj.get("relation").filter(|v| !v.is_null());
+                    let candidate_norm = normalize_observation_content(content);
+                    let already_present = rows.iter().any(|r| {
+                        r.retired.is_none()
+                            && normalize_observation_content(&r.content) == candidate_norm
+                            && r.source_day.as_deref() == source_day
+                            && r.relation.as_ref() == rel_val
+                    });
+                    if already_present {
+                        counts.keep += 1;
+                        continue;
+                    }
+                    rows.push(ObservationRow {
+                        id: next_id,
+                        content: content.to_owned(),
+                        observed_at: now,
+                        source_day: source_day.map(str::to_owned),
+                        relation: rel_val.cloned(),
+                        by: Some("model".to_owned()),
+                        history: Vec::new(),
+                        retired: None,
+                        raw_json: None,
+                    });
+                    next_id += 1;
+                    counts.add += 1;
+                    changed = true;
                     continue;
                 }
                 let target_row = &mut rows[full_idx];
@@ -1629,6 +1662,11 @@ pub fn apply_ops_to_parsed(
                 changed = true;
             }
             "drop" => {
+                if older_than_target {
+                    counts.refused += 1;
+                    counts.skipped += 1;
+                    continue;
+                }
                 rows[full_idx].retired = Some(Retired {
                     at: now,
                     by: "model".to_owned(),
@@ -1882,5 +1920,58 @@ mod tests {
         assert_eq!(counts.keep, 1);
         assert!(!changed);
         assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn observations_order_by_source_day_and_refuse_anachronistic_clobber() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("facets/work/entities/alice/observations.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "{\"id\":1,\"content\":\"Staff engineer at Acme Corp\",\"observed_at\":1000,\"source_day\":\"20260910\"}\n",
+        )
+        .unwrap();
+
+        // Backfilling 2014 later (observed_at > 1000) cannot overwrite or drop 2026 facts.
+        let ops = vec![
+            json!({"op": "replace", "target_id": 1, "target_quote": "Staff engineer", "content": "Intern at Kestrel Robotics"}),
+            json!({"op": "drop", "target_id": 1, "target_quote": "Staff engineer"}),
+        ];
+        let outcome = apply_observation_change(
+            root.path(),
+            "work",
+            "alice",
+            ObservationChange::ApplyOps {
+                ops,
+                source_day: Some("20140615".to_owned()),
+            },
+        )
+        .unwrap();
+        let ObservationWriteOutcome::OpsApplied { counts } = outcome else {
+            panic!("expected OpsApplied");
+        };
+        assert_eq!(counts.replace, 0);
+        assert_eq!(counts.add, 1);
+        assert_eq!(counts.refused, 1);
+
+        let newest = read_live_observations(
+            root.path(),
+            "work",
+            "alice",
+            ObservationReadQuery {
+                order: ObservationReadOrder::Newest,
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(newest.items.len(), 2);
+        assert_eq!(newest.items[0].source_day.as_deref(), Some("20260910"));
+        assert_eq!(newest.items[0].content, "Staff engineer at Acme Corp");
+        assert_eq!(newest.items[1].source_day.as_deref(), Some("20140615"));
+        assert_eq!(newest.items[1].content, "Intern at Kestrel Robotics");
     }
 }

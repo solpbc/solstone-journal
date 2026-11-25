@@ -124,10 +124,40 @@ pub fn compose_talent_instruction_in(
     focused_facet: Option<&str>,
     context: &BTreeMap<String, String>,
 ) -> Result<String, String> {
+    compose_prompt_body_with_facets_in(
+        locale,
+        &config.body,
+        journal_root,
+        templates_dir,
+        focused_facet,
+        context,
+    )
+}
+
+pub fn compose_prompt_body_with_facets_in(
+    locale: &str,
+    body: &str,
+    journal_root: &Path,
+    templates_dir: &Path,
+    focused_facet: Option<&str>,
+    context: &BTreeMap<String, String>,
+) -> Result<String, String> {
     let facets = resolve_facets_in(locale, journal_root, focused_facet)?;
     let mut context = context.clone();
     context.insert("facets".to_owned(), facets);
-    compose_prompt_body_in(locale, &config.body, journal_root, templates_dir, &context)
+    compose_prompt_body_in(locale, body, journal_root, templates_dir, &context)
+}
+
+pub fn compose_talent_schema_in(
+    locale: &str,
+    talent_key: &str,
+    talent_dir: &Path,
+    schema_path: &str,
+    journal_root: &Path,
+) -> Result<Value, String> {
+    let mut parsed = load_talent_schema_in(locale, talent_key, talent_dir, schema_path)?;
+    crate::facets_context::substitute_runtime_facets(locale, &mut parsed, journal_root)?;
+    Ok(parsed)
 }
 
 fn default_load() -> Value {

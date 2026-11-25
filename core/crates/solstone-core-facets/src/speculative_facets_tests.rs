@@ -348,3 +348,51 @@ fn aggregation_skips_unreadable_and_invalid_segment_outputs_without_aborting() {
     assert_eq!(candidates[0].name, "Survives");
     assert_eq!(candidates[0].count, 1);
 }
+
+#[test]
+fn backfill_aggregation_surfaces_multi_week_former_areas_outside_fourteen_day_window() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    crate::create_facet(root, "work", "Work", "", "", "", None).unwrap();
+
+    // 5 segments across 3 ISO weeks in 2021 -> surfaced!
+    for (d, seg) in [
+        ("20210302", "100000_0"),
+        ("20210303", "110000_0"),
+        ("20210310", "100000_0"),
+        ("20210311", "110000_0"),
+        ("20210324", "100000_0"),
+    ] {
+        write_sense(
+            root,
+            d,
+            Some("import.email"),
+            seg,
+            br#"{"speculative_facet":"Kestrel Robotics"}"#,
+        );
+    }
+    // Already-declared facet "Work" and a 2-off historical noise label are excluded.
+    for d in ["20210401", "20210410", "20210420", "20210501", "20210510"] {
+        write_sense(
+            root,
+            d,
+            Some("import.email"),
+            "090000_0",
+            br#"{"speculative_facet":"Work"}"#,
+        );
+    }
+    write_sense(
+        root,
+        "20210601",
+        Some("import.email"),
+        "090000_0",
+        br#"{"speculative_facet":"One Off Hobby"}"#,
+    );
+
+    let candidates =
+        crate::aggregate_speculative_facets_with_backfill(root, day(2026, 8, 10), 3).unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].name, "Kestrel Robotics");
+    assert_eq!(candidates[0].count, 5);
+    assert!(candidates[0].window_days > 14);
+}

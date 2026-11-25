@@ -1035,7 +1035,15 @@ fn attached_entities(
                 .filter_map(Value::as_str)
                 .map(str::to_owned)
                 .collect(),
-            emails: Vec::new(),
+            emails: e
+                .identity
+                .get("emails")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
         })
         .collect();
     Ok((attached_ids, candidates))

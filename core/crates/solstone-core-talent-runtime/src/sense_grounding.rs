@@ -56,8 +56,51 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
         return None;
     }
     let mut output = serde_json::from_str::<Value>(response).ok()?;
-    let entities = output.get_mut("entities")?.as_array_mut()?;
     let mut changed = false;
+    let is_static_sense = prepared
+        .config
+        .get("_sense_static")
+        .and_then(Value::as_bool)
+        == Some(true);
+    let visual_static = prepared.topic_input_kinds.as_ref().is_some_and(|kinds| {
+        kinds.contains(&solstone_core_format::content::AdmittedCategory::Photos)
+            || kinds.contains(&solstone_core_format::content::AdmittedCategory::Screenshots)
+    });
+    if is_static_sense
+        && let Some(root_obj) = output.as_object_mut()
+    {
+        for (key, default_val) in [
+            ("meeting_detected", Value::Bool(false)),
+            ("speakers", Value::Array(Vec::new())),
+            ("recommend", Value::Array(Vec::new())),
+            ("quotes", Value::Array(Vec::new())),
+        ] {
+            if !root_obj.contains_key(key) {
+                root_obj.insert(key.to_owned(), default_val);
+                changed = true;
+            }
+        }
+    }
+    let Some(entities) = output.get_mut("entities").and_then(Value::as_array_mut) else {
+        return changed.then(|| output.to_string());
+    };
+    if is_static_sense {
+        for entity in entities.iter_mut() {
+            if let Some(row) = entity.as_object_mut()
+                && !row.contains_key("source")
+            {
+                let default_source = if visual_static { "screen" } else { "transcript" };
+                row.insert(
+                    "source".to_owned(),
+                    Value::String(default_source.to_owned()),
+                );
+                if visual_static && row.get("role").and_then(Value::as_str) == Some("mentioned") {
+                    row.insert("role".to_owned(), Value::String("visible".to_owned()));
+                }
+                changed = true;
+            }
+        }
+    }
     let counts = prepared.config.get("source_counts");
     let transcripts = counts
         .and_then(|counts| counts.get("transcripts"))
