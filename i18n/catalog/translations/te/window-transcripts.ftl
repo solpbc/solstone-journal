@@ -3561,7 +3561,7 @@ journal.window.transcripts.trash.selection.range = { $start_time } నుండ�
 
 journal.window.transcripts.visible.text.an.earlier.audio.copy.attempt.had = మునుపటి ఆడియో కాపీ ప్రయత్నంలో సమస్య వచ్చింది.
 
-journal.window.transcripts.visible.text.analysis.errored.for.this.segment = ఈ సెగ్మెంట్‌కు అనాలిసిస్ లోపం వచ్చింది
+journal.window.transcripts.visible.text.analysis.errored.for.this.segment = ఈ సెగ్మెంట్‌కు విశ్లేషణ లోపం వచ్చింది
 
 journal.window.transcripts.visible.text.analysis.request.failed = విశ్లేషణ అభ్యర్థన విఫలమైంది
 
