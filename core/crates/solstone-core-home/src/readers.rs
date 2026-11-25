@@ -42,22 +42,37 @@ const BRIEFING_MORNING_END_HOUR: u32 = solstone_core_system_health::OVERNIGHT_WI
 const BRIEFING_LATENESS_THRESHOLD_HOURS: u32 = 2;
 const BRIEFING_EOD_HOUR: u32 = 20;
 
-/// Count elapsed calendar days from the earliest valid chronicle directory.
+/// Count elapsed calendar days from the earliest live (non-backfill) chronicle
+/// directory, clamped at or after `setup.completed_at` when present so
+/// historical imports and backfills never age a brand-new journal past Day 1.
 pub fn count_journal_age_days(context: &HomeContext) -> i64 {
-    let chronicle = context.journal_root().join("chronicle");
+    let journal = context.journal_root();
+    let chronicle = journal.join("chronicle");
     let Ok(entries) = fs::read_dir(chronicle) else {
         return 0;
     };
+    let setup_day = solstone_core_segment::setup_completed_at_ms(journal).and_then(|ms| {
+        let ts = jiff::Timestamp::from_millisecond(ms).ok()?;
+        Some(context.zone().to_datetime(ts).date())
+    });
     let earliest = entries
         .filter_map(Result::ok)
         .filter_map(|entry| {
             entry.file_type().ok().filter(|kind| kind.is_dir())?;
             let day = entry.file_name().to_string_lossy().into_owned();
-            (day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()))
-                .then(|| solstone_core_time::parse_day(&day))
-                .flatten()
+            if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            if solstone_core_segment::day_is_backfill_only(journal, &day) {
+                return None;
+            }
+            solstone_core_time::parse_day(&day)
         })
-        .min();
+        .min()
+        .map(|live| match setup_day {
+            Some(setup) => live.max(setup),
+            None => live,
+        });
     earliest
         .and_then(|day| context.local_date().since(day).ok())
         .map(|span| i64::from(span.get_days()).max(0))
@@ -1565,6 +1580,37 @@ mod tests {
             Some("flow")
         );
         assert_eq!(load_flow_md(&context, "20260531", None).content, None);
+    }
+
+    #[test]
+    fn historical_backfill_days_do_not_age_a_new_journal_past_day_one() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        // Day 0: owner imports a 2015 photo and syncs a 2019 Obsidian note.
+        write(
+            root.path(),
+            "streams/mac_obsidian.json",
+            r#"{"name":"mac_obsidian","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"source":"obsidian","cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+        );
+        write(
+            root.path(),
+            "chronicle/20150412/import.image/080000_0/image_transcript.md",
+            "photo",
+        );
+        write(
+            root.path(),
+            "chronicle/20190610/mac_obsidian/093000_60/note_transcript.md",
+            "note",
+        );
+        assert_eq!(count_journal_age_days(&context), 0);
+
+        // Once live capture records on 2026-06-01 (yesterday relative to 2026-06-02), age is 1, not 4000+.
+        write(
+            root.path(),
+            "chronicle/20260601/desk/100000_300/audio.jsonl",
+            "{}",
+        );
+        assert_eq!(count_journal_age_days(&context), 1);
     }
 
     #[test]

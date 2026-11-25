@@ -58,9 +58,12 @@ mod write;
 pub use body_only::{
     day_holds_nothing_the_owner_did, holds_foreign_content, holds_nothing_the_owner_did,
     is_body_only_dir, is_body_only_listing, is_body_only_segment, is_split_rows_name,
+    is_transactions_dir, is_transactions_segment,
 };
 pub use calendar::{
-    is_calendar_segment, is_calendar_stream, is_obsidian_stream, is_screenshots_stream,
+    SYNCING_SOURCES, day_is_backfill_only, is_backfill_stream, is_calendar_segment,
+    is_calendar_stream, is_obsidian_stream, is_screenshots_stream, is_syncing_source_name,
+    is_syncing_source_stream, setup_completed_at_ms,
 };
 pub use chronicle_migration::{
     ChronicleMigrationError, ChronicleMigrationReport, migrate_root_days_to_chronicle,

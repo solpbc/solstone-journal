@@ -81,8 +81,8 @@ pub(super) fn consent_page(
                     if kind.option_of().is_some() { " option" } else { "" },
                     kind.stored_word,
                     checked(selection.categories.iter().any(|word| word == kind.stored_word)),
-                    html_escape(&text(locale, copy.label_id)),
-                    html_escape(&text(locale, copy.description_id)),
+                    html_escape(&copy.render_label(|id| text(locale, id))),
+                    html_escape(&copy.render_description(|id| text(locale, id))),
                 );
                 if kind.stored_word == "places" {
                     use solstone_core_format::content::kinds::PlacesPrecision;

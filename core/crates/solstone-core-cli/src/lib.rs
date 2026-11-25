@@ -692,7 +692,7 @@ pub fn permission_kind_label_for(
     let copy = kind
         .permission_copy
         .expect("registered permissions have copy");
-    solstone_core_window_catalog::text(locale, copy.label_id)
+    copy.render_label(|id| solstone_core_window_catalog::text(locale, id))
 }
 
 fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {
@@ -771,8 +771,8 @@ fn mcp_subcommand_help(locale: &str, words: &[&str]) -> String {
                     help,
                     "  {:<12} {}: {}",
                     kind.stored_word,
-                    solstone_core_window_catalog::text(locale, copy.label_id),
-                    solstone_core_window_catalog::text(locale, copy.description_id)
+                    copy.render_label(|id| solstone_core_window_catalog::text(locale, id)),
+                    copy.render_description(|id| solstone_core_window_catalog::text(locale, id))
                 );
                 if kind.stored_word == "places" {
                     for (value, label_id, desc_id) in [

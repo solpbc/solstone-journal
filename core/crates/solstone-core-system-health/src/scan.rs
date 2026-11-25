@@ -300,6 +300,15 @@ pub(crate) fn detect_data_state_in(
     now: Timestamp,
 ) -> Result<(DataStateMap, BTreeMap<String, Option<i64>>), HealthError> {
     let files = segment_files(segment_path)?;
+    if solstone_core_segment::is_transactions_dir(segment_path) {
+        return Ok((
+            DataStateMap(BTreeMap::from([(
+                "transactions".to_owned(),
+                DataState::Analyzed.as_str().to_owned(),
+            )])),
+            BTreeMap::new(),
+        ));
+    }
     if is_markdown_only_body_card_segment(stream_parent_name, &files) {
         return Ok((
             DataStateMap(BTreeMap::from([(

@@ -63,6 +63,7 @@ pub(super) fn text_summary_permission(
         let expected = match *name {
             "note_transcript.md" => ("notes", AdmittedCategory::Notes),
             "document_transcript.md" => ("documents", AdmittedCategory::Documents),
+            "transaction_transcript.md" => ("transactions", AdmittedCategory::Transactions),
             _ => return None,
         };
         let tile_dir = Path::new("chronicle").join(day).join(stream).join(segment);

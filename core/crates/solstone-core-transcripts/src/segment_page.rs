@@ -900,6 +900,7 @@ fn source_channel(
             _ => match segment_file_permission(&rel) {
                 AdmittedCategory::Notes => "Note",
                 AdmittedCategory::Documents => "Document",
+                AdmittedCategory::Transactions => "Transaction",
                 AdmittedCategory::ScreenText => "Screenshot",
                 AdmittedCategory::Photos => "Photo",
                 AdmittedCategory::Calendar => "Calendar Event",

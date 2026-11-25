@@ -69,6 +69,7 @@ pub(crate) const SEGMENT_KINDS: &[AdmittedCategory] = &[
     AdmittedCategory::Screenshots,
     AdmittedCategory::Transcripts,
     AdmittedCategory::Messages,
+    AdmittedCategory::Transactions,
     AdmittedCategory::Body,
     AdmittedCategory::Notes,
     AdmittedCategory::Documents,
@@ -123,6 +124,7 @@ const SEARCH: ToolRequirement = ToolRequirement {
     read: &[
         AdmittedCategory::Transcripts,
         AdmittedCategory::Messages,
+        AdmittedCategory::Transactions,
         AdmittedCategory::ScreenText,
         AdmittedCategory::Body,
         AdmittedCategory::Facets,

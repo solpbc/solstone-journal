@@ -929,8 +929,8 @@ pub(crate) fn state_value_with_iface(
                 let copy = kind.permission_copy.expect("registered permissions have copy");
                 json!({
                     "word": kind.stored_word,
-                    "label": text(locale, copy.label_id),
-                    "description": text(locale, copy.description_id),
+                    "label": copy.render_label(|id| text(locale, id)),
+                    "description": copy.render_description(|id| text(locale, id)),
                     "checked_by_default": kind.checked_by_default,
                     "option_of": kind.option_of(),
                 })

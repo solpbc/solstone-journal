@@ -235,6 +235,7 @@ pub struct ScreenTalentRawScreen {
 pub enum AdmittedCategory {
     Transcripts,
     Messages,
+    Transactions,
     Entities,
     Facets,
     ScreenText,
@@ -658,6 +659,24 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
             basis: ScopeBasis::FacetOwned,
         },
         segment: None,
+    },
+    // Deterministic transaction records (receipts, invoices, statements, order
+    // confirmations). Searchable and fetchable under the `transactions` grant,
+    // never offered to talents, facets, entities, or places.
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/transaction_transcript.md",
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        kind: KindAssignment::Settled(Kind::Transactions),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::JournalWide,
+        },
+        segment: Some(SegmentRule::new(OfferedTo::DASHBOARD_AGENT)),
     },
     FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.kindle/*/*_transcript.md",

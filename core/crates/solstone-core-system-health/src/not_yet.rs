@@ -148,10 +148,22 @@ pub fn not_yet_evaluation_in(not_yet: NotYet, locale: &str) -> BacklogStatusEval
 }
 
 fn earliest_day(journal: &Path) -> Result<Option<Date>, solstone_core_journal_io::PathError> {
-    Ok(solstone_core_journal_io::day_dirs(journal)?
+    let setup_day = solstone_core_segment::setup_completed_at_ms(journal).and_then(|ms| {
+        let ts = jiff::Timestamp::from_millisecond(ms).ok()?;
+        let tz = solstone_core_journal_config::owner_zone(journal);
+        Some(tz.to_datetime(ts).date())
+    });
+    let days = solstone_core_journal_io::day_dirs(journal)?;
+    let earliest_live = days
         .keys()
+        .filter(|day| !solstone_core_segment::day_is_backfill_only(journal, day))
         .filter_map(|day| solstone_core_time::parse_day(day))
-        .min())
+        .min();
+    Ok(match (earliest_live, setup_day) {
+        (Some(live), Some(setup)) => Some(live.max(setup)),
+        (Some(live), None) => Some(live),
+        (None, _) => None,
+    })
 }
 
 #[cfg(test)]

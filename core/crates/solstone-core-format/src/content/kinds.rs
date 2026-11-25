@@ -16,6 +16,7 @@ use super::{
 pub enum Kind {
     Transcripts,
     Messages,
+    Transactions,
     Notes,
     Documents,
     Screen,
@@ -46,6 +47,47 @@ pub struct KindSpec {
 pub struct PermissionCopy {
     pub label_id: &'static str,
     pub description_id: &'static str,
+    pub fallback_label: Option<&'static str>,
+    pub fallback_description: Option<&'static str>,
+}
+
+impl PermissionCopy {
+    pub const fn catalog(label_id: &'static str, description_id: &'static str) -> Self {
+        Self {
+            label_id,
+            description_id,
+            fallback_label: None,
+            fallback_description: None,
+        }
+    }
+
+    pub const fn with_fallback(
+        label_id: &'static str,
+        description_id: &'static str,
+        fallback_label: &'static str,
+        fallback_description: &'static str,
+    ) -> Self {
+        Self {
+            label_id,
+            description_id,
+            fallback_label: Some(fallback_label),
+            fallback_description: Some(fallback_description),
+        }
+    }
+
+    pub fn render_label(&self, lookup: impl FnOnce(&str) -> String) -> String {
+        match self.fallback_label {
+            Some(label) => label.to_owned(),
+            None => lookup(self.label_id),
+        }
+    }
+
+    pub fn render_description(&self, lookup: impl FnOnce(&str) -> String) -> String {
+        match self.fallback_description {
+            Some(description) => description.to_owned(),
+            None => lookup(self.description_id),
+        }
+    }
 }
 
 // Permission order is also the existing consent/default order.
@@ -55,10 +97,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "transcripts",
         permission: Some(AdmittedCategory::Transcripts),
         query_alias: Some("Transcripts"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.transcripts.label",
-            description_id: "journal.window.agents.permission.kind.transcripts.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.transcripts.label",
+            "journal.window.agents.permission.kind.transcripts.description",
+        )),
         checked_by_default: true,
     },
     KindSpec {
@@ -66,10 +108,23 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "messages",
         permission: Some(AdmittedCategory::Messages),
         query_alias: Some("Messages"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.messages.label",
-            description_id: "journal.window.agents.permission.kind.messages.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.messages.label",
+            "journal.window.agents.permission.kind.messages.description",
+        )),
+        checked_by_default: false,
+    },
+    KindSpec {
+        kind: Kind::Transactions,
+        stored_word: "transactions",
+        permission: Some(AdmittedCategory::Transactions),
+        query_alias: Some("Transactions"),
+        permission_copy: Some(PermissionCopy::with_fallback(
+            "journal.window.agents.permission.kind.transactions.label",
+            "journal.window.agents.permission.kind.transactions.description",
+            "transactions",
+            "Receipts, order confirmations, bills, and shipping updates",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -77,10 +132,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "entities",
         permission: Some(AdmittedCategory::Entities),
         query_alias: Some("Entities"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.entities.label",
-            description_id: "journal.window.agents.permission.kind.entities.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.entities.label",
+            "journal.window.agents.permission.kind.entities.description",
+        )),
         checked_by_default: true,
     },
     // An option of entities: the picture the journal shows for one. It reads
@@ -92,10 +147,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "profile_pics",
         permission: Some(AdmittedCategory::ProfilePics),
         query_alias: None,
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.profile.pics.label",
-            description_id: "journal.window.agents.permission.kind.profile.pics.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.profile.pics.label",
+            "journal.window.agents.permission.kind.profile.pics.description",
+        )),
         checked_by_default: true,
     },
     KindSpec {
@@ -103,10 +158,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "facets",
         permission: Some(AdmittedCategory::Facets),
         query_alias: Some("Facets"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.facets.label",
-            description_id: "journal.window.agents.permission.kind.facets.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.facets.label",
+            "journal.window.agents.permission.kind.facets.description",
+        )),
         checked_by_default: true,
     },
     KindSpec {
@@ -114,10 +169,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "screen_text",
         permission: Some(AdmittedCategory::ScreenText),
         query_alias: Some("ScreenText"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.screen.text.label",
-            description_id: "journal.window.agents.permission.kind.screen.text.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.screen.text.label",
+            "journal.window.agents.permission.kind.screen.text.description",
+        )),
         checked_by_default: true,
     },
     KindSpec {
@@ -125,10 +180,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "screenshots",
         permission: Some(AdmittedCategory::Screenshots),
         query_alias: None,
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.screenshots.label",
-            description_id: "journal.window.agents.permission.kind.screenshots.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.screenshots.label",
+            "journal.window.agents.permission.kind.screenshots.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -136,10 +191,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "body",
         permission: Some(AdmittedCategory::Body),
         query_alias: Some("Body"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.body.label",
-            description_id: "journal.window.agents.permission.kind.body.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.body.label",
+            "journal.window.agents.permission.kind.body.description",
+        )),
         checked_by_default: true,
     },
     KindSpec {
@@ -158,10 +213,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "notes",
         permission: Some(AdmittedCategory::Notes),
         query_alias: Some("Notes"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.notes.label",
-            description_id: "journal.window.agents.permission.kind.notes.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.notes.label",
+            "journal.window.agents.permission.kind.notes.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -169,10 +224,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "documents",
         permission: Some(AdmittedCategory::Documents),
         query_alias: Some("Documents"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.documents.label",
-            description_id: "journal.window.agents.permission.kind.documents.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.documents.label",
+            "journal.window.agents.permission.kind.documents.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -180,10 +235,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "calendar",
         permission: Some(AdmittedCategory::Calendar),
         query_alias: Some("Calendar"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.calendar.label",
-            description_id: "journal.window.agents.permission.kind.calendar.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.calendar.label",
+            "journal.window.agents.permission.kind.calendar.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -191,10 +246,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "places",
         permission: Some(AdmittedCategory::Places),
         query_alias: Some("Places"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.places.label",
-            description_id: "journal.window.agents.permission.kind.places.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.places.label",
+            "journal.window.agents.permission.kind.places.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -202,10 +257,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "photos",
         permission: Some(AdmittedCategory::Photos),
         query_alias: Some("Photos"),
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.photos.label",
-            description_id: "journal.window.agents.permission.kind.photos.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.photos.label",
+            "journal.window.agents.permission.kind.photos.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {
@@ -588,6 +643,7 @@ pub fn segment_file_permission(path: &str) -> AdmittedCategory {
     match path.rsplit('/').next().unwrap_or(path) {
         "note_transcript.md" => AdmittedCategory::Notes,
         "document_transcript.md" => AdmittedCategory::Documents,
+        "transaction_transcript.md" => AdmittedCategory::Transactions,
         "event_transcript.md" => AdmittedCategory::Calendar,
         "image_transcript.md" => AdmittedCategory::Photos,
         _ => indexed_permission(None, path, AdmittedCategory::Transcripts),
@@ -770,6 +826,7 @@ mod tests {
             [
                 (Kind::Transcripts, Some("transcripts")),
                 (Kind::Messages, Some("messages")),
+                (Kind::Transactions, Some("transactions")),
                 (Kind::Entities, Some("entities")),
                 (Kind::ProfilePics, Some("profile_pics")),
                 (Kind::Facets, Some("facets")),

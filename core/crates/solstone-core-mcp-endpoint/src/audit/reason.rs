@@ -39,6 +39,7 @@ pub(crate) enum Reason {
     ReservationPublication,
     ReadTranscripts,
     ReadMessages,
+    ReadTransactions,
     ReadEntities,
     ReadProfilePics,
     ReadFacets,
@@ -63,6 +64,9 @@ pub(crate) enum Reason {
 
 impl Reason {
     pub(crate) fn render(self, locale: &str) -> String {
+        if matches!(self, Self::ReadTransactions) {
+            return "This connection does not have permission to read transactions.".to_owned();
+        }
         let id = match self {
             Self::Unenforceable => "journal.window.agents.activity.reason.unenforceable",
             Self::NoRead => "journal.window.agents.activity.reason.no.read",
@@ -103,6 +107,7 @@ impl Reason {
             }
             Self::ReadTranscripts => "journal.window.agents.activity.reason.read.transcripts",
             Self::ReadMessages => "journal.window.agents.activity.reason.read.messages",
+            Self::ReadTransactions => "journal.window.agents.activity.reason.read.transactions",
             Self::ReadEntities => "journal.window.agents.activity.reason.read.entities",
             Self::ReadProfilePics => "journal.window.agents.activity.reason.read.profile.pics",
             Self::ReadFacets => "journal.window.agents.activity.reason.read.facets",

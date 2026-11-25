@@ -477,6 +477,7 @@ fn kind_reason(kind: AdmittedCategory) -> Reason {
     match kind {
         AdmittedCategory::Transcripts => Reason::ReadTranscripts,
         AdmittedCategory::Messages => Reason::ReadMessages,
+        AdmittedCategory::Transactions => Reason::ReadTransactions,
         AdmittedCategory::Entities => Reason::ReadEntities,
         AdmittedCategory::ProfilePics => Reason::ReadProfilePics,
         AdmittedCategory::Facets => Reason::ReadFacets,

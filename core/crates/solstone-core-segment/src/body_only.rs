@@ -25,6 +25,9 @@ const STREAM_MARKER: &str = "stream.json";
 const TOMBSTONE: &str = "tombstone.json";
 const TALENTS: &str = "talents";
 const FACETS: &str = "facets.json";
+const TRANSACTION_TRANSCRIPT_FILE: &str = "transaction_transcript.md";
+const IMPORT_KIND_FILE: &str = "import_kind.json";
+const EVENTS_FILE: &str = "events.jsonl";
 
 /// One import's own rows, split out of a window it shares while the trash
 /// moves them (`body.<import>.jsonl`). In passing, never content of its own.
@@ -235,11 +238,61 @@ pub fn is_body_only_segment(segment: &Segment) -> bool {
         .is_some_and(|stream| is_body_only_dir(stream, segment.path()))
 }
 
+/// Whether `dir` holds only deterministic transaction content
+/// (`transaction_transcript.md` and incidental/stream metadata, or a tombstone
+/// whose manifest held only `transaction_transcript.md`). Transaction segments
+/// never enter Sense, activities, entities, or places.
+#[must_use]
+pub fn is_transactions_dir(dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        names.push(entry.file_name());
+    }
+    let mut holds_tx = false;
+    for name in &names {
+        if name == OsStr::new(TOMBSTONE) {
+            let Ok(bytes) = fs::read(dir.join(TOMBSTONE)) else {
+                return false;
+            };
+            if tombstone_record_of(&bytes, TRANSACTION_TRANSCRIPT_FILE)
+                != TombstoneRecord::BodyWindow
+            {
+                return false;
+            }
+            holds_tx = true;
+        } else if name == OsStr::new(TRANSACTION_TRANSCRIPT_FILE) {
+            holds_tx = true;
+        } else if name != OsStr::new(STREAM_MARKER)
+            && name != OsStr::new(IMPORT_KIND_FILE)
+            && name != OsStr::new(EVENTS_FILE)
+            && !is_incidental_file_name(name)
+        {
+            return false;
+        }
+    }
+    holds_tx
+}
+
+/// Whether a listed segment holds only deterministic transaction records.
+#[must_use]
+pub fn is_transactions_segment(segment: &Segment) -> bool {
+    is_transactions_dir(segment.path())
+}
+
 /// Whether a listed segment holds nothing the owner did: calendar notes say what
-/// was planned, and body records come from another system's account of the day.
+/// was planned, body records come from another system's account of the day, and
+/// transaction records are deterministic financial/receipt items outside talents.
 #[must_use]
 pub fn holds_nothing_the_owner_did(journal: &Path, segment: &Segment) -> bool {
-    is_calendar_segment(journal, segment) || is_body_only_segment(segment)
+    is_calendar_segment(journal, segment)
+        || is_body_only_segment(segment)
+        || is_transactions_segment(segment)
 }
 
 /// Whether `day` has segments and every one holds nothing the owner did. Such a
@@ -523,5 +576,35 @@ mod tests {
         assert!(!day_holds_nothing_the_owner_did(root, "20261011"));
         fs::create_dir_all(root.join("chronicle/20261012/health")).unwrap();
         assert!(!day_holds_nothing_the_owner_did(root, "20261012"));
+    }
+
+    #[test]
+    fn transaction_only_segments_hold_nothing_the_owner_did() {
+        let journal = TempDir::new();
+        let root = journal.path();
+        window(
+            root,
+            "20210305",
+            "mail_sync",
+            "101500_0",
+            &[
+                "transaction_transcript.md",
+                "stream.json",
+                "import_kind.json",
+            ],
+        );
+        assert!(is_transactions_dir(
+            &root.join("chronicle/20210305/mail_sync/101500_0")
+        ));
+        assert!(day_holds_nothing_the_owner_did(root, "20210305"));
+
+        window(
+            root,
+            "20210305",
+            "mail_sync",
+            "110000_60",
+            &["note_transcript.md"],
+        );
+        assert!(!day_holds_nothing_the_owner_did(root, "20210305"));
     }
 }
