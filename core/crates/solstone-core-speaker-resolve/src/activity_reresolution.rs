@@ -691,7 +691,10 @@ mod tests {
         let base = format!("chronicle/{DAY}/mic/120000_300");
         let mut transcript = json!({"raw":"fixture"}).to_string() + "\n";
         for idx in 1..=6_i64 {
-            transcript += &(json!({"start":"00:00:01","speaker":idx,"sentence_id":idx,"text":"words"}).to_string() + "\n");
+            transcript +=
+                &(json!({"start":"00:00:01","speaker":idx,"sentence_id":idx,"text":"words"})
+                    .to_string()
+                    + "\n");
         }
         write(root.path(), &format!("{base}/audio.jsonl"), transcript);
         write(root.path(), &format!("{base}/audio.npz"), String::new());

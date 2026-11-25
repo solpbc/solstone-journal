@@ -5001,8 +5001,7 @@ mod tests {
     }
 
     #[test]
-    fn participation_only_links_unblocked_unretired_person_and_rejects_short_tokens_and_non_persons()
-    {
+    fn participation_only_links_unblocked_unretired_person_and_rejects_short_tokens_and_non_persons() {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
         write_json(
@@ -5058,7 +5057,11 @@ mod tests {
             vec![
                 ("Ada Lovelace".into(), "mentioned".into(), "person".into()),
                 ("Pat Rivera".into(), "mentioned".into(), String::new()),
-                ("Unlisted Stranger".into(), "mentioned".into(), String::new()),
+                (
+                    "Unlisted Stranger".into(),
+                    "mentioned".into(),
+                    String::new()
+                ),
                 ("Blocked Sam".into(), "mentioned".into(), String::new()),
                 ("Deploy Bot".into(), "mentioned".into(), String::new()),
                 ("Atlas".into(), "mentioned".into(), String::new()),

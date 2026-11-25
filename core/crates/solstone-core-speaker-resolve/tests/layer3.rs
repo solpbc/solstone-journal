@@ -697,7 +697,10 @@ fn voiceprint_confirmed_structural_labels_resolve_in_voice_names_with_discrete_b
     );
     assert_eq!(clear_medium.labels[&1].speaker.as_deref(), Some("gamma"));
     assert_eq!(clear_medium.labels[&1].method.as_deref(), Some("acoustic"));
-    assert_eq!(clear_medium.labels[&1].confidence.as_deref(), Some("medium"));
+    assert_eq!(
+        clear_medium.labels[&1].confidence.as_deref(),
+        Some("medium")
+    );
     assert_eq!(clear_medium.labels[&1].acoustic_margin_declined, None);
 
     // Unconfirmed structural label (no voiceprint) stays structural_single_speaker.
@@ -737,7 +740,10 @@ fn voiceprint_confirmed_structural_labels_resolve_in_voice_names_with_discrete_b
         .unwrap()
         .clone()
     };
-    assert_eq!(voices.name_for(&row(&clear.labels[&1])).as_deref(), Some("Alpha"));
+    assert_eq!(
+        voices.name_for(&row(&clear.labels[&1])).as_deref(),
+        Some("Alpha")
+    );
     assert_eq!(
         voices.name_for(&row(&clear_medium.labels[&1])).as_deref(),
         Some("Gamma")

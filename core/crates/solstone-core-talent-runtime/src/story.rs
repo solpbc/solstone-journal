@@ -1170,8 +1170,10 @@ mod tests {
             Some("Merged the parser fix.")
         );
         assert_eq!(
-            activity_line("Your agent ran cargo test and fixed the lint failure. You reviewed the diff.")
-                .as_deref(),
+            activity_line(
+                "Your agent ran cargo test and fixed the lint failure. You reviewed the diff."
+            )
+            .as_deref(),
             Some("Your agent ran cargo test and fixed the lint failure.")
         );
         assert_eq!(

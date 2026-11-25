@@ -4647,10 +4647,9 @@ fn normalize_sense_subject(text: &str) -> String {
             .iter()
             .any(|subject| strip_ascii_prefix_ws(after_reported, subject).is_some());
         if targets_owner {
-            let normalized =
-                solstone_core_system::activity_state::normalize_activity_description(
-                    after_reported,
-                );
+            let normalized = solstone_core_system::activity_state::normalize_activity_description(
+                after_reported,
+            );
             if normalized != after_reported {
                 return normalized;
             }
