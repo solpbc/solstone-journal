@@ -561,3 +561,150 @@ fn a_recover_brings_back_only_its_own_and_the_owners_words_stay() {
     );
     assert_eq!(by_name("Dee")["description"], "my own note");
 }
+
+#[test]
+fn default_stream_suffixed_activities_and_anchored_user_rows_trash_and_recover() {
+    let root = TempDir::new().unwrap();
+    let root_path = root.path();
+    write(
+        root_path,
+        "config/journal.json",
+        br#"{"setup":{"completed_at":1700000000000}}"#,
+    );
+    write(
+        root_path,
+        "facets/work/facet.json",
+        json!({"id": FACET_ID, "title": "work"})
+            .to_string()
+            .as_bytes(),
+    );
+    for (dir_name, said, who) in [
+        (A, "planning the launch", "Ann"),
+        (B, "the kestrel secret", "Bob"),
+        ("091000_300_summary", "reviewing the launch", "Cat"),
+        (D, "the kestrel secret again", "Dee"),
+    ] {
+        let dir = format!("chronicle/{DAY}/{dir_name}");
+        write(root_path, &format!("{dir}/audio.flac"), b"sound");
+        write(
+            root_path,
+            &format!("{dir}/talents/sense.json"),
+            sense(said, who).to_string().as_bytes(),
+        );
+    }
+    let default_activity = |id: &str, segments: &[&str], words: &str| {
+        json!({
+            "id": id, "facet": "work", "activity": "meeting",
+            "segments": segments, "title": words, "description": words,
+            "story": {"body": words},
+            "participation_said": [{"name": "Bob", "quote": words}],
+            "level_avg": 1.0, "active_entities": [],
+            "destination_id": FACET_ID, "created_at": 1
+        })
+    };
+    let user_anchored = json!({
+        "id": "meeting_user_anchor", "facet": "work", "activity": "meeting",
+        "source": "user", "segments": [D],
+        "title": "Owner manual title", "description": "Owner manual words",
+        "details": "Keep this note", "active_entities": [], "created_at": 2
+    });
+    let rows = [
+        default_activity("meeting_090000_300", &[A, B, C], "the kestrel secret"),
+        default_activity("meeting_100000_300", &[D], "the kestrel secret again"),
+        user_anchored,
+    ];
+    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    write(
+        root_path,
+        &format!("facets/work/activities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+
+    let trash_default = |key: &str, made: &MadeFromIt| {
+        let path = format!("chronicle/{DAY}/{key}");
+        let (item, _) = crate::segment_trash::trash_segment(
+            root_path,
+            &NoIndex,
+            made,
+            Unit::Segment {
+                day: DAY.into(),
+                stream: solstone_core_journal_io::DEFAULT_STREAM.into(),
+                segment: key.into(),
+            },
+            path,
+            Action::SegmentDelete,
+            surface(),
+        )
+        .unwrap();
+        item
+    };
+
+    let made = MadeFromIt::new();
+    let b_item = trash_default(B, &made);
+    let d_item = trash_default(D, &made);
+    assert!(made.skipped().is_empty(), "{:?}", made.skipped());
+
+    // Search hiding detects gone _default segments on streamless records.
+    let stale_default = default_activity("stale", &[B], "kestrel")
+        .as_object()
+        .unwrap()
+        .clone();
+    assert!(solstone_core_segment::record_names_gone_segment(
+        root_path,
+        DAY,
+        &stale_default
+    ));
+
+    let rows = records(root_path);
+    assert_eq!(
+        rows.len(),
+        2,
+        "single-segment _default row goes, user row stays"
+    );
+    fn by_id<'a>(rows: &'a [Map<String, Value>], id: &str) -> &'a Map<String, Value> {
+        rows.iter().find(|row| row["id"] == json!(id)).unwrap()
+    }
+    let meeting = by_id(&rows, "meeting_090000_300");
+    assert_eq!(meeting["segments"], json!([A, C]));
+    assert_eq!(meeting["description"], json!("reviewing the launch"));
+    assert_eq!(meeting["active_entities"], json!(["Ann", "Cat"]));
+    assert!(!meeting.contains_key("participation_said"));
+    assert!(!meeting.contains_key("story"));
+
+    let manual = by_id(&rows, "meeting_user_anchor");
+    assert_eq!(manual["segments"], json!([]));
+    assert_eq!(manual["title"], json!("Owner manual title"));
+    assert_eq!(manual["description"], json!("Owner manual words"));
+    assert_eq!(manual["details"], json!("Keep this note"));
+
+    let file =
+        fs::read_to_string(root_path.join(format!("facets/work/activities/{DAY}.jsonl"))).unwrap();
+    assert!(!file.contains("kestrel"), "{file}");
+
+    // Recover both B and D: multi-segment row restores B, single-segment row returns,
+    // and segment-anchored source: "user" row regains its restored segment link [D].
+    for item in [&b_item, &d_item] {
+        crate::trash_kinds::with_kinds(root_path, |kinds| {
+            solstone_core_trash::attach(root_path, kinds, &item.id, Action::Recover, surface())
+        })
+        .unwrap();
+    }
+    let restored = records(root_path);
+    assert_eq!(restored.len(), 3);
+    assert_eq!(
+        by_id(&restored, "meeting_090000_300")["segments"],
+        json!([A, B, C])
+    );
+    assert_eq!(
+        by_id(&restored, "meeting_090000_300")["active_entities"],
+        json!(["Ann", "Bob", "Cat"])
+    );
+    assert_eq!(
+        by_id(&restored, "meeting_100000_300")["segments"],
+        json!([D])
+    );
+    let restored_manual = by_id(&restored, "meeting_user_anchor");
+    assert_eq!(restored_manual["segments"], json!([D]));
+    assert_eq!(restored_manual["title"], json!("Owner manual title"));
+    assert_eq!(restored_manual["description"], json!("Owner manual words"));
+}

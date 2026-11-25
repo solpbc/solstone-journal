@@ -460,7 +460,23 @@ pub fn build(
     })?;
     let value = read_sense(&path).unwrap_or(Value::Null);
     let facets = segment_facets(&value);
-    let candidates = candidate_rows(&value);
+    let owner = crate::JournalOwner::load(&context.journal).ok();
+    let candidates: Vec<Map<String, Value>> = candidate_rows(&value)
+        .into_iter()
+        .filter(|row| {
+            let is_person = row
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("person"));
+            if !is_person {
+                return true;
+            }
+            let name = row.get("name").and_then(Value::as_str).unwrap_or_default();
+            !owner.as_ref().is_some_and(|owner| {
+                owner.actor(name) == crate::NamedActor::Owner || owner.sounds_like(name)
+            })
+        })
+        .collect();
     let inline_output = build_inline_detection_output(&facets, &candidates);
     let packet = if inline_output.is_some() {
         String::new()
@@ -652,6 +668,7 @@ fn apply_detections(
     };
     let mut kept_by_facet =
         BTreeMap::<String, Vec<solstone_core_facets::DetectedEntityInput>>::new();
+    let owner = crate::JournalOwner::load(journal).ok();
     for row in rows {
         let Some(row) = row.as_object() else {
             counts.dropped += 1;
@@ -680,6 +697,14 @@ fn apply_detections(
             counts.dropped += 1;
             continue;
         };
+        if entity_type.eq_ignore_ascii_case("person")
+            && owner.as_ref().is_some_and(|owner| {
+                owner.actor(name) == crate::NamedActor::Owner || owner.sounds_like(name)
+            })
+        {
+            counts.dropped += 1;
+            continue;
+        }
         kept_by_facet.entry(facet.to_owned()).or_default().push(
             solstone_core_facets::DetectedEntityInput {
                 entity_type,
@@ -1024,5 +1049,41 @@ mod tests {
         let empty_inline = build_inline_detection_output(&facets, &low_only).expect("low inline");
         let empty_parsed: Value = serde_json::from_str(&empty_inline).unwrap();
         assert!(empty_parsed["detections"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn owner_person_self_entries_are_excluded_from_detection_unless_contact_collides() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"identity":{"name":"Will Sterling"}}"#,
+        )
+        .unwrap();
+        let segment = root.path().join("chronicle/20260101/090000_300/talents");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("sense.json"),
+            r#"{"facets":[{"facet":"work"}],"entities":[{"name":"Will","type":"Person"},{"name":"Willy","type":"Person"},{"name":"Will Sterling","type":"Person"},{"name":"Priya Patel","type":"Person"}]}"#,
+        )
+        .unwrap();
+        apply_result(
+            root.path(),
+            r#"{"detections":[{"name":"Will","facet":"work","description":"Owner"},{"name":"Willy","facet":"work","description":"Misheard owner"},{"name":"Will Sterling","facet":"work","description":"Full owner"},{"name":"Priya Patel","facet":"work","description":"Colleague"}]}"#,
+            "20260101",
+            "090000_300",
+            None,
+        )
+        .unwrap();
+        let rows =
+            solstone_core_facets::read_detected_entities(root.path(), "work", "20260101").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Priya Patel");
+        let outcome: Value = serde_json::from_str(
+            &fs::read_to_string(segment.join("detection_outcome.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["wrote"], 1);
+        assert_eq!(outcome["dropped"], 3);
     }
 }

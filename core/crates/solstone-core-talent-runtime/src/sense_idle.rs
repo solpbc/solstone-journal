@@ -1,27 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! A computer nobody touched is idle, even when Sense calls its screen active.
+//! Idle normalization and untouched-computer override for Sense outputs.
 //!
-//! Sense's own idle definition is fewer than 3 transcript lines and fewer
-//! than 3 distinct screen frames, but its prompt also calls active-as-idle
-//! the worst error, and it reads a static screen nobody touched as browsing.
-//! This rule needs two independent signals before it overrides Sense, and it
-//! is applied after generation, whatever generated the answer:
+//! Two rules apply after Sense generation, whatever generated the answer:
 //!
-//! 1. The segment is near-empty by Sense's own definition, counted from its
-//!    stored files: under 3 transcript lines and under 3 screen frames, and
-//!    no browser page or protected-video note.
-//! 2. The segment's own desktop activity rows report the computer idle or
-//!    locked for at least [`IDLE_SHARE`] of the segment's length.
+//! 1. **Dual-field idle hygiene:** Whenever Sense reports `density == "idle"`
+//!    or `content_type == "idle"`, normalize both fields to `"idle"`, clear
+//!    `facets` and `speakers`, set `meeting_detected` to `false`, reset
+//!    `recommend` to `{"screen_record": false, "speaker_attribution": false}`,
+//!    and demote any `entities[].role == "attendee"` to `"mentioned"`.
+//! 2. **Untouched-computer override:** Sense's own idle definition is fewer
+//!    than 3 transcript lines and fewer than 3 distinct screen frames, but its
+//!    prompt also calls active-as-idle the worst error, and it reads a static
+//!    screen nobody touched as browsing. This override needs two independent
+//!    signals before it turns a non-idle Sense output idle:
+//!    - The segment is near-empty by Sense's own definition, counted from its
+//!      stored files: under 3 transcript lines and under 3 screen frames, and
+//!      no browser page or protected-video note.
+//!    - The segment's own desktop activity rows report the computer idle or
+//!      locked for at least [`IDLE_SHARE`] of the segment's length.
 //!
-//! Then density and content type become `idle`, and no meeting is detected.
-//! A segment with content, or without its own activity rows, keeps Sense's
-//! answer. Rows written as a segment of their own describe no screen, so the
-//! rule reaches a screen only where activity sits in its capture segment.
+//! A segment with content, or without its own activity rows, keeps a non-idle
+//! Sense answer. Rows written as a segment of their own describe no screen, so
+//! the untouched-computer override reaches a screen only where activity sits in
+//! its capture segment.
 
 use crate::PreparedTalent;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::Path;
 
 /// The share of a segment its activity rows must report idle or locked.
@@ -35,34 +41,68 @@ pub(crate) fn enforce(prepared: &PreparedTalent, journal: &Path, response: &str)
     if prepared.name != "sense" || prepared.config.contains_key("span") {
         return None;
     }
+    let mut output = serde_json::from_str::<Value>(response).ok()?;
+    let object = output.as_object_mut()?;
+    let declared_idle = object.get("density").and_then(Value::as_str) == Some("idle")
+        || object.get("content_type").and_then(Value::as_str) == Some("idle");
+    if !declared_idle && !segment_untouched(prepared, journal) {
+        return None;
+    }
+    let mut changed = false;
+    changed |= set_field(object, "density", Value::String("idle".to_owned()));
+    changed |= set_field(object, "content_type", Value::String("idle".to_owned()));
+    changed |= set_field(object, "facets", Value::Array(Vec::new()));
+    changed |= set_field(object, "speakers", Value::Array(Vec::new()));
+    changed |= set_field(object, "meeting_detected", Value::Bool(false));
+    changed |= set_field(
+        object,
+        "recommend",
+        json!({"screen_record": false, "speaker_attribution": false}),
+    );
+    if let Some(entities) = object.get_mut("entities").and_then(Value::as_array_mut) {
+        for entity in entities {
+            if let Some(row) = entity.as_object_mut()
+                && row.get("role").and_then(Value::as_str) == Some("attendee")
+            {
+                row.insert("role".to_owned(), Value::String("mentioned".to_owned()));
+                changed = true;
+            }
+        }
+    }
+    changed.then(|| output.to_string())
+}
+
+fn set_field(object: &mut Map<String, Value>, key: &str, value: Value) -> bool {
+    if object.get(key) == Some(&value) {
+        return false;
+    }
+    object.insert(key.to_owned(), value);
+    true
+}
+
+fn segment_untouched(prepared: &PreparedTalent, journal: &Path) -> bool {
     let text = |key: &str| prepared.config.get(key).and_then(Value::as_str);
-    let segment = text("segment")?;
-    let seconds = segment
-        .rsplit_once('_')?
-        .1
-        .parse::<u64>()
-        .ok()
-        .filter(|seconds| *seconds > 0)?;
-    let mut directory = solstone_core_journal_io::day_path(journal, text("day")?, false).ok()?;
+    let Some(segment) = text("segment") else {
+        return false;
+    };
+    let Some(seconds) = segment
+        .rsplit_once('_')
+        .and_then(|(_, seconds)| seconds.parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+    else {
+        return false;
+    };
+    let Some(day) = text("day") else {
+        return false;
+    };
+    let Ok(mut directory) = solstone_core_journal_io::day_path(journal, day, false) else {
+        return false;
+    };
     if let Some(stream) = text("stream").filter(|stream| !stream.is_empty()) {
         directory.push(stream);
     }
     directory.push(segment);
-    if !untouched(&directory, seconds * 1000)? {
-        return None;
-    }
-    let mut output = serde_json::from_str::<Value>(response).ok()?;
-    let object = output.as_object_mut()?;
-    let already = object.get("density").and_then(Value::as_str) == Some("idle")
-        && object.get("content_type").and_then(Value::as_str) == Some("idle")
-        && object.get("meeting_detected").and_then(Value::as_bool) != Some(true);
-    if already {
-        return None;
-    }
-    object.insert("density".to_owned(), Value::String("idle".to_owned()));
-    object.insert("content_type".to_owned(), Value::String("idle".to_owned()));
-    object.insert("meeting_detected".to_owned(), Value::Bool(false));
-    Some(output.to_string())
+    untouched(&directory, seconds * 1000) == Some(true)
 }
 
 /// Whether the segment is near-empty and its own activity reports it idle or
@@ -236,8 +276,95 @@ mod tests {
         let output = typed(journal.path()).expect("the rule fires");
         assert_eq!(output["density"], "idle");
         assert_eq!(output["content_type"], "idle");
+        assert_eq!(output["facets"], json!([]));
+        assert_eq!(output["speakers"], json!([]));
         assert_eq!(output["meeting_detected"], false);
+        assert_eq!(
+            output["recommend"],
+            json!({"screen_record": false, "speaker_attribution": false})
+        );
         assert_eq!(output["activity_summary"], "Viewed the notes page.");
+    }
+
+    #[test]
+    fn low_change_with_idle_content_type_normalizes_without_desktop_activity_rows() {
+        let journal = scratch();
+        // Non-desktop segment (no desktop_activity rows, even with >3 frames).
+        let directory = segment(journal.path());
+        write(
+            &directory,
+            "030500_300_display_3_screen.jsonl",
+            &[
+                json!({"raw": "x"}),
+                json!({"frame_id": 1}),
+                json!({"frame_id": 2}),
+                json!({"frame_id": 3}),
+            ],
+        );
+        let raw = json!({
+            "density": "low_change",
+            "content_type": "idle",
+            "activity_summary": "Lock screen remained unchanged.",
+            "facets": [{"facet": "work", "activity": "Idle", "level": "high"}],
+            "speakers": ["Speaker 1"],
+            "meeting_detected": true,
+            "recommend": {"screen_record": true, "speaker_attribution": true},
+            "entities": [
+                {"type": "Person", "name": "Alice", "role": "attendee", "source": "screen", "context": "tile", "level": "medium"},
+                {"type": "Tool", "name": "Calendar", "role": "visible", "source": "screen", "context": "menu", "level": "low"}
+            ]
+        })
+        .to_string();
+        let normalized_str = enforce(&sense(), journal.path(), &raw).expect("idle normalized");
+        let output: Value = serde_json::from_str(&normalized_str).unwrap();
+        assert_eq!(output["density"], "idle");
+        assert_eq!(output["content_type"], "idle");
+        assert_eq!(output["facets"], json!([]));
+        assert_eq!(output["speakers"], json!([]));
+        assert_eq!(output["meeting_detected"], false);
+        assert_eq!(
+            output["recommend"],
+            json!({"screen_record": false, "speaker_attribution": false})
+        );
+        assert_eq!(output["entities"][0]["role"], "mentioned");
+        assert_eq!(output["entities"][1]["role"], "visible");
+        assert_eq!(
+            output["activity_summary"],
+            "Lock screen remained unchanged."
+        );
+        // Already-normalized idle output returns None (idempotent).
+        assert!(enforce(&sense(), journal.path(), &normalized_str).is_none());
+    }
+
+    #[test]
+    fn density_idle_with_non_idle_content_type_normalizes_both_fields() {
+        let journal = scratch();
+        let raw = json!({
+            "density": "idle",
+            "content_type": "browsing",
+            "activity_summary": "Static tab.",
+            "facets": [{"facet": "personal", "activity": "Browsing", "level": "medium"}],
+            "speakers": ["Speaker 1"],
+            "meeting_detected": true,
+            "recommend": {"screen_record": true, "speaker_attribution": false},
+            "entities": [
+                {"type": "Person", "name": "Bob", "role": "attendee", "source": "screen", "context": "sidebar", "level": "low"}
+            ]
+        })
+        .to_string();
+        let normalized_str = enforce(&sense(), journal.path(), &raw).expect("idle normalized");
+        let output: Value = serde_json::from_str(&normalized_str).unwrap();
+        assert_eq!(output["density"], "idle");
+        assert_eq!(output["content_type"], "idle");
+        assert_eq!(output["facets"], json!([]));
+        assert_eq!(output["speakers"], json!([]));
+        assert_eq!(output["meeting_detected"], false);
+        assert_eq!(
+            output["recommend"],
+            json!({"screen_record": false, "speaker_attribution": false})
+        );
+        assert_eq!(output["entities"][0]["role"], "mentioned");
+        assert!(enforce(&sense(), journal.path(), &normalized_str).is_none());
     }
 
     #[test]

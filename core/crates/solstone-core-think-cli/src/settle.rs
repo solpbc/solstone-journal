@@ -23,9 +23,13 @@
 //!
 //! An activity this publisher wrote can grow: when later evidence extends it
 //! (the same ID, on the same stream, holding every segment it held and more),
-//! the record takes the new segments and its talents run again. A record
-//! written any other way is never changed here, and no activity that shares a
-//! segment with one is written.
+//! the record takes the new segments (and unheld description) and its talents
+//! run again. When a newly written or grown settled activity strictly subsumes
+//! earlier machine-derived settled rows on the same `(facet, day, stream)`,
+//! owner-held fields and edits are carried forward and those strict-subset
+//! sibling rows are retired atomically with their outputs, pending work, and
+//! provenance. A record written any other way is never changed here, and no
+//! activity that shares a segment with one is written.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -35,14 +39,17 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
-    get_activity_record, load_activity_records, observe_declared_facet_inventory,
-    update_activity_record_checked,
+    ActivityRecord, activity_field_held, admit_activity_destination, append_edit, is_body_record,
+    is_retired_plan, load_activity_records, observe_declared_facet_inventory, remake_activity_day,
+};
+use solstone_core_format::content::{
+    EDIT_STRETCH, STRETCH_ID, edit_names, edit_removed, is_strava_reading, owner_edit,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, DEFAULT_STREAM, LockOptions, PathOrDay, atomic_replace, hold_lock,
     iter_segments,
 };
-use solstone_core_system::activity_state::ActivityStateMachine;
+use solstone_core_system::activity_state::{ActivityStateMachine, Rederived, rederive};
 use solstone_core_system_health::newest_segment_input_ms;
 
 use crate::context::ThinkContext;
@@ -653,7 +660,10 @@ fn settle_day(
             .iter()
             .flat_map(segments_of_map)
             .collect::<BTreeSet<_>>();
-        if record_segments.is_subset(&written) {
+        let has_subset_to_fold = held
+            .iter()
+            .any(|row| is_absorbable_subset(row, id, stream, &record_segments));
+        if record_segments.is_subset(&written) && !has_subset_to_fold {
             // Written already. If its segments were thought again since, its
             // talents run again when what they read has changed.
             if let Some(held) = held
@@ -775,10 +785,220 @@ fn same_stream(record: &Map<String, Value>, stream: &str) -> bool {
         .is_none_or(|held| held == stream)
 }
 
+/// A record's canonical stream coordinate: its stored `stream`, or
+/// [`DEFAULT_STREAM`] when absent.
+fn exact_stream(record: &Map<String, Value>) -> &str {
+    record
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_STREAM)
+}
+
+fn row_id(record: &Map<String, Value>) -> &str {
+    record.get("id").and_then(Value::as_str).unwrap_or_default()
+}
+
+fn has_non_null_source(record: &Map<String, Value>) -> bool {
+    record.get("source").is_some_and(|value| !value.is_null())
+}
+
+/// Whether `row` is an existing machine-derived settled record on the same
+/// stream whose segments are a strict subset of `target_segments`.
+fn is_absorbable_subset(
+    row: &Map<String, Value>,
+    target_id: &str,
+    stream: &str,
+    target_segments: &BTreeSet<String>,
+) -> bool {
+    if row_id(row) == target_id
+        || is_retired_plan(row)
+        || !row.contains_key("settled_at")
+        || has_non_null_source(row)
+        || is_body_record(row)
+        || is_strava_reading(row)
+        || exact_stream(row) != stream
+    {
+        return false;
+    }
+    let segments = segments_of_map(row);
+    !segments.is_empty()
+        && segments.len() < target_segments.len()
+        && segments.is_subset(target_segments)
+}
+
 enum Published {
     Written,
     Grown,
     Refused,
+}
+
+enum FoldOutcome {
+    AppendOnly {
+        target_id: String,
+    },
+    Written {
+        record: ActivityRecord,
+        absorbed_ids: Vec<String>,
+    },
+    Grown {
+        record: ActivityRecord,
+        absorbed_ids: Vec<String>,
+    },
+    Refused,
+}
+
+/// Structural fields that belong to the target span and are never overwritten
+/// from an absorbed subset row.
+const NON_CARRIED_FIELDS: [&str; 10] = [
+    "id",
+    "facet",
+    "stream",
+    "segments",
+    "settled_at",
+    "created_at",
+    "destination_id",
+    "level_avg",
+    "active_entities",
+    "edits",
+];
+
+fn edit_stretch_id(edit: &Map<String, Value>) -> Option<&str> {
+    edit.get(EDIT_STRETCH)?.get(STRETCH_ID)?.as_str()
+}
+
+fn edit_timestamp(edit: &Map<String, Value>) -> &str {
+    edit.get("timestamp")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+/// Carry forward owner-held field values and active owner edits from absorbed
+/// strict-subset sibling rows onto `target`. Any field already held by the
+/// owner on `target` keeps `target`'s value and edit precedence.
+fn carry_forward_owner_edits(target: &mut ActivityRecord, absorbed: &[&ActivityRecord]) {
+    let mut target_held = BTreeSet::new();
+    for key in target.keys() {
+        if !NON_CARRIED_FIELDS.contains(&key.as_str()) && activity_field_held(target, key) {
+            target_held.insert(key.clone());
+        }
+    }
+    if let Some(edits) = target.get("edits").and_then(Value::as_array) {
+        for edit in edits.iter().filter_map(Value::as_object) {
+            if owner_edit(edit) && !edit_removed(edit) {
+                for field in edit
+                    .get("fields")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
+                    if !NON_CARRIED_FIELDS.contains(&field) {
+                        target_held.insert(field.to_owned());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut existing_edits = target
+        .get("edits")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut seen_stretches: BTreeSet<String> = existing_edits
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|edit| !edit_removed(edit))
+        .filter_map(edit_stretch_id)
+        .map(str::to_owned)
+        .collect();
+
+    let mut pending_edits = Vec::new();
+    for row in absorbed {
+        let Some(edits) = row.get("edits").and_then(Value::as_array) else {
+            continue;
+        };
+        let first_segment = segments_of_map(row).into_iter().next().unwrap_or_default();
+        let id = row_id(row).to_owned();
+        for (idx, edit) in edits.iter().enumerate() {
+            if let Some(edit) = edit.as_object()
+                && owner_edit(edit)
+                && !edit_removed(edit)
+            {
+                pending_edits.push((
+                    edit_timestamp(edit).to_owned(),
+                    first_segment.clone(),
+                    id.clone(),
+                    idx,
+                    row,
+                    edit,
+                ));
+            }
+        }
+    }
+    pending_edits.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.3.cmp(&b.3))
+    });
+
+    let mut carried_before_owner = Vec::<Value>::new();
+    let mut carried_after_existing = Vec::<Value>::new();
+    let mut carried_fields = Vec::<(String, Option<Value>)>::new();
+
+    for (_, _, _, _, row, edit) in pending_edits {
+        if let Some(stretch_id) = edit_stretch_id(edit)
+            && !seen_stretches.insert(stretch_id.to_owned())
+        {
+            continue;
+        }
+        let edit_value = Value::Object(edit.clone());
+        if existing_edits.contains(&edit_value)
+            || carried_before_owner.contains(&edit_value)
+            || carried_after_existing.contains(&edit_value)
+        {
+            continue;
+        }
+        let overlaps_target_hold = target_held.iter().any(|field| edit_names(edit, field));
+        for field in edit
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            if !NON_CARRIED_FIELDS.contains(&field)
+                && !target_held.contains(field)
+                && activity_field_held(row, field)
+            {
+                carried_fields.push((field.to_owned(), row.get(field).cloned()));
+            }
+        }
+        if overlaps_target_hold {
+            carried_before_owner.push(edit_value);
+        } else {
+            carried_after_existing.push(edit_value);
+        }
+    }
+
+    for (field, value) in carried_fields {
+        if let Some(value) = value {
+            target.insert(field, value);
+        }
+    }
+
+    if !carried_before_owner.is_empty() || !carried_after_existing.is_empty() {
+        let insert_at = existing_edits
+            .iter()
+            .position(|edit| edit.as_object().is_some_and(owner_edit))
+            .unwrap_or(existing_edits.len());
+        if !carried_before_owner.is_empty() {
+            existing_edits.splice(insert_at..insert_at, carried_before_owner);
+        }
+        existing_edits.extend(carried_after_existing);
+        target.insert("edits".to_owned(), Value::Array(existing_edits));
+    }
 }
 
 fn publish(
@@ -791,6 +1011,9 @@ fn publish(
     talents: &mut Vec<EndedActivity>,
 ) -> Result<Published, String> {
     let day = context.day.as_str();
+    if stream == solstone_core_format::content::strava_body::STRAVA_STREAM {
+        return Ok(Published::Refused);
+    }
     let Some(mut record) = record.as_object().cloned() else {
         return Ok(Published::Refused);
     };
@@ -799,25 +1022,34 @@ fn publish(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    let id = record
-        .get("id")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
+    let initial_id = row_id(&record).to_owned();
     if stream != DEFAULT_STREAM {
         record.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
     record.insert("settled_at".to_owned(), Value::from(context.now_ms));
-    let outcome = append_own_activity(context, &facet, day, &mut record)
-        .map_err(|error| format!("{facet}/{id}: {error}"))?;
-    let published = match outcome {
-        OwnAppend::Written => Published::Written,
-        OwnAppend::AlreadyExists => grow(context, &facet, &record)?,
-        OwnAppend::Skipped => Published::Refused,
-    };
+
+    match rederive(&context.journal, day, &record) {
+        Rederived::Unchanged => {}
+        Rederived::Changed(next) => record = next,
+        Rederived::Removed => return Ok(Published::Refused),
+    }
+    let target_segments = segments_of_map(&record);
+    if target_segments.is_empty() {
+        return Ok(Published::Refused);
+    }
+
+    let (published, absorbed_ids) =
+        publish_or_grow_and_fold(context, &facet, day, stream, &mut record, &target_segments)?;
     if matches!(published, Published::Refused) {
         return Ok(published);
     }
+    let id = row_id(&record).to_owned();
+    let id = if id.is_empty() { initial_id } else { id };
+
+    if !absorbed_ids.is_empty() {
+        cleanup_absorbed(context, &facet, day, &absorbed_ids);
+    }
+
     log.log(
         "activity.detected",
         context.now_ms,
@@ -848,54 +1080,252 @@ fn publish(
     Ok(published)
 }
 
-/// Extend a record this publisher wrote, when `record` holds every segment
-/// it holds and more. Its ID, and everything the owner or a talent wrote on
-/// it, stay.
-fn grow(
+/// Write or grow a settled activity and atomically retire any machine-derived
+/// settled strict-subset sibling rows on `(facet, day, stream)` through
+/// [`remake_activity_day`], carrying forward owner-held fields and edits.
+fn publish_or_grow_and_fold(
     context: &ThinkContext,
     facet: &str,
-    record: &Map<String, Value>,
-) -> Result<Published, String> {
-    let day = context.day.as_str();
-    let Some(id) = record.get("id").and_then(Value::as_str) else {
-        return Ok(Published::Refused);
-    };
-    let Some(held) = get_activity_record(&context.journal, facet, day, id)
-        .map_err(|error| format!("{facet}/{id}: {error}"))?
-    else {
-        return Ok(Published::Refused);
-    };
-    let held_segments = segments_of_map(&held);
-    let segments = segments_of_map(record);
-    if !held.contains_key("settled_at")
-        || held.get("stream") != record.get("stream")
-        || !held_segments.is_subset(&segments)
-        || held_segments == segments
-    {
-        return Ok(Published::Refused);
-    }
-    let patch = ["segments", "level_avg", "active_entities"]
-        .into_iter()
-        .filter_map(|field| {
-            record
-                .get(field)
-                .map(|value| (field.to_owned(), value.clone()))
-        })
-        .collect::<Map<String, Value>>();
+    day: &str,
+    stream: &str,
+    record: &mut ActivityRecord,
+    target_segments: &BTreeSet<String>,
+) -> Result<(Published, Vec<String>), String> {
+    let initial_id = row_id(record).to_owned();
+    context.checkpoint()?;
+    let facet_id = admit_activity_destination(&context.journal, facet)
+        .map_err(|error| format!("{facet}/{initial_id}: {error}"))?;
     let timestamp = solstone_core_time::utc_rfc3339(
         Timestamp::from_millisecond(context.now_ms).unwrap_or_else(|_| Timestamp::now()),
     );
-    update_activity_record_checked(
-        &context.journal,
-        facet,
-        day,
-        id,
-        &patch,
-        "activity",
-        "grew with later evidence",
-        &timestamp,
-        || context.checkpoint(),
-    )
-    .map_err(|error| format!("{facet}/{id}: {error}"))?
-    .map_or(Ok(Published::Refused), |_| Ok(Published::Grown))
+
+    let fold_day = |record: &ActivityRecord| {
+        remake_activity_day(&context.journal, facet, day, |rows| {
+            if let Err(error) = context.checkpoint() {
+                return (None, Err(error));
+            }
+            let Some(activity) = record.get("activity").and_then(Value::as_str) else {
+                return (None, Ok(FoldOutcome::Refused));
+            };
+            let mut target_id = row_id(record).to_owned();
+            if let Some(existing) = rows.iter().find(|row| {
+                !is_retired_plan(row) && !is_body_record(row) && row_id(row) == target_id
+            }) {
+                let held_by_other_stream = existing
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .is_some_and(|held| held != stream)
+                    || (existing.contains_key("settled_at") && exact_stream(existing) != stream);
+                if held_by_other_stream
+                    && safe_stream(stream)
+                    && let Some(since) = target_id.strip_prefix(&format!("{activity}_"))
+                {
+                    target_id = format!("{activity}_{stream}_{since}");
+                }
+            }
+            let blocked_by_unsettled = rows.iter().any(|row| {
+                !is_retired_plan(row)
+                    && !is_body_record(row)
+                    && !row.contains_key("settled_at")
+                    && same_stream(row, stream)
+                    && !segments_of_map(row).is_disjoint(target_segments)
+            });
+            if blocked_by_unsettled {
+                return (None, Ok(FoldOutcome::Refused));
+            }
+            let existing_idx = rows.iter().position(|row| {
+                !is_retired_plan(row) && !is_body_record(row) && row_id(row) == target_id
+            });
+            let absorbed_indices: BTreeSet<usize> = rows
+                .iter()
+                .enumerate()
+                .filter(|(idx, row)| {
+                    Some(*idx) != existing_idx
+                        && is_absorbable_subset(row, &target_id, stream, target_segments)
+                })
+                .map(|(idx, _)| idx)
+                .collect();
+            let absorbed_rows: Vec<&ActivityRecord> =
+                absorbed_indices.iter().map(|idx| &rows[*idx]).collect();
+            let absorbed_ids: Vec<String> = absorbed_rows
+                .iter()
+                .map(|row| row_id(row).to_owned())
+                .collect();
+
+            if let Some(idx) = existing_idx {
+                let held = &rows[idx];
+                let held_segments = segments_of_map(held);
+                if !held.contains_key("settled_at")
+                    || exact_stream(held) != stream
+                    || has_non_null_source(held)
+                    || is_body_record(held)
+                    || is_strava_reading(held)
+                    || !held_segments.is_subset(target_segments)
+                    || (held_segments == *target_segments && absorbed_indices.is_empty())
+                {
+                    return (None, Ok(FoldOutcome::Refused));
+                }
+                let mut updated = held.clone();
+                if !absorbed_rows.is_empty() {
+                    carry_forward_owner_edits(&mut updated, &absorbed_rows);
+                }
+                if held_segments != *target_segments {
+                    let mut patch_fields = Vec::new();
+                    for field in ["segments", "level_avg", "active_entities"] {
+                        if let Some(value) = record.get(field) {
+                            updated.insert(field.to_owned(), value.clone());
+                            patch_fields.push(field.to_owned());
+                        }
+                    }
+                    if !activity_field_held(&updated, "description")
+                        && let Some(description) = record.get("description")
+                        && updated.get("description") != Some(description)
+                    {
+                        updated.insert("description".to_owned(), description.clone());
+                        patch_fields.push("description".to_owned());
+                    }
+                    updated.insert("destination_id".to_owned(), Value::String(facet_id.clone()));
+                    updated = append_edit(
+                        updated,
+                        "activity",
+                        patch_fields,
+                        "grew with later evidence",
+                        &timestamp,
+                    );
+                }
+                let mut next = Vec::with_capacity(rows.len() - absorbed_indices.len());
+                for (i, row) in rows.iter().enumerate() {
+                    if absorbed_indices.contains(&i) {
+                        continue;
+                    }
+                    if i == idx {
+                        next.push(updated.clone());
+                    } else {
+                        next.push(row.clone());
+                    }
+                }
+                (
+                    Some(next),
+                    Ok(FoldOutcome::Grown {
+                        record: updated,
+                        absorbed_ids,
+                    }),
+                )
+            } else if absorbed_indices.is_empty() {
+                // Plain append: leave existing day-file lines untouched byte-for-byte.
+                (None, Ok(FoldOutcome::AppendOnly { target_id }))
+            } else {
+                let mut new_row = record.clone();
+                new_row.insert("id".to_owned(), Value::String(target_id));
+                new_row.insert("destination_id".to_owned(), Value::String(facet_id.clone()));
+                carry_forward_owner_edits(&mut new_row, &absorbed_rows);
+                let mut next = Vec::with_capacity(rows.len() - absorbed_indices.len() + 1);
+                for (i, row) in rows.iter().enumerate() {
+                    if !absorbed_indices.contains(&i) {
+                        next.push(row.clone());
+                    }
+                }
+                next.push(new_row.clone());
+                (
+                    Some(next),
+                    Ok(FoldOutcome::Written {
+                        record: new_row,
+                        absorbed_ids,
+                    }),
+                )
+            }
+        })
+        .map_err(|error| format!("{facet}/{initial_id}: {error}"))
+    };
+
+    let apply_append = |record: &mut ActivityRecord| -> Result<(Published, Vec<String>), String> {
+        match append_own_activity(context, facet, day, record)
+            .map_err(|error| format!("{facet}/{initial_id}: {error}"))?
+        {
+            OwnAppend::Written => Ok((Published::Written, Vec::new())),
+            OwnAppend::Skipped => Ok((Published::Refused, Vec::new())),
+            OwnAppend::AlreadyExists => match fold_day(record)? {
+                Some(outcome) => match outcome? {
+                    FoldOutcome::Written {
+                        record: written,
+                        absorbed_ids,
+                    } => {
+                        *record = written;
+                        Ok((Published::Written, absorbed_ids))
+                    }
+                    FoldOutcome::Grown {
+                        record: grown,
+                        absorbed_ids,
+                    } => {
+                        *record = grown;
+                        Ok((Published::Grown, absorbed_ids))
+                    }
+                    FoldOutcome::AppendOnly { .. } | FoldOutcome::Refused => {
+                        Ok((Published::Refused, Vec::new()))
+                    }
+                },
+                None => Ok((Published::Refused, Vec::new())),
+            },
+        }
+    };
+
+    match fold_day(record)? {
+        Some(outcome) => match outcome? {
+            FoldOutcome::AppendOnly { target_id } => {
+                record.insert("id".to_owned(), Value::String(target_id));
+                apply_append(record)
+            }
+            FoldOutcome::Written {
+                record: written,
+                absorbed_ids,
+            } => {
+                *record = written;
+                Ok((Published::Written, absorbed_ids))
+            }
+            FoldOutcome::Grown {
+                record: grown,
+                absorbed_ids,
+            } => {
+                *record = grown;
+                Ok((Published::Grown, absorbed_ids))
+            }
+            FoldOutcome::Refused => Ok((Published::Refused, Vec::new())),
+        },
+        None => apply_append(record),
+    }
+}
+
+/// Remove per-activity output folders, pending activity-work entries, and
+/// provenance receipts for absorbed strict-subset rows, and enqueue modified
+/// paths for search reindexing.
+fn cleanup_absorbed(context: &ThinkContext, facet: &str, day: &str, absorbed_ids: &[String]) {
+    let day_dir = context
+        .journal
+        .join("facets")
+        .join(facet)
+        .join("activities")
+        .join(day);
+    for absorbed_id in absorbed_ids {
+        let outputs = day_dir.join(absorbed_id);
+        if let Err(error) = std::fs::remove_dir_all(&outputs)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("settle: absorbed outputs {facet}/{absorbed_id} not removed: {error}");
+        }
+        if let Err(error) = context.index.enqueue_path(&context.journal, &outputs) {
+            log::warn!(
+                "settle: search update for absorbed outputs {facet}/{absorbed_id} not queued: {error}"
+            );
+        }
+        crate::activity_work::discard_retired(context, day, facet, absorbed_id);
+    }
+    let day_jsonl = context
+        .journal
+        .join("facets")
+        .join(facet)
+        .join("activities")
+        .join(format!("{day}.jsonl"));
+    if let Err(error) = context.index.enqueue_path(&context.journal, &day_jsonl) {
+        log::warn!("settle: search update for {facet}/{day}.jsonl not queued: {error}");
+    }
 }

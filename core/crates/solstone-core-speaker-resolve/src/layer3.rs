@@ -124,6 +124,7 @@ pub fn apply_acoustic_matching(
         inputs.integer_speakers,
         &matching_centroids,
         &rivals,
+        inputs.margin_declined_sids,
     );
     let unresolved = inputs
         .non_owner_sids
@@ -456,10 +457,14 @@ fn dot(left: &[f32], right: &[f32]) -> f32 {
 ///
 /// A segment whose evidence named one speaker labels every line the owner layer
 /// left open with that name. Where the person has a voiceprint, a line keeps the
-/// name only when it matches them better than every other known voice, and stays
-/// high only with the acoustic lead. Where they have none yet, only the largest
-/// diarization cluster among those lines keeps it; without diarization the name
-/// stays at medium. Lines that lose the name go on to acoustic matching.
+/// name only when it matches them acoustically better than every other known
+/// voice (with the same threshold and margin rules as sentence matching),
+/// upgrading its method to `"acoustic"` so voice-gated readers trust it while
+/// preserving discrete `"high"` / `"medium"` confidence bands. Where they have
+/// no voiceprint yet, only the largest diarization cluster among those lines
+/// keeps the structural label; without diarization the name stays at medium.
+/// Lines that lose the name go on to acoustic matching.
+#[allow(clippy::too_many_arguments)]
 fn confirm_structural_labels(
     labels: &mut BTreeMap<i64, Label>,
     structural: &[(i64, String)],
@@ -468,6 +473,7 @@ fn confirm_structural_labels(
     integer_speakers: &HashMap<i64, i64>,
     matching_centroids: &BTreeMap<String, Vec<f32>>,
     rivals: &BTreeMap<String, Vec<f32>>,
+    margin_declined_sids: &HashSet<i64>,
 ) {
     let mut by_entity = BTreeMap::<&str, Vec<i64>>::new();
     for (sentence_id, entity_id) in structural {
@@ -493,10 +499,41 @@ fn confirm_structural_labels(
                     .filter(|(other_id, _)| other_id.as_str() != entity_id)
                     .map(|(_, other)| dot(&embedding, other))
                     .fold(0.0_f32, f32::max);
+                let owner_margin_declined = margin_declined_sids.contains(&sentence_id)
+                    || labels
+                        .get(&sentence_id)
+                        .and_then(|label| label.owner_margin_declined)
+                        .unwrap_or(false);
                 if score < ACOUSTIC_MEDIUM || others >= score {
                     clear_label(labels, sentence_id);
-                } else if score < ACOUSTIC_HIGH || score - others < ACOUSTIC_MARGIN_MIN {
-                    set_confidence(labels, sentence_id, "medium");
+                } else if score >= ACOUSTIC_HIGH {
+                    let acoustic_margin_declined = score - others < ACOUSTIC_MARGIN_MIN;
+                    let confidence = if owner_margin_declined || acoustic_margin_declined {
+                        "medium"
+                    } else {
+                        "high"
+                    };
+                    replace_label(
+                        labels,
+                        sentence_id,
+                        entity_id,
+                        confidence,
+                        "acoustic",
+                        owner_margin_declined,
+                        acoustic_margin_declined,
+                    );
+                } else if score - others >= ACOUSTIC_MARGIN_MIN {
+                    replace_label(
+                        labels,
+                        sentence_id,
+                        entity_id,
+                        "medium",
+                        "acoustic",
+                        owner_margin_declined,
+                        false,
+                    );
+                } else {
+                    clear_label(labels, sentence_id);
                 }
             }
             continue;

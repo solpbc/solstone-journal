@@ -308,6 +308,7 @@ pub struct Registry {
 struct AttachedEntity {
     name: Option<String>,
     facets: BTreeSet<String>,
+    principal: bool,
 }
 
 impl Registry {
@@ -361,12 +362,13 @@ impl Registry {
         })
     }
 
-    /// Whether `entity_id` still exists under `name` and this viewer may see it.
+    /// Whether `entity_id` still exists under `name`, is not the journal
+    /// principal, and this viewer may see it.
     pub fn admits(&self, entity_id: &str, name: &str, viewer: &Viewer) -> bool {
         let Some(entity) = self.attached().and_then(|attached| attached.get(entity_id)) else {
             return false;
         };
-        if entity.name.as_deref() != Some(name) || entity.facets.is_empty() {
+        if entity.principal || entity.name.as_deref() != Some(name) || entity.facets.is_empty() {
             return false;
         }
         let visible = match viewer {
@@ -403,6 +405,7 @@ fn load_attached(journal_root: &Path) -> Result<BTreeMap<String, AttachedEntity>
                         .and_then(Value::as_str)
                         .map(str::to_owned),
                     facets: BTreeSet::new(),
+                    principal: solstone_core_entity::identity_is_principal(&entity.identity),
                 })
                 .facets
                 .insert(facet_dir.clone());
@@ -470,6 +473,9 @@ pub fn read_candidate_entities(
         )
         .map_err(|error| CandidateReadError::Facet(facet_dir.clone(), Box::new(error)))?;
         for entity in entities {
+            if solstone_core_entity::identity_is_principal(&entity.identity) {
+                continue;
+            }
             let Some(name) = entity.identity.get("name").and_then(Value::as_str) else {
                 continue;
             };

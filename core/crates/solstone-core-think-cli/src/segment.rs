@@ -4616,6 +4616,81 @@ pub(crate) fn empty_input_sense_output() -> Map<String, Value> {
     ])
 }
 
+fn is_you_and_opener(text: &str) -> bool {
+    let mut words = text.split_whitespace();
+    matches!(
+        (words.next(), words.next()),
+        (Some(first), Some(second))
+            if first.eq_ignore_ascii_case("you") && second.eq_ignore_ascii_case("and")
+    )
+}
+
+fn strip_ascii_prefix_ws<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    if !text.get(..prefix.len())?.eq_ignore_ascii_case(prefix) {
+        return None;
+    }
+    let rest = text.get(prefix.len()..)?;
+    if !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    Some(rest.trim_start())
+}
+
+fn normalize_sense_subject(text: &str) -> String {
+    const REPORTED_SUBJECTS: [&str; 4] = ["the owner", "the user", "this person", "the person"];
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return text.to_owned();
+    }
+    if let Some(after_reported) = strip_ascii_prefix_ws(trimmed, "Reported that") {
+        let targets_owner = REPORTED_SUBJECTS
+            .iter()
+            .any(|subject| strip_ascii_prefix_ws(after_reported, subject).is_some());
+        if targets_owner {
+            let normalized = solstone_core_system::activity_state::normalize_activity_description(
+                after_reported,
+            );
+            if normalized != after_reported {
+                return normalized;
+            }
+        }
+        return text.to_owned();
+    }
+    if is_you_and_opener(trimmed) {
+        return text.to_owned();
+    }
+    let normalized = solstone_core_system::activity_state::normalize_activity_description(trimmed);
+    if normalized == trimmed {
+        text.to_owned()
+    } else {
+        normalized
+    }
+}
+
+fn normalize_sense_subjects(sense: &Map<String, Value>) -> Map<String, Value> {
+    let mut normalized = sense.clone();
+    if let Some(summary) = normalized
+        .get("activity_summary")
+        .and_then(Value::as_str)
+        .map(normalize_sense_subject)
+    {
+        normalized.insert("activity_summary".to_owned(), Value::String(summary));
+    }
+    if let Some(Value::Array(facets)) = normalized.get_mut("facets") {
+        for entry in facets {
+            if let Some(object) = entry.as_object_mut()
+                && let Some(activity) = object
+                    .get("activity")
+                    .and_then(Value::as_str)
+                    .map(normalize_sense_subject)
+            {
+                object.insert("activity".to_owned(), Value::String(activity));
+            }
+        }
+    }
+    normalized
+}
+
 pub(crate) fn write_sense_and_change<W: std::io::Write>(
     context: &ThinkContext,
     log: &mut RunLogWriter<W>,
@@ -4627,6 +4702,8 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
     if (context.cancel_checkpoint)() {
         return Err("thinking cancelled".into());
     }
+    let sense = normalize_sense_subjects(sense);
+    let sense = &sense;
     // Source-derived, not measured: sense_splitter.py:13-68 writes these
     // durable projections after both actual and no-input Sense completion.
     let talents = segment.join("talents");

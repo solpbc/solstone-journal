@@ -14,6 +14,46 @@ pub const GAP_THRESHOLD_SECONDS: i64 = 600;
 pub const END_HYSTERESIS_SEGMENTS: usize = 2;
 /// The segments an open activity holds while its facet is missing from them.
 const PENDING_MISS_SEGMENTS: &str = "_pending_miss_segments";
+/// The segments buffered while waiting to see whether an activity-type switch holds.
+const PENDING_TYPE_SEGMENTS: &str = "_pending_type_segments";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PendingTypeSegment {
+    segment: String,
+    activity: String,
+    description: String,
+    level: String,
+    #[serde(default)]
+    active_entities: Vec<String>,
+}
+
+fn is_idle_sense(sense: &Value) -> bool {
+    sense.get("density").and_then(Value::as_str) == Some("idle")
+        || sense.get("content_type").and_then(Value::as_str) == Some("idle")
+}
+
+fn is_storyless_activity(kind: &str) -> bool {
+    matches!(kind, "video" | "media" | "music" | "gaming")
+}
+
+fn is_story_bearing_activity(kind: &str) -> bool {
+    matches!(
+        kind,
+        "meeting"
+            | "messaging"
+            | "email"
+            | "social"
+            | "coding"
+            | "browsing"
+            | "reading"
+            | "terminal"
+            | "ai_conversation"
+            | "writing"
+            | "planning"
+            | "design"
+            | "productivity"
+    )
+}
 
 /// The snapshot every stream shared before activity state was kept per stream.
 /// Only read, once, to carry the activities it holds over to one stream.
@@ -437,15 +477,11 @@ impl ActivityStateMachine {
             changes.extend(self.end_all(segment, "ended_gap", created_at));
         }
         self.last_scope = Some(scope.clone());
-        let density = sense
-            .get("density")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
         let content = sense
             .get("content_type")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        if density == "idle" {
+        if is_idle_sense(sense) {
             changes.extend(self.end_all(segment, "ended_idle", created_at));
             self.last_segment_key = Some(segment.to_owned());
             self.last_segment_day = Some(day.to_owned());
@@ -497,8 +533,14 @@ impl ActivityStateMachine {
                 + 1;
             if misses >= END_HYSTERESIS_SEGMENTS {
                 let prior = self.state.remove(&facet).expect("entry remains");
-                changes.push(ended(&prior, &facet, segment, "ended_facet_gone"));
-                self.completed.push(completed(&prior, created_at));
+                self.finish_active_entry(
+                    &facet,
+                    prior,
+                    segment,
+                    "ended_facet_gone",
+                    created_at,
+                    &mut changes,
+                );
             } else {
                 prior.insert("_pending_facet_misses".to_owned(), json!(misses));
                 prior.insert("_change".to_owned(), json!("facet_gone_pending"));
@@ -522,8 +564,9 @@ impl ActivityStateMachine {
             if let Some(prior) = self.state.get_mut(&facet) {
                 prior.insert("_pending_facet_misses".to_owned(), json!(0));
                 // The facet came back, so the segments it missed bridge one
-                // activity and stay in it.
-                prior.remove(PENDING_MISS_SEGMENTS);
+                // activity and stay in it (or move into the new activity if a
+                // pending type switch confirms right after the miss).
+                let pending_misses = take_pending_miss_segments(prior);
                 if prior.get("activity").and_then(Value::as_str) != Some(content) {
                     let same = prior.get("_pending_type").and_then(Value::as_str) == Some(content);
                     let count = if same {
@@ -536,23 +579,61 @@ impl ActivityStateMachine {
                         1
                     };
                     if count >= END_HYSTERESIS_SEGMENTS {
-                        let old = self.state.remove(&facet).expect("entry remains");
+                        let mut old = self.state.remove(&facet).expect("entry remains");
+                        let pending = take_pending_type_segments(&mut old);
+                        let bridged_misses = if let Some(first_pending) = pending.first() {
+                            let moved = pending_misses
+                                .iter()
+                                .filter(|key| key.as_str() > first_pending.segment.as_str())
+                                .cloned()
+                                .collect::<BTreeSet<_>>();
+                            if !moved.is_empty()
+                                && let Some(values) =
+                                    old.get_mut("segments").and_then(Value::as_array_mut)
+                            {
+                                values.retain(|value| {
+                                    value.as_str().is_none_or(|key| !moved.contains(key))
+                                });
+                            }
+                            moved.into_iter().collect::<Vec<_>>()
+                        } else {
+                            Vec::new()
+                        };
                         changes.push(ended(&old, &facet, segment, "ended_type_change"));
                         self.completed.push(completed(&old, created_at));
-                        let entry =
-                            active(content, segment, &description, level, &entities, &facet);
+                        let entry = active_from_pending(
+                            &pending,
+                            &bridged_misses,
+                            Some((content, segment, &description, level, &entities)),
+                            &facet,
+                        );
                         self.state.insert(facet, entry.clone());
                         changes.push(Value::Object(entry));
                     } else {
+                        let mut pending = if same {
+                            read_pending_type_segments(prior)
+                        } else {
+                            let abandoned = take_pending_type_segments(prior);
+                            fold_pending_type_segments(prior, &abandoned);
+                            Vec::new()
+                        };
+                        pending.push(PendingTypeSegment {
+                            segment: segment.to_owned(),
+                            activity: content.to_owned(),
+                            description,
+                            level: level.to_owned(),
+                            active_entities: entities.clone(),
+                        });
+                        store_pending_type_segments(prior, &pending);
                         prior.insert("_pending_type".to_owned(), json!(content));
                         prior.insert("_pending_type_count".to_owned(), json!(count));
                         prior.insert("_change".to_owned(), json!("type_change_pending"));
-                        prior.insert("level".to_owned(), json!(level));
-                        merge_entities(prior, &entities);
-                        append_segment(prior, segment);
+                        prior.insert("segment".to_owned(), json!(segment));
                         changes.push(Value::Object(prior.clone()));
                     }
                 } else {
+                    let pending = take_pending_type_segments(prior);
+                    fold_pending_type_segments(prior, &pending);
                     prior.insert("description".to_owned(), json!(description));
                     prior.insert("level".to_owned(), json!(level));
                     merge_entities(prior, &entities);
@@ -578,9 +659,7 @@ impl ActivityStateMachine {
     /// Nothing ends and the stream's last segment stays where it is. Returns
     /// whether any open activity took it.
     pub fn join_late(&mut self, sense: &Value, segment: &str, day: &str) -> bool {
-        if self.last_segment_day.as_deref() != Some(day)
-            || sense.get("density").and_then(Value::as_str) == Some("idle")
-        {
+        if self.last_segment_day.as_deref() != Some(day) || is_idle_sense(sense) {
             return false;
         }
         let facets = sense
@@ -601,18 +680,18 @@ impl ActivityStateMachine {
             if !started_before || !facets.contains(facet.as_str()) {
                 continue;
             }
-            let segments = entry
-                .entry("segments".to_owned())
-                .or_insert_with(|| json!([]));
-            if let Some(values) = segments.as_array_mut()
-                && !values.iter().any(|value| value.as_str() == Some(segment))
-            {
-                let at = values
-                    .iter()
-                    .position(|value| value.as_str().is_some_and(|key| key > segment))
-                    .unwrap_or(values.len());
-                values.insert(at, json!(segment));
+            let pending = read_pending_type_segments(entry);
+            if pending.iter().any(|item| item.segment == segment) {
+                joined = true;
+                continue;
             }
+            if pending
+                .first()
+                .is_some_and(|first| segment >= first.segment.as_str())
+            {
+                continue;
+            }
+            insert_segment_sorted(entry, segment);
             joined = true;
         }
         joined
@@ -672,13 +751,152 @@ impl ActivityStateMachine {
     }
     fn end_all(&mut self, segment: &str, change: &str, created_at: i64) -> Vec<Value> {
         let active = std::mem::take(&mut self.state);
-        active
-            .into_iter()
-            .map(|(facet, entry)| {
-                self.completed.push(completed(&entry, created_at));
-                ended(&entry, &facet, segment, change)
-            })
-            .collect()
+        let mut changes = Vec::new();
+        for (facet, entry) in active {
+            self.finish_active_entry(&facet, entry, segment, change, created_at, &mut changes);
+        }
+        changes
+    }
+
+    fn finish_active_entry(
+        &mut self,
+        facet: &str,
+        mut entry: Map<String, Value>,
+        closing_segment: &str,
+        change: &str,
+        created_at: i64,
+        changes: &mut Vec<Value>,
+    ) {
+        let pending = take_pending_type_segments(&mut entry);
+        let parent_activity = entry
+            .get("activity")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if let Some(first) = pending.first()
+            && is_storyless_activity(parent_activity)
+            && is_story_bearing_activity(&first.activity)
+        {
+            changes.push(ended(&entry, facet, closing_segment, change));
+            self.completed.push(completed(&entry, created_at));
+            let rescued = active_from_pending(&pending, &[], None, facet);
+            changes.push(ended(&rescued, facet, closing_segment, change));
+            self.completed.push(completed(&rescued, created_at));
+            return;
+        }
+        if !pending.is_empty() {
+            fold_pending_type_segments(&mut entry, &pending);
+        }
+        changes.push(ended(&entry, facet, closing_segment, change));
+        self.completed.push(completed(&entry, created_at));
+    }
+}
+
+fn read_pending_type_segments(entry: &Map<String, Value>) -> Vec<PendingTypeSegment> {
+    entry
+        .get(PENDING_TYPE_SEGMENTS)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| serde_json::from_value::<PendingTypeSegment>(item.clone()).ok())
+                .filter(|item| !item.segment.is_empty() && !item.activity.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn take_pending_type_segments(entry: &mut Map<String, Value>) -> Vec<PendingTypeSegment> {
+    let pending = read_pending_type_segments(entry);
+    entry.remove(PENDING_TYPE_SEGMENTS);
+    entry.insert("_pending_type".to_owned(), Value::Null);
+    entry.insert("_pending_type_count".to_owned(), json!(0));
+    pending
+}
+
+fn store_pending_type_segments(entry: &mut Map<String, Value>, pending: &[PendingTypeSegment]) {
+    if pending.is_empty() {
+        entry.remove(PENDING_TYPE_SEGMENTS);
+    } else if let Ok(value) = serde_json::to_value(pending) {
+        entry.insert(PENDING_TYPE_SEGMENTS.to_owned(), value);
+    }
+}
+
+fn fold_pending_type_segments(entry: &mut Map<String, Value>, pending: &[PendingTypeSegment]) {
+    for item in pending {
+        insert_segment_sorted(entry, &item.segment);
+        merge_entities(entry, &item.active_entities);
+        entry.insert("level".to_owned(), json!(item.level));
+    }
+}
+
+fn take_pending_miss_segments(entry: &mut Map<String, Value>) -> Vec<String> {
+    entry
+        .remove(PENDING_MISS_SEGMENTS)
+        .and_then(|value| match value {
+            Value::Array(values) => Some(
+                values
+                    .into_iter()
+                    .filter_map(|value| value.as_str().map(str::to_owned))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn active_from_pending(
+    pending: &[PendingTypeSegment],
+    bridged_misses: &[String],
+    current: Option<(&str, &str, &str, &str, &[String])>,
+    facet: &str,
+) -> Map<String, Value> {
+    let Some(first) = pending.first() else {
+        let (activity, segment, description, level, entities) =
+            current.expect("confirmed switch without pending segments carries current segment");
+        return active(activity, segment, description, level, entities, facet);
+    };
+    let activity = current.map_or(first.activity.as_str(), |(activity, ..)| activity);
+    let mut entry = active(
+        activity,
+        &first.segment,
+        &first.description,
+        &first.level,
+        &first.active_entities,
+        facet,
+    );
+    for item in &pending[1..] {
+        insert_segment_sorted(&mut entry, &item.segment);
+        merge_entities(&mut entry, &item.active_entities);
+        entry.insert("description".to_owned(), json!(item.description));
+        entry.insert("level".to_owned(), json!(item.level));
+        entry.insert("segment".to_owned(), json!(item.segment));
+    }
+    for missed in bridged_misses {
+        insert_segment_sorted(&mut entry, missed);
+    }
+    if let Some((_, segment, description, level, entities)) = current {
+        insert_segment_sorted(&mut entry, segment);
+        merge_entities(&mut entry, entities);
+        entry.insert("description".to_owned(), json!(description));
+        entry.insert("level".to_owned(), json!(level));
+        entry.insert("segment".to_owned(), json!(segment));
+    }
+    entry
+}
+
+fn insert_segment_sorted(entry: &mut Map<String, Value>, segment: &str) {
+    let since = entry.get("since").cloned().unwrap_or(Value::Null);
+    let segments = entry
+        .entry("segments".to_owned())
+        .or_insert_with(|| json!([since]));
+    if let Some(values) = segments.as_array_mut()
+        && !values.iter().any(|value| value.as_str() == Some(segment))
+    {
+        let at = values
+            .iter()
+            .position(|value| value.as_str().is_some_and(|key| key > segment))
+            .unwrap_or(values.len());
+        values.insert(at, json!(segment));
     }
 }
 
@@ -780,26 +998,29 @@ fn append_segment(entry: &mut Map<String, Value>, segment: &str) {
     }
 }
 
-pub use solstone_core_segment::{segment_live, stream_segment_dir as segment_dir};
+pub use solstone_core_segment::{
+    effective_activity_stream, live_segment_dir, segment_live, stream_segment_dir as segment_dir,
+};
 
 /// Fields a talent writes onto an activity record from every segment it read.
 /// When a segment leaves, they no longer hold for what remains, so they are
 /// dropped until the record's talents run again.
-pub const TALENT_WRITTEN_FIELDS: [&str; 6] = [
+pub const TALENT_WRITTEN_FIELDS: [&str; 7] = [
     "title",
     "story",
     "relations",
     "participation",
     "participation_confidence",
     "participation_partial_input",
+    "participation_said",
 ];
 
 /// What [`rederive`] made of a record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Rederived {
     /// Every segment it names is in the journal, or it isn't the journal's to
-    /// re-make (body data, a record naming no stream, the owner's own record
-    /// with nothing left): leave it as it is.
+    /// re-make (body data, a streamless record outside the default stream):
+    /// leave it as it is.
     Unchanged,
     /// Re-made from the segments still in the journal.
     Changed(Map<String, Value>),
@@ -834,7 +1055,7 @@ pub fn rederive_with(
     if is_body_record(record) || is_strava_reading(record) {
         return Rederived::Unchanged;
     }
-    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+    let Some(stream) = effective_activity_stream(journal, day, record) else {
         return Rederived::Unchanged;
     };
     let segments = record
@@ -859,7 +1080,7 @@ pub fn rederive_with(
     let mut next = record.clone();
     next.insert("segments".to_owned(), json!(live));
     if record.get("source").and_then(Value::as_str) == Some("user") {
-        return if live.is_empty() || live.len() == segments.len() {
+        return if live.len() == segments.len() {
             Rederived::Unchanged
         } else {
             Rederived::Changed(next)
@@ -892,7 +1113,8 @@ pub fn rederive_with(
     let mut names = Vec::<String>::new();
     let mut seen = BTreeSet::<String>::new();
     for key in &live {
-        let dir = segment_dir(journal, day, stream, key);
+        let dir = live_segment_dir(journal, day, stream, key)
+            .unwrap_or_else(|| segment_dir(journal, day, stream, key));
         let sense = match solstone_core_journal_io::durability::read_json_durable::<Value>(
             solstone_core_journal_io::durability::ArtifactId::SegmentSense,
             &dir.join("talents").join("sense.json"),
@@ -903,7 +1125,7 @@ pub fn rederive_with(
                 continue;
             }
         };
-        if sense.get("density").and_then(Value::as_str) == Some("idle")
+        if is_idle_sense(&sense)
             || (!type_held && sense.get("content_type").and_then(Value::as_str) != Some(activity))
         {
             continue;
@@ -1535,6 +1757,407 @@ mod tests {
         assert_eq!(level_value("low"), 0.25);
     }
 
+    fn typed_sense(
+        content_type: &str,
+        facet: &str,
+        level: &str,
+        activity: &str,
+        entities: &[&str],
+    ) -> serde_json::Value {
+        json!({
+            "density": "active",
+            "content_type": content_type,
+            "activity_summary": activity,
+            "facets": [{"facet": facet, "level": level, "activity": activity}],
+            "entities": entities.iter().map(|name| json!({"name": name})).collect::<Vec<_>>(),
+        })
+    }
+
+    #[test]
+    fn low_change_with_idle_content_type_ends_active_spans_and_emits_no_idle_row() {
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &typed_sense("coding", "work", "high", "Edited parser.", &["Rust"]),
+            "090000_300",
+            "20261124",
+            None,
+            1,
+        );
+        let low_change_idle = json!({
+            "density": "low_change",
+            "content_type": "idle",
+            "activity_summary": "Lock screen displayed unchanged.",
+            "facets": [{"facet": "work", "level": "high", "activity": "Lock screen"}],
+            "entities": [{"name": "Alice"}],
+        });
+        let ended = machine.update(&low_change_idle, "090500_300", "20261124", None, 2);
+        assert_eq!(ended.len(), 1);
+        assert_eq!(ended[0]["_change"], "ended_idle");
+        assert!(machine.state.is_empty());
+
+        // A second low_change + idle segment opens nothing.
+        let again = machine.update(&low_change_idle, "091000_300", "20261124", None, 3);
+        assert!(again.is_empty());
+        assert!(machine.state.is_empty());
+        assert!(
+            machine
+                .completed_activities()
+                .iter()
+                .all(|record| record["activity"] != "idle")
+        );
+
+        // join_late also rejects low_change + content_type: idle.
+        let mut live = ActivityStateMachine::default();
+        live.update(
+            &typed_sense("coding", "work", "high", "Coded.", &[]),
+            "090000_300",
+            "20261124",
+            None,
+            1,
+        );
+        live.update(
+            &typed_sense("coding", "work", "high", "Coded more.", &[]),
+            "091000_300",
+            "20261124",
+            None,
+            2,
+        );
+        assert!(!live.join_late(&low_change_idle, "090500_300", "20261124"));
+    }
+
+    #[test]
+    fn confirmed_type_switch_peels_first_segment_into_new_activity_across_snapshot() {
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &typed_sense("coding", "work", "high", "Wrote parser.", &["Cargo"]),
+            "090000_300",
+            "20261124",
+            None,
+            1,
+        );
+        // Segment t switches to meeting: buffered without contaminating coding.
+        let pending = machine.update(
+            &typed_sense("meeting", "work", "medium", "Joined sync.", &["Alice"]),
+            "090500_300",
+            "20261124",
+            None,
+            2,
+        );
+        assert_eq!(pending[0]["_change"], "type_change_pending");
+        assert_eq!(pending[0]["segments"], json!(["090000_300"]));
+        assert_eq!(pending[0]["active_entities"], json!(["Cargo"]));
+
+        // Snapshot round-trip preserves buffered pending segment.
+        let mut machine = ActivityStateMachine::from_snapshot(&machine.snapshot());
+
+        // Segment t+1 confirms meeting: coding closes with [0900], meeting opens at [0905, 0910].
+        let switched = machine.update(
+            &typed_sense(
+                "meeting",
+                "work",
+                "high",
+                "Reviewed launch checklist.",
+                &["Bob"],
+            ),
+            "091000_300",
+            "20261124",
+            None,
+            3,
+        );
+        assert_eq!(switched.len(), 2);
+        assert_eq!(switched[0]["_change"], "ended_type_change");
+        assert_eq!(switched[0]["id"], "coding_090000_300");
+        assert_eq!(switched[1]["_change"], "new");
+        assert_eq!(switched[1]["id"], "meeting_090500_300");
+        assert_eq!(switched[1]["since"], "090500_300");
+        assert_eq!(switched[1]["segments"], json!(["090500_300", "091000_300"]));
+        assert_eq!(switched[1]["active_entities"], json!(["Alice", "Bob"]));
+
+        machine.close_active("091000_300", 4);
+        let completed = machine.completed_activities();
+        assert_eq!(completed.len(), 2);
+        assert_eq!(completed[0]["id"], "coding_090000_300");
+        assert_eq!(completed[0]["segments"], json!(["090000_300"]));
+        assert_eq!(completed[0]["description"], "Wrote parser.");
+        assert_eq!(completed[0]["level_avg"], 1.0);
+        assert_eq!(completed[0]["active_entities"], json!(["Cargo"]));
+
+        assert_eq!(completed[1]["id"], "meeting_090500_300");
+        assert_eq!(
+            completed[1]["segments"],
+            json!(["090500_300", "091000_300"])
+        );
+        assert_eq!(completed[1]["description"], "Reviewed launch checklist.");
+        assert_eq!(completed[1]["level_avg"], 1.0);
+        assert_eq!(completed[1]["active_entities"], json!(["Alice", "Bob"]));
+    }
+
+    #[test]
+    fn unconfirmed_one_segment_bounce_folds_back_without_fragmenting() {
+        // A -> B -> A bounce folds B back into A.
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &typed_sense("coding", "work", "high", "Edited code.", &["Rust"]),
+            "090000_300",
+            "20261124",
+            None,
+            1,
+        );
+        machine.update(
+            &typed_sense("browsing", "work", "medium", "Checked docs.", &["MDN"]),
+            "090500_300",
+            "20261124",
+            None,
+            2,
+        );
+        let resumed = machine.update(
+            &typed_sense("coding", "work", "high", "Finished tests.", &["Cargo"]),
+            "091000_300",
+            "20261124",
+            None,
+            3,
+        );
+        assert_eq!(resumed.len(), 1);
+        assert_eq!(resumed[0]["_change"], "continuing");
+        machine.close_active("091000_300", 4);
+        let completed = machine.completed_activities();
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0]["id"], "coding_090000_300");
+        assert_eq!(
+            completed[0]["segments"],
+            json!(["090000_300", "090500_300", "091000_300"])
+        );
+        assert_eq!(
+            completed[0]["active_entities"],
+            json!(["Rust", "MDN", "Cargo"])
+        );
+        assert_eq!(completed[0]["description"], "Finished tests.");
+
+        // Storied A -> 1-seg storied B -> idle also folds B back into A (no micro-row spam).
+        let mut storied = ActivityStateMachine::default();
+        storied.update(
+            &typed_sense("coding", "work", "high", "Edited code.", &["Rust"]),
+            "090000_300",
+            "20261124",
+            None,
+            1,
+        );
+        storied.update(
+            &typed_sense("browsing", "work", "medium", "Checked docs.", &["MDN"]),
+            "090500_300",
+            "20261124",
+            None,
+            2,
+        );
+        storied.update(
+            &json!({"density": "idle", "content_type": "idle", "facets": []}),
+            "091000_300",
+            "20261124",
+            None,
+            3,
+        );
+        let completed = storied.completed_activities();
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0]["id"], "coding_090000_300");
+        assert_eq!(
+            completed[0]["segments"],
+            json!(["090000_300", "090500_300"])
+        );
+        assert_eq!(completed[0]["active_entities"], json!(["Rust", "MDN"]));
+    }
+
+    #[test]
+    fn story_bearing_tail_is_rescued_when_storyless_span_closes() {
+        let idle = json!({"density": "idle", "content_type": "idle", "facets": []});
+
+        // 1. Closing on idle rescues social from media.
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &typed_sense(
+                "media",
+                "personal",
+                "medium",
+                "Listened to sports broadcast.",
+                &["Radio"],
+            ),
+            "181000_300",
+            "20261124",
+            None,
+            1,
+        );
+        machine.update(
+            &typed_sense(
+                "media",
+                "personal",
+                "medium",
+                "Continued sports broadcast.",
+                &[],
+            ),
+            "181500_300",
+            "20261124",
+            None,
+            2,
+        );
+        machine.update(
+            &typed_sense(
+                "social",
+                "personal",
+                "high",
+                "Arranged airport pickup with Sam.",
+                &["Sam"],
+            ),
+            "182000_300",
+            "20261124",
+            None,
+            3,
+        );
+        let changes = machine.update(&idle, "182500_300", "20261124", None, 4);
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0]["id"], "media_181000_300");
+        assert_eq!(changes[0]["state"], "ended");
+        assert_eq!(changes[1]["id"], "social_182000_300");
+        assert_eq!(changes[1]["state"], "ended");
+        let completed = machine.completed_activities();
+        assert_eq!(completed.len(), 2);
+        assert_eq!(completed[0]["id"], "media_181000_300");
+        assert_eq!(
+            completed[0]["segments"],
+            json!(["181000_300", "181500_300"])
+        );
+        assert_eq!(completed[0]["active_entities"], json!(["Radio"]));
+        assert_eq!(completed[1]["id"], "social_182000_300");
+        assert_eq!(completed[1]["activity"], "social");
+        assert_eq!(completed[1]["segments"], json!(["182000_300"]));
+        assert_eq!(completed[1]["level_avg"], 1.0);
+        assert_eq!(
+            completed[1]["description"],
+            "Arranged airport pickup with Sam."
+        );
+        assert_eq!(completed[1]["active_entities"], json!(["Sam"]));
+
+        // 2. Closing on gap, flush (close_active), and facet-drop also rescue storied tails.
+        for close_mode in ["gap", "flush", "facet_drop"] {
+            let mut m = ActivityStateMachine::default();
+            m.update(
+                &typed_sense("video", "personal", "medium", "Watched clip.", &[]),
+                "100000_300",
+                "20261124",
+                None,
+                1,
+            );
+            m.update(
+                &typed_sense("browsing", "personal", "high", "Read article.", &["Docs"]),
+                "100500_300",
+                "20261124",
+                None,
+                2,
+            );
+            match close_mode {
+                "gap" => {
+                    m.update(
+                        &typed_sense("coding", "work", "high", "Coded.", &[]),
+                        "110000_300",
+                        "20261124",
+                        None,
+                        3,
+                    );
+                }
+                "flush" => {
+                    m.close_active("100500_300", 3);
+                }
+                "facet_drop" => {
+                    m.update(&sense(json!([])), "101000_300", "20261124", None, 3);
+                    m.update(&sense(json!([])), "101500_300", "20261124", None, 4);
+                }
+                _ => unreachable!(),
+            }
+            let personal: Vec<_> = m
+                .completed_activities()
+                .into_iter()
+                .filter(|record| record["facet"] == "personal")
+                .collect();
+            assert_eq!(personal.len(), 2, "{close_mode}");
+            assert_eq!(personal[0]["id"], "video_100000_300", "{close_mode}");
+            assert_eq!(
+                personal[0]["segments"],
+                json!(["100000_300"]),
+                "{close_mode}"
+            );
+            assert_eq!(personal[1]["id"], "browsing_100500_300", "{close_mode}");
+            assert_eq!(
+                personal[1]["segments"],
+                json!(["100500_300"]),
+                "{close_mode}"
+            );
+        }
+    }
+
+    #[test]
+    fn join_late_and_legacy_snapshots_behave_cleanly_with_pending_type_segments() {
+        // join_late with pending type segment:
+        // - segment before pending boundary joins parent cleanly
+        // - duplicate of pending segment does not duplicate into parent
+        // - segment after pending boundary returns false for capture-order replay
+        let mut machine = ActivityStateMachine::default();
+        let coding = typed_sense("coding", "work", "high", "Coded.", &[]);
+        let meeting = typed_sense("meeting", "work", "high", "Synced.", &["Maya"]);
+        machine.update(&coding, "090000_300", "20261124", None, 1);
+        machine.update(&coding, "091000_300", "20261124", None, 2);
+        machine.update(&meeting, "091500_300", "20261124", None, 3);
+        machine.update(&sense(json!([])), "092500_300", "20261124", None, 4);
+
+        assert!(machine.join_late(&coding, "090500_300", "20261124"));
+        assert!(machine.join_late(&meeting, "091500_300", "20261124"));
+        assert!(!machine.join_late(&coding, "092000_300", "20261124"));
+
+        // Confirm meeting at 0930: parent has [0900, 0905, 0910], meeting gets [0915, 0925, 0930].
+        machine.update(&meeting, "093000_300", "20261124", None, 5);
+        machine.close_active("093000_300", 6);
+        let completed = machine.completed_activities();
+        assert_eq!(completed.len(), 2);
+        assert_eq!(
+            completed[0]["segments"],
+            json!(["090000_300", "090500_300", "091000_300"])
+        );
+        assert_eq!(
+            completed[1]["segments"],
+            json!(["091500_300", "092500_300", "093000_300"])
+        );
+
+        // Legacy snapshot without _pending_type_segments still confirms cleanly.
+        let legacy_snapshot = json!({
+            "last_segment_key": "090500_300",
+            "last_segment_day": "20261124",
+            "active": {
+                "work": {
+                    "id": "coding_090000_300",
+                    "activity": "coding",
+                    "state": "active",
+                    "since": "090000_300",
+                    "description": "Coded.",
+                    "level": "high",
+                    "active_entities": [],
+                    "facet": "work",
+                    "segment": "090500_300",
+                    "segments": ["090000_300", "090500_300"],
+                    "_pending_type": "meeting",
+                    "_pending_type_count": 1
+                }
+            }
+        });
+        let mut restored = ActivityStateMachine::from_snapshot(&legacy_snapshot);
+        restored.update(&meeting, "091000_300", "20261124", None, 3);
+        restored.close_active("091000_300", 4);
+        let completed = restored.completed_activities();
+        assert_eq!(completed.len(), 2);
+        assert_eq!(
+            completed[0]["segments"],
+            json!(["090000_300", "090500_300"])
+        );
+        assert_eq!(completed[1]["id"], "meeting_091000_300");
+        assert_eq!(completed[1]["segments"], json!(["091000_300"]));
+    }
+
     mod rederive {
         use std::fs;
         use std::path::Path;
@@ -1759,6 +2382,97 @@ mod tests {
             let merged = grouped.completed_activities();
             assert_eq!(merged.len(), 1);
             assert_eq!(merged[0]["segments"], json!(["090000_0", "094500_0"]));
+        }
+
+        #[test]
+        fn low_change_with_idle_content_type_is_skipped_on_rederive() {
+            let root = journal();
+            segment(
+                root.path(),
+                "091000_300",
+                Some(json!({
+                    "density": "low_change",
+                    "content_type": "idle",
+                    "activity_summary": "Lock screen",
+                    "facets": [{"facet": "work", "level": "high", "activity": "Lock screen"}],
+                    "entities": [{"name": "Ghost"}]
+                })),
+            );
+            let mut held = record(&ALL);
+            held.insert(
+                "edits".into(),
+                json!([{"actor": "owner:update", "fields": ["activity"], "timestamp": "2026-11-10T10:00:00Z", "note": ""}]),
+            );
+            let Rederived::Changed(next) = rederive_with(root.path(), DAY, &held, true) else {
+                panic!("re-made");
+            };
+            assert_eq!(next["description"], json!("the secret plan"));
+            assert_eq!(next["active_entities"], json!(["Ann", "Bob"]));
+        }
+
+        #[test]
+        fn default_stream_suffixed_segments_participation_said_and_user_rows_rederive_cleanly() {
+            let root = tempfile::tempdir().unwrap();
+            let day_dir = root.path().join("chronicle").join(DAY);
+            let write_default_seg = |dir_name: &str, s: Value| {
+                let dir = day_dir.join(dir_name);
+                fs::create_dir_all(dir.join("talents")).unwrap();
+                fs::write(dir.join("audio.flac"), b"x").unwrap();
+                fs::write(
+                    dir.join("talents/sense.json"),
+                    serde_json::to_vec(&s).unwrap(),
+                )
+                .unwrap();
+            };
+            write_default_seg("090000_300", sense("planning the launch", "Ann"));
+            write_default_seg("090500_300", sense("the secret plan", "Bob"));
+            write_default_seg("091000_300_summary", sense("reviewing the launch", "Cat"));
+
+            // Trash middle segment under _default.
+            let mid = day_dir.join("090500_300");
+            fs::remove_dir_all(&mid).unwrap();
+            fs::create_dir_all(&mid).unwrap();
+            fs::write(mid.join("tombstone.json"), b"{}").unwrap();
+
+            // Streamless _default record carrying participation_said quote from trashed segment.
+            let mut rec = record(&ALL);
+            rec.remove("stream");
+            rec.insert(
+                "participation_said".into(),
+                json!([{"name": "Bob", "quote": "the secret plan"}]),
+            );
+            let Rederived::Changed(next) = rederive(root.path(), DAY, &rec) else {
+                panic!("_default record should narrow");
+            };
+            assert_eq!(next["segments"], json!(["090000_300", "091000_300"]));
+            // Sense was actually read from suffixed 091000_300_summary.
+            assert_eq!(next["description"], json!("reviewing the launch"));
+            assert_eq!(next["active_entities"], json!(["Ann", "Cat"]));
+            assert!(!next.contains_key("participation_said"));
+            assert!(!serde_json::to_string(&next).unwrap().contains("secret"));
+
+            // Single-segment _default record whose only segment was trashed is removed.
+            let mut single = record(&["090500_300"]);
+            single.remove("stream");
+            assert_eq!(rederive(root.path(), DAY, &single), Rederived::Removed);
+
+            // Anchored source: "user" _default record whose only linked segment is trashed
+            // narrows segments to [] while keeping owner words intact.
+            let mut user_rec = record(&["090500_300"]);
+            user_rec.remove("stream");
+            user_rec.insert("source".into(), json!("user"));
+            user_rec.insert("title".into(), json!("My manual meeting note"));
+            let Rederived::Changed(narrowed_user) = rederive(root.path(), DAY, &user_rec) else {
+                panic!("user record with all segments trashed should narrow to []");
+            };
+            assert_eq!(narrowed_user["segments"], json!([]));
+            assert_eq!(narrowed_user["title"], json!("My manual meeting note"));
+            assert_eq!(narrowed_user["source"], json!("user"));
+
+            // Legacy streamless record whose keys do not exist under chronicle/<day>/ stays untouched.
+            let mut legacy = record(&["140000_300"]);
+            legacy.remove("stream");
+            assert_eq!(rederive(root.path(), DAY, &legacy), Rederived::Unchanged);
         }
     }
 }

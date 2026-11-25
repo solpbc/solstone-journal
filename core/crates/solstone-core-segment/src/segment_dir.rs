@@ -238,6 +238,46 @@ impl SegmentDir {
         })
     }
 
+    /// Resolve an existing live segment directory by key, preferring the exact
+    /// path and falling back to a live suffixed `<key>_*` folder in the same
+    /// stream directory, with full chronicle containment checks.
+    pub fn resolve_live(
+        journal: &Path,
+        day: &str,
+        segment: &str,
+        stream: &str,
+    ) -> Result<Self, SegmentError> {
+        let exact = Self::resolve(journal, day, segment, stream)?;
+        if exact.path.exists() {
+            return Ok(exact);
+        }
+        if let Some(found) = live_segment_dir(journal, day, stream, segment)
+            && let Some(basename) = found.file_name().and_then(OsStr::to_str)
+        {
+            let rel = if stream == DEFAULT_STREAM {
+                format!("chronicle/{day}/{basename}")
+            } else {
+                format!("chronicle/{day}/{stream}/{basename}")
+            };
+            let chronicle = contained_path(journal, "chronicle")?;
+            let path = contained_path(journal, &rel)?;
+            if !path.starts_with(&chronicle) {
+                return Err(SegmentError::Path(PathError::Escape(PathEscapeError {
+                    path,
+                    rel,
+                })));
+            }
+            return Ok(Self {
+                journal: journal.to_path_buf(),
+                path,
+                day: day.to_owned(),
+                segment: basename.to_owned(),
+                stream: stream.to_owned(),
+            });
+        }
+        Ok(exact)
+    }
+
     /// Return the contained path resolved by this segment handle.
     ///
     /// Delete-owning crates may use this after resolving a `(day, stream,
@@ -1142,10 +1182,87 @@ pub fn day_has_tombstone(journal: &std::path::Path, day: &str) -> bool {
     false
 }
 
+/// Resolve the on-disk folder of a live segment named by `key` in `stream` on
+/// `day`. Prefers the exact `key` path; when absent, searches the stream folder
+/// for a live directory whose segment key matches `key` (such as
+/// `093000_300_summary`), selecting deterministically by path order.
+pub fn live_segment_dir(
+    journal: &std::path::Path,
+    day: &str,
+    stream: &str,
+    key: &str,
+) -> Option<std::path::PathBuf> {
+    let live = |dir: &std::path::Path| {
+        dir.is_dir()
+            && !matches!(
+                owner_deletion_state(dir),
+                Ok(state) if state != OwnerDeletionState::Live
+            )
+    };
+    let dir = stream_segment_dir(journal, day, stream, key);
+    if dir.exists() {
+        return live(&dir).then_some(dir);
+    }
+    let parent = dir.parent()?;
+    let mut matches: Vec<std::path::PathBuf> = std::fs::read_dir(parent)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let found = entry
+                .file_name()
+                .to_str()
+                .and_then(solstone_core_format::segment::segment_key)?;
+            let path = entry.path();
+            (found == key && live(&path)).then_some(path)
+        })
+        .collect();
+    matches.sort();
+    matches.into_iter().next()
+}
+
+/// Resolve the effective stream for an activity record on `day`.
+///
+/// Named streams carry `"stream"` explicitly. Records written for the default
+/// stream (`_default`, stored directly under `chronicle/<day>/<key>`) omit
+/// `"stream"`, so a non-body, non-Strava record with no `"stream"` resolves to
+/// `_default` when at least one of its referenced segments exists (live or
+/// removed) under `chronicle/<day>/`. Streamless historical or test records
+/// whose segments do not exist under `chronicle/<day>/` stay `None`.
+pub fn effective_activity_stream<'a>(
+    journal: &std::path::Path,
+    day: &str,
+    record: &'a serde_json::Map<String, serde_json::Value>,
+) -> Option<&'a str> {
+    use serde_json::Value;
+    if let Some(stream) = record
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| !stream.is_empty())
+    {
+        return Some(stream);
+    }
+    if solstone_core_format::content::is_body_record(record)
+        || solstone_core_format::content::is_strava_reading(record)
+    {
+        return None;
+    }
+    let resolves_under_default = record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|key| {
+            segment_live(journal, day, DEFAULT_STREAM, key)
+                || segment_removed(journal, day, DEFAULT_STREAM, key)
+        });
+    resolves_under_default.then_some(DEFAULT_STREAM)
+}
+
 /// Whether an activity record names a segment that is no longer in the
 /// journal: what it says was made, in part, from a recording that went to the
-/// trash. A body record is its body data's own to decide, and a record naming
-/// no stream (an older layout) is never matched.
+/// trash. A body record is its body data's own to decide, and a streamless
+/// record whose segments do not live under the default stream is never matched.
 pub fn record_names_gone_segment(
     journal: &std::path::Path,
     day: &str,
@@ -1157,7 +1274,7 @@ pub fn record_names_gone_segment(
     {
         return false;
     }
-    let Some(stream) = record.get("stream").and_then(Value::as_str) else {
+    let Some(stream) = effective_activity_stream(journal, day, record) else {
         return false;
     };
     record
@@ -1167,4 +1284,84 @@ pub fn record_names_gone_segment(
         .flatten()
         .filter_map(Value::as_str)
         .any(|key| !segment_live(journal, day, stream, key))
+}
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+mod effective_stream_tests {
+    use std::fs;
+
+    use serde_json::{Map, Value, json};
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    const DAY: &str = "20261110";
+
+    fn record(value: Value) -> Map<String, Value> {
+        value.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn effective_stream_resolves_default_stream_live_removed_and_suffixed_and_ignores_legacy() {
+        let root = TempDir::new();
+        let day_dir = root.path().join("chronicle").join(DAY);
+        // Live unsuffixed _default segment.
+        fs::create_dir_all(day_dir.join("090000_300")).unwrap();
+        // Tombstoned suffixed _default segment.
+        fs::create_dir_all(day_dir.join("090500_300_summary")).unwrap();
+        fs::write(day_dir.join("090500_300_summary/tombstone.json"), b"{}").unwrap();
+        // Live suffixed _default segment.
+        fs::create_dir_all(day_dir.join("091000_300_notes")).unwrap();
+        // Named-stream segment only (not under _default).
+        fs::create_dir_all(day_dir.join("laptop/100000_300")).unwrap();
+
+        let default_live = record(json!({"id": "a", "segments": ["090000_300"]}));
+        assert_eq!(
+            effective_activity_stream(root.path(), DAY, &default_live),
+            Some(DEFAULT_STREAM)
+        );
+        assert!(!record_names_gone_segment(root.path(), DAY, &default_live));
+
+        let default_tombstoned = record(json!({"id": "b", "segments": ["090500_300"]}));
+        assert_eq!(
+            effective_activity_stream(root.path(), DAY, &default_tombstoned),
+            Some(DEFAULT_STREAM)
+        );
+        assert!(record_names_gone_segment(
+            root.path(),
+            DAY,
+            &default_tombstoned
+        ));
+
+        let default_suffixed_live =
+            record(json!({"id": "c", "source": "user", "segments": ["091000_300"]}));
+        assert_eq!(
+            effective_activity_stream(root.path(), DAY, &default_suffixed_live),
+            Some(DEFAULT_STREAM)
+        );
+        assert_eq!(
+            live_segment_dir(root.path(), DAY, DEFAULT_STREAM, "091000_300"),
+            Some(day_dir.join("091000_300_notes"))
+        );
+        assert_eq!(
+            SegmentDir::resolve_live(root.path(), DAY, "091000_300", DEFAULT_STREAM)
+                .unwrap()
+                .path(),
+            fs::canonicalize(day_dir.join("091000_300_notes")).unwrap()
+        );
+
+        // Legacy streamless row whose key does NOT exist directly under chronicle/<day>/.
+        let legacy = record(json!({"id": "d", "segments": ["100000_300"]}));
+        assert_eq!(effective_activity_stream(root.path(), DAY, &legacy), None);
+        assert!(!record_names_gone_segment(root.path(), DAY, &legacy));
+
+        // Body record stays None even if a matching _default dir exists.
+        let body = record(json!({
+            "id": "e",
+            "source": solstone_core_format::content::BODY_RECORD_SOURCE,
+            "segments": ["090000_300"]
+        }));
+        assert_eq!(effective_activity_stream(root.path(), DAY, &body), None);
+    }
 }

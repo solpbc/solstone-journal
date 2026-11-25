@@ -113,6 +113,9 @@ impl OwnerIdentity {
                 }
             }
         }
+        excluded_ids.extend(solstone_core_entity::hidden_participation_entity_ids(
+            journal_root,
+        ));
         Self {
             id,
             excluded_ids,

@@ -456,3 +456,54 @@ fn a_listed_session_is_the_agents_work_and_what_was_typed_there_is_the_owners_re
         }
     }
 }
+
+#[test]
+fn sense_and_screen_terminal_preparation_redacts_credentials_and_preserves_git_shas() {
+    let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+    let screen = format!(
+        concat!(
+            "Checked commit dbc2c5b8cf11395ac2842f300ea6f52f05c8216d in staging\n",
+            "Authorization: Bearer {jwt}\n",
+            "keys sk-proj-abc123DEF456ghi789 ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5 AKIAIOSFODNN7EXAMPLE\n",
+            "hidden \x1b[8msecret_sgr\x1b[0m text\n",
+            "❯ vault unlock --password hunter2 --token tok999 --api-key key888\n"
+        ),
+        jwt = jwt
+    );
+    for talent in ["sense", "screen"] {
+        let (_root, paths, context, mut request) = setup(&screen);
+        request.insert("name".into(), json!(talent));
+        request.insert("prompt".into(), json!(""));
+        let prepared = crate::prepare::prepare(
+            request,
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        assert!(prepared.terminal_reading.is_some());
+        let text = source_text(&prepared);
+        for leaked in [
+            "hunter2",
+            "tok999",
+            "key888",
+            jwt,
+            "sk-proj-abc123DEF456ghi789",
+            "ghp_q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5",
+            "AKIAIOSFODNN7EXAMPLE",
+            "secret_sgr",
+        ] {
+            assert!(!text.contains(leaked), "{talent} leaked {leaked}: {text}");
+        }
+        assert!(
+            text.contains("dbc2c5b8cf11395ac2842f300ea6f52f05c8216d"),
+            "{talent} redacted a git SHA: {text}"
+        );
+        assert!(
+            text.contains(
+                "❯ vault unlock --password [REDACTED] --token [REDACTED] --api-key [REDACTED]"
+            ),
+            "{talent} missing redacted command: {text}"
+        );
+    }
+}

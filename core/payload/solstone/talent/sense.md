@@ -118,7 +118,7 @@ Classify into the owner's configured facets. Always include at least one facet �
 - `activity`: 1-sentence description of what was done for this facet, written the same way as `activity_summary` above. The first word is a past-tense verb; preserve named people, reported actions and document contents. Good: "Reported that Maya checked the irrigation pump." Wrong: "Checked the irrigation pump." when only Maya's action was reported. This string is rendered verbatim in the owner's recent activity list.
 - `level`: "high" (primary focus), "medium" (significant), "low" (brief/peripheral)
 
-**Facet assignment rules:** Do not invent facet IDs that are not in the configured journal facet list. The array always has at least one entry — pick the closest configured facet even when the match is loose, and use `level: low` to signal weak fit. If a better new name is warranted, put it only in `speculative_facet`, not in `facets[]`.
+**Facet assignment rules:** Do not invent facet IDs that are not in the configured journal facet list. The array always has at least one entry — pick the closest configured facet even when the match is loose, and use `level: low` to signal weak fit. Keep passive entertainment, TV, movies, music, sports, news, and general-interest broadcasts (`media`, `video`, `music`) in personal or leisure facets rather than work or business facets unless the program is explicitly about the owner's work or technical field. If a better new name is warranted, put it only in `speculative_facet`, not in `facets[]`.
 
 ### speculative_facet
 Propose a name for a NEW facet that fits this segment better than any configured facet, or emit `null`.

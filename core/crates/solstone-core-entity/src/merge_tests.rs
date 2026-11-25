@@ -2988,3 +2988,107 @@ fn merge_preview_counts_real_additions_and_preserves_cross_facet_moment_coordina
         assert_eq!(row["active_entities"], json!(["target"]));
     }
 }
+
+#[test]
+fn commit_merge_rewrites_participation_names_dedups_drops_self_edges_and_enqueues_todo() {
+    let temp = tempfile::tempdir().unwrap();
+    let journal = temp.path();
+    save_entity_identity(
+        journal,
+        "ada_short",
+        &json!({"id":"ada_short","name":"Ada","type":"Person","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        journal,
+        "ada_full",
+        &json!({"id":"ada_full","name":"Ada Lovelace","type":"Person","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        journal,
+        "atlas",
+        &json!({"id":"atlas","name":"Atlas","type":"Project","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+
+    let act_path = journal.join("facets/work/activities/20261112.jsonl");
+    fs::create_dir_all(act_path.parent().unwrap()).unwrap();
+    let untouched_path = journal.join("facets/personal/activities/20261112.jsonl");
+    fs::create_dir_all(untouched_path.parent().unwrap()).unwrap();
+    fs::write(
+        &untouched_path,
+        format!("{}\n", json!({"id":"other","participation":[{"name":"Grace","entity_id":"grace","role":"attendee"}]})),
+    )
+    .unwrap();
+    let record = json!({
+        "id": "m1",
+        "stream": "talk",
+        "segments": ["090000_300"],
+        "active_entities": ["ada_short", "ada_full", "atlas"],
+        "participation": [
+            {"name": "Ada", "entity_id": "ada_short", "role": "mentioned", "context": "brought up roadmap", "confidence": 0.9},
+            {"name": "Ada Lovelace", "entity_id": "ada_full", "role": "attendee", "context": "", "confidence": 0.7},
+            {"name": "Grace Hopper", "entity_id": "grace", "role": "heard"}
+        ],
+        "relations": [
+            {"from": "Ada", "from_entity_id": "ada_short", "to": "Ada Lovelace", "to_entity_id": "ada_full", "kind": "met"},
+            {"from": "Ada", "from_entity_id": "ada_short", "to": "Atlas", "to_entity_id": "atlas", "kind": "leads"},
+            {"from": "Atlas", "from_entity_id": "atlas", "to": "Ada", "to_entity_id": "ada_short", "kind": "owned_by"}
+        ]
+    });
+    fs::write(&act_path, format!("{record}\n")).unwrap();
+
+    let report = commit_entity_merge(
+        journal,
+        "ada_short",
+        "ada_full",
+        EntityMergeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(report.counts["activities"]["records_rewritten"], 1);
+    assert_eq!(report.counts["activities"]["files_rewritten"], 1);
+
+    let updated: serde_json::Value =
+        serde_json::from_str(fs::read_to_string(&act_path).unwrap().trim()).unwrap();
+    assert_eq!(
+        updated["active_entities"],
+        json!(["Ada Lovelace", "ada_full", "atlas"])
+    );
+    let participation = updated["participation"].as_array().unwrap();
+    assert_eq!(participation.len(), 2);
+    assert_eq!(participation[0]["entity_id"], "ada_full");
+    assert_eq!(participation[0]["name"], "Ada Lovelace");
+    assert_eq!(participation[0]["role"], "attendee");
+    assert_eq!(participation[0]["context"], "brought up roadmap");
+    assert_eq!(participation[1]["entity_id"], "grace");
+
+    let relations = updated["relations"].as_array().unwrap();
+    assert_eq!(relations.len(), 2);
+    assert_eq!(relations[0]["from"], "Ada Lovelace");
+    assert_eq!(relations[0]["from_entity_id"], "ada_full");
+    assert_eq!(relations[0]["to"], "Atlas");
+    assert_eq!(relations[1]["to"], "Ada Lovelace");
+    assert_eq!(relations[1]["to_entity_id"], "ada_full");
+
+    // Rewritten activity file is enqueued in indexer/todo after commit, while untouched files are not.
+    let todo_entries = solstone_core_indexer_todo::entry_paths(&journal.join("indexer/todo"))
+        .unwrap()
+        .into_iter()
+        .map(|p| {
+            serde_json::from_str::<solstone_core_indexer_todo::Entry>(
+                &fs::read_to_string(p).unwrap(),
+            )
+            .unwrap()
+            .key
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        todo_entries.contains(&"facets/work/activities/20261112.jsonl".to_owned()),
+        "expected rewritten activity path in indexer/todo, got {todo_entries:?}"
+    );
+    assert!(!todo_entries.contains(&"facets/personal/activities/20261112.jsonl".to_owned()));
+}

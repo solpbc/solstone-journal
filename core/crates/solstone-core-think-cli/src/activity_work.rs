@@ -216,6 +216,55 @@ pub(crate) fn has_persisted_disposition(
         .is_some_and(|record| record.blocked.is_some() || record.muted_pause))
 }
 
+/// Discard durable work, retry holds, and input provenance for an activity
+/// row that was retired (for example absorbed into a wider settled span).
+/// Skips quietly if another run currently holds the activity claim.
+pub(crate) fn discard_retired(context: &ThinkContext, day: &str, facet: &str, activity: &str) {
+    let identity = ActivityRetry {
+        day: day.to_owned(),
+        facet: facet.to_owned(),
+        activity: activity.to_owned(),
+    };
+    let Ok(work_path) = path(&context.journal, &identity) else {
+        return;
+    };
+    let provenance = crate::segment::activity_provenance_path(context, day, facet, activity);
+    if !work_path.exists() && !provenance.exists() {
+        return;
+    }
+    let _claim = match claim(context, &identity) {
+        Ok(claim) => claim,
+        Err(error) => {
+            log::warn!("settle: retired activity {facet}/{activity} work claim skipped: {error}");
+            return;
+        }
+    };
+    if let Ok(Some(record)) = read(&work_path) {
+        for talent in record.remaining.union(&record.parked) {
+            let unit = retry_unit(&identity, talent);
+            if let Ok(_exec) =
+                solstone_core_system::work_retry::execution_claim(&context.journal, &unit)
+            {
+                let _ = solstone_core_system::work_retry::reconcile_accepted_checked(
+                    &context.journal,
+                    &unit,
+                    &|| Ok(()),
+                );
+            }
+        }
+    }
+    if let Err(error) = std::fs::remove_file(&work_path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("settle: retired activity work {facet}/{activity} not removed: {error}");
+    }
+    if let Err(error) = std::fs::remove_file(&provenance)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("settle: retired activity provenance {facet}/{activity} not removed: {error}");
+    }
+}
+
 /// A connection failure never exhausts its retries. Only the delay is capped.
 fn backoff_ms(attempts: u32) -> i64 {
     (60_000_i64 * (1_i64 << attempts.saturating_sub(1).min(6))).min(3_600_000)

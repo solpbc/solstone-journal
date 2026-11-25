@@ -1287,7 +1287,7 @@ pub fn apply_owner_line_answers(
     let owner_lines: Vec<OwnerLine> = lines
         .iter()
         .map(|target| {
-            let segment = solstone_core_segment::SegmentDir::resolve(
+            let segment = solstone_core_segment::SegmentDir::resolve_live(
                 root,
                 day,
                 &target.segment,

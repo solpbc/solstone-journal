@@ -40,6 +40,14 @@ struct Report {
 }
 
 impl Report {
+    fn unavailable(state: &'static str) -> Self {
+        Self {
+            fields: Map::new(),
+            state,
+            partial_input: None,
+        }
+    }
+
     fn usable(&self) -> bool {
         self.state == "available"
     }
@@ -167,12 +175,33 @@ pub(crate) fn prepare_in(
     }
     segments.sort_by_key(|segment| segment.key());
 
+    let facet = config
+        .get("facet")
+        .and_then(Value::as_str)
+        .filter(|facet| !facet.is_empty())
+        .or_else(|| {
+            config
+                .get("activity")
+                .and_then(|activity| activity.get("facet"))
+                .and_then(Value::as_str)
+                .filter(|facet| !facet.is_empty())
+        });
+    let span_keys = segments
+        .iter()
+        .map(|segment| segment.key())
+        .collect::<Vec<_>>();
+    let meeting_scoped = transcript::meeting_scope_active(journal, config, &span_keys);
+
     let mut parts = Vec::with_capacity(segments.len());
     let mut provenance = Vec::with_capacity(segments.len());
     let mut usable_reports = 0;
     for segment in segments {
-        let sense = read_report(&segment.path().join("talents/sense.json"), true);
-        let screen = read_report(&segment.path().join("talents/screen.json"), false);
+        let sense = read_report(&segment.path().join("talents/sense.json"), true, facet);
+        let screen = if meeting_scoped {
+            Report::unavailable("omitted_for_meeting")
+        } else {
+            read_report(&segment.path().join("talents/screen.json"), false, None)
+        };
         usable_reports += usize::from(sense.usable()) + usize::from(screen.usable());
 
         let mut native_config = config.clone();
@@ -187,7 +216,12 @@ pub(crate) fn prepare_in(
         {
             sources.insert("percepts".into(), Value::Bool(false));
         }
-        let native = transcript::load_transcript_in(display_locale, journal, &native_config)?;
+        let native = transcript::load_transcript_in_with_meeting_scope(
+            display_locale,
+            journal,
+            &native_config,
+            Some(meeting_scoped),
+        )?;
         if native.memory_incomplete {
             return Err(solstone_core_cli_copy::render_for(
                 locale,
@@ -591,28 +625,37 @@ fn segment_heading(display_locale: Option<&str>, day: &str, key: &str) -> Result
     ))
 }
 
-fn read_report(path: &Path, sense: bool) -> Report {
-    let unavailable = |state| Report {
-        fields: Map::new(),
-        state,
-        partial_input: None,
-    };
+fn facet_activity<'a>(value: &'a Map<String, Value>, target_facet: &str) -> Option<&'a str> {
+    value
+        .get("facets")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_object)
+        .find_map(|entry| {
+            (entry.get("facet").and_then(Value::as_str) == Some(target_facet))
+                .then(|| entry.get("activity").and_then(Value::as_str))
+                .flatten()
+                .filter(|text| !text.trim().is_empty())
+        })
+}
+
+fn read_report(path: &Path, sense: bool, facet: Option<&str>) -> Report {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return unavailable("missing");
+            return Report::unavailable("missing");
         }
         Err(error) => {
             log::warn!(
                 "cannot read Work segment report {}: {error}",
                 path.display()
             );
-            return unavailable("unreadable");
+            return Report::unavailable("unreadable");
         }
     };
     let Ok(Value::Object(value)) = serde_json::from_slice(&bytes) else {
         log::warn!("invalid Work segment report {}", path.display());
-        return unavailable("invalid");
+        return Report::unavailable("invalid");
     };
     let mut fields = Map::new();
     let text_key = if sense {
@@ -620,9 +663,23 @@ fn read_report(path: &Path, sense: bool) -> Report {
     } else {
         "narrative"
     };
-    if let Some(text) = value.get(text_key).and_then(Value::as_str)
-        && !text.trim().is_empty()
-    {
+    let text = if sense {
+        facet
+            .filter(|facet| !facet.is_empty())
+            .and_then(|target| facet_activity(&value, target))
+            .or_else(|| {
+                value
+                    .get(text_key)
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.trim().is_empty())
+            })
+    } else {
+        value
+            .get(text_key)
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+    };
+    if let Some(text) = text {
         fields.insert(text_key.into(), Value::String(text.to_owned()));
     }
     if sense
@@ -1158,5 +1215,398 @@ mod tests {
         source.file = "screen.jsonl".into();
         assert!(speaker_count(silent, &[Some(source)]).is_none());
         assert!(speaker_count(silent, &[None]).is_none());
+    }
+
+    #[test]
+    fn sense_report_prefers_matching_facet_activity_and_falls_back_to_activity_summary() {
+        let root = TempDir::new().unwrap();
+        let seg1 = segment(root.path(), "desktop", "090000_300", "SEG1");
+        let seg2 = segment(root.path(), "desktop", "090500_300", "SEG2");
+        let seg3 = segment(root.path(), "desktop", "091000_300", "SEG3");
+
+        write(
+            &seg1,
+            "sense.json",
+            json!({
+                "activity_summary": "Chatted with family while debugging retries.",
+                "facets": [
+                    {"facet": "personal", "activity": "Chatted with family about dinner.", "level": "high"},
+                    {"facet": "work", "activity": "Debugged queue retry backoff.", "level": "high"}
+                ],
+                "topics": ["retries"]
+            }),
+        );
+        write(
+            &seg2,
+            "sense.json",
+            json!({
+                "activity_summary": "Fallback whole-segment summary.",
+                "facets": [
+                    {"facet": "personal", "activity": "Ordered groceries.", "level": "high"},
+                    {"facet": "work", "activity": "   ", "level": "low"}
+                ]
+            }),
+        );
+        write(
+            &seg3,
+            "sense.json",
+            json!({
+                "activity_summary": "",
+                "facets": [
+                    {"facet": "work", "activity": "Merged the retry fix.", "level": "high"}
+                ]
+            }),
+        );
+
+        let mut work_cfg = config(&["090000_300", "090500_300", "091000_300"]);
+        work_cfg.insert("facet".into(), json!("work"));
+        let work_candidate = prepare(root.path(), &work_cfg).unwrap().unwrap();
+        assert!(
+            work_candidate
+                .compact_transcript
+                .contains("Debugged queue retry backoff."),
+            "{}",
+            work_candidate.compact_transcript
+        );
+        assert!(
+            work_candidate
+                .compact_transcript
+                .contains("Fallback whole-segment summary."),
+            "{}",
+            work_candidate.compact_transcript
+        );
+        assert!(
+            work_candidate
+                .compact_transcript
+                .contains("Merged the retry fix."),
+            "{}",
+            work_candidate.compact_transcript
+        );
+        assert!(
+            !work_candidate
+                .compact_transcript
+                .contains("Chatted with family"),
+            "{}",
+            work_candidate.compact_transcript
+        );
+        assert!(
+            !work_candidate
+                .compact_transcript
+                .contains("Ordered groceries."),
+            "{}",
+            work_candidate.compact_transcript
+        );
+        assert_eq!(
+            work_candidate.metadata["segments"][2]["sense_availability"],
+            "available"
+        );
+
+        let mut personal_cfg = config(&["090000_300", "090500_300"]);
+        personal_cfg.insert("facet".into(), json!("personal"));
+        let personal_candidate = prepare(root.path(), &personal_cfg).unwrap().unwrap();
+        assert!(
+            personal_candidate
+                .compact_transcript
+                .contains("Chatted with family about dinner."),
+            "{}",
+            personal_candidate.compact_transcript
+        );
+        assert!(
+            personal_candidate
+                .compact_transcript
+                .contains("Ordered groceries."),
+            "{}",
+            personal_candidate.compact_transcript
+        );
+        assert!(
+            !personal_candidate
+                .compact_transcript
+                .contains("Debugged queue retry backoff."),
+            "{}",
+            personal_candidate.compact_transcript
+        );
+    }
+
+    #[test]
+    fn meeting_story_input_skips_unscoped_screen_reports_and_keeps_silent_segments_scoped() {
+        let root = TempDir::new().unwrap();
+        let seg1 = root.path().join("chronicle/20260101/desktop/090000_300");
+        let seg2 = root.path().join("chronicle/20260101/desktop/090500_300");
+        fs::create_dir_all(seg1.join("talents")).unwrap();
+        fs::create_dir_all(seg2.join("talents")).unwrap();
+
+        // Segment 1: active call with speech, a meeting screen frame, off-call percepts, and an
+        // unscoped screen.json report.
+        fs::write(
+            seg1.join("audio.jsonl"),
+            r#"{"start":"09:00:05","speaker":1,"text":"Reviewed the release checklist."}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("center_DP-1_screen.jsonl"),
+            [
+                json!({"timestamp": 10.0, "analysis": {"primary": "meeting"}, "content": {"meeting": {"platform": "Meet", "participants": [{"name": "Mina", "status": "speaking", "video": true}]}}}),
+                json!({"timestamp": 20.0, "analysis": {"primary": "terminal"}, "content": {"terminal": "$ side-secret-cmd"}}),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg1.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Side Tab","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Side browser leak"}]}"#,
+        )
+        .unwrap();
+        write(
+            &seg1,
+            "sense.json",
+            json!({
+                "activity_summary": "Whole segment summary",
+                "facets": [{"facet": "work", "activity": "Release checklist call.", "level": "high"}]
+            }),
+        );
+        write(
+            &seg1,
+            "screen.json",
+            json!({"narrative": "UNSCOPED_SIDE_SSO_LOGIN"}),
+        );
+
+        // Segment 2: silent mid-call segment with zero speech, zero meeting frames, and off-call
+        // screen/tmux/browser/desktop percepts plus an unscoped screen.json report.
+        fs::write(
+            seg2.join("center_DP-1_screen.jsonl"),
+            [
+                json!({"raw": "seg2.mp4", "platform": "ios", "sources": ["screen"]}),
+                json!({"timestamp": 10.0, "analysis": {"primary": "terminal"}, "content": {"terminal": "$ muted-terminal-cmd"}}),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("tmux_0_screen.jsonl"),
+            include_str!(
+                "../../solstone-core-format/tests/data/golden/tmux-observer-envelope-main.jsonl"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Side Docs","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Muted segment browser leak"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            seg2.join("090500_300_desktop_activity.jsonl"),
+            r#"{"v":1,"t":"desktop_activity","kind":"foreground","method":"nsworkspace","ts":1000,"end_ts":2000,"app":"Code","title":"Muted editor"}"#,
+        )
+        .unwrap();
+        write(
+            &seg2,
+            "sense.json",
+            json!({
+                "activity_summary": "Whole muted segment summary",
+                "facets": [{"facet": "work", "activity": "Listened quietly on call.", "level": "high"}]
+            }),
+        );
+        write(
+            &seg2,
+            "screen.json",
+            json!({"narrative": "UNSCOPED_MUTED_TERMINAL"}),
+        );
+
+        let mut cfg = config(&["090000_300", "090500_300"]);
+        cfg.insert("name".into(), json!("conversation"));
+        cfg.insert("facet".into(), json!("work"));
+        cfg.insert(
+            "activity".into(),
+            json!({
+                "id": "meeting_090000",
+                "activity": "meeting",
+                "stream": "desktop",
+                "segments": ["090000_300", "090500_300"]
+            }),
+        );
+
+        let candidate = prepare(root.path(), &cfg).unwrap().unwrap();
+        assert!(
+            candidate
+                .compact_transcript
+                .contains("Reviewed the release checklist."),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert!(
+            candidate
+                .compact_transcript
+                .contains("Release checklist call."),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert!(
+            candidate
+                .compact_transcript
+                .contains("Listened quietly on call."),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert!(
+            candidate.compact_transcript.contains("Mina"),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert_eq!(
+            candidate
+                .compact_transcript
+                .matches("### Screen Activity")
+                .count(),
+            1,
+            "{}",
+            candidate.compact_transcript
+        );
+        for leaked in [
+            "UNSCOPED_SIDE_SSO_LOGIN",
+            "UNSCOPED_MUTED_TERMINAL",
+            "side-secret-cmd",
+            "Side browser leak",
+            "muted-terminal-cmd",
+            "Terminal session 'main'",
+            "Muted segment browser leak",
+            "Muted editor",
+        ] {
+            assert!(
+                !candidate.compact_transcript.contains(leaked),
+                "leaked {leaked:?} in:\n{}",
+                candidate.compact_transcript
+            );
+        }
+        assert_eq!(
+            candidate.metadata["segments"][0]["screen_availability"],
+            "omitted_for_meeting"
+        );
+        assert_eq!(
+            candidate.metadata["segments"][0]["raw_percepts_preserved"],
+            true
+        );
+        assert_eq!(
+            candidate.metadata["segments"][0]["native_percept_entries"],
+            1
+        );
+        assert_eq!(
+            candidate.metadata["segments"][1]["screen_availability"],
+            "omitted_for_meeting"
+        );
+        assert_eq!(
+            candidate.metadata["segments"][1]["raw_percepts_preserved"],
+            true
+        );
+        assert_eq!(
+            candidate.metadata["segments"][1]["native_percept_entries"],
+            0
+        );
+    }
+
+    #[test]
+    fn meeting_story_input_fails_open_when_whole_activity_has_no_speech_or_meeting_frames() {
+        let root = TempDir::new().unwrap();
+        let seg1 = root.path().join("chronicle/20260101/desktop/100000_300");
+        let seg2 = root.path().join("chronicle/20260101/desktop/100500_300");
+        fs::create_dir_all(seg1.join("talents")).unwrap();
+        fs::create_dir_all(seg2.join("talents")).unwrap();
+
+        fs::write(seg1.join("audio.jsonl"), r#"{"raw":"audio.flac"}"#).unwrap();
+        fs::write(
+            seg1.join("screen.jsonl"),
+            json!({"timestamp": 10.0, "analysis": {"primary": "browsing"}, "content": {"browsing": "Fail-open slide notes"}})
+                .to_string(),
+        )
+        .unwrap();
+        write(
+            &seg1,
+            "sense.json",
+            json!({"activity_summary": "Silent meeting part 1"}),
+        );
+
+        fs::write(
+            seg2.join("browser_events.jsonl"),
+            concat!(
+                r#"{"t":"segment_start","ts":1,"title":"Agenda","tab":{"front":true,"focused":true},"blocks":[{"type":"text","text":"Fail-open focused tab"}]}"#,
+                "\n",
+                r#"{"t":"segment_start","ts":2,"title":"Background","tab":{"front":false,"focused":true},"blocks":[{"type":"text","text":"Background tab hidden"}]}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        write(
+            &seg2,
+            "sense.json",
+            json!({"activity_summary": "Silent meeting part 2"}),
+        );
+
+        let mut cfg = config(&["100000_300", "100500_300"]);
+        cfg.insert("name".into(), json!("conversation"));
+        cfg.insert(
+            "activity".into(),
+            json!({
+                "id": "meeting_100000",
+                "activity": "meeting",
+                "stream": "desktop",
+                "segments": ["100000_300", "100500_300"]
+            }),
+        );
+
+        let candidate = prepare(root.path(), &cfg).unwrap().unwrap();
+        assert!(
+            candidate
+                .compact_transcript
+                .contains("Fail-open slide notes"),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert!(
+            candidate
+                .compact_transcript
+                .contains("Fail-open focused tab"),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert!(
+            !candidate
+                .compact_transcript
+                .contains("Background tab hidden"),
+            "{}",
+            candidate.compact_transcript
+        );
+        assert!(
+            candidate
+                .compact_transcript
+                .contains("- Background · background tab"),
+            "{}",
+            candidate.compact_transcript
+        );
+    }
+
+    #[test]
+    fn speaker_count_keeps_restart_per_segment_sentence() {
+        let transcript = "## seg\n[09:00:01] Speaker 1: hi\n";
+        let source = solstone_core_transcripts::EntrySource {
+            conversation_medium: None,
+            path: "audio.jsonl".into(),
+            sha256: String::new(),
+            rendered_range: 0..transcript.len(),
+            stream: Some("phone".into()),
+            file: "audio.jsonl".into(),
+            records: Vec::new(),
+            unparsed_lines: 0,
+            chunks: Vec::new(),
+            chunk_offsets: Vec::new(),
+            voice_named: Default::default(),
+        };
+        let count = speaker_count(transcript, &[Some(source)]).unwrap();
+        assert!(
+            count.contains(
+                "The numbers restart in each segment, so the same number in two segments can be two different people."
+            ),
+            "{count}"
+        );
     }
 }

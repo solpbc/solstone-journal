@@ -594,14 +594,161 @@ fn a_single_named_speaker_keeps_the_name_only_on_lines_that_sound_like_them() {
     );
     assert_eq!(result.labels[&1].speaker.as_deref(), Some("alpha"));
     assert_eq!(result.labels[&1].confidence.as_deref(), Some("high"));
-    assert_eq!(
-        result.labels[&1].method.as_deref(),
-        Some("structural_single_speaker")
-    );
+    assert_eq!(result.labels[&1].method.as_deref(), Some("acoustic"));
+    assert_eq!(result.labels[&1].acoustic_margin_declined, None);
     // Sounds more like beta, who was not named: no name.
     assert_eq!(result.labels[&2].speaker, None);
     // Sounds like no one the journal knows: no name.
     assert_eq!(result.labels[&3].speaker, None);
+}
+
+#[test]
+fn voiceprint_confirmed_structural_labels_resolve_in_voice_names_with_discrete_bands() {
+    use solstone_core_transcripts::VoiceNames;
+
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alpha", Some("Person"), false);
+    write_entity(temporary.path(), "beta", Some("Person"), false);
+    write_entity(temporary.path(), "newcomer", Some("Person"), false);
+    write_voiceprint(temporary.path(), "alpha", embedding(1.0, 0.0));
+    write_voiceprint(
+        temporary.path(),
+        "beta",
+        embedding(0.97, (1.0 - 0.97_f32.powi(2)).sqrt()),
+    );
+    let loaded_entities = entities(temporary.path());
+
+    // High match against close rival beta (0.97, lead 0.03 < ACOUSTIC_MARGIN_MIN)
+    // upgrades structural_single_speaker and structural_setting to acoustic/medium.
+    let mut clear_labels = structural(&[1, 2], "alpha");
+    clear_labels.get_mut(&2).unwrap().method = Some("structural_setting".to_owned());
+    let clear = apply_acoustic_matching(
+        Layer3Inputs {
+            labels: clear_labels,
+            non_owner_sids: &[1, 2],
+            margin_declined_sids: &HashSet::from([2]),
+            candidate_entity_ids: &BTreeSet::from(["alpha".to_owned()]),
+            entities: &loaded_entities,
+            journal_root: temporary.path(),
+            stream: "mic",
+            now_ms: 1,
+            statements: &[(1, embedding(1.0, 0.0)), (2, embedding(1.0, 0.0))],
+            integer_speakers: &HashMap::new(),
+        },
+        &mut VoiceprintCentroidCache::default(),
+        &mut Vec::new(),
+    );
+    // Against rival beta at 0.97, lead is 0.03 < ACOUSTIC_MARGIN_MIN -> medium + acoustic_margin_declined.
+    assert_eq!(clear.labels[&1].speaker.as_deref(), Some("alpha"));
+    assert_eq!(clear.labels[&1].method.as_deref(), Some("acoustic"));
+    assert_eq!(clear.labels[&1].confidence.as_deref(), Some("medium"));
+    assert_eq!(clear.labels[&1].acoustic_margin_declined, Some(true));
+    assert_eq!(clear.labels[&1].owner_margin_declined, None);
+    // Line 2 also had owner_margin_declined -> stays medium with both flags recorded.
+    assert_eq!(clear.labels[&2].speaker.as_deref(), Some("alpha"));
+    assert_eq!(clear.labels[&2].method.as_deref(), Some("acoustic"));
+    assert_eq!(clear.labels[&2].confidence.as_deref(), Some("medium"));
+    assert_eq!(clear.labels[&2].owner_margin_declined, Some(true));
+    assert_eq!(clear.labels[&2].acoustic_margin_declined, Some(true));
+
+    // Medium-band match with clear margin vs without margin.
+    let medium_temp = TempDir::new();
+    for (id, x) in [("gamma", 0.30_f32), ("delta", 0.28), ("epsilon", 0.20)] {
+        write_entity(medium_temp.path(), id, Some("Person"), false);
+        write_voiceprint(
+            medium_temp.path(),
+            id,
+            embedding(x, (1.0 - x.powi(2)).sqrt()),
+        );
+    }
+    let medium_entities = entities(medium_temp.path());
+    // With close rival delta (0.30 vs 0.28, lead 0.02 < 0.05): cleared.
+    let close = run(
+        &medium_temp,
+        structural(&[1], "gamma"),
+        &[1],
+        &BTreeSet::from(["gamma".to_owned(), "delta".to_owned()]),
+        &medium_entities,
+        &[(1, embedding(1.0, 0.0))],
+        &HashMap::new(),
+    );
+    assert_eq!(close.labels[&1].speaker, None);
+    assert_eq!(close.labels[&1].method, None);
+
+    // Without close rival (gamma 0.30 vs epsilon 0.20, lead 0.10 >= 0.05): acoustic/medium.
+    let clear_medium_temp = TempDir::new();
+    for (id, x) in [("gamma", 0.30_f32), ("epsilon", 0.20)] {
+        write_entity(clear_medium_temp.path(), id, Some("Person"), false);
+        write_voiceprint(
+            clear_medium_temp.path(),
+            id,
+            embedding(x, (1.0 - x.powi(2)).sqrt()),
+        );
+    }
+    let clear_medium_entities = entities(clear_medium_temp.path());
+    let clear_medium = run(
+        &clear_medium_temp,
+        structural(&[1], "gamma"),
+        &[1],
+        &BTreeSet::from(["gamma".to_owned()]),
+        &clear_medium_entities,
+        &[(1, embedding(1.0, 0.0))],
+        &HashMap::new(),
+    );
+    assert_eq!(clear_medium.labels[&1].speaker.as_deref(), Some("gamma"));
+    assert_eq!(clear_medium.labels[&1].method.as_deref(), Some("acoustic"));
+    assert_eq!(
+        clear_medium.labels[&1].confidence.as_deref(),
+        Some("medium")
+    );
+    assert_eq!(clear_medium.labels[&1].acoustic_margin_declined, None);
+
+    // Unconfirmed structural label (no voiceprint) stays structural_single_speaker.
+    let unconfirmed = run(
+        &temporary,
+        structural(&[1], "newcomer"),
+        &[1],
+        &BTreeSet::from(["newcomer".to_owned()]),
+        &loaded_entities,
+        &[(1, embedding(0.0, 1.0))],
+        &HashMap::from([(1, 0)]),
+    );
+    assert_eq!(unconfirmed.labels[&1].speaker.as_deref(), Some("newcomer"));
+    assert_eq!(
+        unconfirmed.labels[&1].method.as_deref(),
+        Some("structural_single_speaker")
+    );
+
+    // Verify downstream VoiceNames accepts confirmed acoustic and gates unconfirmed structural.
+    let voices = VoiceNames {
+        principal: "owner".to_owned(),
+        owner_voice_confirmed: true,
+        people: BTreeMap::from([
+            ("alpha".to_owned(), "Alpha".to_owned()),
+            ("gamma".to_owned(), "Gamma".to_owned()),
+            ("newcomer".to_owned(), "Newcomer".to_owned()),
+        ]),
+        owner_name: None,
+    };
+    let row = |label: &Label| {
+        json!({
+            "speaker": label.speaker,
+            "method": label.method,
+            "confidence": label.confidence,
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    };
+    assert_eq!(
+        voices.name_for(&row(&clear.labels[&1])).as_deref(),
+        Some("Alpha")
+    );
+    assert_eq!(
+        voices.name_for(&row(&clear_medium.labels[&1])).as_deref(),
+        Some("Gamma")
+    );
+    assert_eq!(voices.name_for(&row(&unconfirmed.labels[&1])), None);
 }
 
 #[test]

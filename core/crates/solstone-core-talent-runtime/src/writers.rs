@@ -142,6 +142,7 @@ pub(crate) fn write_output_if_configured_cancellable(
         .flatten()
         .map(|mut sense| {
             use solstone_core_format::content::topics::{SENSE_INPUT_KINDS, kind_words};
+            crate::sense_redaction::scrub_object(&mut sense);
             sense.remove(SENSE_INPUT_KINDS);
             if let Some(kinds) = &prepared.topic_input_kinds {
                 sense.insert(

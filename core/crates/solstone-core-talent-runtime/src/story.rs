@@ -803,16 +803,25 @@ const ACTIVITY_LINE_MAX_CHARS: usize = 320;
 
 /// The activity's line from its story: the first sentence, in the shape every
 /// segment's line has ("Met with Mina…", not "You met with Mina…"). A sentence
-/// whose subject is more than the owner ("You and Mina…") keeps it.
+/// whose subject is more than the owner ("You and Mina…") keeps it, and
+/// non-owner subjects such as "Your agent…" pass through untouched.
 pub(crate) fn activity_line(body: &str) -> Option<String> {
     let first = first_sentence(body.trim())?;
-    let line = match first.strip_prefix("You ") {
-        Some(rest) if !rest.starts_with("and ") => {
-            solstone_core_system::activity_state::normalize_activity_description(first)
-        }
-        _ => first.to_owned(),
+    let line = if is_you_and_opener(first) {
+        first.to_owned()
+    } else {
+        solstone_core_system::activity_state::normalize_activity_description(first)
     };
     (!line.is_empty() && line.chars().count() <= ACTIVITY_LINE_MAX_CHARS).then_some(line)
+}
+
+fn is_you_and_opener(sentence: &str) -> bool {
+    let mut words = sentence.split_whitespace();
+    matches!(
+        (words.next(), words.next()),
+        (Some(first), Some(second))
+            if first.eq_ignore_ascii_case("you") && second.eq_ignore_ascii_case("and")
+    )
 }
 
 fn first_sentence(text: &str) -> Option<&str> {
@@ -1145,6 +1154,29 @@ mod tests {
             Some("You and Joel planned a camping trip.")
         );
         assert_eq!(
+            activity_line("The user reviewed the retry patch. Later, tests passed.").as_deref(),
+            Some("Reviewed the retry patch.")
+        );
+        assert_eq!(
+            activity_line("The owner was updating the build config.").as_deref(),
+            Some("Updating the build config.")
+        );
+        assert_eq!(
+            activity_line("This person debugged the socket timeout.").as_deref(),
+            Some("Debugged the socket timeout.")
+        );
+        assert_eq!(
+            activity_line("I merged the parser fix.").as_deref(),
+            Some("Merged the parser fix.")
+        );
+        assert_eq!(
+            activity_line(
+                "Your agent ran cargo test and fixed the lint failure. You reviewed the diff."
+            )
+            .as_deref(),
+            Some("Your agent ran cargo test and fixed the lint failure.")
+        );
+        assert_eq!(
             activity_line("Someone described a trip").as_deref(),
             Some("Someone described a trip")
         );
@@ -1215,6 +1247,47 @@ mod tests {
         assert_eq!(read("mine")["title"], "Launch sync");
         assert_eq!(read("mine")["description"], "Owner wrote this.");
         assert_eq!(read("mine")["story"]["body"], story["body"]);
+
+        // Third-person openers strip into title/description while story.body
+        // stays verbatim (including any quoted speech) and "Your agent ..." is preserved.
+        for (id, body, want_line) in [
+            (
+                "third-person",
+                "The user updated the build script. \"Speaker 2 said hold off,\" you noted.",
+                "Updated the build script.",
+            ),
+            (
+                "agent-open",
+                "Your agent ran cargo test and fixed the lint failure. You reviewed the diff.",
+                "Your agent ran cargo test and fixed the lint failure.",
+            ),
+        ] {
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                "work",
+                "20260101",
+                json!({"id": id, "activity": "coding", "segments": ["220000_300"], "description": "Initial."})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let payload = json!({"body": body, "topics": [], "confidence": 0.8, "relations": []});
+            apply_story(
+                root.path(),
+                "work",
+                "work",
+                &destination,
+                "20260101",
+                id,
+                &payload,
+            )
+            .unwrap();
+            let saved = read(id);
+            assert_eq!(saved["title"], want_line);
+            assert_eq!(saved["description"], want_line);
+            assert_eq!(saved["story"]["body"], body);
+        }
     }
 
     #[test]

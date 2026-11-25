@@ -425,3 +425,39 @@ fn a_label_that_only_repeats_its_words_is_not_shown_beside_them() {
         &vec![(5, "Friar".to_owned())]
     );
 }
+
+#[test]
+fn principal_entity_is_excluded_from_candidates_and_admits_but_retained_in_names_another() {
+    let fixture = Fixture::new();
+    fixture.entity("owner", "Avery Quinn", &["alpha"]);
+    fixture.identity(
+        "owner",
+        json!({"id": "owner", "name": "Avery Quinn", "type": "Person", "is_principal": true}),
+    );
+
+    let candidates = load_candidate_entities(fixture.path()).unwrap();
+    assert!(
+        !candidates.iter().any(|entity| entity.entity_id == "owner"),
+        "principal entity must not enter candidate entities: {candidates:?}"
+    );
+    assert!(candidates.iter().any(|entity| entity.entity_id == "friar"));
+
+    let registry = Registry::new(fixture.path());
+    assert!(!registry.admits("owner", "Avery Quinn", &Viewer::Owner));
+    assert!(!registry.admits("owner", "Avery Quinn", &facets(&["alpha"])));
+    assert!(registry.admits("friar", "Friar", &Viewer::Owner));
+    // Principal names stay visible to names_another so another entity's possible
+    // name does not rewrite words that already name the owner.
+    assert!(registry.names_another("Avery Quinn", "friar"));
+    assert!(registry.names_another("avery quinn", "ana"));
+    assert!(!registry.names_another("Avery Quinn", "owner"));
+
+    // Sidecar entries targeting the principal entity are hidden by live_entries.
+    let mut entries = standard_entries();
+    entries.push(entry(1, 4, "Fryer", "owner", "Avery Quinn"));
+    fixture.save(entries);
+    assert_eq!(
+        fixture.live(&Viewer::Owner),
+        ["0:Friar", "1:Ana Lima", "2:Friar"]
+    );
+}

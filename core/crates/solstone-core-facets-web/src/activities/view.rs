@@ -366,6 +366,7 @@ pub fn build_view_in(
     let spans_needed = faces_today || !near_faces.is_empty();
     let mut captures = Vec::new();
     let mut receipts_by_facet = BTreeMap::new();
+    let hidden_entities = solstone_core_entity::hidden_participation_entity_ids(root);
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
         if is_hidden && !include_hidden {
@@ -389,6 +390,7 @@ pub fn build_view_in(
             row,
             &course,
             &definitions_by_facet,
+            &hidden_entities,
             (day, &calendar, &location),
         );
         if spans_needed
@@ -589,6 +591,7 @@ fn project_item(
     record: &Map<String, Value>,
     course: &solstone_core_facets::ActivityCourse,
     definitions_by_facet: &BTreeMap<String, BTreeMap<String, String>>,
+    hidden_entities: &std::collections::BTreeSet<String>,
     (day, calendar, location): (&str, &[ScheduledEvent], &solstone_core_location::DayBeside),
 ) -> Value {
     let mut item = Map::new();
@@ -809,6 +812,13 @@ fn project_item(
                         Some("attendee" | "heard")
                     )
                 })
+                .filter(|p| {
+                    !p.get("entity_id")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .is_some_and(|id| hidden_entities.contains(id))
+                })
                 .filter_map(|p| p.get("name").and_then(Value::as_str))
                 .map(str::trim)
                 .filter(|name| !name.is_empty())
@@ -979,5 +989,86 @@ mod wall_minute_tests {
         // The day before and after clamp to the day's ends.
         assert_eq!(wall_minute(&denver, spring, 1_772_870_400), 0);
         assert_eq!(wall_minute(&denver, spring, 1_773_100_800), 1440);
+    }
+
+    #[test]
+    fn project_item_hides_trashed_entities_and_restores_on_untrash() {
+        let root = tempfile::tempdir().unwrap();
+        let entities = root.path().join("entities");
+        std::fs::create_dir_all(entities.join("ada")).unwrap();
+        std::fs::write(
+            entities.join("ada/entity.json"),
+            r#"{"id":"ada","name":"Ada Lovelace","type":"Person"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            entities.join("retired.json"),
+            r#"{"ids":{"trashed_p":{"state":"deleted","dir":"trashed_p","name":"Trashed Person"}}}"#,
+        )
+        .unwrap();
+
+        let record: serde_json::Map<String, serde_json::Value> = serde_json::from_value(serde_json::json!({
+            "id": "a1",
+            "title": "Sync",
+            "segments": ["090000_300"],
+            "participation": [
+                {"name": "Ada Lovelace", "entity_id": "ada", "role": "attendee", "source": "voice"},
+                {"name": "Trashed Person", "entity_id": "trashed_p", "role": "attendee", "source": "voice"},
+                {"name": "Anne", "entity_id": "anne", "role": "heard", "source": "voice"}
+            ]
+        }))
+        .unwrap();
+        let courses = solstone_core_facets::place_activity_records(
+            root.path(),
+            "20261112",
+            &[solstone_core_facets::PlacedRecord {
+                facet: "work",
+                record: &record,
+            }],
+        );
+        let course = &courses[0];
+        let defs = std::collections::BTreeMap::new();
+        let beside = solstone_core_location::DayBeside::read(root.path(), "20261112");
+
+        let hidden = solstone_core_entity::hidden_participation_entity_ids(root.path());
+        let item = super::project_item(
+            "work",
+            &record,
+            course,
+            &defs,
+            &hidden,
+            ("20261112", &[], &beside),
+        );
+        let names = item["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["Ada Lovelace", "Anne"]);
+
+        // Restoring the entity immediately makes it reappear in `people`.
+        std::fs::create_dir_all(entities.join("trashed_p")).unwrap();
+        std::fs::write(
+            entities.join("trashed_p/entity.json"),
+            r#"{"id":"trashed_p","name":"Trashed Person","type":"Person"}"#,
+        )
+        .unwrap();
+        let restored = solstone_core_entity::hidden_participation_entity_ids(root.path());
+        let item2 = super::project_item(
+            "work",
+            &record,
+            course,
+            &defs,
+            &restored,
+            ("20261112", &[], &beside),
+        );
+        let names2 = item2["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names2, vec!["Ada Lovelace", "Trashed Person", "Anne"]);
     }
 }

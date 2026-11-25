@@ -95,9 +95,10 @@ pub use relocate::{
 };
 pub use segment_dir::{
     Arrival, OwnerDeletionState, RetainedOwnerDeletion, SegmentDir, day_has_tombstone,
-    is_safe_stream_component, list_days, list_segments, list_segments_in, list_stream_segments,
-    owner_deleted, owner_deletion_state, reclaim_for_arrival, reclaimable,
-    record_names_gone_segment, segment_live, segment_removed, stream_segment_dir,
+    effective_activity_stream, is_safe_stream_component, list_days, list_segments,
+    list_segments_in, list_stream_segments, live_segment_dir, owner_deleted, owner_deletion_state,
+    reclaim_for_arrival, reclaimable, record_names_gone_segment, segment_live, segment_removed,
+    stream_segment_dir,
 };
 pub use solstone_core_journal_io::{
     DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, RecordIdentity, Segment,

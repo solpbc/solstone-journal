@@ -452,7 +452,9 @@ pub fn activities_over(
             }
         };
         for record in records {
-            let Some(stream) = record.get("stream").and_then(serde_json::Value::as_str) else {
+            let Some(stream) =
+                solstone_core_segment::effective_activity_stream(journal, day, &record)
+            else {
                 continue;
             };
             let holds = record
@@ -889,5 +891,45 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let ask = think_again(root.path(), "20260101", &[asked("work", "a")], true).unwrap();
         assert_eq!(read(root.path()).unwrap()[&ask.id], ask);
+    }
+
+    #[test]
+    fn activities_over_resolves_default_stream_and_ignores_legacy_streamless_records() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20261110";
+        solstone_core_facets::create_facet(root.path(), "work", "work", "", "", "", None).unwrap();
+        std::fs::create_dir_all(
+            root.path()
+                .join("chronicle")
+                .join(day)
+                .join("090000_300_summary"),
+        )
+        .unwrap();
+        for (id, seg) in [("default_rec", "090000_300"), ("legacy_rec", "110000_300")] {
+            let row = serde_json::json!({"id": id, "activity": "meeting", "segments": [seg]});
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                "work",
+                day,
+                row.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+        let found = activities_over(
+            root.path(),
+            day,
+            &BTreeSet::from([
+                (
+                    solstone_core_journal_io::DEFAULT_STREAM.to_owned(),
+                    "090000_300".to_owned(),
+                ),
+                (
+                    solstone_core_journal_io::DEFAULT_STREAM.to_owned(),
+                    "110000_300".to_owned(),
+                ),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(found, vec![asked("work", "default_rec")]);
     }
 }

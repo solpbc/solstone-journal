@@ -343,11 +343,13 @@ fn continuous_capture_does_not_hold_back_an_activity_that_has_settled() {
         minute += 5;
     }
     // The work activity ended at 09:41, when the second meeting segment was
-    // thought, and has been written while capture went on.
+    // thought, and has been written while capture went on. The first meeting
+    // segment (09:30) peeled cleanly into the meeting span instead of bleeding
+    // into work, so work keeps its six 09:00..=09:25 segments.
     let records = bed.records(DAY);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].0, "work_090000_300");
-    assert_eq!(records[0].1.len(), 7);
+    assert_eq!(records[0].1.len(), 6);
     let written =
         solstone_core_facets::get_activity_record(&bed.journal, "work", DAY, "work_090000_300")
             .unwrap()
@@ -478,4 +480,280 @@ fn a_burst_of_late_pieces_grows_an_activity_once() {
         keys(&["090000_300", "090500_300", "091000_300", "091500_300"])
     );
     assert_eq!(bed.talent_requests(), 2, "one revision for the whole burst");
+}
+
+fn work_with(description: &str) -> Value {
+    serde_json::json!({
+        "density": "active",
+        "content_type": "work",
+        "activity_summary": description,
+        "facets": [{"facet": "work", "level": "high", "activity": description}]
+    })
+}
+
+#[test]
+fn late_earlier_starting_segment_absorbs_settled_subset_and_preserves_owner_edits() {
+    let bed = bed();
+    let idle = serde_json::json!({"density":"idle","content_type":"idle","facets":[]});
+    // Segments 09:05 and 09:10 settle first as work_090500_300.
+    bed.deliver(DAY, "090500_300", &work_with("Reviewed PR."), at(9, 11));
+    bed.deliver(DAY, "091000_300", &work_with("Merged PR."), at(9, 16));
+    bed.deliver(DAY, "091500_300", &idle, at(9, 21));
+    bed.settle(at(9, 28));
+    assert_eq!(
+        bed.records(DAY),
+        [(
+            "work_090500_300".to_owned(),
+            keys(&["090500_300", "091000_300"])
+        )]
+    );
+
+    // Owner edits title, details, and playback on the settled subset row.
+    solstone_core_facets::update_activity_record(
+        &bed.journal,
+        "work",
+        DAY,
+        "work_090500_300",
+        &Map::from_iter([
+            ("title".to_owned(), Value::from("Release PR review")),
+            (
+                "details".to_owned(),
+                Value::from("Owner note kept across fold"),
+            ),
+            ("playback".to_owned(), Value::Bool(true)),
+        ]),
+        "owner:update",
+        "clarified span",
+        "2026-08-13T09:30:00Z",
+    )
+    .unwrap()
+    .unwrap();
+
+    // Seed per-activity output directory, pending activity-work file, and
+    // provenance receipt for the soon-to-be-absorbed row.
+    let absorbed_dir = bed
+        .journal
+        .join(format!("facets/work/activities/{DAY}/work_090500_300"));
+    fs::create_dir_all(&absorbed_dir).unwrap();
+    fs::write(absorbed_dir.join("notes.md"), b"stale output").unwrap();
+    let ctx = bed.context(DAY, at(9, 31));
+    let _claim = crate::activity::enqueue(&ctx, "work_090500_300", "work", true).unwrap();
+    drop(_claim);
+    let prov = crate::segment::activity_provenance_path(&ctx, DAY, "work", "work_090500_300");
+    assert!(prov.exists(), "initial settle wrote provenance receipt");
+    assert!(
+        crate::activity_work::snapshot_activity_work(&bed.journal, at(9, 32))
+            .unfinished
+            .iter()
+            .any(|item| item.activity == "work_090500_300")
+    );
+
+    // Earlier-starting 09:00 arrives late and widens the span to [0900, 0905, 0910].
+    bed.deliver(DAY, "090000_300", &work_with("Opened PR."), at(11, 0));
+    bed.settle(at(11, 10));
+
+    let records = bed.records(DAY);
+    assert_eq!(
+        records,
+        [(
+            "work_090000_300".to_owned(),
+            keys(&["090000_300", "090500_300", "091000_300"])
+        )]
+    );
+    let folded =
+        solstone_core_facets::get_activity_record(&bed.journal, "work", DAY, "work_090000_300")
+            .unwrap()
+            .unwrap();
+    assert_eq!(folded["title"], "Release PR review");
+    assert_eq!(folded["details"], "Owner note kept across fold");
+    assert_eq!(folded["playback"], true);
+    assert!(solstone_core_facets::activity_field_held(&folded, "title"));
+    assert!(solstone_core_facets::activity_field_held(
+        &folded, "details"
+    ));
+    assert!(solstone_core_facets::activity_field_held(
+        &folded, "playback"
+    ));
+    assert!(!absorbed_dir.exists(), "absorbed outputs directory removed");
+    assert!(!prov.exists(), "absorbed provenance receipt removed");
+    let remaining_work = crate::activity_work::snapshot_activity_work(&bed.journal, at(11, 12));
+    assert!(
+        !remaining_work
+            .unfinished
+            .iter()
+            .any(|item| item.activity == "work_090500_300"),
+        "absorbed activity-work entry removed"
+    );
+    let queued = fs::read_dir(bed.journal.join("indexer/todo"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+        .collect::<Vec<_>>();
+    assert!(
+        queued
+            .iter()
+            .any(|entry| entry.contains(&format!("facets/work/activities/{DAY}.jsonl"))),
+        "modified day JSONL queued for search reindex: {queued:?}"
+    );
+}
+
+#[test]
+fn gap_bridging_grows_earlier_updates_unheld_description_and_retires_later_subset() {
+    let bed = bed();
+    let idle = serde_json::json!({"density":"idle","content_type":"idle","facets":[]});
+    // Two separate stretches separated by a >10m gap (09:10 end -> 09:25 start = 15m) both settle independently.
+    bed.deliver(DAY, "090000_300", &work_with("Started parser."), at(9, 6));
+    bed.deliver(DAY, "090500_300", &work_with("Drafted lexer."), at(9, 11));
+    bed.deliver(DAY, "092500_300", &work_with("Added tests."), at(9, 31));
+    bed.deliver(DAY, "093000_300", &work_with("Finished parser."), at(9, 36));
+    bed.deliver(DAY, "093500_300", &idle, at(9, 41));
+    bed.settle(at(9, 48));
+    assert_eq!(
+        bed.records(DAY),
+        [
+            (
+                "work_090000_300".to_owned(),
+                keys(&["090000_300", "090500_300"])
+            ),
+            (
+                "work_092500_300".to_owned(),
+                keys(&["092500_300", "093000_300"])
+            ),
+        ]
+    );
+
+    // Owner edits title on the earlier row and details on the later row.
+    solstone_core_facets::update_activity_record(
+        &bed.journal,
+        "work",
+        DAY,
+        "work_090000_300",
+        &Map::from_iter([("title".to_owned(), Value::from("Morning parser work"))]),
+        "owner:update",
+        "named span",
+        "2026-08-13T09:50:00Z",
+    )
+    .unwrap()
+    .unwrap();
+    solstone_core_facets::update_activity_record(
+        &bed.journal,
+        "work",
+        DAY,
+        "work_092500_300",
+        &Map::from_iter([
+            ("title".to_owned(), Value::from("Later half title")),
+            ("details".to_owned(), Value::from("Included edge cases")),
+        ]),
+        "owner:update",
+        "added detail",
+        "2026-08-13T09:51:00Z",
+    )
+    .unwrap()
+    .unwrap();
+
+    // Gap-bridging segments 09:10, 09:15, and 09:20 arrive late and join both stretches.
+    bed.deliver(DAY, "091000_300", &work_with("Wired AST."), at(11, 0));
+    bed.deliver(DAY, "091500_300", &work_with("Fixed borrow."), at(11, 1));
+    bed.deliver(DAY, "092000_300", &work_with("Cleaned spans."), at(11, 2));
+    bed.settle(at(11, 10));
+
+    assert_eq!(
+        bed.records(DAY),
+        [(
+            "work_090000_300".to_owned(),
+            keys(&[
+                "090000_300",
+                "090500_300",
+                "091000_300",
+                "091500_300",
+                "092000_300",
+                "092500_300",
+                "093000_300",
+            ])
+        )]
+    );
+    let grown =
+        solstone_core_facets::get_activity_record(&bed.journal, "work", DAY, "work_090000_300")
+            .unwrap()
+            .unwrap();
+    // Target's own held title wins over the absorbed row's title.
+    assert_eq!(grown["title"], "Morning parser work");
+    // Unheld details from the absorbed row carry forward.
+    assert_eq!(grown["details"], "Included edge cases");
+    assert!(solstone_core_facets::activity_field_held(&grown, "details"));
+    // Unheld description updates to the widened span's latest description.
+    assert_eq!(grown["description"], "Finished parser.");
+    let last_edit = grown["edits"].as_array().unwrap().last().unwrap();
+    assert_eq!(last_edit["actor"], "activity");
+    assert!(
+        last_edit["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "description")
+    );
+}
+
+#[test]
+fn grow_preserves_owner_held_description_and_never_retires_other_streams() {
+    let bed = bed();
+    let idle = serde_json::json!({"density":"idle","content_type":"idle","facets":[]});
+    // Another stream's settled row with the same subset segment stays untouched.
+    let mut other_stream = Map::new();
+    other_stream.insert("id".to_owned(), Value::from("work_phone_090500_300"));
+    other_stream.insert("activity".to_owned(), Value::from("work"));
+    other_stream.insert("facet".to_owned(), Value::from("work"));
+    other_stream.insert("stream".to_owned(), Value::from("phone"));
+    other_stream.insert("settled_at".to_owned(), Value::from(at(9, 20)));
+    other_stream.insert("segments".to_owned(), serde_json::json!(["090500_300"]));
+    let _ = solstone_core_facets::append_activity_record(&bed.journal, "work", DAY, other_stream)
+        .unwrap();
+
+    bed.deliver(DAY, "090000_300", &work_with("Initial."), at(9, 6));
+    bed.deliver(DAY, "092000_300", &work_with("After gap."), at(9, 26));
+    bed.deliver(DAY, "092500_300", &idle, at(9, 31));
+    bed.settle(at(9, 38));
+
+    solstone_core_facets::update_activity_record(
+        &bed.journal,
+        "work",
+        DAY,
+        "work_090000_300",
+        &Map::from_iter([("description".to_owned(), Value::from("Owner description"))]),
+        "owner:update",
+        "held description",
+        "2026-08-13T09:40:00Z",
+    )
+    .unwrap()
+    .unwrap();
+
+    bed.deliver(DAY, "090500_300", &work_with("Bridge 1."), at(11, 0));
+    bed.deliver(DAY, "091000_300", &work_with("Bridge 2."), at(11, 1));
+    bed.deliver(DAY, "091500_300", &work_with("Bridge 3."), at(11, 2));
+    bed.settle(at(11, 10));
+
+    let records = bed.records(DAY);
+    assert!(
+        records.iter().any(|(id, _)| id == "work_phone_090500_300"),
+        "other stream's settled row stays untouched: {records:?}"
+    );
+    assert!(
+        !records.iter().any(|(id, _)| id == "work_092000_300"),
+        "same stream's absorbed subset row retired: {records:?}"
+    );
+    let grown =
+        solstone_core_facets::get_activity_record(&bed.journal, "work", DAY, "work_090000_300")
+            .unwrap()
+            .unwrap();
+    assert_eq!(grown["description"], "Owner description");
+    assert_eq!(
+        grown["segments"],
+        serde_json::json!([
+            "090000_300",
+            "090500_300",
+            "091000_300",
+            "091500_300",
+            "092000_300"
+        ])
+    );
 }
