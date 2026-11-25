@@ -5063,7 +5063,29 @@ m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d6
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d = detach { $entity_name } from { $facet_name }? stays in your journal and you can re-attach it anytime.
 
+m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79 = { $i18nCategory ->
+    [one] detach { $total } entity from { $facet_name }? it stays in your journal and you can re-attach it anytime.
+   *[other] detach { $total } entities from { $facet_name }? they stay in your journal and you can re-attach them anytime.
+}
+
 m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65 = detached from { $facet_name }. { $entity_name } is still in your journal.
+
+m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65 = { $i18nCategory ->
+    [one] detached { $total } entity from { $facet_name }. it's still in your journal.
+   *[other] detached { $total } entities from { $facet_name }. they're still in your journal.
+}
+
+m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65 = couldn't detach anything from { $facet_name }.
+
+m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274 = { $i18nCategory ->
+    [one] detached { $done } of { $total } entity from { $facet_name }.
+   *[other] detached { $done } of { $total } entities from { $facet_name }.
+}
+
+m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c = { $i18nCategory ->
+    [one] { $remaining } couldn't be detached and is still selected, so you can try it again.
+   *[other] { $remaining } couldn't be detached and are still selected, so you can try them again.
+}
 
 m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e656d7074792e68656164696e67 = nothing in { $facet_name } yet.
 

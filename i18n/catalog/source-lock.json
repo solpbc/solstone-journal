@@ -57602,6 +57602,13 @@
       ]
     },
     {
+      "id": "journal.window.entities.facet.detach.confirm.many",
+      "source": "0e64c83bc95a02af08957f47064006728324469c8824c8dc04faaa9a7303ab76",
+      "contract": "fe821cbbf55caa64c349dc848b8cfa0cd42a3b56b6b34e1a813b1584c0435d79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.facet.detach.done",
       "source": "2fb7fd638afa4a0f9889398c7eca13281a908e91130d0a41cb6c48177a92b703",
       "contract": "80a858a0a397d8a3e5cfb1873b730a2e56bff1ad930b23f29d32bdec04cb1229",
@@ -57626,6 +57633,34 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.done",
+      "source": "c8a77b6ac21877ac1666ace3ff9059da90bbf1692172ef615791ff95d9e13c32",
+      "contract": "fe821cbbf55caa64c349dc848b8cfa0cd42a3b56b6b34e1a813b1584c0435d79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.none",
+      "source": "c9e938d9da7e78600865a500b65a59c7f4b9480e126a84173c8755c10f40e932",
+      "contract": "03f050b8b96eb75e31c3213e51292afa71ae701d078e5bc42ac04cc952d87b79",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.part",
+      "source": "332c2f6db2fa808ec4265644b93bf6e09af35313cd12ecfedb8fe9803768a5f2",
+      "contract": "eeb6d4262ca496e5cc589a6804f2cac51523279437b0cc28997f6d74035ca943",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.still",
+      "source": "4824f1e6566c5d13471c3553e5f1999054316956962c2cbe3fc2675cd1ac3c00",
+      "contract": "da46ae5375fc61c0c1b2dcf639979868b9d6b8fd605b9e9ae0f318feece5b71e",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.entities.facet.empty.heading",

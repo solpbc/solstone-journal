@@ -40962,6 +40962,45 @@
       "selector": null
     },
     {
+      "id": "journal.window.entities.facet.detach.confirm.many",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+      "namespace": "journal.window.entities.facet.detach.confirm",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.entities.facet.detach.done",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65",
       "namespace": "journal.window.entities.facet.detach",
@@ -40987,6 +41026,143 @@
       ],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.done",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+      "namespace": "journal.window.entities.facet.detach.set",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.none",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+      "namespace": "journal.window.entities.facet.detach.set",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.part",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+      "namespace": "journal.window.entities.facet.detach.set",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "facet_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "total_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.entities.facet.detach.set.still",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
+      "namespace": "journal.window.entities.facet.detach.set",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "remaining",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "remaining_quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "remaining_quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.window.entities.facet.empty.heading",

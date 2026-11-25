@@ -2109,6 +2109,12 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-row--picked, .journal-row--picked:hover { background: var(--orange-wash); }
 .journal-row-tick { min-width: 24px; }
 .journal-row-note { order: 2; grid-column: 2 / -1; color: var(--ink-soft); font-size: .85em; white-space: normal; }
+/* Select mode on a facet's cards: a box in each card's corner, and detach. */
+.entity-cards-picking .entity-card { padding-left: 2.4em; }
+.entity-card-tick { position: absolute; top: .6em; left: .6em; display: flex; }
+.entity-card-tick input { width: 1.1rem; height: 1.1rem; margin: 0; }
+.entity-card--picked, .entity-card--picked:hover { background: var(--orange-wash); }
+.entity-card-note { color: var(--ink-soft); font-size: .85em; }
 .trash-set-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; }
 .trash-set-list li + li { margin-top: 2px; }
 .trash-set-more { color: var(--ink-soft); }
@@ -2116,7 +2122,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   .journal-row-tick { min-width: var(--touch-min); min-height: var(--touch-min); }
   .journal-sort-select { min-height: var(--touch-min); }
   .trash-bar-actions button, .ent-select-btn { min-height: 44px; }
-  .journal-row-tick input, .trash-all input { width: 20px; height: 20px; }
+  .journal-row-tick input, .trash-all input, .entity-card-tick input { width: 20px; height: 20px; }
   .btn, .close, .entity-observation-show-all { min-height: var(--touch-min); }
   .close { min-width: var(--touch-min); }
   /* The clear stays a small mark in its chip; its press area reaches past it. */
@@ -2330,8 +2336,19 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
         <span>{{journal.window.entities.visible.text.entities}}</span>
         <input type="text" id="entity-card-search" class="entity-search-input" placeholder="{{journal.window.entities.field.placeholder.search.entities}}" aria-label="{{journal.window.entities.accessible.name.search.entity.cards}}">
         <span id="facet-card-search-count" class="entity-card-search-count" style="display: none;"></span>
+        <button type="button" class="btn btn-secondary btn-sm ent-select-btn" id="facet-select-btn" hidden></button>
       </h3>
       <p class="entities-subtitle" id="facet-entities-subtitle">{{journal.window.entities.visible.text.people.places.and.things.you.re}}</p>
+      <div class="trash-bar ent-pick-bar" id="facet-pick-bar" tabindex="-1" hidden>
+        <div class="trash-bar-group" id="facet-pick-idle">
+          <label class="trash-all"><input type="checkbox" id="facet-pick-all"> <span id="facet-pick-all-label"></span></label>
+          <span class="trash-bar-actions"><button type="button" class="btn btn-secondary btn-sm" id="facet-pick-done-idle"></button></span>
+        </div>
+        <div class="trash-bar-group" id="facet-pick-some" hidden>
+          <span class="trash-count" id="facet-pick-count"></span>
+          <span class="trash-bar-actions"><button type="button" class="btn btn-secondary btn-sm" id="facet-pick-detach"></button><button type="button" class="btn btn-secondary btn-sm" id="facet-pick-done-some"></button></span>
+        </div>
+      </div>
       <div class="entity-cards-container">
         <div id="entity-cards-content"></div>
         <div id="no-facet-entities" class="no-entities" style="display: none;"></div>
@@ -4493,6 +4510,7 @@ function closeDialogsForMove() {
   if (modal && modal.style.display === 'flex') {
     modal.style.display = 'none';
     pendingDetachEntity = null;
+    pendingDetachSet = null;
     detachOpener = null;
   }
   // The shell's modal layer keeps the rest of the page inert while a dialog
@@ -6342,6 +6360,207 @@ async function deleteSetFromEntityList(items, erase) {
 }
 // ========== END ENTITY DELETE ==========
 
+// ========== FACET DETACH SET ==========
+// Select mode on a facet's entity cards: tick several and detach them from
+// the facet under one confirm. Each goes through the entity page's own
+// detach, one after another, so one that is refused stays ticked with its
+// note and the rest still go. Words shared with the journal-wide list's
+// select mode come from its copy.
+const facetPick = { on: false, facet: null, items: new Map(), notes: new Map() };
+
+// A facet change lets go of what was picked on another facet.
+function syncFacetPick() {
+  if (facetPick.facet === currentFacet) return;
+  facetPick.on = false;
+  facetPick.items.clear();
+  facetPick.notes.clear();
+  facetPick.facet = currentFacet;
+}
+
+// Your own entity is never detached from a list.
+function facetPickable(entity) {
+  return entity.is_principal !== true;
+}
+
+function facetCards() {
+  const container = document.getElementById('entity-cards-content');
+  return container ? container.querySelectorAll('.entity-card') : [];
+}
+
+function facetPickTick(entity) {
+  const tick = document.createElement('span');
+  tick.className = 'entity-card-tick';
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.className = 'entity-card-pick';
+  box.setAttribute('aria-label', ENTITY_DELETE_COPY.pickLabel({ name: entity.name || '' }).trim());
+  box.checked = facetPick.items.has(entity.id);
+  box.addEventListener('change', () => setFacetPicked(entity, box.checked));
+  tick.append(box);
+  return tick;
+}
+
+function setFacetPicked(entity, picked) {
+  if (picked) facetPick.items.set(entity.id, entity);
+  else facetPick.items.delete(entity.id);
+  facetPick.notes.delete(entity.id);
+  paintFacetPick();
+}
+
+// In select mode a press on a card toggles it instead of opening it.
+// Answers whether the press was taken.
+function toggleFacetPick(entity, event) {
+  if (!facetPick.on) return false;
+  if (!facetPickable(entity)) return false;
+  if (event && event.target && event.target.tagName === 'INPUT') return true;
+  setFacetPicked(entity, !facetPick.items.has(entity.id));
+  return true;
+}
+
+function paintFacetPick() {
+  const byId = id => document.getElementById(id);
+  const C = ENTITY_DELETE_COPY;
+  const attached = (entitiesData && entitiesData.attached) || [];
+  const selectBtn = byId('facet-select-btn');
+  if (selectBtn) {
+    selectBtn.textContent = C.select;
+    selectBtn.hidden = facetPick.on || !attached.some(facetPickable);
+    selectBtn.onclick = enterFacetPick;
+  }
+  const bar = byId('facet-pick-bar');
+  if (bar) {
+    const count = facetPick.items.size;
+    bar.hidden = !facetPick.on;
+    byId('facet-pick-idle').hidden = count > 0;
+    byId('facet-pick-some').hidden = count === 0;
+    byId('facet-pick-all-label').textContent = C.selectAll;
+    byId('facet-pick-all').checked = false;
+    byId('facet-pick-all').onchange = selectAllFacetCards;
+    byId('facet-pick-count').textContent = C.selected({ n: count });
+    byId('facet-pick-detach').textContent = window.JournalI18n.render('journal.window.entities.button.label.detach');
+    byId('facet-pick-detach').onclick = detachChosenFromFacet;
+    for (const id of ['facet-pick-done-idle', 'facet-pick-done-some']) {
+      byId(id).textContent = C.done;
+      byId(id).onclick = exitFacetPick;
+    }
+  }
+  facetCards().forEach(card => {
+    const id = card.dataset.entityId;
+    const picked = facetPick.on && facetPick.items.has(id);
+    const box = card.querySelector('.entity-card-pick');
+    if (box) box.checked = picked;
+    card.classList.toggle('entity-card--picked', picked);
+    const old = card.querySelector('.entity-card-note');
+    if (old) old.remove();
+    const note = facetPick.on ? facetPick.notes.get(id) : null;
+    if (note) {
+      const line = document.createElement('div');
+      line.className = 'entity-card-note';
+      line.textContent = note;
+      card.append(line);
+    }
+  });
+}
+
+function rerenderFacetCards() {
+  const input = document.getElementById('entity-card-search');
+  renderEntityCards(input ? input.value.trim() : '');
+}
+
+function enterFacetPick() {
+  facetPick.on = true;
+  facetPick.items.clear();
+  facetPick.notes.clear();
+  rerenderFacetCards();
+  const bar = document.getElementById('facet-pick-bar');
+  if (bar) bar.focus();
+}
+
+function exitFacetPick() {
+  facetPick.on = false;
+  facetPick.items.clear();
+  facetPick.notes.clear();
+  rerenderFacetCards();
+  const button = document.getElementById('facet-select-btn');
+  if (button) button.focus();
+}
+
+// The cards a search leaves showing; your own entity is never picked.
+function selectAllFacetCards() {
+  const shown = new Set(Array.from(facetCards(), card => card.dataset.entityId));
+  ((entitiesData && entitiesData.attached) || [])
+    .filter(entity => shown.has(entity.id) && facetPickable(entity))
+    .forEach(entity => facetPick.items.set(entity.id, entity));
+  paintFacetPick();
+  // The strip just swapped away the control that had focus.
+  if (facetPick.items.size) document.getElementById('facet-pick-detach').focus();
+}
+
+function detachChosenFromFacet() {
+  const chosen = [...facetPick.items.values()];
+  if (!chosen.length) return;
+  const facetName = String(facetTitle(currentFacet));
+  const message = chosen.length === 1
+    ? entityWindowText('journal.window.entities.facet.detach.confirm', { entity_name: chosen[0].name, facet_name: facetName })
+    : window.JournalI18n.render('journal.window.entities.facet.detach.confirm.many', [...entityCountArgs('total', chosen.length, String(chosen.length)), ['facet_name', facetName]]);
+  pendingDetachEntity = null;
+  pendingDetachSet = chosen;
+  detachOpener = document.activeElement;
+  document.getElementById('detachConfirmMessage').textContent = message;
+  document.getElementById('detachConfirmModal').style.display = 'flex';
+}
+
+// Detaches one; a name already off the facet counts as detached.
+async function detachOneFromFacet(facet, entity) {
+  try {
+    const response = await fetch(`/app/entities/api/${encodeURIComponent(facet)}/entity/${encodeURIComponent(entity.id)}`, { method: 'DELETE' });
+    if (response.ok) return true;
+    const body = await response.json().catch(() => null);
+    return Boolean(body && body.reason_code === 'entity_not_found');
+  } catch (_) {
+    return false;
+  }
+}
+
+async function detachFacetSet(items) {
+  const facet = currentFacet;
+  const facetName = String(facetTitle(facet));
+  const failed = [];
+  for (const entity of items) {
+    if (!await detachOneFromFacet(facet, entity)) failed.push(entity);
+  }
+  const done = items.length - failed.length;
+  if (currentFacet === facet) {
+    const note = window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.detach.entity');
+    facetPick.on = failed.length > 0;
+    facetPick.items = new Map(failed.map(entity => [entity.id, entity]));
+    facetPick.notes = new Map(failed.map(entity => [entity.id, note]));
+  }
+  await refreshEntitiesAfterMutation();
+  const total = entityCountArgs('total', items.length, String(items.length));
+  const notice = { app: 'entities', dismissible: true };
+  if (items.length === 1) {
+    // One picked: the notice names it, as the confirm did.
+    notice.icon = failed.length ? 'triangle-alert' : 'undo-2';
+    notice.title = failed.length
+      ? window.JournalI18n.render('journal.window.entities.window.state.text.couldn.t.detach.entity')
+      : entityWindowText('journal.window.entities.facet.detach.done', { facet_name: facetName, entity_name: items[0].name });
+    if (!failed.length) notice.autoDismiss = 8000;
+  } else if (!failed.length) {
+    notice.icon = 'undo-2';
+    notice.title = window.JournalI18n.render('journal.window.entities.facet.detach.set.done', [...total, ['facet_name', facetName]]);
+    notice.autoDismiss = 8000;
+  } else {
+    notice.icon = 'triangle-alert';
+    notice.title = done
+      ? window.JournalI18n.render('journal.window.entities.facet.detach.set.part', [['done', String(done)], ...total, ['facet_name', facetName]])
+      : window.JournalI18n.render('journal.window.entities.facet.detach.set.none', [['facet_name', facetName]]);
+    notice.message = window.JournalI18n.render('journal.window.entities.facet.detach.set.still', entityCountArgs('remaining', failed.length, String(failed.length)));
+  }
+  window.AppServices.notifications.show(notice);
+}
+// ========== END FACET DETACH SET ==========
+
 function renderDetailView(entity, observations, detailData) {
   const isDetached = entity.detached === true;
   const needsAttachment = entity.needs_attachment === true;
@@ -6568,6 +6787,7 @@ function saveDescription(entity, newDescription) {
 }
 
 let pendingDetachEntity = null;
+let pendingDetachSet = null;
 let detachOpener = null;
 
 function showDetachConfirmModal(entity) {
@@ -6582,6 +6802,7 @@ function showDetachConfirmModal(entity) {
 function closeDetachConfirmModal() {
   document.getElementById('detachConfirmModal').style.display = 'none';
   pendingDetachEntity = null;
+  pendingDetachSet = null;
   const opener = detachOpener;
   detachOpener = null;
   holdFocus(true, null, () => opener);
@@ -6589,8 +6810,11 @@ function closeDetachConfirmModal() {
 
 function confirmDetach() {
   const entity = pendingDetachEntity;
+  const set = pendingDetachSet;
   closeDetachConfirmModal();
-  if (entity) {
+  if (set) {
+    detachFacetSet(set);
+  } else if (entity) {
     detachEntity(entity);
   }
 }
@@ -7366,6 +7590,8 @@ function appendDetailAffordance(card) {
 
 function renderEntityCards(searchTerm = '') {
   const container = document.getElementById('entity-cards-content');
+  syncFacetPick();
+  container.classList.toggle('entity-cards-picking', facetPick.on);
 
   // Update facet heading
   const facetHeading = document.getElementById('facet-entities-heading');
@@ -7390,6 +7616,7 @@ function renderEntityCards(searchTerm = '') {
     noEntities.style.display = 'block';
     countEl.style.display = 'none';
     noMatchEl.style.display = 'none';
+    paintFacetPick();
     return;
   }
 
@@ -7433,6 +7660,7 @@ function renderEntityCards(searchTerm = '') {
     countEl.style.display = 'none';
     noMatchEl.style.display = 'none';
   }
+  paintFacetPick();
 }
 
 function createEntityCard(entity) {
@@ -7452,13 +7680,19 @@ function createEntityCard(entity) {
     card.appendChild(principalBadge);
   }
 
-  card.onclick = () => navigateToEntity(entity.id);
+  card.dataset.entityId = entity.id;
+  card.onclick = (e) => {
+    if (toggleFacetPick(entity, e)) return;
+    navigateToEntity(entity.id);
+  };
   card.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
+      if (toggleFacetPick(entity, e)) return;
       navigateToEntity(entity.id);
     }
   });
+  if (facetPick.on && facetPickable(entity)) card.append(facetPickTick(entity));
 
   // Mention count badge (top-right corner)
   if (entity.observation_count && entity.observation_count > 0) {

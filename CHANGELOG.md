@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
+- in a facet's list of entities, you can now select several and detach them from that facet in one go. they stay in your journal, your journal won't add them back to that facet on its own, and you can re-attach any of them anytime. thanks @dvanduzer for the suggestion (#429).
 
 ### Changed
 

@@ -1,0 +1,34 @@
+{
+  "description": "Entities view. notice after every picked entity was detached from the facet; total is how many.",
+  "context": "Journal window. Entities view. notice after every picked entity was detached from the facet; total is how many.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c8a77b6ac21877ac1666ace3ff9059da90bbf1692172ef615791ff95d9e13c32",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

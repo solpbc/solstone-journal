@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. notice when none of the picked entities could be detached from the facet.",
+  "context": "Journal window. Entities view. notice when none of the picked entities could be detached from the facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c9e938d9da7e78600865a500b65a59c7f4b9480e126a84173c8755c10f40e932",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

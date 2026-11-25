@@ -2133,7 +2133,12 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e7375676765737465642e7469746c65,
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74,
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d,
+    m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79,
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65,
+    m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65,
+    m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65,
+    m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274,
+    m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c,
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e656d7074792e68656164696e67,
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e6c697374,
     m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e73696e676c65,
@@ -11498,7 +11503,12 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.entities.faces.suggested.title", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e7375676765737465642e7469746c65),
         ("journal.window.entities.faces.unconfirmed.alt", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74),
         ("journal.window.entities.facet.detach.confirm", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d),
+        ("journal.window.entities.facet.detach.confirm.many", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79),
         ("journal.window.entities.facet.detach.done", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65),
+        ("journal.window.entities.facet.detach.set.done", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65),
+        ("journal.window.entities.facet.detach.set.none", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65),
+        ("journal.window.entities.facet.detach.set.part", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274),
+        ("journal.window.entities.facet.detach.set.still", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c),
         ("journal.window.entities.facet.empty.heading", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e656d7074792e68656164696e67),
         ("journal.window.entities.facet.membership.list", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e6c697374),
         ("journal.window.entities.facet.membership.single", MessageId::m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e73696e676c65),
@@ -20891,7 +20901,12 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e7375676765737465642e7469746c65", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e7375676765737465642e7469746c65),
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74),
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d),
+    ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79),
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65),
+    ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65),
+    ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65),
+    ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274),
+    ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c),
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e656d7074792e68656164696e67", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e656d7074792e68656164696e67),
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e6c697374", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e6c697374),
     ("m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e73696e676c65", prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6d656d626572736869702e73696e676c65),
@@ -41807,6 +41822,38 @@ fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e64657461
     Ok((_resource_key, f_args))
 }
 
+fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["total", "total_quantity", "facet_name"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "total_quantity").ok_or_else(|| RenderError::MissingArgument("total_quantity".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("total_quantity".to_string())),
+    };
+    if v1 < -2147483648_i64 || v1 > 2147483647_i64 { return Err(RenderError::OutOfRange("total_quantity".to_string())); }
+    f_args.set("total_quantity", FluentValue::from(v1));
+    let val_v2 = args.iter().find(|(n, _)| *n == "facet_name").ok_or_else(|| RenderError::MissingArgument("facet_name".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("facet_name".to_string())),
+    };
+    f_args.set("facet_name", FluentValue::from(v2.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v1));
+    Ok((_resource_key, f_args))
+}
+
 fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
     const DECLARED: &[&str] = &["facet_name", "entity_name"];
     for (name, _) in args {
@@ -41828,6 +41875,120 @@ fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e64657461
         _ => return Err(RenderError::InvalidArgumentType("entity_name".to_string())),
     };
     f_args.set("entity_name", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["total", "total_quantity", "facet_name"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "total_quantity").ok_or_else(|| RenderError::MissingArgument("total_quantity".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("total_quantity".to_string())),
+    };
+    if v1 < -2147483648_i64 || v1 > 2147483647_i64 { return Err(RenderError::OutOfRange("total_quantity".to_string())); }
+    f_args.set("total_quantity", FluentValue::from(v1));
+    let val_v2 = args.iter().find(|(n, _)| *n == "facet_name").ok_or_else(|| RenderError::MissingArgument("facet_name".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("facet_name".to_string())),
+    };
+    f_args.set("facet_name", FluentValue::from(v2.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v1));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["facet_name"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "facet_name").ok_or_else(|| RenderError::MissingArgument("facet_name".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("facet_name".to_string())),
+    };
+    f_args.set("facet_name", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["done", "total", "total_quantity", "facet_name"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "done").ok_or_else(|| RenderError::MissingArgument("done".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("done".to_string())),
+    };
+    f_args.set("done", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "total").ok_or_else(|| RenderError::MissingArgument("total".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("total".to_string())),
+    };
+    f_args.set("total", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "total_quantity").ok_or_else(|| RenderError::MissingArgument("total_quantity".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("total_quantity".to_string())),
+    };
+    if v2 < -2147483648_i64 || v2 > 2147483647_i64 { return Err(RenderError::OutOfRange("total_quantity".to_string())); }
+    f_args.set("total_quantity", FluentValue::from(v2));
+    let val_v3 = args.iter().find(|(n, _)| *n == "facet_name").ok_or_else(|| RenderError::MissingArgument("facet_name".to_string()))?.1.clone();
+    let v3 = match val_v3 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("facet_name".to_string())),
+    };
+    f_args.set("facet_name", FluentValue::from(v3.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v2));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["remaining", "remaining_quantity"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "remaining").ok_or_else(|| RenderError::MissingArgument("remaining".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("remaining".to_string())),
+    };
+    f_args.set("remaining", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "remaining_quantity").ok_or_else(|| RenderError::MissingArgument("remaining_quantity".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("remaining_quantity".to_string())),
+    };
+    if v1 < -2147483648_i64 || v1 > 2147483647_i64 { return Err(RenderError::OutOfRange("remaining_quantity".to_string())); }
+    f_args.set("remaining_quantity", FluentValue::from(v1));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v1));
     Ok((_resource_key, f_args))
 }
 

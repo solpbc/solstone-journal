@@ -1,0 +1,30 @@
+{
+  "description": "Entities view. notice line: how many picked entities could not be detached and stay selected.",
+  "context": "Journal window. Entities view. notice line: how many picked entities could not be detached and stay selected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "remaining",
+      "type": "string"
+    },
+    {
+      "name": "remaining_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4824f1e6566c5d13471c3553e5f1999054316956962c2cbe3fc2675cd1ac3c00",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "remaining_quantity",
+    "type": "cardinal"
+  }
+}

@@ -190,6 +190,7 @@ class PickNode {
   }
   get className() { return this._class; }
   set className(value) { this._class = String(value || ''); }
+  get childNodes() { return this.children; }
   get id() { return this.attributes.id || ''; }
   set id(value) { this.attributes.id = String(value); }
   set textContent(value) { this._text = String(value); this.children = []; }
@@ -333,6 +334,172 @@ const SHOWING_HOOKS = `
     retryHide: (name) => retryHide({ name }),
   };
 `;
+
+// Select mode on a facet's cards: tick several, one confirm, each detached
+// through the entity page's own route; a refused one stays ticked with its
+// note. Asserts which copy key reaches which element; no assertion pins the words.
+async function facetDetachSetCases(workspace) {
+  const start = workspace.indexOf('// ========== FACET DETACH SET ==========');
+  const end = workspace.indexOf('// ========== END FACET DETACH SET ==========');
+  check(start !== -1 && end > start, 'the facet detach set block is marked');
+  const deleteStart = workspace.indexOf('// ========== ENTITY DELETE ==========');
+  const deleteEnd = workspace.indexOf('// ========== END ENTITY DELETE ==========');
+  const cardsStart = workspace.indexOf('function renderEntityCards(');
+  const cardsEnd = workspace.indexOf('function renderDetectedPagination(');
+  const modalStart = workspace.indexOf('let pendingDetachEntity = null;');
+  const modalEnd = workspace.indexOf('function detachEntity(');
+  check(cardsStart !== -1 && cardsEnd > cardsStart && modalStart !== -1 && modalEnd > modalStart, 'the facet cards and the detach dialog are reachable');
+  const flush = async () => { for (let i = 0; i < 12; i += 1) await new Promise((resolve) => setImmediate(resolve)); };
+  const setup = () => {
+    const h = pickHarness();
+    const make = (id, tag = 'div') => { const node = new PickNode(h.doc, tag); node.id = id; h.doc.registry.set(id, node); return node; };
+    ['facet-select-btn', 'facet-pick-detach', 'facet-pick-done-idle', 'facet-pick-done-some'].forEach((id) => make(id, 'button'));
+    make('facet-pick-all', 'input');
+    ['facet-pick-bar', 'facet-pick-idle', 'facet-pick-some', 'facet-pick-all-label', 'facet-pick-count', 'entity-cards-content',
+      'no-facet-entities', 'facet-card-search-count', 'no-facet-card-matches', 'facet-entities-heading', 'detachConfirmModal',
+      'detachConfirmMessage'].forEach((id) => make(id));
+    make('entity-card-search', 'input');
+    vm.runInContext(`
+      function groupedCount(n) { return String(n); }
+      ${workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate('))}
+      ${workspace.slice(workspace.indexOf('function entityWindowArgs('), workspace.indexOf('// Every entities refusal'))}
+      function fillLastMentionedDate() {}
+      function entityPhotoThumb() { return null; }
+      function appendTypeIndicator() {}
+      function appendDetailAffordance() {}
+      function groupEntitiesByType(items) { return [{ label: 'people', items: items.slice() }]; }
+      function facetTitle(name) { return 'title-' + name; }
+      function navigateToEntity(id) { __log.navigated.push(id); }
+      var ENT_COPY = { ENT_CARDS_EMPTY: 'empty' };
+      var currentFacet = 'work';
+      var entitiesData = { attached: [] };
+      var __nextAttached = null;
+      async function refreshEntitiesAfterMutation() {
+        __log.reloads += 1;
+        if (__nextAttached) { entitiesData = { attached: __nextAttached }; __nextAttached = null; }
+        renderEntityCards('');
+      }
+      ${noticesSource(workspace)}
+      ${workspace.slice(deleteStart, deleteEnd)}
+      ${workspace.slice(start, end)}
+      ${workspace.slice(modalStart, modalEnd)}
+      ${workspace.slice(cardsStart, cardsEnd)}
+      ${SHOWING_HOOKS}
+      this.api = { ENTITY_DELETE_COPY, facetPick, renderEntityCards, confirmDetach, closeDetachConfirmModal,
+        setAttached(a) { entitiesData = { attached: a }; }, setNext(a) { __nextAttached = a; }, setFacet(f) { currentFacet = f; } };
+    `.replace(/__log/g, 'this.__log'), h.context);
+    h.context.__log = h.log;
+    return h;
+  };
+  const ent = (id, extra = {}) => ({ id, name: `name-${id}`, type: 'Person', ...extra });
+
+  {
+    const h = setup();
+    const api = h.context.api;
+    const C = api.ENTITY_DELETE_COPY;
+    const byId = (id) => h.doc.getElementById(id);
+    const cards = () => byId('entity-cards-content').all('entity-card');
+    api.setAttached([ent('me', { is_principal: true }), ent('a'), ent('b'), ent('c')]);
+    api.renderEntityCards();
+    check(byId('facet-select-btn').hidden === false && byId('facet-select-btn').textContent === C.select, 'a facet with entities offers select');
+    check(byId('facet-pick-bar').hidden === true && !cards()[1].querySelector('.entity-card-pick'), 'no strip and no boxes outside select mode');
+    cards()[1].fire('click');
+    check(h.log.navigated.at(-1) === 'a', 'outside select mode a card opens its entity');
+    byId('facet-select-btn').onclick();
+    check(byId('facet-pick-bar').hidden === false && byId('facet-select-btn').hidden === true && byId('facet-pick-idle').hidden === false,
+      'select mode shows the strip');
+    check(byId('entity-cards-content').classList.contains('entity-cards-picking'), 'the cards make room for the box');
+    check(!cards()[0].querySelector('.entity-card-pick') && cards()[1].querySelector('.entity-card-pick') !== null, 'your own entity has no box; another does');
+    cards()[0].fire('click');
+    check(h.log.navigated.at(-1) === 'me', 'your own entity still opens');
+    cards()[1].fire('click');
+    check(api.facetPick.items.has('a') && cards()[1].classList.contains('entity-card--picked'), 'pressing a card picks it');
+    check(byId('facet-pick-some').hidden === false && byId('facet-pick-count').textContent === C.selected({ n: 1 }), 'the strip counts what is picked');
+    cards()[2].fire('keydown', { key: ' ' });
+    check(api.facetPick.items.has('b') && h.log.navigated.at(-1) === 'me', 'Space picks instead of opening');
+    cards()[2].fire('keydown', { key: 'Enter' });
+    check(!api.facetPick.items.has('b'), 'Enter toggles it back');
+    byId('facet-pick-all').onchange();
+    check(api.facetPick.items.size === 3 && !api.facetPick.items.has('me') && h.doc.activeElement === byId('facet-pick-detach'),
+      'select all leaves your own entity out and moves focus to detach');
+    byId('facet-pick-done-some').onclick();
+    check(api.facetPick.on === false && api.facetPick.items.size === 0 && h.doc.activeElement === byId('facet-select-btn'), 'done clears and leaves select mode');
+
+    // Another facet lets go of what was picked.
+    byId('facet-select-btn').onclick();
+    cards()[1].fire('click');
+    api.setFacet('home');
+    api.renderEntityCards();
+    check(api.facetPick.on === false && api.facetPick.items.size === 0, 'a facet change ends select mode');
+
+    // Only your own entity: nothing to select.
+    api.setAttached([ent('me', { is_principal: true })]);
+    api.renderEntityCards();
+    check(byId('facet-select-btn').hidden === true, 'no select when only you are attached');
+  }
+
+  // A set: one confirm, one detach per entity, the refused stay picked with a note.
+  {
+    const h = setup();
+    const api = h.context.api;
+    const byId = (id) => h.doc.getElementById(id);
+    const cards = () => byId('entity-cards-content').all('entity-card');
+    api.setAttached([ent('a'), ent('b'), ent('c'), ent('d')]);
+    api.renderEntityCards();
+    byId('facet-select-btn').onclick();
+    byId('facet-pick-all').onchange();
+    byId('facet-pick-detach').onclick();
+    check(byId('detachConfirmModal').style.display === 'flex' && byId('detachConfirmMessage').textContent.length > 0, 'detach opens the confirm');
+    const route = (id) => `DELETE /app/entities/api/work/entity/${id}`;
+    h.answers[route('a')] = { body: { success: true } };
+    h.answers[route('b')] = { status: 409, body: { reason_code: 'entity_busy' } };
+    h.answers[route('c')] = { status: 404, body: { reason_code: 'entity_not_found' } };
+    h.answers[route('d')] = new Error('no answer');
+    api.setNext([ent('b'), ent('d')]);
+    api.confirmDetach();
+    await flush();
+    const deletes = h.log.fetches.filter((f) => f.method === 'DELETE').map((f) => f.url);
+    check(JSON.stringify(deletes) === JSON.stringify(['a', 'b', 'c', 'd'].map((id) => `/app/entities/api/work/entity/${id}`)),
+      'each picked entity goes through the entity page detach, in order');
+    check(byId('detachConfirmModal').style.display === 'none', 'the confirm closes');
+    check(api.facetPick.on === true && JSON.stringify([...api.facetPick.items.keys()]) === JSON.stringify(['b', 'd']),
+      'the refused and the unanswered stay picked; one already off the facet counts as detached');
+    check(cards().every((card) => card.querySelector('.entity-card-note') !== null), 'each one still picked carries its note');
+    const receipt = h.log.receipts.at(-1);
+    check(receipt.autoDismiss === undefined && receipt.message, 'a partly done set says so and stays');
+  }
+
+  // All of them go: select mode ends and the notice goes by itself.
+  {
+    const h = setup();
+    const api = h.context.api;
+    const byId = (id) => h.doc.getElementById(id);
+    api.setAttached([ent('a'), ent('b')]);
+    api.renderEntityCards();
+    byId('facet-select-btn').onclick();
+    byId('facet-pick-all').onchange();
+    byId('facet-pick-detach').onclick();
+    h.answers['DELETE /app/entities/api/work/entity/a'] = { body: { success: true } };
+    h.answers['DELETE /app/entities/api/work/entity/b'] = { body: { success: true } };
+    api.setNext([]);
+    api.confirmDetach();
+    await flush();
+    check(api.facetPick.on === false && api.facetPick.items.size === 0 && h.log.reloads === 1, 'all detached: select mode ends and the list reloads');
+    const receipt = h.log.receipts.at(-1);
+    check(receipt.autoDismiss > 0 && receipt.message === undefined, 'the done notice goes by itself');
+
+    // Cancel sends nothing.
+    api.setAttached([ent('x')]);
+    api.renderEntityCards();
+    byId('facet-select-btn').onclick();
+    byId('facet-pick-all').onchange();
+    byId('facet-pick-detach').onclick();
+    api.closeDetachConfirmModal();
+    api.confirmDetach();
+    await flush();
+    check(!h.log.fetches.some((f) => f.url.endsWith('/entity/x')), 'cancel detaches nothing');
+  }
+}
 
 async function entityDeleteCases(workspace) {
   const start = workspace.indexOf('// ========== ENTITY DELETE ==========');
@@ -1806,6 +1973,7 @@ ${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidySta
   }
 
   await entityDeleteCases(workspace);
+  await facetDetachSetCases(workspace);
   const entitiesCopy = readCopyTable(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'));
   await detectedHideCases(workspace, entitiesCopy);
   await selectLandingCases(manifestDir);

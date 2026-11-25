@@ -1239,7 +1239,29 @@ journal.window.entities.faces.unconfirmed.alt = a face from a meeting that might
 
 journal.window.entities.facet.detach.confirm = detach { $entity_name } from { $facet_name }? stays in your journal and you can re-attach it anytime.
 
+journal.window.entities.facet.detach.confirm.many = { $total_quantity ->
+        [one] detach { $total } entity from { $facet_name }? it stays in your journal and you can re-attach it anytime.
+       *[other] detach { $total } entities from { $facet_name }? they stay in your journal and you can re-attach them anytime.
+    }
+
 journal.window.entities.facet.detach.done = detached from { $facet_name }. { $entity_name } is still in your journal.
+
+journal.window.entities.facet.detach.set.done = { $total_quantity ->
+        [one] detached { $total } entity from { $facet_name }. it's still in your journal.
+       *[other] detached { $total } entities from { $facet_name }. they're still in your journal.
+    }
+
+journal.window.entities.facet.detach.set.none = couldn't detach anything from { $facet_name }.
+
+journal.window.entities.facet.detach.set.part = { $total_quantity ->
+        [one] detached { $done } of { $total } entity from { $facet_name }.
+       *[other] detached { $done } of { $total } entities from { $facet_name }.
+    }
+
+journal.window.entities.facet.detach.set.still = { $remaining_quantity ->
+        [one] { $remaining } couldn't be detached and is still selected, so you can try it again.
+       *[other] { $remaining } couldn't be detached and are still selected, so you can try them again.
+    }
 
 journal.window.entities.facet.empty.heading = nothing in { $facet_name } yet.
 

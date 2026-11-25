@@ -71775,6 +71775,56 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.confirm.many\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.confirm.many",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "facet_name": "sample",
+        "total": "sample",
+        "total_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "detach ⁨sample⁩ entities from ⁨sample⁩? they stay in your journal and you can re-attach them anytime.",
+      "message_id": "journal.window.entities.facet.detach.confirm.many",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.confirm.many\", [[\"facet_name\", \"sample\"], [\"total\", \"sample\"], [\"total_quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "facet_name",
             "type": "string",
             "value": "sample"
@@ -71812,6 +71862,194 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.done\", [[\"entity_name\", \"sample\"], [\"facet_name\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.done\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.done",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "facet_name": "sample",
+        "total": "sample",
+        "total_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "detached ⁨sample⁩ entities from ⁨sample⁩. they're still in your journal.",
+      "message_id": "journal.window.entities.facet.detach.set.done",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.done\", [[\"facet_name\", \"sample\"], [\"total\", \"sample\"], [\"total_quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.none\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.none",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "facet_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "couldn't detach anything from ⁨sample⁩.",
+      "message_id": "journal.window.entities.facet.detach.set.none",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.none\", [[\"facet_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "done",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.part\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.part",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "done": "sample",
+        "facet_name": "sample",
+        "total": "sample",
+        "total_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "detached ⁨sample⁩ of ⁨sample⁩ entities from ⁨sample⁩.",
+      "message_id": "journal.window.entities.facet.detach.set.part",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.part\", [[\"done\", \"sample\"], [\"facet_name\", \"sample\"], [\"total\", \"sample\"], [\"total_quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "remaining",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "remaining_quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.still\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.still",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "remaining": "sample",
+        "remaining_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ couldn't be detached and are still selected, so you can try them again.",
+      "message_id": "journal.window.entities.facet.detach.set.still",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.still\", [[\"remaining\", \"sample\"], [\"remaining_quantity\", 0]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
       "target": "classic"
     },
     {
@@ -393277,6 +393515,56 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.confirm.many\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.confirm.many",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "detach ⁨sample⁩ entities from ⁨sample⁩? they stay in your journal and you can re-attach them anytime.",
+      "folder": null,
+      "inputs": {
+        "facet_name": "sample",
+        "total": "sample",
+        "total_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "detach ⁨sample⁩ entities from ⁨sample⁩? they stay in your journal and you can re-attach them anytime.",
+      "message_id": "journal.window.entities.facet.detach.confirm.many",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.confirm.many\", &[(\"facet_name\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e636f6e6669726d2e6d616e79",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "facet_name",
             "type": "string",
             "value": "sample"
@@ -393314,6 +393602,194 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.done\", &[(\"entity_name\", Value::String(\"sample\")), (\"facet_name\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e646f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.done\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.done",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "detached ⁨sample⁩ entities from ⁨sample⁩. they're still in your journal.",
+      "folder": null,
+      "inputs": {
+        "facet_name": "sample",
+        "total": "sample",
+        "total_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "detached ⁨sample⁩ entities from ⁨sample⁩. they're still in your journal.",
+      "message_id": "journal.window.entities.facet.detach.set.done",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.done\", &[(\"facet_name\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e646f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.none\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.none",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "couldn't detach anything from ⁨sample⁩.",
+      "folder": null,
+      "inputs": {
+        "facet_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "couldn't detach anything from ⁨sample⁩.",
+      "message_id": "journal.window.entities.facet.detach.set.none",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.none\", &[(\"facet_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e6e6f6e65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "done",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total_quantity",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "facet_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.part\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.part",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "detached ⁨sample⁩ of ⁨sample⁩ entities from ⁨sample⁩.",
+      "folder": null,
+      "inputs": {
+        "done": "sample",
+        "facet_name": "sample",
+        "total": "sample",
+        "total_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "detached ⁨sample⁩ of ⁨sample⁩ entities from ⁨sample⁩.",
+      "message_id": "journal.window.entities.facet.detach.set.part",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.part\", &[(\"done\", Value::String(\"sample\")), (\"facet_name\", Value::String(\"sample\")), (\"total\", Value::String(\"sample\")), (\"total_quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e70617274",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "remaining",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "remaining_quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.facet.detach.set.still\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.facet.detach.set.still",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ couldn't be detached and are still selected, so you can try them again.",
+      "folder": null,
+      "inputs": {
+        "remaining": "sample",
+        "remaining_quantity": 0
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ couldn't be detached and are still selected, so you can try them again.",
+      "message_id": "journal.window.entities.facet.detach.set.still",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.facet.detach.set.still\", &[(\"remaining\", Value::String(\"sample\")), (\"remaining_quantity\", Value::Cardinal(0))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365742e6465746163682e7365742e7374696c6c",
       "target": "rust"
     },
     {
