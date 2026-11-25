@@ -190,7 +190,7 @@ journal.cli.journal.archive.import.stage.changed = la directory superiore della 
 
 journal.cli.journal.archive.import.stopped = importazione fermata
 
-journal.cli.journal.archive.import.symlink = collegamento simbolico
+journal.cli.journal.archive.import.symlink = link simbolico
 
 journal.cli.journal.archive.import.traversal = percorso assoluto o di attraversamento
 
@@ -430,7 +430,7 @@ journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness 
 
 journal.cli.journal.archive.source.windows.wait.for.recursive.namespace.witness.member = attesa del testimone ricorsivo dello spazio dei nomi { $member }: { $detail }
 
-journal.cli.journal.archive.space.overflow = trabocco dello spazio su disco disponibile
+journal.cli.journal.archive.space.overflow = overflow dello spazio su disco disponibile
 
 journal.cli.journal.archive.space.platform = l'ispezione dello spazio su disco non è supportata su questa piattaforma
 
@@ -500,7 +500,7 @@ journal.cli.journal.facet.doctor.argument.merge = { $merge_flag } richiede { $ad
 
 journal.cli.journal.facet.doctor.collision.heading = Collisioni di file regolari
 
-journal.cli.journal.facet.doctor.empty = Niente da segnalare.
+journal.cli.journal.facet.doctor.empty = Niente da riportare.
 
 journal.cli.journal.facet.doctor.failed.heading = Facette orfane non riuscite
 

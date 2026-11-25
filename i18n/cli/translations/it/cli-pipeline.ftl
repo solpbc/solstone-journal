@@ -582,7 +582,7 @@ journal.cli.client.network.local.network.windows.asks = windows potrebbe chieder
 
 journal.cli.client.network.mark.none = l'identità del tuo diario viene creata quando la sua marca viene fissata durante la configurazione iniziale.
 
-journal.cli.client.network.mark.unavailable = marca del tuo diario: non disponibile in questo momento
+journal.cli.client.network.mark.unavailable = marca del tuo diario: non disponibile ora
 
 journal.cli.client.network.observer.pause = { $verb } non è ancora disponibile.
 
@@ -886,7 +886,7 @@ journal.cli.importer.body.zones.hours = { $quantity ->
    *[other] { $count } ore di { $source } possono comparire all'ora sbagliata: sono state salvate in un fuso orario diverso da quello che questo diario tiene per { $source }.
 }
 
-journal.cli.importer.body.zones.under.hour = meno di un'ora di { $source } può comparire all'ora sbagliata: è stata salvata in un fuso orario diverso da quello che questo diario tiene per { $source }.
+journal.cli.importer.body.zones.under.hour = meno di un'ora di { $source } può comparire all'ora sbagliata: è stata salvata in un fuso orario diverso da quello che questo diario ha per { $source }.
 
 journal.cli.importer.connect.available = Backend collegabili: oura, plaud
 
@@ -1056,7 +1056,7 @@ journal.cli.importer.error.no.facet.scope = --no-facet si applica solo a un'impo
 
 journal.cli.importer.error.preview.failed = non è stato possibile mostrare l'anteprima dell'importazione: { $error }
 
-journal.cli.importer.error.stopped = importazione interrotta
+journal.cli.importer.error.stopped = importazione fermata
 
 journal.cli.importer.error.timestamp.format = il timestamp deve essere nel formato YYYYMMDD_HHMMSS
 
@@ -1400,7 +1400,7 @@ journal.cli.importer.timestamp.confirm = timestamp rilevato { $timestamp }; ries
 
 journal.cli.oauth.callback.failure = l'accesso non è finito. torna al tuo diario e riprova
 
-journal.cli.oauth.callback.success = hai effettuato l'accesso. puoi chiudere questa scheda e tornare al tuo diario
+journal.cli.oauth.callback.success = accesso eseguito. puoi chiudere questa scheda e tornare al tuo diario
 
 journal.cli.oauth.oura.callback.allowed = l'hai consentito su Oura. puoi chiudere questa scheda; il terminale dice quando è connesso.
 
@@ -3130,7 +3130,7 @@ journal.cli.transcribe.feed.pool.lock = il blocco del pool di candidati non è r
 
 journal.cli.transcribe.feed.pool.read = la lettura del pool di candidati non è riuscita: { $detail }
 
-journal.cli.transcribe.feed.pool.width = mancata corrispondenza della larghezza del centroide del pool di candidati
+journal.cli.transcribe.feed.pool.width = discrepanza nella larghezza del centroide del pool di candidati
 
 journal.cli.transcribe.feed.pool.write = la scrittura del pool di candidati non è riuscita: { $detail }
 
@@ -3200,7 +3200,7 @@ journal.cli.transcribe.sound.helper.large = la risposta di ced ha superato 64 Mi
 
 journal.cli.transcribe.sound.helper.missing = manca il binario dell'ausiliario ced: { $path }
 
-journal.cli.transcribe.sound.helper.parent = l'eseguibile corrente non ha una directory superiore
+journal.cli.transcribe.sound.helper.parent = l'eseguibile attuale non ha una cartella superiore
 
 journal.cli.transcribe.sound.helper.response = la risposta dell'ausiliario ced non era JSON valido: { $detail }
 
@@ -3242,7 +3242,7 @@ journal.cli.transcribe.sound.windows.package.member = il payload firmato dell'ap
 
 journal.cli.transcribe.sound.windows.package.parent = l'eseguibile in esecuzione non ha una directory che lo contiene
 
-journal.cli.transcribe.sound.windows.package.root = la directory bin del pacchetto non ha una radice di pacchetto
+journal.cli.transcribe.sound.windows.package.root = la directory bin del pacchetto non ha una radice del pacchetto
 
 journal.cli.transcribe.sound.windows.probe = l'ausiliario CED ha restituito una risposta di sonda non valida
 

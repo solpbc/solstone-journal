@@ -1534,7 +1534,7 @@ journal.cli.reprocess.facet.classification = { $path }: classificazione della fa
 
 journal.cli.reprocess.facet.utf8 = non-{ $encoding } facetta
 
-journal.cli.reprocess.help = uso: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $line_break }Invia un giorno passato del diario per la rielaborazione{ $line_break }{ $line_break }argomenti posizionali:{ $line_break }{ $day_column }Giorno passato nel formato { $date_format }{ $line_break }{ $line_break }opzioni:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_9 }mostra questo messaggio di aiuto ed esci{ $line_break }{ $indent_2 }{ $through_option }{ $gap_2 }Fine inclusiva dell'intervallo nel formato { $date_format }{ $line_break }{ $syntax_continuation_13 }{ $line_break }{ $indent_2 }{ $unit_option }{ $gap_8 }Richiedi di riprovare un passaggio giornaliero di elaborazione non riuscito{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_6 }Faccetta di quell'unità; obbligatoria quando l'unità ha una faccetta{ $line_break }{ $indent_2 }{ $from_scratch_option }{ $gap_5 }Forza una riesecuzione giornaliera completa, preservando i marcatori (non{ $line_break }                     contrassegna il giorno come aggiornato){ $line_break }{ $indent_2 }{ $mark_updated_option }{ $gap_5 }Contrassegna il giorno come avente nuovi dati grezzi così l'elaborazione giornaliera{ $line_break }                     lo rimette in coda; sollecita poi uno svuotamento{ $line_break }{ $indent_2 }{ $owed_option }{ $gap_13 }Elenca gli output giornalieri dovuti nel giorno o nell'intervallo e perché,{ $line_break }                     senza inviare nulla{ $line_break }{ $indent_2 }{ $json_option }{ $gap_13 }Con { $owed_flag }, riporta ogni giorno come stati e conteggi: i suoi{ $line_break }                     marcatori, la sua copertura, quanti output giornalieri ha e{ $line_break }                     quanti sono dovuti, per causa{ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_6 }Abilita l'output dettagliato{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_8 }Abilita il logging di debug
+journal.cli.reprocess.help = uso: { $syntax }{ $line_break }{ $syntax_continuation_1 }{ $line_break }{ $syntax_continuation_2 }{ $line_break }{ $day_line }{ $line_break }{ $line_break }Invia un giorno passato del diario per la rielaborazione{ $line_break }{ $line_break }argomenti posizionali:{ $line_break }{ $day_column }Giorno passato nel formato { $date_format }{ $line_break }{ $line_break }opzioni:{ $line_break }{ $indent_2 }{ $help_option }{ $gap_9 }mostra questo messaggio di aiuto ed esci{ $line_break }{ $indent_2 }{ $through_option }{ $gap_2 }Fine inclusiva dell'intervallo nel formato { $date_format }{ $line_break }{ $syntax_continuation_13 }{ $line_break }{ $indent_2 }{ $unit_option }{ $gap_8 }Richiedi di riprovare un passaggio giornaliero di elaborazione non riuscito{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_6 }Facetta di quell'unità; obbligatoria quando l'unità ha una facetta{ $line_break }{ $indent_2 }{ $from_scratch_option }{ $gap_5 }Forza una riesecuzione giornaliera completa, preservando i marcatori (non{ $line_break }                     contrassegna il giorno come aggiornato){ $line_break }{ $indent_2 }{ $mark_updated_option }{ $gap_5 }Contrassegna il giorno come avente nuovi dati grezzi così l'elaborazione giornaliera{ $line_break }                     lo rimette in coda; sollecita poi uno svuotamento{ $line_break }{ $indent_2 }{ $owed_option }{ $gap_13 }Elenca gli output giornalieri dovuti nel giorno o nell'intervallo e perché,{ $line_break }                     senza inviare nulla{ $line_break }{ $indent_2 }{ $json_option }{ $gap_13 }Con { $owed_flag }, riporta ogni giorno come stati e conteggi: i suoi{ $line_break }                     marcatori, la sua copertura, quanti output giornalieri ha e{ $line_break }                     quanti sono dovuti, per causa{ $line_break }{ $indent_2 }{ $verbose_option }{ $gap_6 }Abilita l'output dettagliato{ $line_break }{ $indent_2 }{ $debug_option }{ $gap_8 }Abilita il logging di debug
 
 journal.cli.reprocess.input.day = giorno non valido: { $day }
 
@@ -1724,7 +1724,7 @@ journal.cli.schedule.cell.midnight = mezzanotte
 
 journal.cli.schedule.cell.never = mai
 
-journal.cli.schedule.cell.now = adesso
+journal.cli.schedule.cell.now = ora
 
 journal.cli.schedule.config = Configurazione: { $path }
 
@@ -1878,7 +1878,7 @@ journal.cli.segment.inspect.indexed = { $quantity ->
    *[other] Indice: indicizzato ({ $chunks } blocchi)
 }
 
-journal.cli.segment.inspect.next = successivo: { $next }
+journal.cli.segment.inspect.next = prossimo: { $next }
 
 journal.cli.segment.inspect.next.none = successivo: (nessuno)
 
@@ -2042,9 +2042,9 @@ journal.cli.share.facets = non è stato possibile elencare le facette: { $detail
 
 journal.cli.share.failure = { $command }: { $detail }
 
-journal.cli.share.help.match = uso: { $syntax }{ $line_break }{ $line_break }opzioni:{ $line_break }{ $indent_2 }{ $person_option }{ $gap_3 }id entità, o un nome o alias univoco di una persona{ $line_break }{ $indent_2 }{ $day_option }{ $gap_4 }il giorno da leggere{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_5 }solo questa faccetta (predefinito: ogni faccetta)
+journal.cli.share.help.match = uso: { $syntax }{ $line_break }{ $line_break }opzioni:{ $line_break }{ $indent_2 }{ $person_option }{ $gap_3 }id entità, o un nome o alias univoco di una persona{ $line_break }{ $indent_2 }{ $day_option }{ $gap_4 }il giorno da leggere{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_5 }solo questa facetta (predefinito: ogni facetta)
 
-journal.cli.share.help.package = uso: { $syntax }{ $line_break }{ $line_break }opzioni:{ $line_break }{ $indent_2 }{ $person_option }{ $gap_3 }id entità, o un nome o alias univoco di una persona{ $line_break }{ $indent_2 }{ $day_option }{ $gap_4 }il giorno dell'attività{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_5 }la faccetta dell'attività{ $line_break }{ $indent_2 }{ $activity_option }{ $gap_5 }l'id dell'attività
+journal.cli.share.help.package = uso: { $syntax }{ $line_break }{ $line_break }opzioni:{ $line_break }{ $indent_2 }{ $person_option }{ $gap_3 }id entità, o un nome o alias univoco di una persona{ $line_break }{ $indent_2 }{ $day_option }{ $gap_4 }il giorno dell'attività{ $line_break }{ $indent_2 }{ $facet_option }{ $gap_5 }la facetta dell'attività{ $line_break }{ $indent_2 }{ $activity_option }{ $gap_5 }l'id dell'attività
 
 journal.cli.share.help.root = uso: { $syntax }{ $line_break }{ $line_break }Trova le attività condivise con una persona collegata e mostra l'anteprima di ciò che verrebbe condiviso.{ $line_break }Entrambi i sottocomandi leggono soltanto il diario.{ $line_break }{ $line_break }comandi:{ $line_break }{ $match_command }Elenca le attività del giorno che corrispondono a una persona, una riga { $json } ciascuna{ $line_break }{ $package_command }Stampa il pacchetto di riepilogo circoscritto per un'attività corrispondente
 
@@ -2700,7 +2700,7 @@ journal.cli.talent.facet.malformed = dati malformati in { $path }
 
 journal.cli.talent.facet.malformed.line = dati malformati in { $path } alla riga { $line }
 
-journal.cli.talent.facet.object = la dichiarazione della facetta non è un oggetto: { $path }
+journal.cli.talent.facet.object = la dichiarazione di facetta non è un oggetto: { $path }
 
 journal.cli.talent.floor.invalid.budget = { $budget } mancante o non valido
 
