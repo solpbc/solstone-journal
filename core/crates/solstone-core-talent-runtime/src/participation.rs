@@ -12,7 +12,7 @@ use solstone_core_time::Precision;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
-use crate::{PreparedTalent, StageError, detected_resolution_entities, stage_error};
+use crate::{PreparedTalent, StageError, stage_error};
 
 /// Matched lines that show a voice was heard in an activity.
 const HEARD_LINES: usize = 2;
