@@ -78,9 +78,3 @@ Exercise all live wire invariants against a disposable test journal origin:
 ```sh
 python3 contracts/mobile-import/conformance.py --origin http://127.0.0.1:<port>
 ```
-
-Or spin up a disposable Convey HTTP server and run both checks in one step:
-
-```sh
-cargo test --manifest-path core/Cargo.toml -p solstone-core-import-web --test import_web_transport conformance_script_passes_against_live_convey_server -- --nocapture
-```
