@@ -1,0 +1,31 @@
+{
+  "description": "Shown next to the dated successful copy in Backup and Status. Use of the current settings does not prove current coverage or destination contents.",
+  "context": "Journal window, Backup and Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "44b4c4d49672f72eecbe1513fcb66246da9eb08b96d4ae427eb474f62c2efc3d",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "state",
+    "type": "string",
+    "enum_values": [
+      "current",
+      "earlier",
+      "unknown"
+    ],
+    "enum_default": "unknown"
+  }
+}

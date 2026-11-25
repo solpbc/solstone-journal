@@ -1505,6 +1505,38 @@ test('backup off, unknown, incomplete, active and changed-destination history st
   assert.strictEqual(env.state.backupView.tone, 'unavailable');
 });
 
+test('backup history qualifies the saved copy independently of the latest attempt', async () => {
+  const env = createBackupEnvironment();
+  const read = async (attemptMatches, copyMatches, schedule) => {
+    await env.read({
+      ...backupSnapshot({ ...successfulBackup, last_success: successfulBackup }),
+      last_backup_current_setup: attemptMatches,
+      last_success_current_setup: copyMatches,
+      schedule,
+    });
+    return {
+      copy: env.facts.querySelectorAll('dd')[3].textContent,
+      schedule: env.facts.querySelector('p').textContent,
+    };
+  };
+  const earlier = await read(true, false, { enabled: false });
+  const current = await read(true, true, { enabled: true });
+  const unknown = await read(true, null, null);
+  assert.notStrictEqual(earlier.copy, current.copy);
+  assert.notStrictEqual(unknown.copy, current.copy);
+  assert.notStrictEqual(earlier.copy, unknown.copy);
+  assert.strictEqual(new Set([earlier.schedule, current.schedule, unknown.schedule]).size, 3);
+  assert.strictEqual(env.state.backupView.tone, 'neutral');
+
+  await env.read({
+    ...backupSnapshot({ status: 'error', time: successfulBackup.time, last_success: successfulBackup }),
+    last_backup_current_setup: false,
+    last_success_current_setup: false,
+  });
+  assert.strictEqual(env.state.backupView.tone, 'neutral');
+  assert.strictEqual(env.facts.querySelectorAll('dd')[3].textContent, earlier.copy);
+});
+
 test('backup read cannot repaint a replacement workspace and the deep link reaches detail', async () => {
   const env = createBackupEnvironment();
   let finish;

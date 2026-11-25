@@ -1,0 +1,31 @@
+{
+  "description": "Configuration readout in Backup and Status when backup is on and unpaused. This does not report whether the scheduler is running.",
+  "context": "Journal window, Backup and Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "state",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "bbd029c15d9588ad5d157dcfb0b634bc60101838aed9574d11a9466f6003b878",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "state",
+    "type": "string",
+    "enum_values": [
+      "scheduled",
+      "off",
+      "unknown"
+    ],
+    "enum_default": "unknown"
+  }
+}

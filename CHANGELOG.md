@@ -28,6 +28,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- backup and status show whether the last recorded copy used your current destination and credentials for saving backups.
 - search now indexes spoken transcript lines from your recordings and imported audio, so you and your connected agents (when allowed to read transcripts) can find specific words and lines directly; connected agents also get each line's time and speaker when known. existing journals add these lines to their search index automatically in the background.
 - when a connected agent searches your journal with keywords, search now orders results by how closely they match instead of newest first, so older matches with several of the searched words aren't buried under newer single-word matches. browsing without a query still shows newest entries first.
 - connected agents also receive updated search instructions for searching spoken transcript lines directly, closest-match ordering, and narrowing searches that match only some of the keywords.

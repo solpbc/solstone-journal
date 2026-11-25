@@ -256,7 +256,7 @@ async fn status_shape_preserves_backup_phase_discrimination() {
         assert_eq!(status, 200);
         assert_eq!(
             body.as_object().expect("object").len(),
-            21 + usize::from(cfg!(windows))
+            22 + usize::from(cfg!(windows))
         );
         assert_eq!(body["recovery_key_revocation_pending"], false);
         assert_eq!(body["recovery_key_revocation_unresolved"], false);
@@ -266,6 +266,7 @@ async fn status_shape_preserves_backup_phase_discrimination() {
             body["last_backup_current_setup"].is_null(),
             "historical fixtures have no setup provenance"
         );
+        assert_eq!(body.get("last_success_current_setup"), Some(&Value::Null));
         if phase == "broken" {
             assert_eq!(body["last_backup"]["error_reason"], "locked");
             assert_eq!(body["last_verification"]["reason"], "read_data_mismatch");

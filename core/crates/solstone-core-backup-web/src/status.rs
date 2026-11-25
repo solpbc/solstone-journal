@@ -49,20 +49,33 @@ pub fn status(root: &Path, operations: &SharedOperationSlot) -> Result<Value, ()
     status_with_operation(root, operation.as_ref())
 }
 
+fn result_matches_setup(result: &Value, current: Option<&str>) -> Option<bool> {
+    let current = current?;
+    let stored = result.get("setup_fingerprint")?.as_str()?;
+    (stored.len() == 64 && stored.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then_some(stored == current)
+}
+
 pub(crate) fn status_with_operation(
     root: &Path,
     operation: Option<&Operation>,
 ) -> Result<Value, ()> {
     let backup = config::backup(root)?;
     let binding = load_hosted_binding(root);
-    let current_setup = backup
-        .get("last_backup")
-        .and_then(|result| result.get("setup_fingerprint"))
-        .and_then(Value::as_str)
-        .filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
-        .and_then(|stored| {
-            backup_setup_fingerprint(&backup, binding.as_ref()).map(|current| stored == current)
-        });
+    let current_setup = backup_setup_fingerprint(&backup, binding.as_ref());
+    let attempt = &backup["last_backup"];
+    // An explicit null is unknown. Older journals used the successful
+    // attempt itself as the history record.
+    let last_success = attempt.get("last_success").unwrap_or(attempt);
+    let success_matches_setup = if last_success["status"] == "ok"
+        && last_success["snapshot_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty())
+    {
+        result_matches_setup(last_success, current_setup.as_deref())
+    } else {
+        None
+    };
     let destination = backup.get("destination").and_then(Value::as_object);
     let pending_val = backup.get("pending_key_revocation");
     let revocation_unresolved = pending_val.is_some();
@@ -75,7 +88,8 @@ pub(crate) fn status_with_operation(
         "daily_key_set": backup.get("daily_key").is_some_and(|value| !value.is_null()), "recovery_key_set": backup.get("recovery_key").is_some_and(|value| !value.is_null()), "recovery_key_confirmed": backup.get("confirmed_recovery_key").and_then(Value::as_bool).unwrap_or(false),
         "recovery_key_revocation_pending": revocation_pending, "recovery_key_revocation_unresolved": revocation_unresolved,
         "retention": backup.get("retention").cloned().unwrap_or(Value::Null), "offload": backup.get("offload").cloned().unwrap_or(Value::Null), "schedule": solstone_core_backup_runtime::effective_backup_schedule(root),
-        "last_backup": backup.get("last_backup").cloned().unwrap_or(Value::Null), "last_backup_current_setup": current_setup, "last_prune": backup.get("last_prune").cloned().unwrap_or(Value::Null), "last_offload": backup.get("last_offload").cloned().unwrap_or(Value::Null), "last_verification": backup.get("last_verification").cloned().unwrap_or(Value::Null), "last_restore": backup.get("last_restore").cloned().unwrap_or(Value::Null), "hosted": hosted_view(binding.as_ref(), operation), "operation": operation_value(operation)
+        "last_backup": attempt, "last_backup_current_setup": result_matches_setup(attempt, current_setup.as_deref()), "last_success_current_setup": success_matches_setup,
+        "last_prune": backup.get("last_prune").cloned().unwrap_or(Value::Null), "last_offload": backup.get("last_offload").cloned().unwrap_or(Value::Null), "last_verification": backup.get("last_verification").cloned().unwrap_or(Value::Null), "last_restore": backup.get("last_restore").cloned().unwrap_or(Value::Null), "hosted": hosted_view(binding.as_ref(), operation), "operation": operation_value(operation)
     })))
 }
 

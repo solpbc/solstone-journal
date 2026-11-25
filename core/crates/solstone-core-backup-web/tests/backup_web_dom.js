@@ -299,6 +299,7 @@ function restoreOperation(phase, reasonCode, portalUrl = 'https://services.solst
 
 function fixture(document) {
   const root = add(document.body, 'section', { class: 'backup-shell', 'data-backup-root': '', 'data-state': 'empty' });
+  add(root, 'p', { 'data-backup-schedule-note': '', hidden: '' });
   const banner = add(root, 'div', { 'data-operation-banner': '', hidden: '' });
   add(banner, 'span', { class: 'backup-spinner' });
   add(banner, 'span', { 'data-operation-phase': '' });
@@ -335,6 +336,7 @@ function fixture(document) {
   const lastBackup = add(managementGrid, 'p', { 'data-last-backup': '' });
   add(managementGrid, 'p', { 'data-last-successful-backup': '' });
   add(managementGrid, 'p', { 'data-last-successful-backup-reason': '', hidden: '' });
+  add(managementGrid, 'p', { 'data-last-successful-backup-setup': '', hidden: '' });
   add(managementGrid, 'p', { 'data-backup-history-note': '', hidden: '', 'data-copy': 'management.status_labels.backup_history_note' });
   const backupNow = add(management, 'button', { 'data-action': 'backup-now' });
   const viewKey = add(management, 'button', { 'data-action': 'view-key' });
@@ -1702,25 +1704,38 @@ asyncCase('refresh advances attempt history without presenting retained evidence
   const success = { status: 'ok', time: earlier, error_reason: null };
   const initial = { ...status(restoreOperation('restoring')), enabled: true,
     last_backup: { ...success, last_success: success },
+    last_success_current_setup: true,
+    schedule: { enabled: true, every: 'hourly' },
   };
   const changed = { ...status(restoreOperation('restoring')), enabled: true,
     destination: { repository: 's3:other-bucket/other-backup', backend: 's3' },
     last_backup: { status: 'error', time: 1770000000, error_reason: 'timeout', last_success: success },
+    last_success_current_setup: false,
+    schedule: { enabled: false, every: null },
   };
   const harness = createHarness({ statusQueue: [initial, changed], respond(call, calls, queue) {
     if (call.url === '/app/backup/status' && !queue.length) return response({}, 503);
   } });
   await settle();
   const history = harness.root.querySelector('[data-last-successful-backup]');
+  const setup = harness.root.querySelector('[data-last-successful-backup-setup]');
+  const schedule = harness.root.querySelector('[data-backup-schedule-note]');
+  assert.ok(!setup.hidden && setup.textContent);
+  assert.ok(!schedule.hidden && schedule.textContent);
+  const initialSetup = setup.textContent;
+  const initialSchedule = schedule.textContent;
   const initialTitle = history.title;
   await harness.runTimer(800);
   await settle();
   assert.strictEqual(history.title, initialTitle);
+  assert.notStrictEqual(setup.textContent, initialSetup);
+  assert.notStrictEqual(schedule.textContent, initialSchedule);
   assert.notStrictEqual(harness.lastBackup.title, initialTitle);
   assert.ok(!harness.root.querySelector('[data-backup-history-note]').hidden);
   await harness.runTimer(800);
   await settle();
   assert.strictEqual(history.title, initialTitle, 'failed refresh does not manufacture or erase historical success');
+  assert.ok(setup.hidden && schedule.hidden, 'a failed read cannot qualify history or schedule as current');
   assert.ok(!harness.root.querySelector('[data-backup-history-note]').hidden);
   const reloaded = createHarness({ statusQueue: [changed] });
   await settle();

@@ -1,0 +1,16 @@
+{
+  "description": "Backup and Status summary when the last attempt belongs to a different setup. Its outcome remains in history.",
+  "context": "Journal window, Backup and Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74fe17a5ac0e1e999ae0ce3633936911cd5fb19efb88233cd4245d6970f26cc7",
+  "max_length": 92,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

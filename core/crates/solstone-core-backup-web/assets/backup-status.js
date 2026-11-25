@@ -98,6 +98,24 @@
     return detail ? `${message} ${detail}` : message;
   }
 
+  function lastSuccessfulCopy(attempt) {
+    const saved = record(attempt) && Object.hasOwn(attempt, 'last_success')
+      ? attempt.last_success : attempt;
+    return saved?.status === 'ok' && date(saved.time) ? saved : null;
+  }
+
+  function copySetupNote(matches) {
+    const state = matches === true ? 'current' : matches === false ? 'earlier' : 'unknown';
+    return window.JournalI18n.render('journal.window.backup.status.copy.setup', [['state', state]]);
+  }
+
+  function scheduleNote(snapshot) {
+    if (!snapshot.enabled || Number.isInteger(snapshot.paused_at)) return '';
+    const enabled = snapshot.schedule?.enabled;
+    const state = enabled === true ? 'scheduled' : enabled === false ? 'off' : 'unknown';
+    return window.JournalI18n.render('journal.window.backup.status.schedule.configuration', [['state', state]]);
+  }
+
   function select(snapshot) {
     if (!record(snapshot) || typeof snapshot.enabled !== 'boolean'
         || !['last_backup', 'last_verification', 'operation'].every(key => Object.hasOwn(snapshot, key))
@@ -112,6 +130,7 @@
     }
     const attempt = snapshot.last_backup;
     const verification = snapshot.last_verification;
+    const earlierAttempt = snapshot.last_backup_current_setup === false;
     let text, tone = 'neutral';
     // A pause is the owner's choice: neutral, and never read as failing or stale.
     const paused = snapshot.enabled && Number.isInteger(snapshot.paused_at);
@@ -123,15 +142,17 @@
       text = date(snapshot.paused_at) ? window.JournalI18n.render('journal.window.backup.status.paused.on.date', [['paused_at', date(snapshot.paused_at)]])
         : window.JournalI18n.render('journal.window.backup.status.window.explanation.you.paused.backup.the.date.isn');
     }
-    else if (attempt?.status === 'error') {
+    else if (!earlierAttempt && attempt?.status === 'error') {
       text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.latest.recorded.backup.attempt.failed');
       tone = 'attention';
-    } else if (attempt?.status === 'ok' && attempt.error_reason === 'incomplete') {
+    } else if (!earlierAttempt && attempt?.status === 'ok' && attempt.error_reason === 'incomplete') {
       text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.latest.recorded.backup.copy.is');
       tone = 'attention';
     } else if (verification?.status === 'error') {
       text = window.JournalI18n.render('journal.window.backup.status.window.explanation.the.last.recorded.backup.spot.check');
       tone = 'attention';
+    } else if (earlierAttempt) {
+      text = window.JournalI18n.render('journal.window.backup.status.attempt.earlier.setup');
     } else if (attempt?.status === 'ok' && date(attempt.time)) {
       text = window.JournalI18n.render('journal.window.backup.status.last.attempt.completed.date', [['completed_at', date(attempt.time)]]);
     } else {
@@ -174,8 +195,7 @@
       return;
     }
     const attempt = snapshot.last_backup;
-    const success = record(attempt) && Object.hasOwn(attempt, 'last_success')
-      ? attempt.last_success : attempt?.status === 'ok' ? attempt : null;
+    const success = lastSuccessfulCopy(attempt);
     const operation = snapshot.operation;
     const facts = [
       [window.JournalI18n.render('journal.window.backup.status.fact.name'), !snapshot.enabled ? window.JournalI18n.render('journal.window.backup.status.fact.off') : Number.isInteger(snapshot.paused_at)
@@ -184,7 +204,9 @@
       [window.JournalI18n.render('journal.window.backup.status.fact.operation'), operation
         ? operationText(operation, 'label') : window.JournalI18n.render('journal.window.backup.status.fact.none.reported')],
       [window.JournalI18n.render('journal.window.backup.status.fact.latest.attempt'), resultText(attempt)],
-      [window.JournalI18n.render('journal.window.backup.status.fact.last.success'), success?.status === 'ok' && date(success.time) ? resultText(success) : window.JournalI18n.render('journal.window.backup.status.outcome.unknown')],
+      [window.JournalI18n.render('journal.window.backup.status.fact.last.success'), success
+        ? `${resultText(success)} ${copySetupNote(snapshot.last_success_current_setup)}`
+        : window.JournalI18n.render('journal.window.backup.status.outcome.unknown')],
       [window.JournalI18n.render('journal.window.backup.status.fact.last.check'), resultText(snapshot.last_verification, true)],
     ];
     const list = document.createElement('dl');
@@ -198,6 +220,12 @@
       list.appendChild(row);
     }
     element.appendChild(list);
+    const schedule = scheduleNote(snapshot);
+    if (schedule) {
+      const note = document.createElement('p');
+      note.textContent = schedule;
+      element.appendChild(note);
+    }
     const note = document.createElement('p');
     note.className = 'backup-history-note';
     note.textContent = qualification;
@@ -257,6 +285,9 @@
     select,
     renderSummary,
     renderFacts,
+    lastSuccessfulCopy,
+    copySetupNote,
+    scheduleNote,
     verificationSubsetLine,
     errorReasons: BACKUP_ERROR_REASONS,
     operationActive,

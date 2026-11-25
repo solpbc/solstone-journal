@@ -8,6 +8,7 @@
 
   <div class="backup-general-status">
     <p data-backup-summary role="status">{{journal.window.backup.visible.text.checking.backup.status}}</p>
+    <p class="backup-note" data-backup-schedule-note hidden></p>
     <a class="backup-link" href="/app/health/#backup">{{journal.window.backup.link.label.backup.details.in.status}}</a>
   </div>
 
@@ -220,6 +221,7 @@
           <h2 data-copy="management.status_labels.last_successful_backup"></h2>
           <p data-last-successful-backup></p>
           <p data-last-successful-backup-reason hidden></p>
+          <p class="backup-note" data-last-successful-backup-setup hidden></p>
           <p class="backup-note" data-backup-history-note data-copy="management.status_labels.backup_history_note" hidden></p>
         </section>
         <section>

@@ -20576,6 +20576,18 @@
       }
     },
     {
+      "id": "journal.window.backup.status.attempt.earlier.setup",
+      "resource": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+      "namespace": "journal.window.backup.status.attempt.earlier",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.backup.status.backup.off",
       "resource": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e6261636b75702e6f6666",
       "namespace": "journal.window.backup.status.backup",
@@ -20731,6 +20743,35 @@
           "could-not-run"
         ],
         "enum_default": "could-not-run"
+      }
+    },
+    {
+      "id": "journal.window.backup.status.copy.setup",
+      "resource": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570",
+      "namespace": "journal.window.backup.status.copy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "state",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "state",
+        "type": "string",
+        "enum_values": [
+          "current",
+          "earlier",
+          "unknown"
+        ],
+        "enum_default": "unknown"
       }
     },
     {
@@ -21287,6 +21328,35 @@
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.window.backup.status.schedule.configuration",
+      "resource": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e",
+      "namespace": "journal.window.backup.status.schedule",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "enum",
+      "arguments": [
+        {
+          "name": "state",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "state",
+        "type": "string",
+        "enum_values": [
+          "scheduled",
+          "off",
+          "unknown"
+        ],
+        "enum_default": "unknown"
+      }
     },
     {
       "id": "journal.window.backup.status.status.text.backup.is.off.value1",

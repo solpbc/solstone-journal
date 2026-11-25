@@ -38982,6 +38982,36 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.backup.status.attempt.earlier.setup\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.backup.status.attempt.earlier.setup",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the latest recorded attempt used a different destination or different credentials for saving backups.",
+      "message_id": "journal.window.backup.status.attempt.earlier.setup",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.attempt.earlier.setup\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.backup.status.backup.off\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e6261636b75702e6f6666",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e6261636b75702e6f6666_plural",
         "gettext_unsigned_quantity": null,
@@ -39196,6 +39226,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.check.result.date.unknown.sentence\", [[\"outcome\", \"could-not-run\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636865636b2e726573756c742e646174652e756e6b6e6f776e2e73656e74656e6365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "state",
+            "type": "string",
+            "value": "unknown"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": "unknown",
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.backup.status.copy.setup.unknown\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570_v756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570_v756e6b6e6f776e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.backup.status.copy.setup",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570_v756e6b6e6f776e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "state": "unknown"
+      },
+      "locale": "en-US",
+      "logical_expected": "your journal can't tell whether this copy used your current destination and credentials.",
+      "message_id": "journal.window.backup.status.copy.setup",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.copy.setup\", [[\"state\", \"unknown\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570",
       "target": "classic"
     },
     {
@@ -39580,6 +39648,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.paused.on.date\", [[\"paused_at\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7061757365642e6f6e2e64617465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "state",
+            "type": "string",
+            "value": "unknown"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": "unknown",
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.backup.status.schedule.configuration.unknown\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e_v756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e_v756e6b6e6f776e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.backup.status.schedule.configuration",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e_v756e6b6e6f776e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "state": "unknown"
+      },
+      "locale": "en-US",
+      "logical_expected": "the automatic backup schedule isn't known.",
+      "message_id": "journal.window.backup.status.schedule.configuration",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.schedule.configuration\", [[\"state\", \"unknown\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e",
       "target": "classic"
     },
     {
@@ -372072,6 +372178,36 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.backup.status.attempt.earlier.setup\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.backup.status.attempt.earlier.setup",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the latest recorded attempt used a different destination or different credentials for saving backups.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "the latest recorded attempt used a different destination or different credentials for saving backups.",
+      "message_id": "journal.window.backup.status.attempt.earlier.setup",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.attempt.earlier.setup\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e617474656d70742e6561726c6965722e7365747570",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.backup.status.backup.off\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e6261636b75702e6f6666",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e6261636b75702e6f6666_plural",
         "gettext_unsigned_quantity": null,
@@ -372286,6 +372422,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.check.result.date.unknown.sentence\", &[(\"outcome\", Value::String(\"could-not-run\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636865636b2e726573756c742e646174652e756e6b6e6f776e2e73656e74656e6365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "state",
+            "type": "string",
+            "value": "unknown"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": "unknown",
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.backup.status.copy.setup.unknown\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570_v756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570_v756e6b6e6f776e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.backup.status.copy.setup",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570_v756e6b6e6f776e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal can't tell whether this copy used your current destination and credentials.",
+      "folder": null,
+      "inputs": {
+        "state": "unknown"
+      },
+      "locale": "en-US",
+      "logical_expected": "your journal can't tell whether this copy used your current destination and credentials.",
+      "message_id": "journal.window.backup.status.copy.setup",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.copy.setup\", &[(\"state\", Value::String(\"unknown\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e636f70792e7365747570",
       "target": "rust"
     },
     {
@@ -372670,6 +372844,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.paused.on.date\", &[(\"paused_at\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7061757365642e6f6e2e64617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "state",
+            "type": "string",
+            "value": "unknown"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": "unknown",
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.backup.status.schedule.configuration.unknown\u0004m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e_v756e6b6e6f776e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e_v756e6b6e6f776e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.backup.status.schedule.configuration",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e_v756e6b6e6f776e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "the automatic backup schedule isn't known.",
+      "folder": null,
+      "inputs": {
+        "state": "unknown"
+      },
+      "locale": "en-US",
+      "logical_expected": "the automatic backup schedule isn't known.",
+      "message_id": "journal.window.backup.status.schedule.configuration",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.backup.status.schedule.configuration\", &[(\"state\", Value::String(\"unknown\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6261636b75702e7374617475732e7363686564756c652e636f6e66696775726174696f6e",
       "target": "rust"
     },
     {

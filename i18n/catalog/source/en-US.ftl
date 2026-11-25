@@ -23898,3 +23898,17 @@ journal.window.agents.permission.kind.audio.media.description = this agent can a
 
 journal.window.agents.activity.reason.read.audio.media = this connection needs permission to include audio
 
+
+journal.window.backup.status.attempt.earlier.setup = the latest recorded attempt used a different destination or different credentials for saving backups.
+
+journal.window.backup.status.copy.setup = { $state ->
+    [current] this copy used your current destination and credentials for saving backups.
+    [earlier] this copy used a different destination or different credentials for saving backups.
+   *[unknown] your journal can't tell whether this copy used your current destination and credentials.
+    }
+
+journal.window.backup.status.schedule.configuration = { $state ->
+    [scheduled] automatic backups are scheduled.
+    [off] no automatic backups are scheduled.
+   *[unknown] the automatic backup schedule isn't known.
+    }

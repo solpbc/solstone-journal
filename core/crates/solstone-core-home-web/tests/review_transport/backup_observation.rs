@@ -161,6 +161,19 @@ async fn read(deps: &BackupWebDeps) -> Value {
     payload
 }
 
+async fn backup_status(root: &Path) -> Value {
+    let response = solstone_core_backup_web::routes(root.to_path_buf())
+        .oneshot(
+            Request::get("/app/backup/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
+}
+
 #[tokio::test]
 async fn admitted_copy_to_home_http_to_production_javascript() {
     let root = setup();
@@ -221,6 +234,24 @@ async fn admitted_copy_to_home_http_to_production_javascript() {
     let success = read(&deps).await;
     assert_eq!(success["backup"]["issue"], false);
     cases.insert("success".into(), success);
+    assert_eq!(
+        backup_status(root.path()).await["last_success_current_setup"],
+        true
+    );
+    let admitted = prepare(root.path(), &Fixed).unwrap();
+    let change_root = root.path().to_path_buf();
+    execute(
+        admitted,
+        0,
+        Some(Box::new(move || {
+            set_destination(&change_root, &destination("s3:synthetic/new-target")).unwrap();
+        })),
+    );
+    assert_eq!(
+        backup_status(root.path()).await["last_success_current_setup"],
+        false,
+        "a copy completing after a destination edit retains its admitted setup"
+    );
     for code in [1, 3, 11, 124] {
         execute(prepare(root.path(), &Fixed).unwrap(), code, None);
         assert_eq!(
@@ -287,6 +318,9 @@ async fn admitted_copy_to_home_http_to_production_javascript() {
     set_mode(root.path(), "operated").unwrap();
     save_hosted_binding(root.path(), &binding).unwrap();
     execute(prepare(root.path(), &Fixed).unwrap(), 12, None);
+    let status = backup_status(root.path()).await;
+    assert_eq!(status["last_backup_current_setup"], true);
+    assert_eq!(status["last_success_current_setup"], false);
     let operated = read(&deps).await;
     assert_eq!(operated["backup"]["issue"], true);
     cases.insert("operated".into(), operated);
@@ -309,6 +343,19 @@ async fn admitted_copy_to_home_http_to_production_javascript() {
     let restored = read(&deps).await;
     assert_eq!(restored["backup"]["issue"], true);
     cases.insert("binding_restored".into(), restored);
+    execute(prepare(root.path(), &Fixed).unwrap(), 3, None);
+    let status = backup_status(root.path()).await;
+    assert_eq!(status["last_success_current_setup"], true);
+    assert_eq!(
+        status["last_backup"]["last_success"]["error_reason"],
+        "incomplete"
+    );
+    save_hosted_binding(root.path(), &replacement).unwrap();
+    assert_eq!(
+        backup_status(root.path()).await["last_success_current_setup"],
+        false,
+        "a different operated binding cannot inherit the copy"
+    );
     let encoded = serde_json::to_vec(&cases).unwrap();
     if let Some(dir) = std::env::var_os("BACKUP_HOME_EVIDENCE_DIR") {
         std::fs::create_dir_all(&dir).unwrap();

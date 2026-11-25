@@ -1953,6 +1953,11 @@
 
   function renderStatus() {
     window.BackupStatus.renderSummary(root.querySelector('[data-backup-summary]'), backupStatusCurrent ? state : null);
+    const schedule = root.querySelector('[data-backup-schedule-note]');
+    if (schedule) {
+      schedule.textContent = backupStatusCurrent ? window.BackupStatus.scheduleNote(state) : '';
+      schedule.hidden = !schedule.textContent;
+    }
     root.setAttribute(
       'data-state',
       operationActive(state.operation) ? state.operation.phase : managedMode() ? 'done' : 'empty',
@@ -1983,13 +1988,16 @@
     }
     // An absent history field can still have an intact successful attempt.
     // Explicit null means success history is unknown, not "never backed up".
-    const success = Object.hasOwn(lastBackup, 'last_success')
-      ? lastBackup.last_success : lastBackup.status === 'ok' ? lastBackup : null;
-    const knownSuccess = success?.status === 'ok' && validTimestamp(success.time)
-      && Number.isFinite(new Date(success.time * 1000).getTime());
-    setTextWithTitle('[data-last-successful-backup]', knownSuccess
+    const success = window.BackupStatus.lastSuccessfulCopy(lastBackup);
+    setTextWithTitle('[data-last-successful-backup]', success
       ? timestampDisplay(success.time)
       : { text: statusLabels.backup_history_unknown || '', title: '' });
+    const successSetup = root.querySelector('[data-last-successful-backup-setup]');
+    if (successSetup) {
+      successSetup.textContent = backupStatusCurrent && success
+        ? window.BackupStatus.copySetupNote(state.last_success_current_setup) : '';
+      successSetup.hidden = !successSetup.textContent;
+    }
     const successReason = root.querySelector('[data-last-successful-backup-reason]');
     if (successReason) {
       const reason = success?.status === 'ok' && success.error_reason === 'incomplete'
@@ -2088,6 +2096,8 @@
           if (!workspaceCurrent()) return null;
           backupStatusCurrent = false;
           window.BackupStatus.renderSummary(root.querySelector('[data-backup-summary]'), null);
+          setElementHidden('[data-backup-schedule-note]', true);
+          setElementHidden('[data-last-successful-backup-setup]', true);
           failure = error;
         }
       } while (statusReadAgain && workspaceCurrent());
