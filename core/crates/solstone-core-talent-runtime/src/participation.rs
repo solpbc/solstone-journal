@@ -130,7 +130,6 @@ pub(crate) fn apply_result_cancellable(
     let playback = stored.get("playback") == Some(&Value::Bool(true))
         && solstone_core_facets::stretch::correction_segments(&stored, "playback").is_none();
     let passive_playback = playback || is_passive_media_activity(&stored);
-    let entities = detected_resolution_entities(journal, facet, day)?;
     let journal_entities = solstone_core_entity::load_all_journal_entities(journal)
         .map_err(|error| error.to_string())?;
     let owner = crate::JournalOwner::from_entities(journal, &journal_entities);
@@ -140,7 +139,9 @@ pub(crate) fn apply_result_cancellable(
         .map(solstone_core_entity::JournalEntity::resolution_entity)
         .collect::<Vec<_>>();
     let admitted_people_by_id = admitted_non_owner_people_map(&people, owner.id.as_deref());
-    let detected_people = detected_admitted_people(&entities, &people, &admitted_people_by_id);
+    let hidden_ids = solstone_core_entity::hidden_participation_entity_ids(journal);
+    let detected_day_people =
+        detected_day_person_entities(journal, facet, day, &owner, &hidden_ids)?;
     let origin = |field: &str| json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":field});
     let mut resolved = Vec::new();
     for entry in entries.iter().filter_map(Value::as_object) {
@@ -162,9 +163,11 @@ pub(crate) fn apply_result_cancellable(
         let entity_id = resolve_participation_person(
             journal,
             name,
-            &detected_people,
+            &detected_day_people,
             &people,
             &admitted_people_by_id,
+            &hidden_ids,
+            owner.id.as_deref(),
             facet,
             origin("participation.name"),
         )?
@@ -857,7 +860,6 @@ pub fn judge_again(
     }) {
         return Ok(Rejudged::Nothing);
     }
-    let detected = detected_resolution_entities(journal, facet, day)?;
     let journal_entities = solstone_core_entity::load_all_journal_entities(journal)
         .map_err(|error| error.to_string())?;
     let owner = crate::JournalOwner::from_entities(journal, &journal_entities);
@@ -867,9 +869,9 @@ pub fn judge_again(
         .map(solstone_core_entity::JournalEntity::resolution_entity)
         .collect::<Vec<_>>();
     let admitted_people_by_id = admitted_non_owner_people_map(&people, owner.id.as_deref());
-    let detected_people = detected_admitted_people(&detected, &people, &admitted_people_by_id);
     let hidden_ids = solstone_core_entity::hidden_participation_entity_ids(journal);
-    let detected_day_people = detected_day_person_entities(journal, facet, day, &owner, &hidden_ids)?;
+    let detected_day_people =
+        detected_day_person_entities(journal, facet, day, &owner, &hidden_ids)?;
     let voices = solstone_core_transcripts::VoiceNames {
         principal: owner.id.clone().unwrap_or_default(),
         owner_voice_confirmed: false,
@@ -926,35 +928,17 @@ pub fn judge_again(
                     || !people.iter().any(|person| person.id.as_deref() == Some(id))
             });
         let mut entity_id = if from_the_name {
-            let origin = json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"});
-            match resolve_participation_person(
+            resolve_participation_person(
                 journal,
                 &listed_name,
-                &detected_people,
+                &detected_day_people,
                 &people,
                 &admitted_people_by_id,
+                &hidden_ids,
+                owner.id.as_deref(),
                 facet,
-                origin.clone(),
-            )? {
-                Some(id) => Some(id),
-                None if crate::possible_names::retrieval::compact(&listed_name)
-                    .chars()
-                    .count()
-                    > 2 =>
-                {
-                    solstone_core_entity::resolve_activity_name(
-                        journal,
-                        &listed_name,
-                        &detected_day_people,
-                        facet,
-                        origin,
-                        90.0,
-                    )
-                    .map_err(|error| error.to_string())?
-                    .filter(|id| !hidden_ids.contains(id) && owner.id.as_deref() != Some(id.as_str()))
-                }
-                None => None,
-            }
+                json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":"participation.name"}),
+            )?
         } else {
             linked.clone()
         };
@@ -1545,39 +1529,8 @@ fn admitted_non_owner_people_map(
     map
 }
 
-/// Filter day-detected entities to live, unblocked `Person` entities in
-/// `entities/`, preserving day-level disambiguation context without allowing
-/// unpromoted `<day>.jsonl` slugs or non-`Person` entities to be assigned as
-/// `participation[].entity_id`.
-fn detected_admitted_people(
-    detected: &[solstone_core_entity::EntityResolutionEntity],
-    people: &[solstone_core_entity::EntityResolutionEntity],
-    admitted_by_id: &BTreeMap<String, solstone_core_entity::EntityResolutionEntity>,
-) -> Vec<solstone_core_entity::EntityResolutionEntity> {
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::new();
-    for row in detected {
-        let live_id = row
-            .id
-            .as_deref()
-            .filter(|id| admitted_by_id.contains_key(*id))
-            .map(str::to_owned)
-            .or_else(|| {
-                known_person(people, &row.name).filter(|id| admitted_by_id.contains_key(id))
-            });
-        if let Some(id) = live_id
-            && seen.insert(id.clone())
-            && let Some(entity) = admitted_by_id.get(&id)
-        {
-            out.push(entity.clone());
-        }
-    }
-    out
-}
-
 /// Day-detected `Person` rows on `(facet, day)` that are not blocked, retired,
-/// short initials, or the journal owner, used by [`judge_again`] when a reopened
-/// ambiguity question restores a historical day-detected person link.
+/// non-`Person` in `entities/`, short initials, or the journal owner.
 fn detected_day_person_entities(
     journal: &std::path::Path,
     facet: &str,
@@ -1640,15 +1593,18 @@ fn detected_day_person_entities(
     Ok(out)
 }
 
-/// Resolve a participation entry's name strictly to a live, unblocked
-/// non-owner `Person` entity in `entities/`. Rejects `<= 2`-char bare tokens
-/// and never mints dangling `<day>.jsonl` ids or non-`Person` ids.
+/// Resolve a participation entry's name strictly to an unblocked, unretired
+/// non-owner `Person` entity (either answered/day-detected `Person` or live
+/// `entities/` `Person`), rejecting `<= 2`-char tokens and non-`Person` ids.
+#[allow(clippy::too_many_arguments)]
 fn resolve_participation_person(
     journal: &std::path::Path,
     name: &str,
-    detected_people: &[solstone_core_entity::EntityResolutionEntity],
+    detected_day_people: &[solstone_core_entity::EntityResolutionEntity],
     people: &[solstone_core_entity::EntityResolutionEntity],
     admitted_by_id: &BTreeMap<String, solstone_core_entity::EntityResolutionEntity>,
+    hidden_ids: &BTreeSet<String>,
+    owner_id: Option<&str>,
     facet: &str,
     origin: Value,
 ) -> Result<Option<String>, String> {
@@ -1662,13 +1618,13 @@ fn resolve_participation_person(
     let resolved = solstone_core_entity::resolve_activity_name(
         journal,
         name,
-        detected_people,
+        detected_day_people,
         facet,
         origin,
         90.0,
     )
     .map_err(|error| error.to_string())?
-    .filter(|id| admitted_by_id.contains_key(id));
+    .filter(|id| !hidden_ids.contains(id) && owner_id != Some(id.as_str()));
     if resolved.is_some() {
         return Ok(resolved);
     }
@@ -2538,7 +2494,7 @@ mod tests {
         let heard = json!({"name":"Ada","role":"attendee","source":"voice"});
 
         let before = apply(root.path(), heard.clone());
-        assert_eq!(before["entity_id"], Value::Null);
+        assert_eq!(before["entity_id"], "ada");
         assert_eq!(before["role"], "mentioned");
 
         solstone_core_entity::record_ambiguity_choice(
@@ -2574,7 +2530,7 @@ mod tests {
             root,
             json!({"name":"Ada","role":"attendee","source":"voice"}),
         );
-        assert_eq!(entry["entity_id"], Value::Null);
+        assert_eq!(entry["entity_id"], "ada");
         assert_eq!(entry["role"], "mentioned");
     }
 
@@ -5045,7 +5001,7 @@ mod tests {
     }
 
     #[test]
-    fn participation_only_links_live_unblocked_person_and_rejects_short_tokens_and_dangling_slugs()
+    fn participation_only_links_unblocked_unretired_person_and_rejects_short_tokens_and_non_persons()
     {
         let root = tempfile::tempdir().expect("temporary journal");
         write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
@@ -5057,14 +5013,18 @@ mod tests {
             &root.path().join("entities/al/entity.json"),
             json!({"id":"al","name":"Al","type":"Person"}),
         );
-        // Unreviewed detected-only human slug without entities/dangling_pat/entity.json.
+        write_json(
+            &root.path().join("entities/retired.json"),
+            json!({"ids":{"trashed_pat":{"state":"deleted","dir":"trashed_pat","name":"Pat Rivera"}}}),
+        );
         let det_path = root
             .path()
             .join(format!("facets/{FACET}/entities/{DAY}.jsonl"));
         let mut det = fs::read_to_string(&det_path).unwrap();
         det.push_str(&format!(
-            "{}\n",
-            json!({"id":"dangling_pat","name":"Pat Rivera","type":"Person"})
+            "{}\n{}\n",
+            json!({"id":"trashed_pat","name":"Pat Rivera","type":"Person"}),
+            json!({"id":"acme_cloud","name":"Acme Cloud","type":"Company"}),
         ));
         fs::write(&det_path, det).unwrap();
 
@@ -5073,9 +5033,11 @@ mod tests {
             json!([
                 {"name":"Ada Lovelace","role":"mentioned","source":"transcript"},
                 {"name":"Pat Rivera","role":"mentioned","source":"transcript"},
+                {"name":"Unlisted Stranger","role":"mentioned","source":"transcript"},
                 {"name":"Blocked Sam","role":"mentioned","source":"transcript"},
                 {"name":"Deploy Bot","role":"mentioned","source":"transcript"},
                 {"name":"Atlas","role":"mentioned","source":"transcript"},
+                {"name":"Acme Cloud","role":"mentioned","source":"transcript"},
                 {"name":"Al","role":"mentioned","source":"transcript"},
             ]),
         );
@@ -5096,9 +5058,11 @@ mod tests {
             vec![
                 ("Ada Lovelace".into(), "mentioned".into(), "person".into()),
                 ("Pat Rivera".into(), "mentioned".into(), String::new()),
+                ("Unlisted Stranger".into(), "mentioned".into(), String::new()),
                 ("Blocked Sam".into(), "mentioned".into(), String::new()),
                 ("Deploy Bot".into(), "mentioned".into(), String::new()),
                 ("Atlas".into(), "mentioned".into(), String::new()),
+                ("Acme Cloud".into(), "mentioned".into(), String::new()),
                 ("Al".into(), "mentioned".into(), String::new()),
             ]
         );
