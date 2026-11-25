@@ -32,17 +32,22 @@ chrome reads:
 
 `GET /api/shell` is the per-request part: `app_names` (the apps this router
 serves, in order, so the agents app appears only where its routes are
-mounted), `version`, `clock`, and `pinned`, the resolved
-`convey.pinned_views` list from `config/journal.json`. The side rail's top
-group is home, then those pins, then `more`. The bottom group is the
-management rail (import, settings, network, sources, and agents when agent
-routes are mounted), ordered by `rail_rank`. `/app/more/` lists every served view except
-more: what it shows, where its contents come from, and, for some views, a state
-line read from that view's own endpoint, and a pin control for each pinnable
-view.
+mounted), `version`, `clock`, `pinned` (the resolved `convey.pinned_views` list
+from `config/journal.json`, defaulting to `transcripts`, `entities`,
+`activities`, and `curation`), and `pin_offers_seen` (`convey.pin_offers_seen`).
+The desktop side rail groups `home` and pinned `keeps` views under `your
+journal`, pinned `shape` views and `more` under `shaping`, and pinned `runs`
+views plus the fixed management rail (`sources`, `import`, `agents` when agent
+routes are mounted, `network`, `settings`, ordered by `rail_rank`) under
+`running`. `GET /api/shell/badges` serves coalesced count badges for `home`,
+`curation`, and `import`. `/app/more/` lists every served view except more:
+what it shows, where its contents come from, and, for some views, a state line
+read from that view's own endpoint, and a pin control for each pinnable view.
 
 `PUT /api/shell/pins` with `{"view","pinned"}` writes only
-`convey.pinned_views` and returns `{"pinned":[...]}`.
+`convey.pinned_views` and returns `{"pinned":[...]}`. `PUT /api/shell/pin-offers`
+with `{"view"}` records a seen one-time pin offer in `convey.pin_offers_seen`
+and returns `{"pin_offers_seen":[...]}`.
 
 ## Journal storage
 
