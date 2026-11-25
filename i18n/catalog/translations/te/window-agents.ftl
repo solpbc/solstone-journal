@@ -402,7 +402,7 @@ journal.window.agents.connection.this.device = ఈ పరికరం
 
 journal.window.agents.connection.to.bring.it.back.with.its = దాని జ్ఞాపకాలతో దాన్ని తిరిగి తీసుకురావాలంటే, మునుపటి ఏజెంట్‌ల నుండి దాన్ని మళ్ళీ కనెక్ట్ చేయండి.
 
-journal.window.agents.connection.unreadable.support = మీ జర్నల్ తన ఏజెంట్ సెట్టింగ్‌లు చదవలేకపోతోంది, కాబట్టి అది చదవగలిగే వరకు ఏ ఏజెంట్‌ూ మీ జర్నల్ వాడలేదు. మీరు కనెక్ట్ చేసిన ఏజెంట్‌లు, ఒక్కొక్కటి ఏమి చూడవచ్చో అది మారవు. కాసేపటి తర్వాత మళ్ళీ ప్రయత్నించండి. ఇలాగే ఉంటే, { $support_link }.
+journal.window.agents.connection.unreadable.support = మీ జర్నల్ తన ఏజెంట్ సెట్టింగ్‌లు చదవలేకపోతోంది, కాబట్టి అది చదవగలిగే వరకు ఏ ఏజెంట్‌ూ మీ జర్నల్ వాడలేరు. మీరు కనెక్ట్ చేసిన ఏజెంట్‌లు, ఒక్కొక్కటి ఏమి చూడవచ్చో అవి మారవు. కాసేపటి తర్వాత మళ్ళీ ప్రయత్నించండి. ఇలాగే ఉంటే, { $support_link }.
 
 journal.window.agents.disclosure.label.about.these.addresses = ఈ చిరునామాల గురించి
 
@@ -1016,7 +1016,7 @@ journal.window.agents.visible.text.it.may.see = అది చూడవచ్చ�
 
 journal.window.agents.visible.text.it.prints.ready.when.it.s = పూర్తి అయినప్పుడు అది "ready" అని ముద్రిస్తుంది.
 
-journal.window.agents.visible.text.it.stays.connected.with.its.memories = అది కనెక్ట్ అయి ఉంటుంది, తన జ్ఞాపకాలతో మరియు అది ఏమి చూడవచ్చు అనే దానితో, కానీ మీరు దాన్ని కొనసాగించే వరకు అది మీ జర్నల్‌ను చదవలేదు లేదా తన జ్ఞాపకాలను వాడలేదు.
+journal.window.agents.visible.text.it.stays.connected.with.its.memories = అది కనెక్ట్ అయి ఉంటుంది, తన జ్ఞాపకాలతోను, అది ఏమి చూడవచ్చో దానితోను. కానీ మీరు దాన్ని కొనసాగించే వరకు అది మీ జర్నల్‌ను చదవలేకపోతుంది, తన జ్ఞాపకాలను వాడలేకపోతుంది.
 
 journal.window.agents.visible.text.it.works.once.and.expires.after = అది ఒకసారి పని చేస్తుంది, మరియు 10 నిమిషాల తర్వాత గడువు అవుతుంది.
 
