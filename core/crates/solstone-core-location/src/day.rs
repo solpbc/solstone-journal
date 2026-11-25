@@ -336,6 +336,7 @@ fn word_for(platform: Platform, device_type: Option<&str>) -> &'static str {
         (Platform::Ios, _) => "iphone",
         (Platform::Android, Some("tablet")) => "android tablet",
         (Platform::Android, _) => "android phone",
+        (Platform::Photo, _) => "photo",
         (Platform::Unknown, Some("tablet")) => "tablet",
         (Platform::Unknown, _) => "phone",
     }

@@ -52,6 +52,7 @@ pub use projection::{Reconciler, rebuild_day};
 /// Device names from the journal itself: each segment's upload record, and the
 /// description a paired client gave of itself.
 pub struct JournalDirectory {
+    journal: PathBuf,
     descriptions: BTreeMap<String, (Option<String>, Option<String>)>,
 }
 
@@ -71,32 +72,40 @@ impl JournalDirectory {
                 (cid, (name, device_type))
             })
             .collect();
-        Self { descriptions }
+        Self {
+            journal: journal.to_path_buf(),
+            descriptions,
+        }
     }
 }
 
 impl DeviceDirectory for JournalDirectory {
     fn segment_context(&self, segment_dir: &Path) -> SegmentContext {
-        let Ok(report) = solstone_core_callosum::read_device_ingest_events(segment_dir) else {
-            return SegmentContext::default();
-        };
-        let Some(record) = report.records.last() else {
-            return SegmentContext::default();
-        };
-        let zone = report
-            .records
-            .iter()
-            .rev()
-            .find_map(solstone_core_callosum::DeviceIngestEvent::reported_zone);
+        if let Ok(report) = solstone_core_callosum::read_device_ingest_events(segment_dir)
+            && let Some(record) = report.records.last()
+        {
+            let zone = report
+                .records
+                .iter()
+                .rev()
+                .find_map(solstone_core_callosum::DeviceIngestEvent::reported_zone);
+            return SegmentContext {
+                cid: Some(record.cid.clone()).filter(|cid| !cid.is_empty()),
+                platform: record
+                    .meta
+                    .get("platform")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+                tz: zone.as_ref().and_then(|zone| zone.tz.clone()),
+                utc_offset_seconds: zone.and_then(|zone| zone.utc_offset_seconds),
+            };
+        }
+        let zone = solstone_core_callosum::read_reported_zone(&self.journal, segment_dir);
         SegmentContext {
-            cid: Some(record.cid.clone()).filter(|cid| !cid.is_empty()),
-            platform: record
-                .meta
-                .get("platform")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-            tz: zone.as_ref().and_then(|zone| zone.tz.clone()),
-            utc_offset_seconds: zone.and_then(|zone| zone.utc_offset_seconds),
+            cid: None,
+            platform: None,
+            tz: zone.as_ref().and_then(|z| z.tz.clone()),
+            utc_offset_seconds: zone.and_then(|z| z.utc_offset_seconds),
         }
     }
 

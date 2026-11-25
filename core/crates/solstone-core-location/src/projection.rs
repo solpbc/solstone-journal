@@ -91,7 +91,11 @@ pub fn stay_records(view: &DayLocation) -> Vec<StayRecord> {
                 arrival.map(|time| time.utc.as_second()),
                 departure.map(|time| time.utc.as_second()),
                 point,
-                "reported",
+                if view.devices[*device].platform == crate::record::Platform::Photo {
+                    "photo"
+                } else {
+                    "reported"
+                },
             ),
             Entry::Stay {
                 device,

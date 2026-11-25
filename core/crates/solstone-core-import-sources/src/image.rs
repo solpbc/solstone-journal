@@ -496,6 +496,7 @@ pub struct PreparedImage {
     pub tz: Option<String>,
     pub caption: Option<String>,
     pub original_filename: Option<String>,
+    pub capture_location: Option<solstone_core_import::CaptureLocation>,
     triage: Option<Box<ImageTriage>>,
 }
 
@@ -643,6 +644,13 @@ fn prepare(
         },
     };
 
+    let capture_location = (placed.time_source == PhotoTimeSource::Capture
+        && !triage
+            .as_ref()
+            .is_some_and(|t| t.verdict.kind == ContentKind::Screen))
+    .then(|| solstone_core_import::detect_photo_capture_location(path, exif.as_deref()))
+    .flatten();
+
     Ok(PreparedImage {
         path: path.to_path_buf(),
         image,
@@ -661,6 +669,7 @@ fn prepare(
         tz: placed.tz,
         caption,
         original_filename,
+        capture_location,
         triage,
     })
 }
@@ -1097,6 +1106,19 @@ pub fn install_image_at(
     } else {
         write_image_meta(&claimed.directory, prepared)?;
     }
+    let mut extra_created = Vec::new();
+    if !screenshot
+        && attachment.is_none()
+        && prepared.time_source == PhotoTimeSource::Capture
+        && let Some(loc) = &prepared.capture_location
+    {
+        let location_path = write_photo_sighting_location(
+            &claimed.directory,
+            prepared.timestamp.timestamp(),
+            loc,
+        )?;
+        extra_created.push(location_path);
+    }
     let _ = solstone_core_format::stored_markdown::remove_display_receipt(&transcript_path);
     write_text(
         &transcript_path,
@@ -1113,7 +1135,8 @@ pub fn install_image_at(
 
     drop(commit);
     let days_affected = vec![claimed.day.clone()];
-    let files_created = vec![transcript_path.clone()];
+    let mut files_created = vec![transcript_path.clone()];
+    files_created.extend(extra_created);
     Ok(ImageImportResult {
         files_created,
         created_segment: CreatedSegment {
@@ -1146,6 +1169,26 @@ fn write_image_meta(directory: &Path, prepared: &PreparedImage) -> Result<(), Im
     if let Some(filename) = prepared.original_filename.as_deref() {
         meta.insert("original_filename".to_owned(), serde_json::json!(filename));
     }
+    if prepared.time_source == PhotoTimeSource::Capture
+        && let Some(loc) = &prepared.capture_location
+    {
+        let mut loc_obj = serde_json::Map::new();
+        loc_obj.insert("lat".to_owned(), serde_json::json!(loc.latitude));
+        loc_obj.insert("lon".to_owned(), serde_json::json!(loc.longitude));
+        if let Some(acc) = loc.accuracy_m {
+            loc_obj.insert("h_acc_m".to_owned(), serde_json::json!(acc));
+        }
+        if let Some(make) = loc.camera_make.as_deref() {
+            loc_obj.insert("camera_make".to_owned(), serde_json::json!(make));
+        }
+        if let Some(model) = loc.camera_model.as_deref() {
+            loc_obj.insert("camera_model".to_owned(), serde_json::json!(model));
+        }
+        meta.insert(
+            "capture_location".to_owned(),
+            serde_json::Value::Object(loc_obj),
+        );
+    }
     let path = directory.join(IMAGE_META_FILENAME);
     let encoded = serde_json::to_vec(&serde_json::Value::Object(meta)).map_err(|error| {
         ImageImportError::JournalIo {
@@ -1164,6 +1207,66 @@ fn write_image_meta(directory: &Path, prepared: &PreparedImage) -> Result<(), Im
         path,
         detail: error.to_string(),
     })
+}
+
+/// Nominal horizontal GPS margin (metres) used when camera EXIF carries valid
+/// GPS coordinates without an explicit `GPSHPositioningError` tag (`0x001f`).
+const DEFAULT_PHOTO_GPS_ACCURACY_M: f64 = 25.0;
+
+fn write_photo_sighting_location(
+    directory: &Path,
+    captured_utc: jiff::Timestamp,
+    loc: &solstone_core_import::CaptureLocation,
+) -> Result<PathBuf, ImageImportError> {
+    let path = directory.join("location.jsonl");
+    let header = serde_json::json!({
+        "schema": "solstone.location.segment/1",
+        "kind": "location",
+        "source": "photo_exif",
+        "platform": "photo",
+        "accuracy": "full",
+        "fix_count": 0,
+        "gap": false,
+    });
+    let h_acc = loc.accuracy_m.unwrap_or(DEFAULT_PHOTO_GPS_ACCURACY_M);
+    let mut sighting = serde_json::Map::new();
+    sighting.insert(
+        "schema".to_owned(),
+        serde_json::json!("solstone.location.sighting/1"),
+    );
+    sighting.insert(
+        "t".to_owned(),
+        serde_json::json!(solstone_core_time::utc_rfc3339(captured_utc)),
+    );
+    sighting.insert("lat".to_owned(), serde_json::json!(loc.latitude));
+    sighting.insert("lon".to_owned(), serde_json::json!(loc.longitude));
+    sighting.insert("h_acc".to_owned(), serde_json::json!(h_acc));
+    let camera = match (loc.camera_make.as_deref(), loc.camera_model.as_deref()) {
+        (Some(make), Some(model)) if !model.starts_with(make) => Some(format!("{make} {model}")),
+        (_, Some(model)) => Some(model.to_owned()),
+        (Some(make), None) => Some(make.to_owned()),
+        (None, None) => None,
+    };
+    if let Some(cam) = camera {
+        sighting.insert("camera".to_owned(), serde_json::json!(cam));
+    }
+    let content = format!(
+        "{}\n{}\n",
+        header,
+        serde_json::Value::Object(sighting)
+    );
+    atomic_replace(
+        &path,
+        content.as_bytes(),
+        AtomicWriteOptions {
+            mode: Some(PRIVATE_IMPORT_FILE_MODE),
+        },
+    )
+    .map_err(|error| ImageImportError::JournalIo {
+        path: path.clone(),
+        detail: error.to_string(),
+    })?;
+    Ok(path)
 }
 
 /// Install original, transcript, and manifest for a prepared image.
@@ -1195,6 +1298,7 @@ pub fn install_and_publish_image(
             effective_prepared.time_source = PhotoTimeSource::Owner;
             effective_prepared.utc_offset_seconds = None;
             effective_prepared.tz = None;
+            effective_prepared.capture_location = None;
         }
         if effective_prepared.caption.is_none() {
             effective_prepared.caption = meta

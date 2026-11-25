@@ -22,6 +22,7 @@ use serde_json::{Map, Value};
 pub const SEGMENT_SCHEMA: &str = "solstone.location.segment/1";
 pub const FIX_SCHEMA: &str = "solstone.location.fix/1";
 pub const VISIT_SCHEMA: &str = "solstone.location.visit/1";
+pub const SIGHTING_SCHEMA: &str = "solstone.location.sighting/1";
 
 /// Which device platform wrote the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,6 +31,7 @@ pub enum Platform {
     Watchos,
     Wearos,
     Android,
+    Photo,
     Unknown,
 }
 
@@ -40,6 +42,7 @@ impl Platform {
             "watchos" => Self::Watchos,
             "wearos" => Self::Wearos,
             "android" => Self::Android,
+            "photo" => Self::Photo,
             _ => Self::Unknown,
         }
     }
@@ -50,6 +53,7 @@ impl Platform {
             Self::Watchos => "watchos",
             Self::Wearos => "wearos",
             Self::Android => "android",
+            Self::Photo => "photo",
             Self::Unknown => "unknown",
         }
     }
@@ -253,6 +257,19 @@ pub fn parse_segment_file(bytes: &[u8]) -> SegmentFile {
                 }
                 _ => file.unreadable_lines += 1,
             },
+            Some(SIGHTING_SCHEMA) => match (coordinates(&object), iso_time(&object, "t")) {
+                (Some((latitude, longitude)), Ok(Some(time))) => {
+                    file.visits.push(Visit {
+                        line: line_number,
+                        arrival: Some(time),
+                        departure: Some(time),
+                        latitude,
+                        longitude,
+                        accuracy_m: accuracy(&object, "h_acc"),
+                    });
+                }
+                _ => file.unreadable_lines += 1,
+            },
             Some(_) => file.unrecognised_lines += 1,
             None if object.contains_key("timestamp") => {
                 let time = object
@@ -368,5 +385,22 @@ mod tests {
         assert_eq!(file.unrecognised_lines, 2);
         assert!(file.fixes.is_empty());
         assert!(parse_segment_file(&[0xff, 0xfe]).unreadable_file);
+    }
+
+    #[test]
+    fn photo_exif_sightings_parse_as_zero_dwell_instant_visits() {
+        let file = parse_segment_file(
+            br#"{"schema":"solstone.location.segment/1","kind":"location","source":"photo_exif","platform":"photo","accuracy":"full","fix_count":0,"gap":false}
+{"schema":"solstone.location.sighting/1","t":"2019-04-12T05:15:03Z","lat":35.658581,"lon":139.745433,"h_acc":12.5}
+"#,
+        );
+        assert_eq!(file.platform(), Some(Platform::Photo));
+        assert_eq!(file.precision(Platform::Unknown), Precision::Precise);
+        assert_eq!(file.visits.len(), 1);
+        let visit = &file.visits[0];
+        assert!(visit.arrival.is_some());
+        assert_eq!(visit.arrival, visit.departure);
+        assert_eq!(visit.accuracy_m, Some(12.5));
+        assert_eq!(file.unreadable_lines + file.unrecognised_lines, 0);
     }
 }

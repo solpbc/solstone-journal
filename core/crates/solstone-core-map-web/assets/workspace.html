@@ -1003,6 +1003,9 @@ button.map-month-row:hover { background: var(--cream); }
         : `${moment(entry.first, day)}–\u200b${moment(entry.last, day)}`;
     }
     if (entry.kind === "visit") {
+      if (entry.arrival && entry.departure && entry.arrival.utc === entry.departure.utc) {
+        return moment(entry.arrival, day);
+      }
       return `${entry.arrival ? moment(entry.arrival, day) : "…"}–\u200b${entry.departure ? moment(entry.departure, day) : "…"}`;
     }
     if (entry.kind === "stay") {

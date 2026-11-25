@@ -31,6 +31,153 @@ pub struct CaptureMoment {
     pub tz: Option<String>,
 }
 
+/// Verified owner-camera GPS sighting extracted from a photo's EXIF IFD.
+///
+/// Populated only when hardware camera provenance (`Make` or `Model`) is
+/// present alongside valid finite non-(0,0) coordinates, and never on
+/// screenshots.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CaptureLocation {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub accuracy_m: Option<f64>,
+    pub camera_make: Option<String>,
+    pub camera_model: Option<String>,
+}
+
+/// Extract a verified owner-camera GPS sighting from embedded EXIF metadata.
+pub fn detect_photo_capture_location(
+    path: &Path,
+    extra_exif: Option<&[u8]>,
+) -> Option<CaptureLocation> {
+    if let Some(exif_bytes) = extra_exif
+        && let Some(loc) = exif_photo_capture_location(exif_bytes)
+    {
+        return Some(loc);
+    }
+    if path.is_file() {
+        if let Some(jpeg_exif) = scan_jpeg_exif_bytes(path)
+            && let Some(loc) = exif_photo_capture_location(&jpeg_exif)
+        {
+            return Some(loc);
+        }
+        if let Ok(file) = File::open(path) {
+            let mut buf = std::io::BufReader::new(file);
+            if let Ok(parsed) = exif::Reader::new().read_from_container(&mut buf)
+                && let Some(loc) = capture_location_from_exif(&parsed)
+            {
+                return Some(loc);
+            }
+        }
+    }
+    None
+}
+
+/// Parse verified camera GPS coordinates from raw EXIF TIFF bytes (with or
+/// without a leading `Exif\0\0` header).
+pub fn exif_photo_capture_location(exif_bytes: &[u8]) -> Option<CaptureLocation> {
+    let tiff = exif_bytes.strip_prefix(b"Exif\0\0").unwrap_or(exif_bytes);
+    let parsed = exif::Reader::new().read_raw(tiff.to_vec()).ok()?;
+    capture_location_from_exif(&parsed)
+}
+
+fn capture_location_from_exif(data: &exif::Exif) -> Option<CaptureLocation> {
+    use exif::{Context, In, Tag, Value};
+    let ascii_tag = |tag: Tag| -> Option<String> {
+        let field = data.get_field(tag, In::PRIMARY)?;
+        match &field.value {
+            Value::Ascii(items) => items
+                .iter()
+                .filter_map(|bytes| std::str::from_utf8(bytes).ok())
+                .map(|s| s.trim_matches(char::from(0)).trim())
+                .find(|s| !s.is_empty())
+                .map(ToOwned::to_owned),
+            _ => None,
+        }
+    };
+    let camera_make = ascii_tag(Tag::Make);
+    let camera_model = ascii_tag(Tag::Model);
+    if camera_make.is_none() && camera_model.is_none() {
+        return None;
+    }
+    // Exclude screenshot EXIF comments.
+    if let Some(comment) = data.get_field(Tag::UserComment, In::PRIMARY) {
+        let is_shot = match &comment.value {
+            Value::Undefined(bytes, _) => bytes
+                .strip_prefix(b"ASCII\0\0\0")
+                .is_some_and(|rest| rest.trim_ascii() == b"Screenshot"),
+            Value::Ascii(items) => items.iter().any(|b| b.trim_ascii() == b"Screenshot"),
+            _ => false,
+        };
+        if is_shot {
+            return None;
+        }
+    }
+    if ascii_tag(Tag::ImageDescription).as_deref() == Some("Screenshot") {
+        return None;
+    }
+
+    let dms_degrees = |tag: Tag| -> Option<f64> {
+        let field = data.get_field(tag, In::PRIMARY)?;
+        match &field.value {
+            Value::Rational(rats) if rats.len() >= 3 => {
+                if rats[0].denom == 0 || rats[1].denom == 0 || rats[2].denom == 0 {
+                    return None;
+                }
+                let deg = f64::from(rats[0].num) / f64::from(rats[0].denom);
+                let min = f64::from(rats[1].num) / f64::from(rats[1].denom);
+                let sec = f64::from(rats[2].num) / f64::from(rats[2].denom);
+                let total = deg + (min / 60.0) + (sec / 3600.0);
+                total.is_finite().then_some(total)
+            }
+            _ => None,
+        }
+    };
+
+    let lat_abs = dms_degrees(Tag::GPSLatitude)?;
+    let lon_abs = dms_degrees(Tag::GPSLongitude)?;
+    let lat_ref = ascii_tag(Tag::GPSLatitudeRef)?;
+    let lon_ref = ascii_tag(Tag::GPSLongitudeRef)?;
+    let latitude = match lat_ref.chars().next()?.to_ascii_uppercase() {
+        'N' => lat_abs,
+        'S' => -lat_abs,
+        _ => return None,
+    };
+    let longitude = match lon_ref.chars().next()?.to_ascii_uppercase() {
+        'E' => lon_abs,
+        'W' => -lon_abs,
+        _ => return None,
+    };
+    if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+        return None;
+    }
+    if latitude.abs() < 1e-6 && longitude.abs() < 1e-6 {
+        return None;
+    }
+
+    // Tag 0x001f in GPS IFD is GPSHPositioningError (metres).
+    let accuracy_m = data
+        .get_field(Tag(Context::Gps, 31), In::PRIMARY)
+        .and_then(|field| match &field.value {
+            Value::Rational(rats) => rats.first().and_then(|r| {
+                (r.denom != 0).then(|| f64::from(r.num) / f64::from(r.denom))
+            }),
+            Value::SRational(rats) => rats.first().and_then(|r| {
+                (r.denom != 0).then(|| f64::from(r.num) / f64::from(r.denom))
+            }),
+            _ => field.value.get_uint(0).map(f64::from),
+        })
+        .filter(|v| v.is_finite() && *v >= 0.0);
+
+    Some(CaptureLocation {
+        latitude,
+        longitude,
+        accuracy_m,
+        camera_make,
+        camera_model,
+    })
+}
+
 /// Detect a photo's creation moment from embedded EXIF metadata only.
 ///
 /// A filename never dates a photo. When EXIF carries both `DateTimeOriginal`
@@ -1814,5 +1961,129 @@ mod tests {
         let civil = parse_client_captured_at("2026-11-12T08:30:00", &denver()).unwrap();
         assert_eq!(civil.stamp.as_str(), "20261112_083000");
         assert_eq!(civil.utc_offset_seconds, None);
+    }
+
+    #[test]
+    fn exif_photo_capture_location_requires_camera_provenance_and_rejects_null_island() {
+        use exif::experimental::Writer;
+        use exif::{Field, In, Rational, Tag, Value};
+
+        fn build_tiff(fields: Vec<Field>) -> Vec<u8> {
+            let mut writer = Writer::new();
+            for f in &fields {
+                writer.push_field(f);
+            }
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            writer.write(&mut cursor, false).unwrap();
+            cursor.into_inner()
+        }
+
+        let gps_fields = |lat_deg: u32, lon_deg: u32| -> Vec<Field> {
+            vec![
+                Field {
+                    tag: Tag::GPSLatitudeRef,
+                    ifd_num: In::PRIMARY,
+                    value: Value::Ascii(vec![b"N".to_vec()]),
+                },
+                Field {
+                    tag: Tag::GPSLatitude,
+                    ifd_num: In::PRIMARY,
+                    value: Value::Rational(vec![
+                        Rational { num: lat_deg, denom: 1 },
+                        Rational { num: 39, denom: 1 },
+                        Rational { num: 3089, denom: 100 },
+                    ]),
+                },
+                Field {
+                    tag: Tag::GPSLongitudeRef,
+                    ifd_num: In::PRIMARY,
+                    value: Value::Ascii(vec![b"W".to_vec()]),
+                },
+                Field {
+                    tag: Tag::GPSLongitude,
+                    ifd_num: In::PRIMARY,
+                    value: Value::Rational(vec![
+                        Rational { num: lon_deg, denom: 1 },
+                        Rational { num: 0, denom: 1 },
+                        Rational { num: 0, denom: 1 },
+                    ]),
+                },
+            ]
+        };
+
+        // 1. Missing Make/Model -> rejected (downloaded web/meme image).
+        let no_cam = build_tiff(gps_fields(39, 105));
+        assert!(exif_photo_capture_location(&no_cam).is_none());
+
+        // 2. Camera Make + Model + valid coordinates -> accepted.
+        let mut valid_fields = gps_fields(39, 105);
+        valid_fields.push(Field {
+            tag: Tag::Make,
+            ifd_num: In::PRIMARY,
+            value: Value::Ascii(vec![b"Apple".to_vec()]),
+        });
+        valid_fields.push(Field {
+            tag: Tag::Model,
+            ifd_num: In::PRIMARY,
+            value: Value::Ascii(vec![b"iPhone 15 Pro".to_vec()]),
+        });
+        let valid_tiff = build_tiff(valid_fields);
+        let loc = exif_photo_capture_location(&valid_tiff).expect("verified camera GPS");
+        assert!((loc.latitude - 39.65858).abs() < 1e-3);
+        assert!((loc.longitude - (-105.0)).abs() < 1e-5);
+        assert_eq!(loc.camera_make.as_deref(), Some("Apple"));
+        assert_eq!(loc.camera_model.as_deref(), Some("iPhone 15 Pro"));
+
+        // 3. Screenshot UserComment -> rejected even with Make.
+        let mut shot_fields = gps_fields(39, 105);
+        shot_fields.push(Field {
+            tag: Tag::Make,
+            ifd_num: In::PRIMARY,
+            value: Value::Ascii(vec![b"Apple".to_vec()]),
+        });
+        shot_fields.push(Field {
+            tag: Tag::UserComment,
+            ifd_num: In::PRIMARY,
+            value: Value::Undefined(b"ASCII\0\0\0Screenshot".to_vec(), 0),
+        });
+        assert!(exif_photo_capture_location(&build_tiff(shot_fields)).is_none());
+
+        // 4. Null island (0, 0) -> rejected.
+        let null_fields = vec![
+            Field {
+                tag: Tag::Make,
+                ifd_num: In::PRIMARY,
+                value: Value::Ascii(vec![b"Apple".to_vec()]),
+            },
+            Field {
+                tag: Tag::GPSLatitudeRef,
+                ifd_num: In::PRIMARY,
+                value: Value::Ascii(vec![b"N".to_vec()]),
+            },
+            Field {
+                tag: Tag::GPSLatitude,
+                ifd_num: In::PRIMARY,
+                value: Value::Rational(vec![
+                    Rational { num: 0, denom: 1 },
+                    Rational { num: 0, denom: 1 },
+                    Rational { num: 0, denom: 1 },
+                ]),
+            },
+            Field {
+                tag: Tag::GPSLongitudeRef,
+                ifd_num: In::PRIMARY,
+                value: Value::Ascii(vec![b"E".to_vec()]),
+            },
+            Field {
+                tag: Tag::GPSLongitude,
+                ifd_num: In::PRIMARY,
+                value: Value::Rational(vec![
+                    Rational { num: 0, denom: 1 },
+                    Rational { num: 0, denom: 1 },
+                    Rational { num: 0, denom: 1 },
+                ]),
+            },
+        ];
+        assert!(exif_photo_capture_location(&build_tiff(null_fields)).is_none());
     }
 }
