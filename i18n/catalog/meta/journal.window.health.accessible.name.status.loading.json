@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label while status summary metrics are loading.",
+  "context": "Journal window. Accessible label while status summary metrics are loading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dd44738c1653e13379c3f5bcfcda28cdec3ac8006e60a23dc953ecbf07f44601",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

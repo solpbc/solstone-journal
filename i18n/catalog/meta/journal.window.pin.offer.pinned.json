@@ -1,0 +1,36 @@
+{
+  "description": "In-place confirmation text shown after pinning a view from a one-time pin offer bar.",
+  "context": "Journal window. In-place confirmation text shown after pinning a view from a one-time pin offer bar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "view_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "45274daefba0a0aa5f3a72d0ab537cdf5250c58d172e998d2c4048f7caf5a8e3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "body",
+      "map",
+      "speakers",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

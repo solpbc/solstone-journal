@@ -22903,3 +22903,167 @@ journal.window.sources.syncs.provider.garmin = { $provider }
 journal.window.sources.syncs.empty.hint.with.garmin = { $plaud }, { $granola } and { $garmin } show up here once connected in settings.
 
 journal.window.sources.syncs.garmin.expiring = key expires soon
+
+journal.window.shell.rail.group.keeps = your journal
+
+journal.window.shell.rail.group.shape = shaping
+
+journal.window.shell.rail.group.runs = running
+
+journal.window.shell.badge.attention = ({ $count } needing attention)
+
+journal.window.shell.badge.review = ({ $count } to review)
+
+journal.window.shell.badge.uncertain = (status unconfirmed)
+
+journal.window.pin.offer.body.text = your journal now has entries in body.
+
+journal.window.pin.offer.map.text = your journal now has places in map.
+
+journal.window.pin.offer.map.location.text = your journal now has location in map.
+
+journal.window.pin.offer.speakers.text = your journal now has voices to name in speakers.
+
+journal.window.pin.offer.speakers.named.text = your journal now has voices in speakers.
+
+journal.window.pin.offer.import.apple.text = your Apple Health export added entries to body.
+
+journal.window.pin.offer.import.strava.text = your Strava export added entries to body.
+
+journal.window.pin.offer.open.body = open body
+
+journal.window.pin.offer.not.now = not now
+
+journal.window.pin.offer.undo = undo
+
+journal.window.pin.offer.action.pin = { $view ->
+        [body] pin body
+        [map] pin map
+        [speakers] pin speakers
+       *[other] pin { $view_name }
+    }
+
+journal.window.pin.offer.pinned = { $view ->
+        [body] body is pinned.
+        [map] map is pinned.
+        [speakers] speakers is pinned.
+       *[other] { $view_name } is pinned.
+    }
+
+journal.window.view.status.label = status
+
+journal.window.chrome.view.status.document.title = { $view ->
+        [agents] agents - journal
+        [activities] activities - journal
+        [backup] backup - journal
+        [body] body - journal
+        [curation] suggestions - journal
+        [entities] entities - journal
+        [health] status - journal
+        [home] home - journal
+        [import] import - journal
+        [map] map - journal
+        [more] more - journal
+        [network] network - journal
+        [search] search - journal
+        [settings] settings - journal
+        [sources] sources - journal
+        [speakers] speakers - journal
+        [stats] stats - journal
+        [support] support - journal
+        [thinking] thinking - journal
+        [transcripts] transcripts - journal
+        [year] year - journal
+       *[other] { $fallback_label } - journal
+    }
+
+journal.window.more.pin.status.action.pin = { $view ->
+        [agents] pin agents to the side rail
+        [activities] pin activities to the side rail
+        [backup] pin backup to the side rail
+        [body] pin body to the side rail
+        [curation] pin suggestions to the side rail
+        [entities] pin entities to the side rail
+        [health] pin status to the side rail
+        [home] pin home to the side rail
+        [import] pin import to the side rail
+        [map] pin map to the side rail
+        [more] pin more to the side rail
+        [network] pin network to the side rail
+        [search] pin search to the side rail
+        [settings] pin settings to the side rail
+        [sources] pin sources to the side rail
+        [speakers] pin speakers to the side rail
+        [stats] pin stats to the side rail
+        [support] pin support to the side rail
+        [thinking] pin thinking to the side rail
+        [transcripts] pin transcripts to the side rail
+        [year] pin year to the side rail
+       *[other] pin { $view_name } to the side rail
+    }
+
+journal.window.more.pin.status.action.unpin = { $view ->
+        [agents] unpin agents from the side rail
+        [activities] unpin activities from the side rail
+        [backup] unpin backup from the side rail
+        [body] unpin body from the side rail
+        [curation] unpin suggestions from the side rail
+        [entities] unpin entities from the side rail
+        [health] unpin status from the side rail
+        [home] unpin home from the side rail
+        [import] unpin import from the side rail
+        [map] unpin map from the side rail
+        [more] unpin more from the side rail
+        [network] unpin network from the side rail
+        [search] unpin search from the side rail
+        [settings] unpin settings from the side rail
+        [sources] unpin sources from the side rail
+        [speakers] unpin speakers from the side rail
+        [stats] unpin stats from the side rail
+        [support] unpin support from the side rail
+        [thinking] unpin thinking from the side rail
+        [transcripts] unpin transcripts from the side rail
+        [year] unpin year from the side rail
+       *[other] unpin { $view_name } from the side rail
+    }
+
+journal.window.loading.status = loading status…
+
+journal.window.shared.status.pane.visible.text.view.device.status = view device status →
+
+journal.window.health.vitals.status.accessible = status: { $status }
+
+journal.window.health.accessible.name.status.loading = status: loading
+
+journal.window.health.accessible.name.status.summary.metrics = status summary metrics
+
+journal.window.health.heading.status.state.couldn.t.be.loaded = status couldn't be loaded
+
+journal.window.health.visible.text.status = status
+
+journal.window.backup.link.label.backup.details.in.status = backup details in status →
+
+journal.window.entities.copy.conn.index.status.action = check journal status →
+
+journal.window.import.progress.thinking.held.status = { $quantity ->
+        [one] { $count } held · { $health_link_start }review in status{ $health_link_end }
+       *[other] { $count } held · { $health_link_start }review in status{ $health_link_end }
+    }
+
+journal.window.stats.empty.processing.status.link = { $heading_start }no statistics yet. { $heading_end }check processing in { $health_start }status{ $health_end }.
+
+journal.window.thinking.error.status.generic = something went wrong. try again, and if it keeps happening, check journal status.
+
+journal.window.thinking.error.status.save = those settings couldn't be saved. try again, and if it keeps happening, check journal status.
+
+journal.window.thinking.response.error.confidential.off.status = confidential processing couldn't be turned off. try again, and if it keeps happening, check journal status.
+
+journal.window.thinking.response.error.confidential.on.status = confidential processing couldn't be turned on. try again, and if it keeps happening, check journal status.
+
+journal.window.thinking.response.error.log.unconfirmed.status = your change was saved, but your journal couldn't confirm its log entry. check journal status.
+
+journal.window.thinking.response.error.key.check.status = your key couldn't be checked. try again, and if it keeps happening, check journal status.
+
+journal.window.settings.http.detail.status = something went wrong. try again, and if it keeps happening, check journal status.
+
+journal.window.settings.visible.text.see.in.status = see in status ›

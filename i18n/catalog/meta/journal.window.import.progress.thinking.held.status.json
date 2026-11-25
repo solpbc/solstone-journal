@@ -1,0 +1,38 @@
+{
+  "description": "Import progress for recordings held for review, with a link to Status.",
+  "context": "Journal window. Import progress for recordings held for review, with a link to Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "health_link_start",
+      "type": "string"
+    },
+    {
+      "name": "health_link_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e1800765f49f82eb0fdf76a9fd7dcbc7b762da53167b5637aaca4615fc958407",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

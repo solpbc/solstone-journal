@@ -57,11 +57,10 @@ const RUNTIME_ASSETS: &[(&str, &str)] = &[
 /// The stable fallback each status-mark script keeps for when it isn't served
 /// under a hashed address (a page from before hashing, the setup window).
 const SAME_TREE_ABSOLUTE: &[(&str, &str)] = &[
-    ("/static/shell_boot.js", "/static/sol-status/"),
     ("/static/sunarc.js", "/static/sol-status/"),
     ("/static/websocket.js", "/static/sol-status/"),
-    // The same paths, inside the shell's script bundles. Sun arc's fallback
-    // lives in the rest file; boot still names the status marks itself.
+    // The same paths, inside the shell's script bundles: websocket.js is in
+    // shell.js and sunarc.js is in shell-rest.js.
     ("/static/shell.js", "/static/sol-status/"),
     ("/static/shell-rest.js", "/static/sol-status/"),
 ];

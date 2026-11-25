@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! `PUT /api/shell/pins`. The mutation closure reads, toggles, and normalizes.
+//! `PUT /api/shell/pins` and `PUT /api/shell/pin-offers`.
 
 use crate::window_catalog;
 use solstone_core_convey_http::coalesce::ResponseLocale;
@@ -18,7 +18,7 @@ use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_c
 use solstone_core_journal_io::LockOptions;
 
 use crate::JournalRoot;
-use crate::pinned::{is_pinnable, known_view, toggle};
+use crate::pinned::{is_pinnable, known_view, mark_offer_seen, toggle};
 
 /// A pin request is one view name and a boolean.
 const MAX_BODY_BYTES: usize = 4096;
@@ -102,6 +102,91 @@ pub(crate) async fn put_pins(
             Ok(pinned) => (
                 StatusCode::OK,
                 Json(serde_json::json!({ "pinned": pinned })),
+            )
+                .into_response(),
+            Err(detail) => refuse(locale, detail),
+        },
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            window_catalog::text(locale, "journal.window.shell.pin.error.save"),
+        )
+            .into_response(),
+    }
+}
+
+pub(crate) async fn put_pin_offers(
+    locale: Option<axum::Extension<ResponseLocale>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    body: Body,
+) -> Response {
+    let locale = window_catalog::response_locale(locale);
+    let bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return refuse(
+                locale,
+                window_catalog::text(
+                    locale,
+                    "journal.window.shell.error.the.pins.request.could.not.be.read",
+                ),
+            );
+        }
+    };
+    let request = match serde_json::from_slice::<Value>(&bytes) {
+        Ok(Value::Object(object)) => object,
+        _ => {
+            return refuse(
+                locale,
+                window_catalog::text(
+                    locale,
+                    "journal.window.shell.error.pins.request.must.be.an.object",
+                ),
+            );
+        }
+    };
+    let Some(view) = request.get("view").and_then(Value::as_str) else {
+        return refuse(
+            locale,
+            window_catalog::text(locale, "journal.window.shell.error.view.must.be.a.string"),
+        );
+    };
+    let view = view.to_owned();
+    if !known_view(&view) {
+        return refuse(
+            locale,
+            window_catalog::text(locale, "journal.window.shell.error.unknown.view"),
+        );
+    }
+    if !is_pinnable(&view) {
+        return refuse(
+            locale,
+            window_catalog::text(
+                locale,
+                "journal.window.shell.error.that.view.can.t.be.pinned",
+            ),
+        );
+    }
+
+    let saved =
+        mutate_journal_config(
+            &journal.0,
+            LockOptions::default(),
+            |config| match mark_offer_seen(config, &view) {
+                Ok((list, changed)) => JournalConfigMutation {
+                    changed,
+                    value: Ok(list),
+                },
+                Err(detail) => JournalConfigMutation {
+                    changed: false,
+                    value: Err(detail),
+                },
+            },
+        );
+    match saved {
+        Ok(transaction) => match transaction.value {
+            Ok(seen) => (
+                StatusCode::OK,
+                Json(serde_json::json!({ "pin_offers_seen": seen })),
             )
                 .into_response(),
             Err(detail) => refuse(locale, detail),
@@ -210,6 +295,24 @@ mod tests {
         (status, parsed, response)
     }
 
+    async fn put_offer(app: axum::Router, body: &Value) -> (StatusCode, Value, Vec<u8>) {
+        let bytes = serde_json::to_vec(body).unwrap();
+        let (status, _headers, response) = call(
+            app,
+            "PUT",
+            "/api/shell/pin-offers",
+            Some("application/json"),
+            &bytes,
+        )
+        .await;
+        let parsed = if response.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&response).unwrap_or(Value::Null)
+        };
+        (status, parsed, response)
+    }
+
     fn pinned_of(config: &Value) -> Value {
         config["convey"]["pinned_views"].clone()
     }
@@ -222,8 +325,9 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             json_body(&body)["pinned"],
-            json!(["search", "entities", "thinking"])
+            json!(["transcripts", "entities", "activities", "curation"])
         );
+        assert_eq!(json_body(&body)["pin_offers_seen"], json!([]));
 
         let (status, response, _) = put(
             app.clone(),
@@ -233,14 +337,14 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             response["pinned"],
-            json!(["search", "entities", "thinking", "map"])
+            json!(["transcripts", "entities", "activities", "curation", "map"])
         );
 
         let (status, _, body) = call(app.clone(), "GET", "/api/shell", None, b"").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             json_body(&body)["pinned"],
-            json!(["search", "entities", "thinking", "map"])
+            json!(["transcripts", "entities", "activities", "curation", "map"])
         );
 
         let (status, response, _) =
@@ -248,14 +352,53 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             response["pinned"],
-            json!(["search", "entities", "thinking"])
+            json!(["transcripts", "entities", "activities", "curation"])
         );
         let (status, _, body) = call(app, "GET", "/api/shell", None, b"").await;
         assert_eq!(
             json_body(&body)["pinned"],
-            json!(["search", "entities", "thinking"])
+            json!(["transcripts", "entities", "activities", "curation"])
         );
         assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn pin_offers_mutation_records_seen_views_idempotently_and_preserves_siblings() {
+        let journal = Journal::new(
+            br#"{"setup":{"completed_at":1767225600},"convey":{"secret":"s","pinned_views":["search"]}}"#,
+        );
+        let app = router(journal.path().to_path_buf());
+
+        let (status, response, _) = put_offer(app.clone(), &json!({"view": "body"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["pin_offers_seen"], json!(["body"]));
+        let saved = journal.config();
+        assert_eq!(saved["convey"]["secret"], "s");
+        assert_eq!(saved["convey"]["pinned_views"], json!(["search"]));
+        assert_eq!(saved["convey"]["pin_offers_seen"], json!(["body"]));
+
+        let before = journal.bytes();
+        let (status, response, _) = put_offer(app.clone(), &json!({"view": "body"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["pin_offers_seen"], json!(["body"]));
+        assert_eq!(journal.bytes(), before);
+
+        for invalid in [
+            json!({"view": "home"}),
+            json!({"view": "more"}),
+            json!({"view": "news"}),
+            json!({"view": 42}),
+            json!({}),
+        ] {
+            let (status, err_body, _) = put_offer(app.clone(), &invalid).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}");
+            assert_eq!(err_body["reason_code"], "invalid_config_value");
+            assert_eq!(journal.bytes(), before, "{invalid}");
+        }
+
+        let (status, _, shell_body) = call(app, "GET", "/api/shell", None, b"").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json_body(&shell_body)["pin_offers_seen"], json!(["body"]));
     }
 
     #[tokio::test]
@@ -268,19 +411,19 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             json_body(&body)["pinned"],
-            json!(["search", "entities", "thinking"])
+            json!(["transcripts", "entities", "activities", "curation"])
         );
         let before = journal.bytes();
         let (status, response, _) = put(app.clone(), &json!({"view": "map", "pinned": true})).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             response["pinned"],
-            json!(["search", "entities", "thinking", "map"])
+            json!(["transcripts", "entities", "activities", "curation", "map"])
         );
         assert_ne!(journal.bytes(), before);
         assert_eq!(
             pinned_of(&journal.config()),
-            json!(["search", "entities", "thinking", "map"])
+            json!(["transcripts", "entities", "activities", "curation", "map"])
         );
         assert_eq!(journal.config()["convey"]["secret"], "s");
         let (status, _, body) = call(app, "GET", "/api/shell", None, b"").await;
@@ -398,7 +541,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             json_body(&get_body)["pinned"],
-            json!(["search", "entities", "thinking"])
+            json!(["transcripts", "entities", "activities", "curation"])
         );
         assert_eq!(blocked.bytes(), blocked_before);
         let (status, response, _) = put(blocked_app, &json!({"view": "map", "pinned": true})).await;
@@ -432,6 +575,7 @@ mod tests {
             ("GET", "/app/more/"),
             ("GET", "/app/more/workspace"),
             ("PUT", "/api/shell/pins"),
+            ("PUT", "/api/shell/pin-offers"),
         ] {
             let (status, headers, _) = call(
                 app.clone(),
@@ -476,10 +620,15 @@ mod tests {
                 .any(|name| name == "map")
         );
 
-        for path in ["/app/more/", "/app/more/workspace", "/api/shell/pins"] {
+        for path in [
+            "/app/more/",
+            "/app/more/workspace",
+            "/api/shell/pins",
+            "/api/shell/pin-offers",
+        ] {
             let corrupt = Journal::new(br#"{"setup":{"completed_at":1767225600},"convey":}"#);
             let app = router(corrupt.path().to_path_buf());
-            let method = if path.contains("pins") { "PUT" } else { "GET" };
+            let method = if path.contains("pin") { "PUT" } else { "GET" };
             let (status, headers, body) = call(
                 app,
                 method,
@@ -505,7 +654,7 @@ mod tests {
         let cases: &[(&str, Value)] = &[
             (
                 r#"{"setup":{"completed_at":1767225600}}"#,
-                json!(["search", "entities", "thinking"]),
+                json!(["transcripts", "entities", "activities", "curation"]),
             ),
             (
                 r#"{"setup":{"completed_at":1767225600},"convey":{"pinned_views":[]}}"#,
@@ -521,15 +670,15 @@ mod tests {
             ),
             (
                 r#"{"setup":{"completed_at":1767225600},"convey":{"pinned_views":"oops"}}"#,
-                json!(["search", "entities", "thinking"]),
+                json!(["transcripts", "entities", "activities", "curation"]),
             ),
             (
                 r#"{"setup":{"completed_at":1767225600},"convey":{"pinned_views":[1]}}"#,
-                json!(["search", "entities", "thinking"]),
+                json!(["transcripts", "entities", "activities", "curation"]),
             ),
             (
                 r#"{"setup":{"completed_at":1767225600},"convey":"nope"}"#,
-                json!(["search", "entities", "thinking"]),
+                json!(["transcripts", "entities", "activities", "curation"]),
             ),
         ];
         let root = tempfile::TempDir::new_in("/var/tmp").unwrap();

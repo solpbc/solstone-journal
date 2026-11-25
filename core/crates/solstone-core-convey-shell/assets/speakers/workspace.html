@@ -1336,6 +1336,7 @@
 
 <div id="speakersDayView" hidden>
 <div class="spk-wrap">
+  <div id="spkPinOfferDay" hidden></div>
   <div id="spkOwnerBanner" class="spk-owner-banner" tabindex="-1"></div>
   <div id="spkDiscoveryBanner" class="spk-discovery-banner" aria-live="polite"></div>
   <div class="spk-layout">
@@ -1659,6 +1660,7 @@
 
 <div id="speakersOverviewView" hidden>
 <div class="spk-overview" data-spk-overview>
+  <div id="spkPinOfferOverview" hidden></div>
   <section class="spk-overview-section spk-day-grid-card" id="spkDayGridCard" hidden>
     <div class="spk-overview-header">
       <div>
@@ -3547,6 +3549,23 @@ function runDay(ctx, page) {
         segmentsComplete = segments.length >= segmentTotal;
         renderSegmentList();
         updateLoadMore();
+        const dayOfferHost = document.getElementById('spkPinOfferDay');
+        if (dayOfferHost) {
+          if (segments.length > 0 && typeof window.solShellChrome?.mountPinOffer === 'function') {
+            const hasUnnamed = segments.some((seg) => (seg.unlabeled_count || 0) > 0 || (seg.unconfirmed_count || 0) > 0);
+            window.solShellChrome.mountPinOffer(dayOfferHost, {
+              view: 'speakers',
+              message: window.JournalI18n.render(
+                hasUnnamed
+                  ? 'journal.window.pin.offer.speakers.text'
+                  : 'journal.window.pin.offer.speakers.named.text'
+              ),
+            });
+          } else {
+            dayOfferHost.replaceChildren?.();
+            dayOfferHost.hidden = true;
+          }
+        }
         reportSpeakersReady(segments.length ? 'content' : 'empty');
 	        if (ownHash() && ownHash() !== OWNER_TEACH_HASH) {
 	          const hashKey = ownHash();
@@ -5135,16 +5154,65 @@ function runOverview(ctx, page) {
       });
   }
 
+  let overviewOwnerState = null;
+  let overviewDiscoveryState = null;
+  let overviewOwnerSettled = false;
+  let overviewDiscoverySettled = false;
+
+  function syncOverviewSpeakersPinOffer() {
+    const host = document.getElementById('spkPinOfferOverview');
+    if (!host) return;
+    if (typeof window.solShellChrome?.mountPinOffer !== 'function') {
+      host.replaceChildren?.();
+      host.hidden = true;
+      return;
+    }
+    const speakers = Array.isArray(lastKnownData?.speakers) ? lastKnownData.speakers : [];
+    const unnamedKnown = speakers.some((speaker) => isPlaceholderSpeakerName(speaker.name));
+    const unnamedDiscovery = Array.isArray(overviewDiscoveryState?.clusters) && overviewDiscoveryState.clusters.length > 0;
+    const ownerNeedsNaming = Boolean(
+      overviewOwnerState && (
+        overviewOwnerState.status === OWNER_STATUS_ROUTING.candidate
+        || (overviewOwnerState.status === 'not_ready' && ((overviewOwnerState.candidate_count || 0) > 0 || (overviewOwnerState.unlabeled_segments || 0) > 0))
+      )
+    );
+    if (unnamedKnown || unnamedDiscovery || ownerNeedsNaming) {
+      window.solShellChrome.mountPinOffer(host, {
+        view: 'speakers',
+        message: window.JournalI18n.render('journal.window.pin.offer.speakers.text'),
+      });
+      return;
+    }
+    if (speakers.length > 0 && overviewOwnerSettled && overviewDiscoverySettled) {
+      window.solShellChrome.mountPinOffer(host, {
+        view: 'speakers',
+        message: window.JournalI18n.render('journal.window.pin.offer.speakers.named.text'),
+      });
+      return;
+    }
+    if (!speakers.length && overviewOwnerSettled && overviewDiscoverySettled) {
+      host.replaceChildren?.();
+      host.hidden = true;
+    }
+  }
+
   function loadOwner() {
     return apiJson('/app/speakers/api/owner/status')
       .then((data) => {
+        overviewOwnerState = data;
+        overviewOwnerSettled = true;
         if (data.status === OWNER_STATUS_ROUTING.candidate) ownerCandidate(data);
         else if (data.status === OWNER_STATUS_ROUTING.confirmed) ownerConfirmed(data);
         else if (data.status === OWNER_STATUS_ROUTING.identity_needed) ownerIdentityNeeded();
         else ownerNotReady(data);
         pollRelabel(data);
+        syncOverviewSpeakersPinOffer();
       })
-      .catch(ownerStatusError);
+      .catch((err) => {
+        overviewOwnerSettled = true;
+        ownerStatusError(err);
+        syncOverviewSpeakersPinOffer();
+      });
   }
 
   // G1-208: at phone width the known-voices list is one card per row, so 51
@@ -5222,6 +5290,7 @@ function runOverview(ctx, page) {
       .then((data) => {
         if (requestSeq !== knownRequestSeq) return false;
         renderKnown(data);
+        syncOverviewSpeakersPinOffer();
         reportSpeakersReady((data.speakers || []).length ? 'content' : 'empty');
         return true;
       })
@@ -5484,14 +5553,19 @@ function runOverview(ctx, page) {
     return apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
       .then((data) => {
         if (requestSeq !== overviewDiscoveryRequestSeq) return false;
+        overviewDiscoveryState = data;
+        overviewDiscoverySettled = true;
         renderDiscovery(data);
+        syncOverviewSpeakersPinOffer();
         return true;
       })
       .catch((err) => {
         if (requestSeq !== overviewDiscoveryRequestSeq) return false;
+        overviewDiscoverySettled = true;
         overviewDiscoveryNotice = overviewDiscoveryLoadErrorNotice();
         renderOverviewDiscoveryNotice();
         discoverySection.hidden = false;
+        syncOverviewSpeakersPinOffer();
         if (throwOnError) throw err;
         return false;
       });

@@ -1,0 +1,16 @@
+{
+  "description": "Link label on Backup pointing to detailed backup diagnostics in Status.",
+  "context": "Journal window. Link label on Backup pointing to detailed backup diagnostics in Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf3a9a43c9f4c21352b897e03d36b102d1db37c1edc7ca221e9812f1ad616b8a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

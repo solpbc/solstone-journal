@@ -95,6 +95,7 @@ fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
                             && name != "devices"
                             && name != "news"
                             && name != "agents"
+                            && name != "status"
                             && served_app(name, include_agents).is_none()
                     })
             }
@@ -717,5 +718,7 @@ mod tests {
         assert!(!is_exempt("/app/news"));
         assert!(!is_exempt("/app/news/"));
         assert!(!is_exempt("/app/news/workspace"));
+        assert!(!is_exempt("/app/status"));
+        assert!(!is_exempt("/app/status/"));
     }
 }

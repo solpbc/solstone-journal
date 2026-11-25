@@ -1,0 +1,16 @@
+{
+  "description": "Notice when a Thinking setting saved without log confirmation, directing to journal status.",
+  "context": "Journal window. Notice when a Thinking setting saved without log confirmation, directing to journal status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7588223f08556bbfbe669efea6624b41d1a6483e8e20823b8ebe5e6dba35557a",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

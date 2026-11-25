@@ -1,0 +1,16 @@
+{
+  "description": "Action link label in Entities when connection index requires checking status.",
+  "context": "Journal window. Action link label in Entities when connection index requires checking status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f2785ea10939795b959576f2a7fee0a058bedc3eb9a6b06f68428c9c1040f31",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

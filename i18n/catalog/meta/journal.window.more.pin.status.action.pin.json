@@ -1,0 +1,54 @@
+{
+  "description": "Accessible label for pinning a view from More to the side rail.",
+  "context": "Journal window. Accessible label for pinning a view from More to the side rail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "view_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "762946f31b8f706e0d286d3cbe5d739b8a4d1fa39cae4c6683787a8b4ab81007",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "agents",
+      "activities",
+      "backup",
+      "body",
+      "curation",
+      "entities",
+      "health",
+      "home",
+      "import",
+      "map",
+      "more",
+      "network",
+      "search",
+      "settings",
+      "sources",
+      "speakers",
+      "stats",
+      "support",
+      "thinking",
+      "transcripts",
+      "year",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

@@ -483,7 +483,7 @@ async fn the_shipped_app_table_and_the_served_names_match_each_router() {
         .collect();
     assert_eq!(
         keys,
-        BTreeSet::from(["app_names", "clock", "pinned", "version"])
+        BTreeSet::from(["app_names", "clock", "pin_offers_seen", "pinned", "version"])
     );
     let names: Vec<&str> = served_apps(false).map(|app| app.name).collect();
     assert_eq!(state["app_names"], serde_json::json!(names));

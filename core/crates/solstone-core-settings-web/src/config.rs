@@ -1314,7 +1314,10 @@ mod tests {
         assert_eq!(body["reason_code"], "settings_operation_failed");
         assert_eq!(
             body["detail"],
-            "something went wrong — try again, and if it persists, check the health dashboard"
+            solstone_core_convey_http::window_catalog::text(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+                "journal.window.settings.http.detail.status",
+            )
         );
     }
 

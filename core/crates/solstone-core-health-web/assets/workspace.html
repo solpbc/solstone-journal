@@ -21,6 +21,16 @@
   gap: 1em;
 }
 
+.health-page-title {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: clamp(1.35rem, 2.2vw, 1.6rem);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
 /* Vitals Bar (Full Width) */
 .vitals-bar {
   display: flex;
@@ -1537,9 +1547,10 @@ h2.card-title {
 </style>
 
 <div class="health-dashboard">
+  <h1 class="health-page-title">{{journal.window.view.status.label}}</h1>
   <div class="health-glance" id="healthGlance">
     <p class="glance-sentence" id="healthGlanceSentence" aria-live="polite"></p>
-    <div class="glance-metrics" aria-label="{{journal.window.health.accessible.name.health.summary.metrics}}">
+    <div class="glance-metrics" aria-label="{{journal.window.health.accessible.name.status.summary.metrics}}">
       <a class="glance-metric glance-metric-errors" href="#focus=recent-errors" id="glanceErrors">
         <span class="glance-metric-value" id="glanceErrorsValue">—</span>
         <span class="glance-metric-label" id="glanceErrorsLabel">{{journal.window.health.visible.text.errors.today}}</span>
@@ -1613,8 +1624,8 @@ h2.card-title {
           <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="{{journal.window.health.accessible.name.health.loading}}">
-        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.health}}</div>
+      <div class="vitals-section" role="group" aria-label="{{journal.window.health.accessible.name.status.loading}}">
+        <div class="vitals-label" aria-hidden="true">{{journal.window.health.visible.text.status}}</div>
         <div class="vitals-value" id="healthValue" aria-hidden="true">
           <span class="skeleton" style="width: 100px; height: 0.9em;">&nbsp;</span>
         </div>

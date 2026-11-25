@@ -505,7 +505,7 @@
     }
     if (controller.signal.aborted) return true;
     window.solShellChrome?.markCurrent?.(name);
-    document.title = window.JournalI18n.render('journal.window.chrome.view.document.title', [
+    document.title = window.JournalI18n.render('journal.window.chrome.view.status.document.title', [
       ['view', String(app.name || '')], ['fallback_label', String(app.label)]
     ]);
     settleAfterMove(mode, app.label);

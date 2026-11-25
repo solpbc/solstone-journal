@@ -1,0 +1,36 @@
+{
+  "description": "Action button label in a one-time pin offer bar.",
+  "context": "Journal window. Action button label in a one-time pin offer bar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "view_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "73b56084e732c09199901f251ce6cde9f1e7772f7cf5d6b2e11f63aab8358e5f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "body",
+      "map",
+      "speakers",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

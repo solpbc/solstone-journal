@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown on import detail after a Strava import writes Body entries.",
+  "context": "Journal window. One-time offer prompt shown on import detail after a Strava import writes Body entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12d1f28c6b2f1bf4d43a311c3a17bbb25467243e336f60b0432b2f48e02471fc",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

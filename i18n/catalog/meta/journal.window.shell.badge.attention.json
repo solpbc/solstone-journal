@@ -1,0 +1,21 @@
+{
+  "description": "Screen-reader suffix for the Home navigation badge when status issues exist.",
+  "context": "Journal window. Screen-reader suffix for the Home navigation badge when status issues exist.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a4bbb0a8a38bb4a55eab32be0ab86905c83e6cc094935faacab3f42d8f3c8121",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

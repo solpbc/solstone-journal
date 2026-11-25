@@ -133,6 +133,7 @@ mod asset_references;
 pub mod assets;
 #[cfg(feature = "host")]
 pub mod authorization_gate;
+mod badges;
 mod body;
 mod clients;
 mod device_migration;
@@ -1556,10 +1557,13 @@ fn router_with_roots(
         .route("/favicon.ico", get(favicon))
         .route("/static/{*path}", get(static_asset))
         .route("/api/shell", get(shell_api))
-        .route("/api/streams/labels", get(streams_labels_api));
+        .route("/api/streams/labels", get(streams_labels_api))
+        .merge(badges::routes(backup_deps.clone(), import_route.clone()));
     #[cfg(feature = "host")]
     {
-        routes = routes.route("/api/shell/pins", put(pinned_write::put_pins));
+        routes = routes
+            .route("/api/shell/pins", put(pinned_write::put_pins))
+            .route("/api/shell/pin-offers", put(pinned_write::put_pin_offers));
     }
     let mut routes = routes
         .route(
@@ -1608,6 +1612,8 @@ fn router_with_roots(
         .route("/app/devices", get(clients::redirect_app))
         .route("/app/devices/", get(clients::redirect_app))
         .route("/app/devices/workspace", get(clients::redirect_workspace))
+        .route("/app/status", get(redirect_status_app))
+        .route("/app/status/", get(redirect_status_app))
         .merge(if include_agents {
             Router::new()
                 .route("/app/agents/", get(agents_shell))
@@ -2024,11 +2030,21 @@ async fn shell_api(
             "today": solstone_core_time::day_key(now.date()),
         }),
     );
-    match pinned::read_pinned_views(&journal.0) {
-        Ok(pinned) => {
+    match pinned::read_shell_pin_state(&journal.0) {
+        Ok(state) => {
             payload.insert(
                 "pinned".to_string(),
-                Value::Array(pinned.into_iter().map(Value::String).collect()),
+                Value::Array(state.pinned.into_iter().map(Value::String).collect()),
+            );
+            payload.insert(
+                "pin_offers_seen".to_string(),
+                Value::Array(
+                    state
+                        .pin_offers_seen
+                        .into_iter()
+                        .map(Value::String)
+                        .collect(),
+                ),
             );
         }
         Err(error) => {
@@ -2110,6 +2126,14 @@ async fn app_bare(
         return Redirect::permanent(&location).into_response();
     }
     not_found_response()
+}
+
+async fn redirect_status_app(RawQuery(query): RawQuery) -> Response {
+    let location = match query.filter(|query| !query.is_empty()) {
+        Some(query) => format!("/app/health/?{query}"),
+        None => "/app/health/".to_owned(),
+    };
+    Redirect::permanent(&location).into_response()
 }
 
 async fn not_found() -> Response {
@@ -2541,5 +2565,47 @@ mod tests {
             b"<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n"
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn status_app_alias_redirects_permanently_when_established_and_stays_session_gated() {
+        let unestablished = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let gated_app = router(unestablished.path().to_path_buf());
+        for path in ["/app/status", "/app/status/"] {
+            let response = gated_app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FOUND, "{path}");
+            assert_eq!(response.headers()[header::LOCATION], "/init", "{path}");
+        }
+
+        let established = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        fs::create_dir_all(established.path().join("config")).unwrap();
+        fs::write(
+            established.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1767225600}}"#,
+        )
+        .unwrap();
+        let app = router(established.path().to_path_buf());
+        for (path, expected_location) in [
+            ("/app/status", "/app/health/"),
+            ("/app/status/", "/app/health/"),
+            ("/app/status?day=20261124", "/app/health/?day=20261124"),
+            ("/app/status/?day=20261124", "/app/health/?day=20261124"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT, "{path}");
+            assert_eq!(
+                response.headers()[header::LOCATION],
+                expected_location,
+                "{path}"
+            );
+        }
     }
 }

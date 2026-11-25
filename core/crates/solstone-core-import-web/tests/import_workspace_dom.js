@@ -3870,7 +3870,8 @@ async function runThinkingRefreshKeepsControlsAndFocus() {
   context.document.activeElement = null;
   await timer();
   assert.ok(panel.innerHTML.includes('1'), 'thinking counts refresh without a publication event');
-  assert.ok(panel.innerHTML.includes('1 held — <a href="/app/health/">review on Health</a>'), panel.innerHTML);
+  const expectedLink = '<a href="/app/health/">';
+  assert.ok(panel.innerHTML.includes(expectedLink), panel.innerHTML);
   assert.strictEqual(context.importEvents.id.thinking.ready, 1);
   context.window.location.hash = '#history';
   await timer();

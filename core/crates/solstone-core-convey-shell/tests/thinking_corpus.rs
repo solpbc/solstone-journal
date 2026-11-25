@@ -282,6 +282,19 @@ fn corpus() -> Value {
                     }
                 }
             }
+            let generic_status_error = solstone_core_convey_http::window_catalog::text(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+                "journal.window.thinking.error.status.generic",
+            );
+            for field in ["error", "detail"] {
+                if case["json"][field]
+                    == "something went wrong - try again, and if it persists, check the health dashboard"
+                {
+                    case["json"][field] = json!(generic_status_error);
+                    case["body_sha256_basis"] = json!("normalized-json");
+                    projected = true;
+                }
+            }
             if case.pointer("/json/reason_code").and_then(Value::as_str)
                 == Some("invalid_config_value")
                 && case["json"]["detail"] == "endpoint_url must be an http or https URL with a host"
@@ -295,9 +308,10 @@ fn corpus() -> Value {
                 == Some("settings_operation_failed")
                 && case["json"]["error"] == "those settings couldn't be saved."
             {
-                case["json"]["error"] = json!(
-                    "those settings couldn't be saved. try again, and if it keeps happening, check the health dashboard."
-                );
+                case["json"]["error"] = json!(solstone_core_convey_http::window_catalog::text(
+                    solstone_core_convey_http::window_catalog::ENGLISH,
+                    "journal.window.thinking.error.status.save",
+                ));
                 case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
@@ -2093,7 +2107,10 @@ async fn confidential_enable_refuses_corrupt_identity_and_settles_preparation_wi
         assert_eq!(body["reason_code"], "settings_operation_failed");
         assert_eq!(
             body["detail"],
-            "something went wrong - try again, and if it persists, check the health dashboard"
+            solstone_core_convey_http::window_catalog::text(
+                solstone_core_convey_http::window_catalog::ENGLISH,
+                "journal.window.thinking.error.status.generic",
+            )
         );
         assert_eq!(link_snapshot(journal), before);
         let providers = request(app, "GET", "/app/thinking/api/providers").await;

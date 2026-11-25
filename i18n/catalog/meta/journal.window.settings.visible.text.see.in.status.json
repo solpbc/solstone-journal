@@ -1,0 +1,16 @@
+{
+  "description": "Link label in Settings pointing to Status.",
+  "context": "Journal window. Link label in Settings pointing to Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abcce69eed572adfb6bf2fc7ca3d6e04da70f62f24e0561eca85fcfdb72d84e0",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

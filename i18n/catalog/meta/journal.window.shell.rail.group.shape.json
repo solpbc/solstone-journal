@@ -1,0 +1,16 @@
+{
+  "description": "Desktop side rail section header for curation and shaping views.",
+  "context": "Journal window. Desktop side rail section header for curation and shaping views.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d2e32423ef758a16602e937bf3e16635043309aab502ba6ac09481592189c9f6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

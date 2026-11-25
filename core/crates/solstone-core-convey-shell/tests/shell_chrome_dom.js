@@ -454,6 +454,7 @@ function perRequest(shell) {
   return {
     app_names: shell.apps.map((app) => app.name),
     clock: shell.clock,
+    pin_offers_seen: shell.pin_offers_seen || [],
     pinned: shell.pinned,
     version: shell.version,
   };
@@ -463,7 +464,10 @@ function shellFixture(options = {}) {
   const shell = JSON.parse(JSON.stringify(generatedShell));
   shell.pinned = Object.prototype.hasOwnProperty.call(options, 'pinned')
     ? options.pinned.slice()
-    : ['search', 'entities', 'thinking'];
+    : ['transcripts', 'entities', 'activities', 'curation'];
+  shell.pin_offers_seen = Object.prototype.hasOwnProperty.call(options, 'pinOffersSeen')
+    ? options.pinOffersSeen.slice()
+    : [];
   if (options.boot) {
     const support = shell.apps.find((app) => app.name === 'support');
     if (support) support.background_url = '/app/support/background';
@@ -491,6 +495,9 @@ function createHarness(options = {}) {
   const fixtureOptions = { boot: options.boot };
   if (Object.prototype.hasOwnProperty.call(options, 'pinned')) {
     fixtureOptions.pinned = options.pinned;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'pinOffersSeen')) {
+    fixtureOptions.pinOffersSeen = options.pinOffersSeen;
   }
   const shell = options.shell || shellFixture(fixtureOptions);
   const fetchCalls = [];
@@ -531,7 +538,7 @@ function createHarness(options = {}) {
   const document = new Document();
   addStaticElement(document, 'nav', { id: 'app-rail', class: 'app-rail', 'aria-label': 'views' });
   addStaticElement(document, 'nav', { id: 'app-dock', class: 'app-dock', 'aria-label': 'views' });
-  addStaticElement(document, 'div', { id: 'status-instrument' });
+  addStaticElement(document, 'span', { id: 'status-live-region', role: 'status', class: 'visually-hidden' });
   addStaticElement(document, 'div', { id: 'status-pane', class: 'status-pane' });
   addStaticElement(document, 'main', { id: 'main-content', tabindex: '-1' });
 
@@ -799,31 +806,47 @@ testCase('version survives chrome navigation and opens about', () => {
   }
 });
 
-testCase('status instrument stays the same node across chrome rebuilds', () => {
+testCase('standalone status instrument is absent from chrome and live region stays in body', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
-  const icon = harness.document.querySelector('#status-instrument .status-icon');
+  assert.strictEqual(harness.document.getElementById('status-instrument'), null);
+  const live = harness.document.getElementById('status-live-region');
+  assert.ok(live);
   renderChrome(harness, 'search');
-  assert.strictEqual(harness.document.querySelector('#status-instrument .status-icon'), icon);
+  assert.strictEqual(harness.document.getElementById('status-live-region'), live);
 });
 
-testCase('rail and dock follow the resolved pin list', () => {
-  const pinned = createHarness({ pinned: ['map', 'search'] });
+testCase('rail groups views by job and dock renders four slots without status box', () => {
+  const defaults = createHarness();
+  renderChrome(defaults, 'home');
+  const defaultRail = defaults.document.querySelector('#app-rail');
+  assert.deepStrictEqual(
+    namedApps(defaultRail.querySelector('[data-rail-group="keeps"]')),
+    ['home', 'transcripts', 'activities']
+  );
+  assert.deepStrictEqual(
+    namedApps(defaultRail.querySelector('[data-rail-group="shape"]')),
+    ['entities', 'curation', 'more']
+  );
+  assert.deepStrictEqual(
+    namedApps(defaultRail.querySelector('[data-rail-group="runs"]')),
+    ['sources', 'import', 'agents', 'network', 'settings']
+  );
+  assert.deepStrictEqual(
+    namedApps(defaults.document.querySelector('#app-dock')),
+    ['home', 'transcripts', 'entities', 'more']
+  );
+
+  const pinned = createHarness({ pinned: ['map', 'search', 'thinking'] });
   renderChrome(pinned, 'home');
   const rail = pinned.document.querySelector('#app-rail');
   assert.strictEqual(rail.getAttribute('aria-label'), 'views');
-  assert.strictEqual(rail.children.length, 13);
-  assert.deepStrictEqual(namedApps(rail), ['home', 'map', 'search', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
-  assert.ok(!namedApps(rail).includes('entities'));
-  assert.ok(!namedApps(rail).includes('thinking'));
-  assert.ok(rail.children[4].classList.contains('app-rail-spacer'));
-  assert.strictEqual(rail.children[5].id, 'status-instrument');
-  assert.ok(rail.children[6].classList.contains('app-rail-divider'));
   assert.deepStrictEqual(
-    ['import', 'settings', 'network', 'sources', 'agents'],
-    rail.children.slice(7, 12).map((element) => element.getAttribute('data-app-name'))
+    namedApps(rail),
+    ['home', 'map', 'search', 'more', 'thinking', 'sources', 'import', 'agents', 'network', 'settings']
   );
-  assert.ok(rail.children[12].classList.contains('journal-about-link'));
+  assert.ok(!namedApps(rail).includes('entities'));
+  assert.ok(rail.querySelector('[data-rail-group="runs"] .journal-about-link'));
   const desktopDock = pinned.document.querySelector('#app-dock');
   assert.deepStrictEqual(namedApps(desktopDock), ['home', 'map', 'search', 'more']);
   assert.strictEqual(desktopDock.children.length, 4);
@@ -832,23 +855,20 @@ testCase('rail and dock follow the resolved pin list', () => {
   renderChrome(phone, 'home');
   const dock = phone.document.querySelector('#app-dock');
   assert.strictEqual(dock.getAttribute('aria-label'), 'views');
-  assert.strictEqual(dock.children.length, 5);
+  assert.strictEqual(dock.children.length, 4);
   assert.deepStrictEqual(namedApps(dock), ['home', 'map', 'search', 'more']);
-  assert.strictEqual(dock.children[4].id, 'status-instrument');
 
   const empty = createHarness({ pinned: [] });
   renderChrome(empty, 'home');
   const emptyRail = empty.document.querySelector('#app-rail');
-  assert.strictEqual(emptyRail.children.length, 11);
-  assert.deepStrictEqual(namedApps(emptyRail), ['home', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+  assert.deepStrictEqual(namedApps(emptyRail), ['home', 'more', 'sources', 'import', 'agents', 'network', 'settings']);
   assert.deepStrictEqual(namedApps(empty.document.querySelector('#app-dock')), ['home', 'more']);
 
   const emptyPhone = createHarness({ pinned: [], mobile: true });
   renderChrome(emptyPhone, 'home');
   const emptyDock = emptyPhone.document.querySelector('#app-dock');
-  assert.strictEqual(emptyDock.children.length, 3);
+  assert.strictEqual(emptyDock.children.length, 2);
   assert.deepStrictEqual(namedApps(emptyDock), ['home', 'more']);
-  assert.strictEqual(emptyDock.children[2].id, 'status-instrument');
 });
 
 testCase('more keeps its label and current treatment follows each surface', () => {
@@ -1011,7 +1031,7 @@ asyncCase('successful pin toggle updates rail and dock from the returned list', 
   await pending;
   await settle();
   await settle();
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'sources', 'import', 'agents', 'network', 'settings']);
   assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-dock')), ['home', 'entities', 'more']);
   assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('map'));
   assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('search'));
@@ -1037,7 +1057,7 @@ asyncCase('failed pin save restores the previous list and says so', async () => 
   await settle();
   await settle();
   assert.strictEqual(shellReads, 1);
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'search', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'search', 'more', 'sources', 'import', 'agents', 'network', 'settings']);
   assert.strictEqual(root.querySelector('.more-live').textContent, "couldn't save that. try again.");
   assert.strictEqual(root.querySelector('[data-pin-view="map"]').getAttribute('aria-pressed'), 'false');
 });
@@ -1290,7 +1310,7 @@ asyncCase('a pin save in flight is not marked failed once more is gone', async (
   assert.strictEqual(shellScope, 'shell');
   assert.strictEqual(root.querySelector('[data-pin-view="entities"]').getAttribute('aria-pressed'), 'true');
   assert.strictEqual(root.querySelector('.more-live').textContent, '');
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'sources', 'import', 'agents', 'network', 'settings']);
 });
 
 asyncCase('a pin save that lands after leaving updates the rail and not the old page', async () => {
@@ -1315,7 +1335,7 @@ asyncCase('a pin save that lands after leaving updates the rail and not the old 
   await settle();
   await settle();
   assert.strictEqual(root.querySelector('.more-live').textContent, '');
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'sources', 'import', 'agents', 'network', 'settings']);
   await paintMore(harness, { timeout: 30 });
   assert.strictEqual(shellReads, 0, 'an applied save does not read the shell again');
   assert.strictEqual(root.querySelector('.more-live').textContent, '');
@@ -1442,14 +1462,108 @@ asyncCase('more boots with its own title', async () => {
   assert.strictEqual(moreLabel(harness.document.querySelector('#app-rail').innerHTML), 'more');
 });
 
-testCase('status instrument target', () => {
-  const harness = createHarness();
+testCase('badges survive markCurrent and updatePinnedViews and clear cleanly', () => {
+  const harness = createHarness({ pinned: ['transcripts', 'curation'] });
+  harness.window.solShellData = harness.shell;
   renderChrome(harness, 'home');
-  const icon = harness.document.querySelector('#status-instrument .status-icon');
-  assert.ok(icon);
-  assert.strictEqual(icon.tagName, 'A');
-  assert.strictEqual(icon.getAttribute('href'), '/app/health/#healthSystemDetails');
-  assert.ok(!icon.hasAttribute('aria-controls'));
+
+  harness.chrome.setBadge('home', { count: 2, tone: 'danger' });
+  harness.chrome.setBadge('curation', { count: 5, tone: 'neutral' });
+  harness.chrome.setBadge('import', { count: 1, tone: 'review' });
+
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="home"]'));
+  assert.ok(harness.document.querySelector('#app-dock [data-chrome-badge="home"]'));
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="curation"]'));
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="import"]'));
+
+  harness.chrome.markCurrent('transcripts');
+  assert.strictEqual(harness.chrome.getBadge('home').count, 2);
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="home"]'));
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="curation"]'));
+
+  harness.chrome.updatePinnedViews(harness.shell, ['transcripts', 'curation', 'map']);
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="curation"]'));
+  assert.ok(harness.document.querySelector('#app-dock [data-chrome-badge="curation"]'));
+
+  harness.chrome.setBadge('home', { count: 0, tone: 'warn', marker: '!' });
+  assert.strictEqual(harness.chrome.getBadge('home').marker, '!');
+  assert.ok(harness.document.querySelector('#app-rail [data-chrome-badge="home"]'));
+
+  harness.chrome.setBadge('home', null);
+  assert.strictEqual(harness.chrome.getBadge('home'), null);
+  assert.strictEqual(harness.document.querySelector('#app-rail [data-chrome-badge="home"]'), null);
+  assert.strictEqual(harness.document.querySelector('#app-dock [data-chrome-badge="home"]'), null);
+});
+
+asyncCase('mountPinOffer pins in place with undo and dismisses permanently', async () => {
+  const harness = createHarness({ pinned: ['transcripts'], pinOffersSeen: [] });
+  harness.window.solShellData = harness.shell;
+  renderChrome(harness, 'body');
+  const calls = [];
+  harness.window.apiJson = (url, options) => {
+    const payload = options && options.body ? JSON.parse(options.body) : null;
+    calls.push({ url, payload });
+    if (url === '/api/shell/pins') {
+      const next = payload.pinned ? ['transcripts', payload.view] : ['transcripts'];
+      return Promise.resolve({ pinned: next });
+    }
+    if (url === '/api/shell/pin-offers') {
+      return Promise.resolve({ pin_offers_seen: [payload.view] });
+    }
+    return Promise.reject(new Error('unexpected ' + url));
+  };
+
+  const host = addStaticElement(harness.document, 'div', { id: 'offer-host' });
+  const msg = harness.window.JournalI18n.render('journal.window.pin.offer.body.text');
+  assert.strictEqual(harness.chrome.mountPinOffer(host, { view: 'body', message: msg }), true);
+  assert.strictEqual(host.hidden, false);
+  const pinBtn = host.querySelector('[data-pin-offer-action="pin"]');
+  assert.ok(pinBtn);
+
+  pinBtn.dispatchEvent(event('click', { bubbles: true }));
+  await settle();
+  await settle();
+  assert.ok(namedApps(harness.document.querySelector('#app-rail')).includes('body'));
+  const undoBtn = host.querySelector('[data-pin-offer-action="undo"]');
+  assert.ok(undoBtn, 'flips in place to undo');
+
+  undoBtn.dispatchEvent(event('click', { bubbles: true }));
+  await settle();
+  await settle();
+  assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('body'));
+  assert.strictEqual(host.hidden, true);
+  assert.strictEqual(harness.chrome.shouldShowPinOffer('body'), false);
+
+  // Dismissal flow on a second view
+  const mapHost = addStaticElement(harness.document, 'div', { id: 'map-offer-host' });
+  const mapMsg = harness.window.JournalI18n.render('journal.window.pin.offer.map.text');
+  assert.strictEqual(harness.chrome.mountPinOffer(mapHost, { view: 'map', message: mapMsg }), true);
+  const dismissBtn = mapHost.querySelector('[data-pin-offer-action="dismiss"]');
+  assert.ok(dismissBtn);
+  dismissBtn.dispatchEvent(event('click', { bubbles: true }));
+  await settle();
+  await settle();
+  assert.strictEqual(mapHost.hidden, true);
+  assert.strictEqual(harness.chrome.mountPinOffer(mapHost, { view: 'map', message: mapMsg }), false);
+
+  // Pre-hydration deferral mounts once whenShellReady fires and skips detached nodes
+  const deferredHarness = createHarness({ pinned: ['transcripts'], pinOffersSeen: [] });
+  let readyCallback = null;
+  deferredHarness.window.whenShellReady = (cb) => { readyCallback = cb; };
+  const connectedHost = addStaticElement(deferredHarness.document, 'div', { id: 'deferred-host', hidden: '' });
+  const detachedHost = deferredHarness.document.createElement('div');
+  detachedHost.isConnected = false;
+  const spkMsg = deferredHarness.window.JournalI18n.render('journal.window.pin.offer.speakers.text');
+  assert.strictEqual(deferredHarness.chrome.mountPinOffer(connectedHost, { view: 'speakers', message: spkMsg }), false);
+  let readyCallbackDetached = null;
+  deferredHarness.window.whenShellReady = (cb) => { readyCallbackDetached = cb; };
+  assert.strictEqual(deferredHarness.chrome.mountPinOffer(detachedHost, { view: 'speakers', message: spkMsg }), false);
+  deferredHarness.window.solShellData = deferredHarness.shell;
+  readyCallback();
+  readyCallbackDetached();
+  assert.strictEqual(connectedHost.hidden, false);
+  assert.ok(connectedHost.querySelector('[data-pin-offer-action="pin"]'));
+  assert.strictEqual(detachedHost.innerHTML, '');
 });
 
 
@@ -2395,6 +2509,60 @@ asyncCase('the status pane adopts the workspace already on the page when its scr
   });
   assert.strictEqual(pane.parentElement.id, 'healthSystemDetails');
   assert.strictEqual(pane.hidden, false);
+});
+
+asyncCase('websocket and status_pane update live region, solShellStatus, and shell badges without status-instrument', async () => {
+  const statusEvents = [];
+  const harness = createHarness({
+    fetchResponses: {
+      '/api/system/status': {
+        status: 200,
+        body: JSON.stringify({ capture: { status: 'active', clients: [] }, version: { current: '2.0.0' }, ok: true }),
+      },
+      '/api/shell/badges': {
+        status: 200,
+        body: JSON.stringify({ home: { issues: 2, severity: 'red' }, curation: 4, import: 1 }),
+      },
+    },
+  });
+  harness.window.solShellData = harness.shell;
+  renderChrome(harness, 'home');
+  harness.window.EventSource = class EventSource {
+    constructor() {
+      setImmediate(() => { if (this.onopen) this.onopen(); });
+    }
+    addEventListener() {}
+    close() {}
+  };
+  harness.window.setInterval = () => 0;
+  harness.window.addEventListener('sol:shell-status', (ev) => statusEvents.push(ev.detail));
+
+  vm.runInContext(
+    fs.readFileSync(path.join(crateDir, 'assets/static/websocket.js'), 'utf8'),
+    harness.context,
+    { filename: 'websocket.js' },
+  );
+  vm.runInContext(
+    fs.readFileSync(path.join(crateDir, 'assets/static/status_pane.js'), 'utf8'),
+    harness.context,
+    { filename: 'status_pane.js' },
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.strictEqual(harness.document.getElementById('status-instrument'), null);
+  assert.ok(harness.window.solShellStatus, 'solShellStatus published');
+  assert.strictEqual(harness.window.solShellStatus.captureStatus, 'active');
+  assert.strictEqual(harness.window.solShellStatus.variant, 'mark');
+  assert.ok(statusEvents.length > 0, 'sol:shell-status event fired');
+  assert.ok(harness.document.getElementById('status-live-region').textContent.length > 0);
+
+  assert.strictEqual(harness.chrome.getBadge('home')?.count, 2);
+  assert.strictEqual(harness.chrome.getBadge('home')?.tone, 'danger');
+  assert.strictEqual(harness.chrome.getBadge('curation')?.count, 4);
+  assert.strictEqual(harness.chrome.getBadge('curation')?.tone, 'neutral');
+  assert.strictEqual(harness.chrome.getBadge('import')?.count, 1);
+  assert.strictEqual(harness.chrome.getBadge('import')?.tone, 'review');
 });
 
 async function runAsyncCases() {

@@ -1,0 +1,16 @@
+{
+  "description": "Heading shown when the status state fails to load.",
+  "context": "Journal window. Heading shown when the status state fails to load.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e92e9a53a511cf6b327c3fcddf42ace4f0f118356882f529bc75e06b567cfc13",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

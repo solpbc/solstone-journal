@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown when Map holds location readings without named places yet.",
+  "context": "Journal window. One-time offer prompt shown when Map holds location readings without named places yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75f6afcf24252d15ad0fb2c4701a872081c01191eec31d65f210e944f5a86af5",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -253,6 +253,38 @@ pub fn apply_permanent_storage_custody_summary_divergence(expected: &mut Value) 
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced 2026-11-24: generic settings
+/// operation refusals now direct the owner to `journal status` instead of the
+/// retired `health dashboard` wording. Applies only to the seven captured
+/// `settings_operation_failed` `detail` strings in the frozen corpus.
+pub fn apply_permanent_status_rename_refusal_divergence(expected: &mut Value) {
+    const CAPTURED: &str =
+        "something went wrong \u{2014} try again, and if it persists, check the health dashboard";
+    let current = solstone_core_convey_http::window_catalog::text(
+        solstone_core_convey_http::window_catalog::ENGLISH,
+        "journal.window.settings.http.detail.status",
+    );
+    let mut changed = 0;
+    for pointer in [
+        "/mutations/POST prune-logs.dry-run/normalized/detail",
+        "/mutations_malformed/POST prune-logs.dry-run/normalized/detail",
+        "/phases/established/POST config.no-body/normalized/detail",
+        "/phases/malformed/POST config.no-body/normalized/detail",
+        "/phases/populated/POST config.no-body/normalized/detail",
+        "/phases/rich/POST config.no-body/normalized/detail",
+        "/phases/tokened/POST config.no-body/normalized/detail",
+    ] {
+        let slot = expected
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("missing frozen settings refusal {pointer}"));
+        assert_eq!(*slot, Value::String(CAPTURED.to_owned()), "{pointer}");
+        *slot = Value::String(current.clone());
+        changed += 1;
+    }
+    assert_eq!(changed, 7);
+    recompute_case_digests(expected);
+}
+
 fn update_empty_journal_name_probes(value: &mut Value) {
     match value {
         Value::Object(map) => {

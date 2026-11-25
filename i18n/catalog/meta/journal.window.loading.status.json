@@ -1,0 +1,16 @@
+{
+  "description": "Loading indicator text while the status view opens.",
+  "context": "Journal window. Loading indicator text while the status view opens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b70121bc90ddc9dbca6d05f34e88eea99c265ec1531df72920f641a87e390285",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

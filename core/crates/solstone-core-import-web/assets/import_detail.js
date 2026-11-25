@@ -1624,6 +1624,45 @@
     };
   }
 
+  function bodyPinOfferMessage(data) {
+    const importedJson = asObject(data?.imported_json) || {};
+    const importJson = asObject(data?.import_json) || {};
+    const source = String(
+      importedJson.source_type || data?.source_type || importJson.source || ''
+    ).toLowerCase();
+    const entries = numberValue(importedJson.entries_written ?? data?.entries_written);
+    if (entries === null || entries <= 0) return null;
+    if (source === 'apple_health' || source === 'apple-health') {
+      const saved = data?.body_state === 'saved' || (!data?.body_state && data?.status === 'success');
+      return saved ? window.JournalI18n.render('journal.window.pin.offer.import.apple.text') : null;
+    }
+    if (source === 'strava') {
+      return data?.status === 'success'
+        ? window.JournalI18n.render('journal.window.pin.offer.import.strava.text')
+        : null;
+    }
+    return null;
+  }
+
+  function mountBodyPinOffer(container, data) {
+    const slot = container?.querySelector?.('[data-body-pin-offer-slot]');
+    if (!slot) return false;
+    const message = bodyPinOfferMessage(data);
+    if (!message || typeof window.solShellChrome?.mountPinOffer !== 'function') {
+      slot.replaceChildren?.();
+      slot.hidden = true;
+      return false;
+    }
+    return window.solShellChrome.mountPinOffer(slot, {
+      view: 'body',
+      message,
+      primaryLink: {
+        href: '/app/body/',
+        label: window.JournalI18n.render('journal.window.pin.offer.open.body'),
+      },
+    });
+  }
+
   function renderDetail(data, liveStage = null) {
     if (!window.Drawer || typeof window.Drawer.render !== 'function') {
       throw new Error(strings.drawer_unavailable);
@@ -1638,10 +1677,13 @@
       open: derived.open,
       bodyHtml: renderDrawerBody(data)
     });
+    const offerSlot = Boolean(bodyPinOfferMessage(data))
+      ? '<div data-body-pin-offer-slot hidden></div>'
+      : '';
     const leads = derived.code === 'success' ? renderLeadsCard(data) : '';
     const running = `<div class="import-running-slot" data-running-progress-slot>${derived.code === 'running' ? renderRunningProgress(data, liveStage) : ''}</div>`;
     const continuation = hasSavedFlow(data) ? '<div data-saved-start-slot></div>' : '';
-    return continuation + running + leads + drawer + renderImportDelete(data);
+    return continuation + running + offerSlot + leads + drawer + renderImportDelete(data);
   }
 
   window.ImportDetail = Object.freeze({
@@ -1649,6 +1691,8 @@
     renderRunningProgress,
     renderExpiredRecovery,
     mountSavedStart,
+    mountBodyPinOffer,
+    bodyPinOfferMessage,
     forgetSavedStarts,
     renderMeta,
     deriveStatus,

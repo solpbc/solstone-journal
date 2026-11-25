@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the status pane pointing to device status.",
+  "context": "Journal window. Link label in the status pane pointing to device status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bc66fedfda92e7578d1a8208c0108ba1c3886c96917452bf008f05bc1935680c",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

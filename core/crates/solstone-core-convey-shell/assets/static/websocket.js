@@ -268,14 +268,41 @@
     return false;
   }
 
+  let lastPublishedStatusKey = '';
+
+  function publishShellStatus(mark, stem) {
+    const detail = {
+      variant: mark.variant,
+      stem,
+      label: mark.label,
+      labelMessage: mark.labelMessage,
+      connecting: mark.connecting,
+      wsState: connectionState,
+      captureStatus: lastCaptureStatus,
+      statusMarksBase: STATUS_MARKS
+    };
+    window.solShellStatus = detail;
+    const nextKey = `${stem}|${mark.labelMessage}|${connectionState}|${String(lastCaptureStatus)}`;
+    if (nextKey !== lastPublishedStatusKey) {
+      lastPublishedStatusKey = nextKey;
+      if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') {
+        try {
+          window.dispatchEvent(new window.CustomEvent('sol:shell-status', { detail }));
+        } catch (_) {}
+      }
+    }
+  }
+
   function renderStatusMark() {
     if (!statusIcon) {
       statusIcon = document.querySelector('#status-instrument .status-icon');
     }
-    if (!statusIcon) return;
 
-    const badge = statusIcon.querySelector('#quiet-notif-badge');
-    const hasUnviewed = !!badge && badge.style.display !== 'none';
+    const badge = statusIcon ? statusIcon.querySelector('#quiet-notif-badge') : null;
+    const unviewedCount = window.AppServices?.quietNotifs?.unviewedCount?.();
+    const hasUnviewed = typeof unviewedCount === 'number'
+      ? unviewedCount > 0
+      : (!!badge && badge.style.display !== 'none');
     const mark = deriveStatusMark(connectionState, lastCaptureStatus, hasUnviewed);
     if (window.appEvents) {
       window.appEvents.statusLabel = mark.label;
@@ -286,6 +313,15 @@
     const stem = connectingAnimationDue(mark.connecting) && !reduced
       ? 'mark-connecting-animated'
       : mark.variant;
+    publishShellStatus(mark, stem);
+
+    if (!statusIcon) {
+      lastRenderedStem = stem;
+      lastRenderedConnecting = mark.connecting;
+      window.updateStatusLabel?.();
+      return;
+    }
+
     if (stem === lastRenderedStem && mark.connecting === lastRenderedConnecting) {
       window.updateStatusLabel?.();
       return;
@@ -302,15 +338,6 @@
       statusIcon.insertBefore(img, badge || statusIcon.firstChild);
     }
     if (!img.onerror) {
-      // The one icon meant to convey connectivity is itself fetched over the
-      // network, so it can fail to load exactly when it matters most. Hide it
-      // rather than let the browser's broken-image glyph stand in for "offline".
-      // shell_boot.js seeds this <img> before this module ever runs, so this
-      // must attach regardless of whether the element pre-existed or was just
-      // created above.
-      // A page from before an upgrade names marks by its own build's hash,
-      // which the upgraded journal no longer serves; those come from the
-      // stable path instead, once, before the mark is hidden.
       img.onerror = () => {
         const stable = '/static/sol-status/' + img.dataset.stem + '.svg';
         if (img.dataset.stem && new URL(img.src, window.location.href).pathname !== stable) {

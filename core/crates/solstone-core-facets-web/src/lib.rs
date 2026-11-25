@@ -18,6 +18,7 @@ mod http;
 pub mod segments;
 
 pub use clock::Clock;
+pub use curation::to_review_count;
 pub use date_nav::date_nav_index;
 
 /// Activities per day across the facets that aren't muted, as the activities

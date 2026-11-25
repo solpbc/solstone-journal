@@ -566,6 +566,7 @@ button.map-month-row:hover { background: var(--cream); }
 <div class="workspace-content map-shell" id="map-shell">
   <div data-date-nav></div>
   <h1 class="map-title" data-date-nav-heading></h1>
+  <div id="map-pin-offer" hidden></div>
   <div id="map-state-gate"></div>
   <div id="map-view-root" hidden></div>
 </div>
@@ -1351,6 +1352,23 @@ button.map-month-row:hover { background: var(--cream); }
     return false;
   }
 
+  function syncMapPinOffer(mode) {
+    const host = document.getElementById("map-pin-offer");
+    if (!host) return;
+    if (!mode || typeof window.solShellChrome?.mountPinOffer !== "function") {
+      host.replaceChildren?.();
+      host.hidden = true;
+      return;
+    }
+    const key = mode === "places"
+      ? "journal.window.pin.offer.map.text"
+      : "journal.window.pin.offer.map.location.text";
+    window.solShellChrome.mountPinOffer(host, {
+      view: "map",
+      message: window.JournalI18n.render(key),
+    });
+  }
+
   async function loadDay(day, arrive) {
     if (!alive() || !DAY_RE.test(String(day || ""))) return;
     // The link that opened this day, or what had focus in the day a step
@@ -1365,18 +1383,27 @@ button.map-month-row:hover { background: var(--cream); }
     try {
       const data = await readJson(`/app/map/api/day/${day}`);
       if (data === STALE || mine !== epoch || !alive()) return;
-      if (!asArray(data.entries).length && !asArray(data.devices).length) {
-        if (data.journal_has_location) renderDayEmpty(data, day);
-        else renderJournalEmpty();
+      const entries = asArray(data.entries);
+      if (!entries.length && !asArray(data.devices).length) {
+        if (data.journal_has_location) {
+          renderDayEmpty(data, day);
+          syncMapPinOffer("location");
+        } else {
+          renderJournalEmpty();
+          syncMapPinOffer(null);
+        }
         if (refocus) focusArrived();
         reportMapReady("empty");
         return;
       }
       renderDay(data);
+      const hasStopOrPlace = entries.some((entry) => entry && (entry.kind === "visit" || entry.kind === "stay" || entry.place));
+      syncMapPinOffer(hasStopOrPlace ? "places" : "location");
       if (refocus) focusArrived();
       reportMapReady("content");
     } catch (err) {
       if (mine !== epoch || !alive()) return;
+      syncMapPinOffer(null);
       showError(err, () => loadDay(day, arrive));
       if (refocus) focusArrived();
       reportMapReady("error");
@@ -1536,33 +1563,42 @@ button.map-month-row:hover { background: var(--cream); }
     setGate(window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.map.text.loading') }));
     try {
       let hasContent;
+      let offerMode = null;
       if (view.page === "places") {
         const data = await readJson("/app/map/api/places");
         if (data === STALE || !still()) return;
         renderPlaces(data);
         hasContent = asArray(data.places).length > 0;
+        offerMode = hasContent ? "places" : null;
       } else if (view.page === "place") {
         const data = await readJson(`/app/map/api/place/${encodeURIComponent(view.id)}`);
         if (data === STALE || !still()) return;
         renderPlace(data);
         hasContent = true;
+        offerMode = "places";
       } else if (view.page === "month") {
         const data = await readJson(`/app/map/api/month/${encodeURIComponent(view.month)}`);
         if (data === STALE || !still()) return;
         await renderMonth(data);
         if (!still()) return;
         hasContent = asArray(data.days).some(day => day.has_location);
+        const hasStops = asArray(data.choices).length > 0 || asArray(data.days).some(day => day.state === "stops");
+        offerMode = hasStops ? "places" : (hasContent ? "location" : null);
       } else {
         const day = view.day;
         const data = await readJson(`/app/map/api/week/${day}`);
         if (data === STALE || !still()) return;
         renderWeek(data);
         hasContent = asArray(data.days).some(day => day.readings || asArray(day.items).length);
+        const hasStops = asArray(data.days).some(day => asArray(day.items).length > 0);
+        offerMode = hasStops ? "places" : (hasContent ? "location" : null);
       }
       if (!still()) return;
+      syncMapPinOffer(offerMode);
       reportMapReady(hasContent ? 'content' : 'empty');
     } catch (err) {
       if (!still()) return;
+      syncMapPinOffer(null);
       const month = view.page === "month";
       const heading = month ? window.JournalI18n.render('journal.window.map.status.text.couldn.t.open.this.month.s') : undefined;
       showError(err, () => loadPage(view), heading, month ? "map:month" : "map:day");
@@ -3065,6 +3101,7 @@ button.map-month-row:hover { background: var(--cream); }
       const end = index?.coverage?.end;
       if (!DAY_RE.test(String(end || ""))) {
         renderJournalEmpty();
+        syncMapPinOffer(null);
         reportMapReady("empty");
         return;
       }

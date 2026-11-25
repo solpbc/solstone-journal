@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown on import detail after an Apple Health import writes Body entries.",
+  "context": "Journal window. One-time offer prompt shown on import detail after an Apple Health import writes Body entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "789628039acfbd46595ff25f1d54244a910052a1f63de94749582ac178883c43",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

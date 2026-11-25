@@ -114,7 +114,7 @@ pub static AGENTS_APP: AppDefinition = view(
     "journal.window.view.agents.source",
     &["claude", "chatgpt", "mcp", "connect", "solstone.me"],
     Some(RailGroup::Management),
-    4,
+    2,
     None,
 );
 
@@ -213,13 +213,20 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
     view(
         "health",
         "🩺",
-        "journal.window.view.health.label",
+        "journal.window.view.status.label",
         "stethoscope",
         true,
         focus(FocusGroup::Runs, 1),
         "journal.window.view.health.description",
         "journal.window.view.health.source",
-        &["status", "errors", "processing", "working", "problem"],
+        &[
+            "status",
+            "health",
+            "errors",
+            "processing",
+            "working",
+            "problem",
+        ],
         None,
         0,
         None,
@@ -251,7 +258,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
             "upload", "chatgpt", "claude", "gemini", "calendar", "notes", "strava", "file",
         ],
         Some(RailGroup::Management),
-        0,
+        1,
         None,
     ),
     view(
@@ -299,7 +306,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
             "devices", "pair", "phone", "computer", "private", "link", "qr",
         ],
         Some(RailGroup::Management),
-        2,
+        3,
         None,
     ),
     view(
@@ -334,7 +341,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
             "transcription",
         ],
         Some(RailGroup::Management),
-        1,
+        4,
         None,
     ),
     view(
@@ -348,7 +355,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "journal.window.view.sources.source",
         &["sources", "devices", "audio", "screen", "added"],
         Some(RailGroup::Management),
-        3,
+        0,
         None,
     ),
     view(
@@ -646,7 +653,7 @@ mod tests {
             .collect();
         management_apps.sort_by_key(|app| app.rail_rank);
         let names: Vec<&str> = management_apps.iter().map(|app| app.name).collect();
-        assert_eq!(names, &["import", "settings", "network", "sources"]);
+        assert_eq!(names, &["sources", "import", "network", "settings"]);
 
         let mut served: Vec<_> = served_apps(true)
             .filter(|app| matches!(app.rail_group, Some(RailGroup::Management)))
@@ -655,14 +662,14 @@ mod tests {
         let served_names: Vec<&str> = served.iter().map(|app| app.name).collect();
         assert_eq!(
             served_names,
-            &["import", "settings", "network", "sources", "agents"]
+            &["sources", "import", "agents", "network", "settings"]
         );
         assert_eq!(
             served_apps(true)
                 .find(|app| app.name == "agents")
                 .expect("agents")
                 .rail_rank,
-            4
+            2
         );
         let sources = APP_REGISTRY
             .iter()

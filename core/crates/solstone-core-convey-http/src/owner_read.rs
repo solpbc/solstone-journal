@@ -81,6 +81,7 @@ pub enum OwnerReadRole {
     ActivitiesIndex,
     ActivitiesMonthStats,
     YearView,
+    ShellBadges,
 }
 
 impl OwnerReadRole {
@@ -149,6 +150,7 @@ impl OwnerReadRole {
         Self::ActivitiesIndex,
         Self::ActivitiesMonthStats,
         Self::YearView,
+        Self::ShellBadges,
     ];
 
     /// The paired-device sync roles. Kept separate from [`Self::ALL`] because
@@ -233,6 +235,7 @@ impl OwnerReadRole {
             Self::ActivitiesIndex => "/app/activities/api/index",
             Self::ActivitiesMonthStats => "/app/activities/api/stats/202609",
             Self::YearView => "/app/year/api/view",
+            Self::ShellBadges => "/api/shell/badges",
         }
     }
 }

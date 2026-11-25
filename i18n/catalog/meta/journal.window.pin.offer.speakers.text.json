@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown when Speakers holds unnamed or unconfirmed voices.",
+  "context": "Journal window. One-time offer prompt shown when Speakers holds unnamed or unconfirmed voices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1d58bb63daabd1670a59be8ea10018d390579df43b5da865f25ca0963cc1a0a",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

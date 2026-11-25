@@ -31,21 +31,81 @@ window.whenShellReady(() => {
       .length;
   }
 
+  let latestServerBadges = null;
+  let badgesFetchFailed = false;
+  let badgesRefreshTimer = null;
+
+  function syncHomeBadge() {
+    if (!window.solShellChrome?.setBadge) return;
+    const unviewed = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
+    const serverIssues = Number.isFinite(latestServerBadges?.home?.issues)
+      ? Math.max(0, Math.floor(latestServerBadges.home.issues))
+      : 0;
+    const serverSeverity = latestServerBadges?.home?.severity || null;
+    const totalIssues = serverIssues + unviewed;
+    const wsState = window.appEvents?.getMetrics?.()?.state || 'connecting';
+    if (totalIssues > 0) {
+      window.solShellChrome.setBadge('home', {
+        count: totalIssues,
+        tone: serverSeverity === 'red' ? 'danger' : 'warn'
+      });
+      return;
+    }
+    const uncertain = wsState === 'disconnected'
+      || badgesFetchFailed
+      || serverSeverity === 'amber'
+      || lastCaptureStatusForPane === 'unknown';
+    window.solShellChrome.setBadge('home', uncertain ? { count: 0, tone: 'warn', marker: '!' } : null);
+  }
+
+  function fetchShellBadges() {
+    const reqOpts = window.solWindowRequest
+      ? window.solWindowRequest('/api/shell/badges', { credentials: 'same-origin', cache: 'no-store' })
+      : { credentials: 'same-origin', cache: 'no-store' };
+    fetch('/api/shell/badges', reqOpts)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(data => {
+        if (data && typeof data === 'object') {
+          latestServerBadges = data;
+          badgesFetchFailed = false;
+          syncHomeBadge();
+          const curationCount = Number.isFinite(data.curation) ? Math.max(0, Math.floor(data.curation)) : 0;
+          window.solShellChrome?.setBadge?.('curation', curationCount > 0 ? { count: curationCount, tone: 'neutral' } : null);
+          const importCount = Number.isFinite(data.import) ? Math.max(0, Math.floor(data.import)) : 0;
+          window.solShellChrome?.setBadge?.('import', importCount > 0 ? { count: importCount, tone: 'review' } : null);
+        } else {
+          badgesFetchFailed = true;
+          syncHomeBadge();
+        }
+      });
+  }
+
+  function scheduleBadgesRefresh() {
+    if (badgesRefreshTimer !== null) return;
+    badgesRefreshTimer = window.setTimeout(() => {
+      badgesRefreshTimer = null;
+      fetchShellBadges();
+    }, 1500);
+  }
+
   // Shared label updater — called from here and from websocket.js
   window.updateStatusLabel = function() {
-    if (!statusIcon) return;
     const label = statusLabelText();
-    statusIcon.setAttribute('aria-label', label);
-    statusIcon.setAttribute('title', label);
-    const unread = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
-    statusIcon.href = lastCaptureStatusForPane === 'degraded'
-      ? '/app/health/#registeredClientsCard'
-      : unread ? '/app/health/#quiet-notifs-section'
-      : ['offline', 'stale'].includes(lastCaptureStatusForPane)
-        ? '/app/health/#registeredClientsCard' : '/app/health/#healthSystemDetails';
-    const visibleLabel = document.querySelector('#status-instrument .status-label');
-    if (visibleLabel) visibleLabel.textContent = label;
-    if (liveRegion) liveRegion.textContent = label;
+    if (statusIcon) {
+      statusIcon.setAttribute('aria-label', label);
+      statusIcon.setAttribute('title', label);
+      const unread = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
+      statusIcon.href = lastCaptureStatusForPane === 'degraded'
+        ? '/app/health/#registeredClientsCard'
+        : unread ? '/app/health/#quiet-notifs-section'
+        : ['offline', 'stale'].includes(lastCaptureStatusForPane)
+          ? '/app/health/#registeredClientsCard' : '/app/health/#healthSystemDetails';
+      const visibleLabel = document.querySelector('#status-instrument .status-label');
+      if (visibleLabel) visibleLabel.textContent = label;
+    }
+    if (liveRegion && liveRegion.textContent !== label) liveRegion.textContent = label;
+    syncHomeBadge();
   };
 
   function updateDiagnosticConsoleLink() {
@@ -251,6 +311,7 @@ window.whenShellReady(() => {
           lastCaptureStatusForPane = 'unknown';
           silentDeviceCount = 0;
           window.appEvents?.setCaptureStatus?.('unknown');
+          syncHomeBadge();
         }
       });
   }
@@ -289,8 +350,8 @@ window.whenShellReady(() => {
 		      };
 		      const appendHealthLink = () => {
 		        const link = document.createElement('a');
-		        link.href = '/app/health';
-		        link.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.view.device.health');
+		        link.href = '/app/health/';
+		        link.textContent = window.JournalI18n.render('journal.window.shared.status.pane.visible.text.view.device.status');
 		        link.style.cssText = 'display: inline-block; margin-top: 4px; color: var(--danger); font-size: 12px;';
 		        text.appendChild(link);
 		      };
@@ -810,12 +871,28 @@ window.whenShellReady(() => {
   else document.addEventListener('workspace:mounted', onWorkspaceMounted);
 
   fetchSystemStatus();
+  // Defer the first badge fetch until after the current frame paints.
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => window.setTimeout(fetchShellBadges, 0));
+  } else {
+    window.setTimeout(fetchShellBadges, 0);
+  }
   // The capture rollup, the quiet-device count and the version come from this
   // read only. It waits while the page is hidden and reads again on return.
   const every = window.AppServices?.visibleInterval
     ? (fn, ms) => window.AppServices.visibleInterval(fn, ms)
     : (fn, ms) => window.setInterval(fn, ms);
   every(fetchSystemStatus, 60000);
+  every(fetchShellBadges, 60000);
+  if (window.appEvents?.listen) {
+    for (const tract of ['change', 'importer', 'supervisor', 'owner_notice', 'observe', 'cortex']) {
+      window.appEvents.listen(tract, scheduleBadgesRefresh);
+    }
+  }
+  window.appEvents?.onConnectionState?.(() => {
+    syncHomeBadge();
+    scheduleBadgesRefresh();
+  });
   // The pane's clock ticks only while the pane is on the page and in view;
   // the mark redraws itself on every change in connection or capture.
   if (statusPaneOpen) startPaneTick();

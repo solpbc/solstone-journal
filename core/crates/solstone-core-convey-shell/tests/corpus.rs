@@ -530,6 +530,16 @@ fn strip_permanent_app_metadata_from_actual(actual: &mut Value) {
             );
             object.insert("label".to_owned(), Value::String("curation".to_owned()));
         }
+        if name == "health" {
+            assert!(
+                object
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .is_some_and(|label| !label.is_empty() && label != "health"),
+                "health's display label diverged from the frozen corpus slug"
+            );
+            object.insert("label".to_owned(), Value::String("health".to_owned()));
+        }
         if name != "more" {
             assert!(
                 !object
@@ -648,6 +658,21 @@ fn strip_permanent_pinned_from_actual(actual: &mut Value) {
         .as_object_mut()
         .expect("shell object")
         .remove("pinned");
+}
+
+fn strip_permanent_pin_offers_seen_from_actual(actual: &mut Value) {
+    let seen = actual
+        .get("pin_offers_seen")
+        .unwrap_or_else(|| panic!("actual shell has no pin_offers_seen list"));
+    assert!(
+        seen.as_array()
+            .is_some_and(|items| items.iter().all(Value::is_string)),
+        "actual shell pin_offers_seen list must be an array of strings"
+    );
+    actual
+        .as_object_mut()
+        .expect("shell object")
+        .remove("pin_offers_seen");
 }
 
 #[test]
@@ -1082,6 +1107,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     strip_permanent_sources_addition_from_actual(&mut actual);
                     strip_permanent_year_addition_from_actual(&mut actual);
                     strip_permanent_pinned_from_actual(&mut actual);
+                    strip_permanent_pin_offers_seen_from_actual(&mut actual);
                     actual.as_object_mut().unwrap().remove("clock");
                 }
                 if phase == "established" && path == "/api/system/status" {

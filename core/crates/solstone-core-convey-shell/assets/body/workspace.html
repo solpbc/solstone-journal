@@ -1130,6 +1130,7 @@ a.body-day-cell:focus-visible {
 <div class="workspace-content body-shell">
   <div data-date-nav></div>
   <h1 class="body-title" data-date-nav-heading></h1>
+  <div id="body-pin-offer" hidden></div>
   <div id="body-state-gate"></div>
   <div id="body-view-root" hidden></div>
 </div>
@@ -1786,6 +1787,20 @@ a.body-day-cell:focus-visible {
       dialog.querySelector("[data-workout-move]")?.focus();
     }
 
+    function syncBodyPinOffer(hasData) {
+      const host = document.getElementById("body-pin-offer");
+      if (!host) return;
+      if (!hasData || typeof window.solShellChrome?.mountPinOffer !== "function") {
+        host.replaceChildren?.();
+        host.hidden = true;
+        return;
+      }
+      window.solShellChrome.mountPinOffer(host, {
+        view: "body",
+        message: window.JournalI18n.render("journal.window.pin.offer.body.text"),
+      });
+    }
+
     async function loadOverview() {
       const asked = epoch;
       setLoading(window.JournalI18n.render('journal.window.body.window.state.text.loading.body.data'));
@@ -1795,9 +1810,11 @@ a.body-day-cell:focus-visible {
         const hasData = overviewHasDays(status);
         document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
         reveal(renderOverview(status));
+        syncBodyPinOffer(hasData);
         ctx.ready(hasData ? "content" : "empty");
       } catch (err) {
         if (asked !== epoch || ctx.disposed) return;
+        syncBodyPinOffer(false);
         showError(window.JournalI18n.render('journal.window.body.status.text.couldn.t.load.your.body.data'), err, () => loadOverview());
         ctx.ready("error");
       }
@@ -1810,11 +1827,13 @@ a.body-day-cell:focus-visible {
         const bodyDay = await read(`/app/body/api/day/${day}`);
         if (asked !== epoch || ctx.disposed) return;
         reveal(renderDayView(bodyDay));
+        syncBodyPinOffer(Boolean(bodyDay.has_data && !bodyDay.hidden));
         if (arrive) focusArrived();
         else if (focus) focusNode(root.querySelector(focus));
         ctx.ready(bodyDay.has_data || bodyDay.hidden ? "content" : "empty");
       } catch (err) {
         if (asked !== epoch || ctx.disposed) return;
+        syncBodyPinOffer(false);
         showError(window.JournalI18n.render('journal.window.body.status.text.couldn.t.load.body.day'), err, () => loadBodyDay(day, arrive));
         if (arrive) focusArrived();
         ctx.ready("error");

@@ -75,6 +75,7 @@ html {
      windows, 92px with the word under the icon below 1100px (see the rail). */
   --app-rail-width: 208px;
   --app-dock-height: 64px;
+  --app-dock-safe-bottom: env(safe-area-inset-bottom, 0px);
   --status-instrument-inset: 20px;
   --status-instrument-size: 44px;
   --chrome-gap: 12px;
@@ -604,6 +605,7 @@ body.has-managed-dialog .workspace {
 
 .app-rail-link,
 .app-dock-link {
+  position: relative;
   appearance: none;
   width: var(--status-instrument-size);
   min-width: var(--status-instrument-size);
@@ -692,12 +694,74 @@ body.has-managed-dialog .workspace {
   margin: 4px 0;
 }
 
+.app-rail-divider--between {
+  display: none;
+}
+
+.app-rail-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.app-rail-group-label {
+  padding: 6px 11px 2px;
+  font-size: var(--text-min);
+  font-weight: var(--weight-medium);
+  color: var(--ink-faint-paper);
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  user-select: none;
+}
+
+.app-chrome-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--text-min);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.app-chrome-badge--danger {
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--hairline-2));
+}
+
+.app-chrome-badge--warn {
+  color: var(--warn-ink);
+  background: var(--warn-wash);
+  border: 1px solid color-mix(in srgb, var(--warn) 48%, var(--hairline-2));
+}
+
+.app-chrome-badge--neutral {
+  color: var(--ink-soft);
+  background: var(--cream);
+  border: 1px solid var(--hairline-2);
+}
+
+.app-chrome-badge--review {
+  color: var(--orange-text-aa);
+  background: var(--orange-wash);
+  border: 1px solid var(--orange-ink);
+}
+
 /* The rail names its places: icon and word on every row,
    so an owner can scan what the journal holds without hovering. Below 1100px
    the word sits under the icon; at 700px and below the dock takes over. */
 #app-rail {
   align-items: stretch;
   overflow-y: auto;
+  gap: 6px;
 }
 
 #app-rail .app-rail-link {
@@ -709,6 +773,8 @@ body.has-managed-dialog .workspace {
 
 #app-rail .app-chrome-label {
   position: static;
+  flex: 1 1 auto;
+  min-width: 0;
   width: auto;
   height: auto;
   margin: 0;
@@ -719,8 +785,8 @@ body.has-managed-dialog .workspace {
   line-height: 1.2;
 }
 
-#app-rail #status-instrument {
-  align-self: flex-start;
+#app-rail .app-chrome-badge {
+  margin-left: auto;
 }
 
 #app-rail .journal-about-link {
@@ -737,6 +803,22 @@ body.has-managed-dialog .workspace {
     padding: 10px 6px;
   }
 
+  .app-rail-group-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .app-rail-divider--between {
+    display: block;
+  }
+
   #app-rail .app-rail-link {
     height: auto;
     min-height: 56px;
@@ -747,13 +829,20 @@ body.has-managed-dialog .workspace {
   }
 
   #app-rail .app-chrome-label {
+    flex: 0 0 auto;
     max-width: 100%;
     font-size: var(--text-min);
     text-align: center;
   }
 
-  #app-rail #status-instrument {
-    align-self: center;
+  #app-rail .app-chrome-badge {
+    position: absolute;
+    top: 3px;
+    right: max(4px, calc(50% - 26px));
+    margin-left: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
   }
 
   #app-rail .journal-about-link {
@@ -781,14 +870,17 @@ body.has-managed-dialog .workspace {
     right: 0;
     bottom: 0;
     left: 0;
-    height: var(--app-dock-height);
-    padding: 8px;
+    height: auto;
+    min-height: calc(var(--app-dock-height) + var(--app-dock-safe-bottom));
+    padding: 8px 8px calc(8px + var(--app-dock-safe-bottom));
     background: var(--paper);
     border-top: 1px solid var(--hairline);
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
     z-index: calc(var(--z-bars) + 1);
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 4px;
     place-items: center;
   }
 
@@ -800,6 +892,27 @@ body.has-managed-dialog .workspace {
     align-items: center;
     justify-content: center;
     gap: 2px;
+  }
+
+  #app-dock .app-dock-link.is-current::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 24px;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 0 0 2px 2px;
+    background: var(--orange-ink);
+  }
+
+  #app-dock .app-chrome-badge {
+    position: absolute;
+    top: 2px;
+    right: max(4px, calc(50% - 26px));
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
   }
 
   /* The dock names its places, like the rail. `.app-chrome-label` is visually
@@ -822,13 +935,95 @@ body.has-managed-dialog .workspace {
   }
 
   .workspace {
-    padding-bottom: calc(var(--app-dock-height) + 8px);
+    padding-bottom: calc(var(--app-dock-height) + var(--app-dock-safe-bottom) + 8px);
   }
 
   #diagnostic-console {
     top: auto;
-    bottom: calc(var(--app-dock-height) + var(--chrome-gap));
+    bottom: calc(var(--app-dock-height) + var(--app-dock-safe-bottom) + var(--chrome-gap));
     left: var(--chrome-gap);
+  }
+}
+
+/* One-time quiet pin offer bar */
+.pin-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius);
+  background: var(--cream-bright);
+  color: var(--ink);
+}
+
+.pin-offer-text {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.pin-offer-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pin-offer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pin-offer-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.pin-offer-btn--primary {
+  background: var(--orange);
+  color: var(--ink-on-brand);
+  border: 1px solid var(--orange-ink);
+}
+
+.pin-offer-btn--quiet {
+  background: var(--paper);
+  color: var(--ink-soft);
+  border: 1px solid var(--hairline-2);
+}
+
+.pin-offer-btn:focus-visible,
+.pin-offer-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  .pin-offer-btn,
+  .pin-offer-link {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 
@@ -1676,6 +1871,7 @@ body.presentation-mode::after {
 body.presentation-mode {
   --app-rail-width: 0px;
   --app-dock-height: 0px;
+  --app-dock-safe-bottom: 0px;
 }
 
 body.presentation-mode #app-rail,

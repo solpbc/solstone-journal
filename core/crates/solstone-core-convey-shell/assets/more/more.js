@@ -146,8 +146,8 @@ const MORE_STATE_FIELDS = [
 
   function pinLabel(app, pinned) {
     return pinned
-      ? window.JournalI18n.render('journal.window.more.pin.action.unpin', [['view', String(app.name || '')], ['view_name', String(app.label)]])
-      : window.JournalI18n.render('journal.window.more.pin.action.pin', [['view', String(app.name || '')], ['view_name', String(app.label)]]);
+      ? window.JournalI18n.render('journal.window.more.pin.status.action.unpin', [['view', String(app.name || '')], ['view_name', String(app.label)]])
+      : window.JournalI18n.render('journal.window.more.pin.status.action.pin', [['view', String(app.name || '')], ['view_name', String(app.label)]]);
   }
 
   function paint(root, shell, pinIcon) {

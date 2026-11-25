@@ -704,6 +704,94 @@ fn row_needs_review(
         && projection.raw_publication.is_none()
 }
 
+/// Fast read-only count of staged confirmation-required imports waiting for
+/// owner review. Short-circuits immediately when `imported.json` exists and
+/// performs zero staging sweep mutations.
+pub fn pending_review_count(root: &Path, route: Option<&crate::ImportRouteSlot>) -> usize {
+    let imports_dir = root.join("imports");
+    let Ok(entries) = fs::read_dir(&imports_dir) else {
+        return 0;
+    };
+    let mut sync_made: Option<solstone_core_import::sync_state::SyncMadeImports> = None;
+    let mut count = 0;
+    for entry in entries.flatten() {
+        let timestamp = entry.file_name().to_string_lossy().into_owned();
+        if timestamp.len() != 15 || timestamp.matches('_').count() != 1 || !entry.path().is_dir() {
+            continue;
+        }
+        let directory = entry.path();
+        if directory.join("imported.json").exists() {
+            continue;
+        }
+        if route.is_some_and(|slot| slot.retains(&timestamp)) {
+            continue;
+        }
+        let Ok(metadata) = solstone_core_import::read_import_metadata(root, &timestamp) else {
+            continue;
+        };
+        if metadata.get("is_local_path").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let hint = metadata
+            .get("source_hint")
+            .and_then(Value::as_str)
+            .map(str::trim);
+        if hint == Some("audio_archive") {
+            continue;
+        }
+        let confirmation_source = hint == Some("apple_health")
+            || metadata
+                .get("confirmation_required")
+                .and_then(Value::as_bool)
+                == Some(true);
+        if !confirmation_source {
+            continue;
+        }
+        if crate::audio_archive::selected(&metadata)
+            && matches!(crate::audio_archive::run_id(root, &metadata), Ok(Some(_)))
+        {
+            continue;
+        }
+        let sync = sync_made
+            .get_or_insert_with(|| solstone_core_import::sync_state::SyncMadeImports::read(root));
+        if sync.contains(root, &timestamp) {
+            continue;
+        }
+        if solstone_core_import::saved_start::saved_start_state(&metadata, &timestamp)
+            != solstone_core_import::saved_start::SavedStartState::Eligible
+        {
+            continue;
+        }
+        let Some(file_path) = metadata.get("file_path").and_then(Value::as_str) else {
+            continue;
+        };
+        if !Path::new(file_path).exists() {
+            continue;
+        }
+        if crate::lifecycle::apple_card_already_ran(root, &timestamp, false) {
+            continue;
+        }
+        if hint == Some("apple_health")
+            && solstone_core_import_sources::body_status::read(root, &timestamp).is_some_and(
+                |(code, generation)| {
+                    generation == 1
+                        && solstone_core_import_sources::body_status::class_of(&code)
+                            != solstone_core_import_sources::body_status::StopClass::Stopped
+                },
+            )
+        {
+            continue;
+        }
+        let projection = solstone_core_import::project_import_result(root, &timestamp);
+        if projection.status == solstone_core_import::ProjectionStatus::Pending
+            && projection.raw_publication.is_none()
+        {
+            count += 1;
+        }
+    }
+    count
+}
+
 pub(crate) async fn detail(
     selected_locale: Option<Extension<ResponseLocale>>,
     State(state): State<AppState>,
@@ -1608,5 +1696,70 @@ mod tests {
         let custom = "legacy custom parser detail";
         assert_eq!(localize_projected_error(ENGLISH, custom), custom);
         assert_eq!(localize_projected_error(locale, custom), custom);
+    }
+
+    #[test]
+    fn pending_review_count_matches_staged_confirmation_imports_without_sweeping() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        assert_eq!(pending_review_count(root, None), 0);
+
+        // Staged confirmation-required import (eligible) -> counted
+        let staged_id = "20261124_100000";
+        let staged_dir = root.join("imports").join(staged_id);
+        fs::create_dir_all(&staged_dir).unwrap();
+        let payload_file = staged_dir.join("export.zip");
+        fs::write(&payload_file, b"PK\x03\x04test").unwrap();
+        let mut staged_meta = json!({
+            "import_id": staged_id,
+            "file_path": payload_file.to_string_lossy(),
+            "file_size": 8,
+            "source_hash": "a".repeat(64),
+            "source_timestamp": "2026-11-24T10:00:00Z",
+            "source_hint": "strava",
+            "confirmation_required": true
+        })
+        .as_object()
+        .cloned()
+        .unwrap();
+        solstone_core_import::saved_start::initialize_saved_start(&mut staged_meta, staged_id)
+            .unwrap();
+        fs::write(
+            staged_dir.join("import.json"),
+            serde_json::to_vec(&staged_meta).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(pending_review_count(root, None), 1);
+
+        // Completed import with imported.json -> short-circuited and not counted
+        let done_id = "20261124_110000";
+        let done_dir = root.join("imports").join(done_id);
+        fs::create_dir_all(&done_dir).unwrap();
+        let done_file = done_dir.join("export.zip");
+        fs::write(&done_file, b"PK\x03\x04done").unwrap();
+        let mut done_meta = json!({
+            "import_id": done_id,
+            "file_path": done_file.to_string_lossy(),
+            "file_size": 8,
+            "source_hash": "b".repeat(64),
+            "source_timestamp": "2026-11-24T11:00:00Z",
+            "source_hint": "strava",
+            "confirmation_required": true
+        })
+        .as_object()
+        .cloned()
+        .unwrap();
+        solstone_core_import::saved_start::initialize_saved_start(&mut done_meta, done_id).unwrap();
+        fs::write(
+            done_dir.join("import.json"),
+            serde_json::to_vec(&done_meta).unwrap(),
+        )
+        .unwrap();
+        fs::write(done_dir.join("imported.json"), br#"{"entries_written":5}"#).unwrap();
+        assert_eq!(pending_review_count(root, None), 1);
+        assert!(
+            payload_file.exists(),
+            "read-only count never sweeps staged files"
+        );
     }
 }

@@ -1309,7 +1309,7 @@ fn brain_action(state: &str, reason: Option<&str>, locale: &str) -> Value {
     }
 }
 
-pub(crate) fn transcription_processing_issue(
+pub fn transcription_processing_issue(
     journal: &Path,
     config: &Map<String, Value>,
     active_lane: Option<&str>,

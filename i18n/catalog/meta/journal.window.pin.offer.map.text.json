@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown when Map holds places.",
+  "context": "Journal window. One-time offer prompt shown when Map holds places.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d95b3d424a9d9e49c813cd81f0a3bc66432f332c1043e8c18aa470de5c33971f",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

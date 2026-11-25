@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! One resolver for the views pinned to the side rail.
+//! One resolver for the views pinned to the side rail and one-time pin offers.
 //!
-//! The stored value is `config/journal.json` → `convey.pinned_views`. Reads
-//! use [`read_journal_config`] and never materialize a missing file.
+//! Stored values live in `config/journal.json` → `convey.pinned_views` and
+//! `convey.pin_offers_seen`. Reads use [`read_journal_config`] and never
+//! materialize a missing file.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -15,8 +16,15 @@ use solstone_core_journal_config::{ConfigLoadError, read_journal_config};
 use crate::registry::served_apps;
 
 pub(crate) const PINNED_VIEWS_KEY: &str = "pinned_views";
+pub(crate) const PIN_OFFERS_SEEN_KEY: &str = "pin_offers_seen";
 
-pub const DEFAULT_PINNED_VIEWS: &[&str] = &["search", "entities", "thinking"];
+pub const DEFAULT_PINNED_VIEWS: &[&str] = &["transcripts", "entities", "activities", "curation"];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellPinState {
+    pub pinned: Vec<String>,
+    pub pin_offers_seen: Vec<String>,
+}
 
 pub fn is_pinnable(name: &str) -> bool {
     served_apps(true).any(|app| app.name == name && app.pinnable)
@@ -60,11 +68,48 @@ pub fn resolve(stored: Option<&Value>) -> Vec<String> {
     resolved
 }
 
+/// Resolve a stored `pin_offers_seen` value.
+///
+/// `None` or a malformed shape resolves to an empty list; valid string arrays
+/// keep the first pinnable name of each view.
+pub fn resolve_pin_offers_seen(stored: Option<&Value>) -> Vec<String> {
+    let Some(value) = stored else {
+        return Vec::new();
+    };
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    if items.iter().any(|item| !item.is_string()) {
+        return Vec::new();
+    }
+    let mut seen = HashSet::new();
+    let mut resolved = Vec::new();
+    for item in items {
+        let Some(name) = item.as_str() else {
+            continue;
+        };
+        if is_pinnable(name) && seen.insert(name) {
+            resolved.push(name.to_owned());
+        }
+    }
+    resolved
+}
+
 /// Read the resolved pin list. A missing file, a missing `convey` object, or
 /// a non-object `convey` resolves to the defaults and does not write.
+#[cfg(test)]
 pub fn read_pinned_views(journal_root: &Path) -> Result<Vec<String>, ConfigLoadError> {
+    Ok(read_shell_pin_state(journal_root)?.pinned)
+}
+
+/// Read both `pinned` and `pin_offers_seen` from a single `read_journal_config` call.
+pub fn read_shell_pin_state(journal_root: &Path) -> Result<ShellPinState, ConfigLoadError> {
     let read = read_journal_config(journal_root)?;
-    Ok(pinned_from_config(read.config.as_ref()))
+    let config = read.config.as_ref();
+    Ok(ShellPinState {
+        pinned: pinned_from_config(config),
+        pin_offers_seen: pin_offers_seen_from_config(config),
+    })
 }
 
 pub(crate) fn pinned_from_config(config: Option<&Map<String, Value>>) -> Vec<String> {
@@ -75,6 +120,18 @@ pub(crate) fn pinned_from_config(config: Option<&Map<String, Value>>) -> Vec<Str
         None => default_pinned_views(),
         Some(convey) if convey.is_object() => resolve(convey.get(PINNED_VIEWS_KEY)),
         Some(_) => default_pinned_views(),
+    }
+}
+
+pub(crate) fn pin_offers_seen_from_config(config: Option<&Map<String, Value>>) -> Vec<String> {
+    let Some(config) = config else {
+        return Vec::new();
+    };
+    match config.get("convey") {
+        Some(convey) if convey.is_object() => {
+            resolve_pin_offers_seen(convey.get(PIN_OFFERS_SEEN_KEY))
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -122,14 +179,55 @@ pub(crate) fn toggle(
     Ok((next, changed))
 }
 
+/// Record a one-time pin offer as seen in the in-memory config map.
+///
+/// Idempotent: if `view` is already in the resolved `pin_offers_seen` list,
+/// `changed` is false and the map is left untouched.
+pub(crate) fn mark_offer_seen(
+    config: &mut Map<String, Value>,
+    view: &str,
+) -> Result<(Vec<String>, bool), String> {
+    if let Some(convey) = config.get("convey")
+        && !convey.is_object()
+    {
+        return Err("convey must be an object".to_owned());
+    }
+    let stored = config
+        .get("convey")
+        .and_then(|convey| convey.get(PIN_OFFERS_SEEN_KEY))
+        .cloned();
+    let current = resolve_pin_offers_seen(stored.as_ref());
+    let mut next = current.clone();
+    if !next.iter().any(|name| name == view) {
+        next.push(view.to_owned());
+    }
+    let changed = next != current;
+    if changed {
+        let convey = config
+            .entry("convey".to_owned())
+            .or_insert_with(|| Value::Object(Map::new()));
+        let convey = convey
+            .as_object_mut()
+            .expect("convey is an object when pin_offers_seen changes");
+        convey.insert(
+            PIN_OFFERS_SEEN_KEY.to_owned(),
+            Value::Array(next.iter().cloned().map(Value::String).collect()),
+        );
+    }
+    Ok((next, changed))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{resolve, toggle};
+    use super::{
+        DEFAULT_PINNED_VIEWS, mark_offer_seen, pin_offers_seen_from_config, resolve,
+        resolve_pin_offers_seen, toggle,
+    };
     use serde_json::json;
 
     #[test]
     fn pinned_views_resolve_table_handles_absent_empty_unknown_dirty_and_corrupt_shapes() {
-        assert_eq!(resolve(None), ["search", "entities", "thinking"]);
+        assert_eq!(resolve(None), DEFAULT_PINNED_VIEWS);
         assert_eq!(resolve(Some(&json!([]))), Vec::<String>::new());
         assert_eq!(resolve(Some(&json!(["news"]))), Vec::<String>::new());
         assert_eq!(
@@ -138,14 +236,8 @@ mod tests {
             ]))),
             ["entities", "search"]
         );
-        assert_eq!(
-            resolve(Some(&json!("oops"))),
-            ["search", "entities", "thinking"]
-        );
-        assert_eq!(
-            resolve(Some(&json!([1]))),
-            ["search", "entities", "thinking"]
-        );
+        assert_eq!(resolve(Some(&json!("oops"))), DEFAULT_PINNED_VIEWS);
+        assert_eq!(resolve(Some(&json!([1]))), DEFAULT_PINNED_VIEWS);
         assert_eq!(
             resolve(Some(&json!(["entities", "entities", "news"]))),
             ["entities"]
@@ -154,7 +246,9 @@ mod tests {
         let mut absent = serde_json::Map::new();
         let (list, changed) = toggle(&mut absent, "map", true).unwrap();
         assert!(changed);
-        assert_eq!(list, ["search", "entities", "thinking", "map"]);
+        let mut expected_with_map: Vec<&str> = DEFAULT_PINNED_VIEWS.to_vec();
+        expected_with_map.push("map");
+        assert_eq!(list, expected_with_map);
 
         let mut empty = json!({"convey": {"pinned_views": []}});
         let map = empty.as_object_mut().unwrap();
@@ -193,11 +287,46 @@ mod tests {
         let config = json!({"convey": "nope"});
         assert_eq!(
             super::pinned_from_config(config.as_object()),
-            ["search", "entities", "thinking"]
+            DEFAULT_PINNED_VIEWS
+        );
+        assert_eq!(super::pinned_from_config(None), DEFAULT_PINNED_VIEWS);
+    }
+
+    #[test]
+    fn pin_offers_seen_resolves_and_marks_idempotently_preserving_siblings() {
+        assert_eq!(resolve_pin_offers_seen(None), Vec::<String>::new());
+        assert_eq!(
+            resolve_pin_offers_seen(Some(&json!("oops"))),
+            Vec::<String>::new()
         );
         assert_eq!(
-            super::pinned_from_config(None),
-            ["search", "entities", "thinking"]
+            resolve_pin_offers_seen(Some(&json!([1]))),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            resolve_pin_offers_seen(Some(&json!(["body", "home", "body", "map", "unknown"]))),
+            ["body", "map"]
+        );
+
+        let mut doc = json!({"convey": {"secret": "s", "pinned_views": ["search"]}});
+        let (seen, changed) = mark_offer_seen(doc.as_object_mut().unwrap(), "body").unwrap();
+        assert!(changed);
+        assert_eq!(seen, ["body"]);
+        assert_eq!(doc["convey"]["pin_offers_seen"], json!(["body"]));
+        assert_eq!(doc["convey"]["secret"], "s");
+        assert_eq!(doc["convey"]["pinned_views"], json!(["search"]));
+
+        let before = doc.clone();
+        let (seen_again, changed_again) =
+            mark_offer_seen(doc.as_object_mut().unwrap(), "body").unwrap();
+        assert!(!changed_again);
+        assert_eq!(seen_again, ["body"]);
+        assert_eq!(doc, before);
+
+        let non_obj = json!({"convey": "nope"});
+        assert_eq!(
+            pin_offers_seen_from_config(non_obj.as_object()),
+            Vec::<String>::new()
         );
     }
 }

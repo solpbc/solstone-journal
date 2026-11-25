@@ -1,0 +1,33 @@
+{
+  "description": "Empty stats notice linking to processing details in Status.",
+  "context": "Journal window. Empty stats notice linking to processing details in Status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "heading_start",
+      "type": "string"
+    },
+    {
+      "name": "heading_end",
+      "type": "string"
+    },
+    {
+      "name": "health_start",
+      "type": "string"
+    },
+    {
+      "name": "health_end",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5b06881a5753abbad61804a10ee03b9b08db75298e25d6119f5eed9fc91c2a25",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

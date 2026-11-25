@@ -56,10 +56,7 @@ pub fn retired_facet_names_unreadable(locale: &str) -> Response {
 pub fn settings_operation_failed(locale: &str) -> Response {
     settings_operation_failed_with_detail(
         locale,
-        text(
-            locale,
-            "journal.window.settings.http.detail.something.went.wrong.try.again.and",
-        ),
+        text(locale, "journal.window.settings.http.detail.status"),
     )
 }
 

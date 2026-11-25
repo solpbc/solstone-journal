@@ -322,6 +322,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "badges",
+        include_str!("../../../solstone-core-convey-shell/src/badges.rs"),
+    ),
+    (
+        "convey",
         "body",
         include_str!("../../../solstone-core-convey-shell/src/body.rs"),
     ),

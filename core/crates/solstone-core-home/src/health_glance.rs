@@ -561,6 +561,61 @@ fn parse_time(value: &str) -> Option<Timestamp> {
                 .and_then(|time| Offset::UTC.to_timestamp(time).ok())
         })
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatusBadgeSummary {
+    pub issues: usize,
+    pub severity: Option<&'static str>,
+    pub uncertain: bool,
+}
+
+pub fn status_badge_summary(root: &std::path::Path) -> StatusBadgeSummary {
+    let context = crate::HomeContext::new(root, Timestamp::now());
+    status_badge_summary_at(&context)
+}
+
+pub fn status_badge_summary_at(context: &crate::HomeContext) -> StatusBadgeSummary {
+    let capture_health = crate::readers::get_capture_health(context);
+    let last_observe = crate::readers::last_observe_relative_seconds(context)
+        .map(|seconds| crate::formatting::relative_time_ago(seconds as f64, context.locale()));
+    let brain = crate::readers::build_brain_snapshot(context);
+    let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
+        .ok()
+        .and_then(|config| {
+            crate::readers::transcription_processing_issue(
+                context.journal_root(),
+                &config,
+                brain.pointer("/identity/lane").and_then(Value::as_str),
+                context.locale(),
+            )
+        });
+    let backlog = crate::readers::load_backlog_source(context);
+    let glance = build_health_glance_in(
+        &capture_health,
+        last_observe.as_deref(),
+        &backlog,
+        &brain,
+        context.now_utc,
+        transcription_issue.as_ref(),
+        context.locale(),
+    );
+    let issues_arr = glance.get("issues").and_then(Value::as_array);
+    let issues = issues_arr.map_or(0, Vec::len);
+    let severity = if issues == 0 {
+        None
+    } else if issues_arr.is_some_and(|rows| rows.iter().any(|issue| issue["severity"] == "red")) {
+        Some("red")
+    } else {
+        Some("amber")
+    };
+    let uncertain = glance.get("verdict").and_then(Value::as_str) == Some("unavailable");
+    StatusBadgeSummary {
+        issues,
+        severity,
+        uncertain,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use jiff::SignedDuration;
@@ -1367,5 +1422,40 @@ mod tests {
         let green = glance_at(&active, Some("2 minutes ago"), &Value::Null, now());
         assert_eq!(green["verdict"], "ok");
         assert!(green.get("note").is_none());
+    }
+
+    #[test]
+    fn status_badge_summary_reflects_calm_and_attention_states() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).expect("config dir");
+        std::fs::write(
+            root.join("config/journal.json"),
+            br#"{"setup":{"completed_at":1778760000},"identity":{"timezone":"UTC"}}"#,
+        )
+        .expect("write config");
+        let t0 = crate::test_time::utc_at(2026, 5, 14, 15, 30, 0);
+        solstone_core_brain::begin_refresh(root, t0, None, None, false, None)
+            .expect("write initial none brain record");
+        let day0_ctx = crate::HomeContext::new(root, t0);
+        let day0 = status_badge_summary_at(&day0_ctx);
+        assert_eq!(day0.issues, 0);
+        assert_eq!(day0.severity, None);
+        assert!(!day0.uncertain);
+
+        // Unparseable stats.json surfaces 1 amber backlog issue; stuck day surfaces red.
+        std::fs::write(root.join("stats.json"), b"not json").expect("write unparseable stats");
+        let amber = status_badge_summary_at(&day0_ctx);
+        assert_eq!(amber.issues, 1);
+        assert_eq!(amber.severity, Some("amber"));
+
+        std::fs::write(
+            root.join("stats.json"),
+            br#"{"generated_at":"2026-05-14T15:25:00Z","backlog":{"stuck_days":1,"days":[{"state":"stuck","reason":"needs retry"}]}}"#,
+        )
+        .expect("write stuck stats");
+        let red = status_badge_summary_at(&day0_ctx);
+        assert_eq!(red.issues, 1);
+        assert_eq!(red.severity, Some("red"));
     }
 }

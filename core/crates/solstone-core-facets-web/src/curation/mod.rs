@@ -211,6 +211,57 @@ fn suggestions_to_review(state: &Value) -> usize {
     facet_groups.len() + ambiguity_count + speaker_count + pair_count
 }
 
+/// Fast read-only count of open suggestions to review for shell badges,
+/// skipping entity-merge candidate loading and display copy hydration.
+pub fn to_review_count(root: &Path) -> usize {
+    let mut facet_groups = std::collections::BTreeSet::new();
+    if let Ok(rows) = solstone_core_facets::load_candidates(root) {
+        for row in rows {
+            if row.get("status").and_then(Value::as_str) != Some("open") {
+                continue;
+            }
+            let key = string(&row, "name_key");
+            let name = string_or(&row, "name", &key);
+            facet_groups.insert(facet_group_key(&name));
+        }
+    }
+    let mut ambiguity_groups = std::collections::BTreeSet::new();
+    if let Ok(rows) = read_ambiguities(root, MalformedPolicy::Raise) {
+        for row in rows {
+            let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
+            if status != "open" || is_row_suppressed(&row) {
+                continue;
+            }
+            let mut candidate_ids: Vec<String> = row
+                .get("ranked_candidates")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|c| c.get("id").and_then(Value::as_str).map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            candidate_ids.sort();
+            candidate_ids.dedup();
+            if !candidate_ids.is_empty() {
+                ambiguity_groups.insert(candidate_ids);
+            }
+        }
+    }
+    let speaker_count = speaker_store::load_candidates(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| include_speaker(root, row))
+        .count();
+    let pair_count = pair_store::load_candidates(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| row.get("status").and_then(Value::as_str) == Some("open"))
+        .count();
+
+    facet_groups.len() + ambiguity_groups.len() + speaker_count + pair_count
+}
+
 fn page_limit(limit: Option<usize>) -> usize {
     limit.unwrap_or(STATE_PAGE_MAX).clamp(1, STATE_PAGE_MAX)
 }
@@ -2603,6 +2654,29 @@ mod tests {
         )
         .expect("json");
         assert_eq!(body, json!({ "to_review": 0 }));
+        assert_eq!(to_review_count(temp.path()), 0);
+    }
+
+    #[test]
+    fn to_review_count_matches_summary_and_skips_entity_merges() {
+        let root_dir = crate::test_support::phase_root("populated");
+        let root = root_dir.path();
+        let state = load_state(
+            root,
+            solstone_core_convey_http::window_catalog::ENGLISH,
+            false,
+        )
+        .expect("load_state");
+        let expected = suggestions_to_review(&state);
+        assert!(
+            expected > 0,
+            "populated fixture has open curation items to review"
+        );
+        assert!(
+            !state["entity_items"].as_array().unwrap().is_empty(),
+            "populated fixture also carries entity merge items that to_review excludes"
+        );
+        assert_eq!(to_review_count(root), expected);
     }
 
     #[test]

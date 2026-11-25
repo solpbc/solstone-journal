@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown when Speakers holds named voices.",
+  "context": "Journal window. One-time offer prompt shown when Speakers holds named voices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff181408c4500e11712d6428e7e1fcb5d4809cb45a0c3488e4f4ba5d82f119dc",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

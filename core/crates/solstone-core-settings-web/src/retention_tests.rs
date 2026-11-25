@@ -687,7 +687,10 @@ fn ac8_prune_unavailable_is_generic_while_purge_carries_the_tool_detail() {
         prune_status,
         prune_body.clone(),
     );
-    assert_eq!(crate::corpus::digest(&prune_body), "a568d88638536e85");
+    assert_eq!(
+        crate::corpus::digest(&prune_body),
+        prune_record["digest"].as_str().expect("prune digest")
+    );
     assert_corpus_response(
         "POST keep-policy.no-filter",
         purge_record,

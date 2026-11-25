@@ -84,7 +84,7 @@
   "ENT_CONN_EVIDENCE_FAILED": "journal.window.entities.copy.conn.evidence.failed",
   "ENT_CONN_EMPTY": "journal.window.entities.copy.conn.empty",
   "ENT_CONN_INDEX_UNAVAILABLE": "journal.window.entities.copy.conn.index.unavailable",
-  "ENT_CONN_INDEX_ACTION": "journal.window.entities.copy.conn.index.action",
+  "ENT_CONN_INDEX_ACTION": "journal.window.entities.copy.conn.index.status.action",
   "ENT_CONN_AMBIGUOUS": "journal.window.entities.copy.conn.ambiguous",
   "ENT_CONN_LOAD_FAILED": "journal.window.entities.copy.conn.load.failed",
   "ENT_CONN_KIND_WORDS": {

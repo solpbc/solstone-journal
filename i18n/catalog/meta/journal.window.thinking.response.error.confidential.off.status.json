@@ -1,0 +1,16 @@
+{
+  "description": "Error turning off confidential processing, directing the owner to journal status.",
+  "context": "Journal window. Error turning off confidential processing, directing the owner to journal status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61b3d98e9df1742cb141f778b3ef5f422d549db9c22010ab9e042847192dec0b",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

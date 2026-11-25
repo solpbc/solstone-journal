@@ -1,0 +1,16 @@
+{
+  "description": "Accessible landmark label for the status summary metrics strip.",
+  "context": "Journal window. Accessible landmark label for the status summary metrics strip.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64d1e173032399f379a71d2194994471d89b48fe1624da6962b15584a2bd02f9",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

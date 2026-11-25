@@ -1,0 +1,54 @@
+{
+  "description": "Accessible label for unpinning a view from More.",
+  "context": "Journal window. Accessible label for unpinning a view from More.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "view_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "ab0bb6d18ea5482978c523e9dc891c9eefc327d56980940d593d39a6ce42a23d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "agents",
+      "activities",
+      "backup",
+      "body",
+      "curation",
+      "entities",
+      "health",
+      "home",
+      "import",
+      "map",
+      "more",
+      "network",
+      "search",
+      "settings",
+      "sources",
+      "speakers",
+      "stats",
+      "support",
+      "thinking",
+      "transcripts",
+      "year",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

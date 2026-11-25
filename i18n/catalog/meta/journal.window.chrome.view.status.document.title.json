@@ -1,0 +1,54 @@
+{
+  "description": "Browser document title per journal view using status for the health route.",
+  "context": "Journal window. Browser document title per journal view using status for the health route.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "view",
+      "type": "string"
+    },
+    {
+      "name": "fallback_label",
+      "type": "string"
+    }
+  ],
+  "format_intent": "enum",
+  "source_revision": "e505391f1b749ee1aad38b81043c5cdc7b4b25237a14a8d0cc0410b8bf6e8b9e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "view",
+    "type": "string",
+    "enum_values": [
+      "agents",
+      "activities",
+      "backup",
+      "body",
+      "curation",
+      "entities",
+      "health",
+      "home",
+      "import",
+      "map",
+      "more",
+      "network",
+      "search",
+      "settings",
+      "sources",
+      "speakers",
+      "stats",
+      "support",
+      "thinking",
+      "transcripts",
+      "year",
+      "other"
+    ],
+    "enum_default": "other"
+  }
+}

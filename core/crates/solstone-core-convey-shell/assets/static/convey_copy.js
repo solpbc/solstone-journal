@@ -7,7 +7,7 @@
   const locale = globalThis.document?.documentElement?.lang;
   const language = locale && locale !== 'en' ? locale : sourceLocale;
   const prefix = 'journal.window.chrome.';
-  const dynamicMessages = new Set(['view.document.title', 'zone.time', 'day.zones.part', 'day.zones.all']);
+  const dynamicMessages = new Set(['view.document.title', 'view.status.document.title', 'zone.time', 'day.zones.part', 'day.zones.all']);
 
   function renderMessage(selected, id, args = []) {
     return bundle.render(selected, id, args, { useIsolating: selected !== sourceLocale });

@@ -1,0 +1,16 @@
+{
+  "description": "Thinking settings save error directing the owner to journal status.",
+  "context": "Journal window. Thinking settings save error directing the owner to journal status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10f036226251a4d25297d461ca8b0c06d714b069a2476fa13656bfa761b98e74",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

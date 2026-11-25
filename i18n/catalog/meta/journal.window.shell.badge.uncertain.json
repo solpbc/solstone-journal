@@ -1,0 +1,16 @@
+{
+  "description": "Screen-reader suffix for the Home navigation badge when status cannot be confirmed.",
+  "context": "Journal window. Screen-reader suffix for the Home navigation badge when status cannot be confirmed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "68ebe38f51fb095d4f2e896384bf40e3827d6b18327b4326ea8f4587ab37c578",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

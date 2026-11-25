@@ -1,0 +1,21 @@
+{
+  "description": "Accessible label for status summary metrics.",
+  "context": "Journal window. Accessible label for status summary metrics.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "52b6b546ce228a932e702679122adb33b5bd3af3f1ee2ad7944142fbf0eacad3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

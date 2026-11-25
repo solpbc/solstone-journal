@@ -2,19 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
-  // The status marks sit beside this script in its asset tree. Under a hashed
-  // address they resolve hashed too, so a repeat visit takes them from cache;
-  // anywhere else they keep their stable path.
-  const STATUS_MARKS = (() => {
-    try {
-      const src = document.currentScript && document.currentScript.src;
-      if (src && /^\/static\/[0-9a-f]{16}\//.test(new URL(src).pathname)) {
-        return new URL('sol-status/', src).pathname;
-      }
-    } catch (_) {}
-    return '/static/sol-status/';
-  })();
   const DAY_RE = /^\d{8}$/;
+  const badgesByView = new Map();
 
   function pathContext() {
     const parts = window.location.pathname.split('/');
@@ -30,7 +19,7 @@
   window.solPathContext = pathContext;
 
   function findApp(shell, appName) {
-    return (shell.apps || []).find((app) => app.name === appName) || null;
+    return (shell?.apps || []).find((app) => app.name === appName) || null;
   }
 
   const escapeHtml = window.AppServices.escapeHtml;
@@ -107,7 +96,7 @@
   }
 
   function applyBodyState(app) {
-    document.title = window.JournalI18n.render('journal.window.chrome.view.document.title', [
+    document.title = window.JournalI18n.render('journal.window.chrome.view.status.document.title', [
       ['view', String(app.name || '')], ['fallback_label', String(app.label)]
     ]);
   }
@@ -116,6 +105,71 @@
     return [...(shell.apps || [])]
       .filter((app) => app[groupField] === group)
       .sort((left, right) => left[rankField] - right[rankField]);
+  }
+
+  function normalizeBadgeSpec(spec) {
+    if (!spec || typeof spec !== 'object') return null;
+    const count = Number.isFinite(spec.count) && spec.count > 0 ? Math.floor(spec.count) : 0;
+    const marker = typeof spec.marker === 'string' ? spec.marker.trim() : '';
+    if (count <= 0 && !marker) return null;
+    const tone = ['danger', 'warn', 'review', 'neutral'].includes(spec.tone) ? spec.tone : 'neutral';
+    return { count, tone, marker };
+  }
+
+  function badgeSrText(appName, spec) {
+    if (appName === 'home') {
+      return spec.count > 0
+        ? window.JournalI18n.render('journal.window.shell.badge.attention', [['count', String(spec.count)]])
+        : window.JournalI18n.render('journal.window.shell.badge.uncertain');
+    }
+    return spec.count > 0
+      ? window.JournalI18n.render('journal.window.shell.badge.review', [['count', String(spec.count)]])
+      : '';
+  }
+
+  function badgeMarkup(appName) {
+    const spec = badgesByView.get(appName);
+    if (!spec) return '';
+    const visible = spec.count > 0 ? (spec.count > 99 ? '99+' : String(spec.count)) : spec.marker;
+    const sr = badgeSrText(appName, spec);
+    return (
+      `<span class="app-chrome-badge app-chrome-badge--${escapeHtml(spec.tone)}" data-chrome-badge="${escapeHtml(appName)}">` +
+      `<span aria-hidden="true">${escapeHtml(visible)}</span>` +
+      (sr ? `<span class="visually-hidden"> ${escapeHtml(sr)}</span>` : '') +
+      '</span>'
+    );
+  }
+
+  function setBadge(view, spec) {
+    if (typeof view !== 'string' || !view) return;
+    const normalized = normalizeBadgeSpec(spec);
+    if (normalized) badgesByView.set(view, normalized);
+    else badgesByView.delete(view);
+
+    for (const containerId of ['app-rail', 'app-dock']) {
+      const nav = document.getElementById(containerId);
+      if (!nav) continue;
+      const links = nav.querySelectorAll ? nav.querySelectorAll('[data-app-name]') : [];
+      for (const link of links) {
+        if (link.getAttribute('data-app-name') !== view) continue;
+        const existing = link.querySelector('[data-chrome-badge]');
+        if (!normalized) {
+          existing?.remove();
+          continue;
+        }
+        const wrapper = document.createElement('span');
+        wrapper.innerHTML = badgeMarkup(view);
+        const nextNode = wrapper.firstElementChild;
+        if (!nextNode) continue;
+        if (existing) existing.replaceWith(nextNode);
+        else link.appendChild(nextNode);
+      }
+    }
+  }
+
+  function getBadge(view) {
+    const found = badgesByView.get(view);
+    return found ? Object.assign({}, found) : null;
   }
 
   function appLink(app, currentAppName, className) {
@@ -127,6 +181,7 @@
       ` data-app-name="${escapeHtml(app.name)}"${isCurrent ? ' aria-current="page"' : ''}>` +
       `<span class="app-chrome-icon" aria-hidden="true">${icon}</span>` +
       `<span class="app-chrome-label">${label}</span>` +
+      badgeMarkup(app.name) +
       '</a>'
     );
   }
@@ -154,7 +209,9 @@
     return (
       `<a class="${className}${isCurrent ? ' is-current' : ''}" href="/app/more/" data-app-name="more"${onMore ? ' aria-current="page"' : ''}>` +
       `<span class="app-chrome-icon" aria-hidden="true">${icon}</span>` +
-      `<span class="app-chrome-label">${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.visible.text.more')}</span></a>`
+      `<span class="app-chrome-label">${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.visible.text.more')}</span>` +
+      badgeMarkup('more') +
+      '</a>'
     );
   }
 
@@ -163,23 +220,54 @@
     return `<a class="journal-about-link" href="/app/settings/#about" aria-label="${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.accessible.name.about')}">${escapeHtml(version)}</a>`;
   }
 
+  function railGroupMarkup(group, labelId, itemsHtml) {
+    const headingId = `app-rail-group-${group}`;
+    return (
+      `<div class="app-rail-group" role="group" data-rail-group="${group}" aria-labelledby="${headingId}">` +
+      `<div class="app-rail-group-label" id="${headingId}">${window.JournalI18n.renderHtml(labelId)}</div>` +
+      itemsHtml.join('') +
+      '</div>'
+    );
+  }
+
   function renderAppRail(shell, currentAppName) {
     const rail = document.getElementById('app-rail');
     const currentApp = findApp(shell, currentAppName);
     if (!rail || !currentApp) return;
-    const status = rail.querySelector('#status-instrument');
-    if (status) document.body.appendChild(status);
     const home = findApp(shell, 'home');
     const pins = pinnedApps(shell);
+    const keepsPins = pins.filter((app) => !app.focus || app.focus.group === 'keeps');
+    const shapePins = pins.filter((app) => app.focus && app.focus.group === 'shape');
+    const runsPins = pins.filter((app) => app.focus && app.focus.group === 'runs');
     const management = appsByRank(shell, 'rail_group', 'rail_rank', 'management');
-    const top = home ? [home, ...pins] : pins;
-    rail.innerHTML = [
-      ...top.map((app) => appLink(app, currentAppName, 'app-rail-link')),
-      moreLink(shell, currentAppName, [...top, ...management], 'app-rail-link'),
-      '<div class="app-rail-spacer" aria-hidden="true"></div>',
-      '<div class="app-rail-divider" aria-hidden="true"></div>',
+    const surfaceApps = [
+      ...(home ? [home] : []),
+      ...keepsPins,
+      ...shapePins,
+      ...runsPins,
+      ...management
+    ];
+    const keepsItems = [
+      ...(home ? [home] : []),
+      ...keepsPins
+    ].map((app) => appLink(app, currentAppName, 'app-rail-link'));
+    const shapeItems = [
+      ...shapePins.map((app) => appLink(app, currentAppName, 'app-rail-link')),
+      moreLink(shell, currentAppName, surfaceApps, 'app-rail-link')
+    ];
+    const runsItems = [
+      ...runsPins.map((app) => appLink(app, currentAppName, 'app-rail-link')),
       ...management.map((app) => appLink(app, currentAppName, 'app-rail-link')),
       aboutLink(shell)
+    ];
+
+    rail.innerHTML = [
+      railGroupMarkup('keeps', 'journal.window.shell.rail.group.keeps', keepsItems),
+      '<div class="app-rail-divider app-rail-divider--between" aria-hidden="true"></div>',
+      railGroupMarkup('shape', 'journal.window.shell.rail.group.shape', shapeItems),
+      '<div class="app-rail-spacer" aria-hidden="true"></div>',
+      '<div class="app-rail-divider" aria-hidden="true"></div>',
+      railGroupMarkup('runs', 'journal.window.shell.rail.group.runs', runsItems)
     ].join('');
   }
 
@@ -187,8 +275,6 @@
     const dock = document.getElementById('app-dock');
     const currentApp = findApp(shell, currentAppName);
     if (!dock || !currentApp) return;
-    const status = dock.querySelector('#status-instrument');
-    if (status) document.body.appendChild(status);
     const home = findApp(shell, 'home');
     const pins = pinnedApps(shell).slice(0, 2);
     const top = home ? [home, ...pins] : pins;
@@ -199,25 +285,8 @@
   }
 
   function renderStatusInstrument() {
-    const instrument = document.getElementById('status-instrument');
-    if (!instrument) return;
-    if (!instrument.querySelector('.status-icon')) instrument.innerHTML =
-      `<a class="status-icon" href="/app/health/#healthSystemDetails" aria-label="${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.accessible.name.connecting')}" title="${window.JournalI18n.renderHtml('journal.window.shared.shell.boot.tooltip.connecting')}">` +
-      '<img class="status-indicator status-indicator--connecting" src="' + STATUS_MARKS + 'mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
-      '<span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span>' +
-      '</a>' +
-      '<span id="status-live-region" role="status" class="visually-hidden"></span>';
-    const mobile = window.matchMedia('(max-width: 700px)');
-    const placeStatus = () => {
-      const nav = document.getElementById(mobile.matches ? 'app-dock' : 'app-rail');
-      const divider = nav.querySelector('.app-rail-divider');
-      nav.insertBefore(instrument, divider || null);
-    };
-    placeStatus();
-    if (!instrument.dataset.placementBound) {
-      mobile.addEventListener('change', placeStatus);
-      instrument.dataset.placementBound = 'true';
-    }
+    // Retained as a safe no-op for callers; Home and the Home rail/dock badge
+    // now carry live status without a standalone chrome box.
   }
 
   // The view the rail marks as current, after a move inside the page.
@@ -226,7 +295,6 @@
     if (!shell || !findApp(shell, name)) return;
     renderAppRail(shell, name);
     renderAppDock(shell, name);
-    renderStatusInstrument();
   }
 
   function updatePinnedViews(shell, pinnedList) {
@@ -235,7 +303,193 @@
     if (!current || !findApp(shell, current)) return;
     renderAppRail(shell, current);
     renderAppDock(shell, current);
-    renderStatusInstrument();
+  }
+
+  function updatePinOffersSeen(shell, seenList) {
+    if (!shell) return;
+    shell.pin_offers_seen = Array.isArray(seenList) ? seenList.slice() : [];
+  }
+
+  function shouldShowPinOffer(view, shellArg) {
+    const shell = shellArg || window.solShellData;
+    if (!shell || typeof view !== 'string' || !view) return false;
+    const app = findApp(shell, view);
+    if (!app || !app.pinnable) return false;
+    const pinned = Array.isArray(shell.pinned) ? shell.pinned : [];
+    const seen = Array.isArray(shell.pin_offers_seen) ? shell.pin_offers_seen : [];
+    return !pinned.includes(view) && !seen.includes(view);
+  }
+
+  function mountPinOffer(hostEl, opts) {
+    if (!hostEl || !opts || typeof opts.view !== 'string') return false;
+    const view = opts.view;
+    const message = String(opts.message || '').trim();
+    if (!message) {
+      hostEl.replaceChildren?.();
+      hostEl.hidden = true;
+      return false;
+    }
+    if (!window.solShellData && typeof window.whenShellReady === 'function') {
+      window.whenShellReady(() => {
+        if (hostEl.isConnected === false) return;
+        mountPinOffer(hostEl, opts);
+      });
+      return false;
+    }
+    const shell = window.solShellData;
+    if (!shell) return false;
+    const app = findApp(shell, view);
+    if (!app || !app.pinnable) {
+      hostEl.replaceChildren?.();
+      hostEl.hidden = true;
+      return false;
+    }
+
+    if (hostEl.dataset?.pinOfferState === 'pinned' && hostEl.dataset?.pinOfferView === view) {
+      return true;
+    }
+
+    if (!shouldShowPinOffer(view, shell)) {
+      if (hostEl.dataset) {
+        delete hostEl.dataset.pinOfferState;
+        delete hostEl.dataset.pinOfferView;
+      }
+      hostEl.replaceChildren?.();
+      hostEl.hidden = true;
+      return false;
+    }
+
+    const primaryLink = opts.primaryLink && opts.primaryLink.href && opts.primaryLink.label
+      ? `<a class="pin-offer-link" href="${escapeHtml(opts.primaryLink.href)}">${escapeHtml(opts.primaryLink.label)}</a>`
+      : '';
+    const pinLabel = window.JournalI18n.render('journal.window.pin.offer.action.pin', [
+      ['view', view],
+      ['view_name', String(app.label || view)]
+    ]);
+    const notNowLabel = window.JournalI18n.render('journal.window.pin.offer.not.now');
+    const pinnedText = window.JournalI18n.render('journal.window.pin.offer.pinned', [
+      ['view', view],
+      ['view_name', String(app.label || view)]
+    ]);
+    const undoLabel = window.JournalI18n.render('journal.window.pin.offer.undo');
+
+    const closeOffer = () => {
+      if (hostEl.dataset) {
+        delete hostEl.dataset.pinOfferState;
+        delete hostEl.dataset.pinOfferView;
+      }
+      hostEl.replaceChildren?.();
+      hostEl.hidden = true;
+    };
+
+    const setBusy = (busy) => {
+      const buttons = hostEl.querySelectorAll ? hostEl.querySelectorAll('button') : [];
+      for (const btn of buttons) btn.disabled = busy;
+    };
+
+    const renderPinnedState = () => {
+      if (hostEl.dataset) {
+        hostEl.dataset.pinOfferView = view;
+        hostEl.dataset.pinOfferState = 'pinned';
+      }
+      hostEl.hidden = false;
+      hostEl.innerHTML =
+        `<div class="pin-offer pin-offer--pinned" role="status" aria-live="polite" data-pin-offer="${escapeHtml(view)}">` +
+        `<p class="pin-offer-text">${escapeHtml(pinnedText)}</p>` +
+        '<div class="pin-offer-actions">' +
+        primaryLink +
+        `<button type="button" class="pin-offer-btn pin-offer-btn--quiet" data-pin-offer-action="undo">${escapeHtml(undoLabel)}</button>` +
+        '</div>' +
+        '</div>';
+      const undoBtn = hostEl.querySelector('[data-pin-offer-action="undo"]');
+      undoBtn?.addEventListener('click', async () => {
+        setBusy(true);
+        try {
+          const reply = await window.apiJson('/api/shell/pins', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ view, pinned: false })
+          });
+          if (reply && Array.isArray(reply.pinned)) {
+            updatePinnedViews(shell, reply.pinned);
+          }
+          closeOffer();
+        } catch (err) {
+          setBusy(false);
+          window.logError?.(err, { context: 'pin-offer-undo', view });
+        }
+      });
+    };
+
+    if (hostEl.dataset) {
+      hostEl.dataset.pinOfferView = view;
+      hostEl.dataset.pinOfferState = 'offer';
+    }
+    hostEl.hidden = false;
+    hostEl.innerHTML =
+      `<div class="pin-offer" data-pin-offer="${escapeHtml(view)}">` +
+      `<p class="pin-offer-text">${escapeHtml(message)}</p>` +
+      '<div class="pin-offer-actions">' +
+      primaryLink +
+      `<button type="button" class="pin-offer-btn pin-offer-btn--primary" data-pin-offer-action="pin">${escapeHtml(pinLabel)}</button>` +
+      `<button type="button" class="pin-offer-btn pin-offer-btn--quiet" data-pin-offer-action="dismiss">${escapeHtml(notNowLabel)}</button>` +
+      '</div>' +
+      '</div>';
+
+    const pinBtn = hostEl.querySelector('[data-pin-offer-action="pin"]');
+    const dismissBtn = hostEl.querySelector('[data-pin-offer-action="dismiss"]');
+
+    pinBtn?.addEventListener('click', async () => {
+      setBusy(true);
+      try {
+        const [pinReply, seenReply] = await Promise.all([
+          window.apiJson('/api/shell/pins', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ view, pinned: true })
+          }),
+          window.apiJson('/api/shell/pin-offers', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ view })
+          }).catch(() => null)
+        ]);
+        if (pinReply && Array.isArray(pinReply.pinned)) {
+          updatePinnedViews(shell, pinReply.pinned);
+        }
+        const currentSeen = Array.isArray(shell.pin_offers_seen) ? shell.pin_offers_seen : [];
+        const nextSeen = seenReply && Array.isArray(seenReply.pin_offers_seen)
+          ? seenReply.pin_offers_seen
+          : (currentSeen.includes(view) ? currentSeen : [...currentSeen, view]);
+        updatePinOffersSeen(shell, nextSeen);
+        renderPinnedState();
+      } catch (err) {
+        setBusy(false);
+        window.logError?.(err, { context: 'pin-offer-pin', view });
+      }
+    });
+
+    dismissBtn?.addEventListener('click', async () => {
+      setBusy(true);
+      try {
+        const reply = await window.apiJson('/api/shell/pin-offers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ view })
+        });
+        const currentSeen = Array.isArray(shell.pin_offers_seen) ? shell.pin_offers_seen : [];
+        const nextSeen = reply && Array.isArray(reply.pin_offers_seen)
+          ? reply.pin_offers_seen
+          : (currentSeen.includes(view) ? currentSeen : [...currentSeen, view]);
+        updatePinOffersSeen(shell, nextSeen);
+        closeOffer();
+      } catch (err) {
+        setBusy(false);
+        window.logError?.(err, { context: 'pin-offer-dismiss', view });
+      }
+    });
+
+    return true;
   }
 
   if (!window.solShellChrome) {
@@ -244,7 +498,12 @@
       renderAppDock,
       renderStatusInstrument,
       updatePinnedViews,
+      updatePinOffersSeen,
       markCurrent,
+      setBadge,
+      getBadge,
+      shouldShowPinOffer,
+      mountPinOffer,
     };
   }
 
@@ -318,7 +577,6 @@
     return shellFrom(await window.apiJson('/api/shell', { scope: 'shell' }));
   }
 
-
   // The rest of the shell is a second file. A fast view loads it when that
   // view is ready, so the wait for the view does not include it. A view
   // still reading loads it three seconds after this script starts, so a
@@ -361,7 +619,6 @@
       seedGlobals(shell);
       renderAppRail(shell, app.name);
       renderAppDock(shell, app.name);
-      renderStatusInstrument();
       applyBodyState(app);
       await window.solRouter.openDay(app);
       window.resolveSolShellReady(shell);

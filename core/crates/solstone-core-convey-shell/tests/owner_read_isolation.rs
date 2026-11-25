@@ -461,9 +461,13 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/app/year/api/view",
             RouteClassification::Moved(OwnerReadRole::YearView),
         ),
+        (
+            "/api/shell/badges",
+            RouteClassification::Moved(OwnerReadRole::ShellBadges),
+        ),
     ];
 
-    assert_eq!(table.len(), 105, "Must classify all 105 live GET routes");
+    assert_eq!(table.len(), 106, "Must classify all 106 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -486,7 +490,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         moved_roles, all_roles,
         "Moved roles must equal OwnerReadRole::ALL exactly"
     );
-    assert_eq!(moved_roles.len(), 64);
+    assert_eq!(moved_roles.len(), 65);
 
     let ten_measured = [
         OwnerReadRole::SpeakersKnown,

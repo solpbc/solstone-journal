@@ -640,7 +640,7 @@
     errorHost.hidden = false;
     if (window.SurfaceState) {
       errorHost.innerHTML = window.SurfaceState.error({
-        heading: window.JournalI18n.render('journal.window.health.heading.health.state.couldn.t.be.loaded'),
+        heading: window.JournalI18n.render('journal.window.health.heading.status.state.couldn.t.be.loaded'),
         desc: window.CONVEY_COPY?.RELOAD_HINT || window.JournalI18n.render('journal.window.health.window.explanation.reload.to.try.again'),
         retry: true,
         retryLabel: window.JournalI18n.render('journal.window.health.button.label.try.again'),
@@ -2290,7 +2290,7 @@
     } else if (state.health) {
       healthLabel = window.JournalI18n.render('journal.window.health.status.ok');
     }
-    sections[3]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.health.accessible', [['status', healthLabel]]));
+    sections[3]?.setAttribute('aria-label', window.JournalI18n.render('journal.window.health.vitals.status.accessible', [['status', healthLabel]]));
 
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
     const queues = queueEntries.map(([cmd, size]) => cmd + ' ' + size).join(', ')

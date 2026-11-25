@@ -1538,6 +1538,7 @@ window.AppServices = {
       },
 
       _updateBadge() {
+        window.renderStatusMark?.();
         window.updateStatusLabel?.();
         const badge = document.getElementById('quiet-notif-badge');
         if (!badge) return;

@@ -4976,7 +4976,7 @@ function renderThinkingProgress(progress) {
     const link = document.createElement('a');
     link.setAttribute('href', '/app/health/');
     const holder = document.createElement('div');
-    for (const part of window.JournalI18n.renderMarkup('journal.window.import.progress.thinking.held', quantityArgs(progress.held), {
+    for (const part of window.JournalI18n.renderMarkup('journal.window.import.progress.thinking.held.status', quantityArgs(progress.held), {
       elements: { health_link: link },
     })) {
       holder.appendChild(typeof part === 'string' ? importPage.createTextNode(part) : part);
@@ -6003,6 +6003,7 @@ function loadImportDetail(keepSavedStart = false) {
         onDiscard: typeof navigateAfterDiscard === 'function' ? navigateAfterDiscard : null,
         autoPreview: true,
       });
+      window.ImportDetail.mountBodyPinOffer?.(overview, data);
       if (restoreFocus && !overview.querySelector('[data-saved-start-slot]')) {
         const heading = document.getElementById('importDetailHeading');
         heading?.setAttribute('tabindex', '-1');

@@ -1,0 +1,21 @@
+{
+  "description": "Screen-reader suffix for navigation count badges on Suggestions and Import.",
+  "context": "Journal window. Screen-reader suffix for navigation count badges on Suggestions and Import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c4d4be3312850632b5848c50d03cecf2969375685b5a3b95b3ecaba430d21cac",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

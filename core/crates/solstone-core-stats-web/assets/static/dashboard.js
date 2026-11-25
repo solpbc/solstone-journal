@@ -949,7 +949,7 @@
     // Handle empty data
     if (!stats.days || Object.keys(stats.days).length === 0) {
       clearDashboardSections();
-      const message = window.JournalI18n.renderMarkup('journal.window.stats.empty.processing.link', [], {
+      const message = window.JournalI18n.renderMarkup('journal.window.stats.empty.processing.status.link', [], {
         elements: {heading: el('strong'), health: el('a', {href: '/app/health/'})}
       });
       document.getElementById('notice').appendChild(el('div', {className: 'alert alert-warning'}, message));

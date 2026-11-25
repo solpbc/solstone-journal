@@ -1,0 +1,16 @@
+{
+  "description": "One-time offer prompt shown when Body first holds entries.",
+  "context": "Journal window. One-time offer prompt shown when Body first holds entries.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1aeb8c911cad47dde5c269c42d8bcb568397689fd5ea5c0adc29ff2cd353c9ae",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

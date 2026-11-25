@@ -1,0 +1,16 @@
+{
+  "description": "Generic Settings HTTP error detail directing the owner to journal status.",
+  "context": "Journal window. Generic Settings HTTP error detail directing the owner to journal status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64a59a10464eb5cbc77816ee8d88e6ace95a6144279ea059771376ae951a610c",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the post-import Body pin offer bar.",
+  "context": "Journal window. Link label in the post-import Body pin offer bar.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b56ef2bd719f627670fd7d149e75ed2b7299358695a15fe53e36b0281ece1c3",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

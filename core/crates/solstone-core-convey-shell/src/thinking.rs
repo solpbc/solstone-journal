@@ -1163,9 +1163,9 @@ async fn confidential_disable(
             "settings_operation_failed",
             text(
                 locale,
-                "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.couldn.t.be.turned",
+                "journal.window.thinking.response.error.confidential.off.status",
             ),
-            text(locale, "journal.window.thinking.error.generic"),
+            text(locale, "journal.window.thinking.error.status.generic"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
@@ -2322,9 +2322,9 @@ fn confidential_enable_failed(locale: &str) -> Response {
         "settings_operation_failed",
         text(
             locale,
-            "journal.window.thinking.thinking.response.error.or.detail.confidential.processing.couldn.t.be.turned.variant2",
+            "journal.window.thinking.response.error.confidential.on.status",
         ),
-        text(locale, "journal.window.thinking.error.generic"),
+        text(locale, "journal.window.thinking.error.status.generic"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
@@ -2335,9 +2335,9 @@ fn saved_unlogged(locale: &str) -> Response {
         "settings_saved_unlogged",
         text(
             locale,
-            "journal.window.thinking.thinking.response.error.or.detail.your.change.was.saved.but.your",
+            "journal.window.thinking.response.error.log.unconfirmed.status",
         ),
-        text(locale, "journal.window.thinking.error.generic"),
+        text(locale, "journal.window.thinking.error.status.generic"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
@@ -2347,22 +2347,22 @@ fn key_check_failed(locale: &str) -> Response {
         "settings_operation_failed",
         text(
             locale,
-            "journal.window.thinking.thinking.response.error.or.detail.your.key.couldn.t.be.checked",
+            "journal.window.thinking.response.error.key.check.status",
         ),
-        text(locale, "journal.window.thinking.error.generic"),
+        text(locale, "journal.window.thinking.error.status.generic"),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
 fn thinking_failure(locale: &str) -> Response {
     thinking_failure_with_detail(
         locale,
-        text(locale, "journal.window.thinking.error.generic"),
+        text(locale, "journal.window.thinking.error.status.generic"),
     )
 }
 fn thinking_failure_with_detail(locale: &str, detail: impl Into<String>) -> Response {
     envelope(
         "settings_operation_failed",
-        text(locale, "journal.window.thinking.error.save"),
+        text(locale, "journal.window.thinking.error.status.save"),
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
