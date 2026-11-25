@@ -281,6 +281,7 @@ pub(crate) fn maybe_sweep_abandoned_uploads(root: &Path) {
     if should_run {
         sweep_abandoned_strava_uploads(root);
         crate::uploads::sweep_expired_uploads(root);
+        crate::uploads::sweep_orphaned_save_temps(root);
     }
 }
 
@@ -558,11 +559,9 @@ pub(crate) fn safe_filename(filename: &str) -> Option<String> {
 
 pub(crate) fn allowlisted_device_noun(raw: Option<&str>) -> Option<String> {
     let trimmed = raw?.trim();
-    matches!(
-        trimmed,
-        "iphone" | "ipad" | "phone" | "mac" | "PC" | "computer" | "browser"
-    )
-    .then(|| trimmed.to_owned())
+    crate::mobile_import_contract::DEVICE_NOUN_ALLOWLIST
+        .contains(&trimmed)
+        .then(|| trimmed.to_owned())
 }
 
 fn failure(
@@ -955,7 +954,6 @@ pub(crate) fn parse_and_validate_context(
 ) -> Result<Option<Map<String, Value>>, &'static str> {
     let context = match raw {
         None | Some(Value::Null) => None,
-        Some(Value::String(encoded)) if encoded.trim().is_empty() => None,
         Some(Value::String(encoded)) if encoded.len() <= 16 * 1024 => {
             match serde_json::from_str::<Map<String, Value>>(encoded) {
                 Ok(fields) => Some(fields),
@@ -1013,7 +1011,7 @@ pub(crate) struct VerifiedFileStageInput {
     pub(crate) original_filename: String,
     pub(crate) mime_type: Option<String>,
     pub(crate) file_size: u64,
-    pub(crate) source_hash: SourceHash,
+    pub(crate) precomputed_hash: Option<SourceHash>,
     pub(crate) source_file: VerifiedSourceFile,
     pub(crate) client_item_id: String,
     pub(crate) data: Value,
@@ -1025,8 +1023,23 @@ pub(crate) struct StagedCommitOutcome {
     pub(crate) import_id: Option<String>,
 }
 
+#[cfg(test)]
+pub(crate) fn fail_next_commit_metadata_write_for_root(root: &Path) {
+    let set =
+        FAIL_COMMIT_METADATA_ROOTS.get_or_init(|| Mutex::new(std::collections::BTreeSet::new()));
+    let mut guard = match set.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    guard.insert(root.to_path_buf());
+}
+
+#[cfg(test)]
+static FAIL_COMMIT_METADATA_ROOTS: OnceLock<Mutex<std::collections::BTreeSet<PathBuf>>> =
+    OnceLock::new();
+
 /// Shared staging pipeline for both `/app/import/api/save` (`Incoming::File`) and
-/// `/app/import/api/uploads/{id}/commit`, ensuring identical deduplication,
+/// `/app/import/api/uploads/{id}/commit`, ensuring identical refusal order, deduplication,
 /// source detection, timestamp placement, and `import.json` creation.
 pub(crate) fn stage_verified_upload_file(
     state: &AppState,
@@ -1037,7 +1050,7 @@ pub(crate) fn stage_verified_upload_file(
         original_filename,
         mime_type,
         file_size,
-        source_hash,
+        precomputed_hash,
         source_file,
         client_item_id,
         mut data,
@@ -1089,6 +1102,18 @@ pub(crate) fn stage_verified_upload_file(
             import_id: None,
         };
     }
+    let source_hash = match precomputed_hash {
+        Some(hash) => hash,
+        None => match hash_source(&source_path) {
+            Ok(hash) => hash,
+            Err(err) => {
+                return StagedCommitOutcome {
+                    response: metadata_failed(format!("Failed to stage temporary file: {err}")),
+                    import_id: None,
+                };
+            }
+        },
+    };
     if let Some(existing) = staged_by_client_item(&state.root, &client_item_id) {
         if existing.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()) {
             let existing_id = recorded_directory_id(&existing).as_str().map(str::to_owned);
@@ -1198,6 +1223,7 @@ pub(crate) fn stage_verified_upload_file(
     let target = match contained_import_file(&state.root, &import_id, &filename) {
         Ok(target) => target,
         Err(error) => {
+            let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
             return StagedCommitOutcome {
                 response: metadata_failed(error.to_string()),
                 import_id: None,
@@ -1206,16 +1232,22 @@ pub(crate) fn stage_verified_upload_file(
     };
     let directory = target.parent().expect("import target parent").to_owned();
     if let Err(error) = create_directory_with_mode(&directory, 0o700) {
+        let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
         return StagedCommitOutcome {
             response: metadata_failed(error.to_string()),
             import_id: None,
         };
     }
+    let mut restore_upload_part_to = None;
     match source_file {
         VerifiedSourceFile::SaveTemp(counted) => {
             let (kept, _active_guard) = match counted.keep() {
                 Ok(pair) => pair,
                 Err(error) => {
+                    let _ = solstone_core_import::discard_abandoned_import_records(
+                        &state.root,
+                        &import_id,
+                    );
                     return StagedCommitOutcome {
                         response: metadata_failed(format!(
                             "Failed to stage temporary file: {error}"
@@ -1228,6 +1260,8 @@ pub(crate) fn stage_verified_upload_file(
                 install_file(&kept, &target, AtomicWriteOptions { mode: Some(0o600) })
             {
                 let _ = std::fs::remove_file(&kept);
+                let _ =
+                    solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
                 return StagedCommitOutcome {
                     response: metadata_failed(error.to_string()),
                     import_id: None,
@@ -1240,11 +1274,14 @@ pub(crate) fn stage_verified_upload_file(
                 &target,
                 AtomicWriteOptions { mode: Some(0o600) },
             ) {
+                let _ =
+                    solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
                 return StagedCommitOutcome {
                     response: metadata_failed(error.to_string()),
                     import_id: None,
                 };
             }
+            restore_upload_part_to = Some(part_path);
         }
     }
     let mut metadata = staged_metadata(StagedMetadata {
@@ -1321,25 +1358,38 @@ pub(crate) fn stage_verified_upload_file(
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
     );
+    let rollback_on_metadata_failure = |detail: String| -> StagedCommitOutcome {
+        if let Some(ref part_path) = restore_upload_part_to {
+            let _ = install_file(&target, part_path, AtomicWriteOptions { mode: Some(0o600) });
+        }
+        let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
+        StagedCommitOutcome {
+            response: metadata_failed(detail),
+            import_id: None,
+        }
+    };
     if let Err(error) =
         solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
     {
-        return StagedCommitOutcome {
-            response: metadata_failed(error.to_string()),
-            import_id: None,
-        };
+        return rollback_on_metadata_failure(error.to_string());
     }
     if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
-        return StagedCommitOutcome {
-            response: metadata_failed(error.to_string()),
-            import_id: None,
+        return rollback_on_metadata_failure(error.to_string());
+    }
+    #[cfg(test)]
+    if FAIL_COMMIT_METADATA_ROOTS.get().is_some_and(|set| {
+        let mut guard = match set.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
         };
+        guard.remove(&state.root)
+    }) {
+        return rollback_on_metadata_failure(
+            "simulated transient metadata write failure".to_owned(),
+        );
     }
     if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
-        return StagedCommitOutcome {
-            response: metadata_failed(format!("Failed to write metadata: {error}")),
-            import_id: None,
-        };
+        return rollback_on_metadata_failure(format!("Failed to write metadata: {error}"));
     }
     StagedCommitOutcome {
         response: json_response(StatusCode::OK, summary(&metadata)),
@@ -1624,12 +1674,6 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             );
         };
         let file_size = counted.bytes();
-        let source_hash = match hash_source(counted.path()) {
-            Ok(source_hash) => source_hash,
-            Err(error) => {
-                return metadata_failed(format!("Failed to stage temporary file: {error}"));
-            }
-        };
         return stage_verified_upload_file(
             &state,
             VerifiedFileStageInput {
@@ -1637,7 +1681,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                 original_filename: original,
                 mime_type: content_type,
                 file_size,
-                source_hash,
+                precomputed_hash: None,
                 source_file: VerifiedSourceFile::SaveTemp(counted),
                 client_item_id,
                 data,

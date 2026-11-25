@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 use solstone_core_import_web::mobile_import_contract::{
-    ImportReasonCode, SavedSource, schema_json, vectors_json,
+    ImportReasonCode, SavedSource, UploadReasonCode, schema_json, vectors_json,
 };
 
 const SCHEMA_BYTES: &[u8] = include_bytes!("../../../../../contracts/mobile-import/v1.schema.json");
@@ -59,6 +59,14 @@ fn mobile_import_vectors_hold_the_save_then_start_handoff() {
         assert_eq!(body["import_id"], saved["timestamp"]);
         assert!(body["task_id"].is_string());
     }
+    assert_eq!(
+        vectors["upload_committed_200"]["body"], *saved,
+        "resumable upload commit must stage the identical save_response handoff shape"
+    );
+    assert_eq!(
+        vectors["upload_created_201"]["body"]["chunk_bytes"],
+        solstone_core_import_web::uploads::RESUMABLE_CHUNK_BYTES
+    );
 }
 
 #[test]
@@ -70,6 +78,20 @@ fn mobile_import_reason_codes_are_distinct_refusals() {
             codes[index + 1..]
                 .iter()
                 .all(|other| other.as_wire() != code.as_wire())
+        );
+    }
+    let upload_codes = UploadReasonCode::all();
+    for (index, code) in upload_codes.iter().enumerate() {
+        assert!(code.status().is_client_error() || code.status().is_server_error());
+        assert!(
+            upload_codes[index + 1..]
+                .iter()
+                .all(|other| other.as_wire() != code.as_wire())
+        );
+        assert!(
+            codes.iter().all(|other| other.as_wire() != code.as_wire()),
+            "upload reason code {} must not duplicate an ImportReasonCode",
+            code.as_wire()
         );
     }
 }

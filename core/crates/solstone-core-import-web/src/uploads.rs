@@ -14,7 +14,7 @@ use std::{
 
 use axum::{
     body::{Body, to_bytes},
-    extract::{Json, Path as AxumPath, Query, State},
+    extract::{Path as AxumPath, Query, State},
     http::{HeaderMap, StatusCode, header},
     response::Response,
 };
@@ -38,7 +38,7 @@ use crate::{
         is_heic_upload, now_ms, parse_and_validate_context, replay_summary, safe_filename,
         stage_verified_upload_file, staged_by_client_item, staged_by_source_hash, summary,
     },
-    mobile_import_contract::{ImportErrorKind, ImportReasonCode},
+    mobile_import_contract::{ImportErrorKind, ImportReasonCode, UploadReasonCode},
     multipart, save_stream, start_lock,
 };
 
@@ -64,7 +64,10 @@ pub const UPLOADS_DIR: &str = ".uploads";
 const PAYLOAD_PART_FILE: &str = "payload.part";
 const META_JSON_FILE: &str = "meta.json";
 const MAX_CLIENT_ITEM_ID_BYTES: usize = 256;
-const MAX_JSON_CONTROL_BYTES: usize = 64 * 1024;
+const MAX_CLIENT_BAG_BYTES: usize = 16 * 1024;
+pub const MAX_JSON_CONTROL_BYTES: usize = 64 * 1024;
+/// Minimum mtime age before `.save-tmp/` files not held by this process are swept as orphans.
+pub const SAVE_TMP_ORPHAN_MIN_AGE: Duration = Duration::from_secs(60 * 60);
 const PROGRESS_EVENT_THROTTLE: Duration = Duration::from_millis(500);
 const RECENT_COMMIT_RETENTION: Duration = Duration::from_secs(15 * 60);
 
@@ -740,7 +743,7 @@ fn sweep_expired_uploads_with_grace(root: &Path, incomplete_grace: Duration) {
     }
 }
 
-fn sweep_orphaned_save_temps(root: &Path) {
+pub(crate) fn sweep_orphaned_save_temps(root: &Path) {
     let save_tmp = root.join("imports").join(crate::lifecycle::SAVE_TMP_DIR);
     let Ok(entries) = fs::read_dir(&save_tmp) else {
         return;
@@ -754,6 +757,14 @@ fn sweep_orphaned_save_temps(root: &Path) {
             continue;
         }
         if save_stream::is_active_save_path(&path) {
+            continue;
+        }
+        let old_enough = meta
+            .modified()
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= SAVE_TMP_ORPHAN_MIN_AGE);
+        if !old_enough {
             continue;
         }
         let _ = fs::remove_file(&path);
@@ -797,17 +808,18 @@ pub(crate) fn list_active_upload_values(root: &Path) -> Vec<Value> {
         .collect()
 }
 
-fn find_open_by_client_item_and_reserved_bytes(
+fn scan_open_uploads_for_create(
     root: &Path,
     client_item_id: &str,
     now: i64,
-) -> (Option<String>, u64) {
+) -> (Option<String>, u64, u64) {
     let uploads = uploads_root(root);
     let Ok(entries) = fs::read_dir(&uploads) else {
-        return (None, 0);
+        return (None, 0, 0);
     };
     let mut matched_upload_id = None;
     let mut reserved_total_bytes = 0_u64;
+    let mut remaining_unwritten_bytes = 0_u64;
     for entry in entries.flatten() {
         if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
             continue;
@@ -826,11 +838,17 @@ fn find_open_by_client_item_and_reserved_bytes(
             continue;
         }
         reserved_total_bytes = reserved_total_bytes.saturating_add(meta.total_bytes);
+        remaining_unwritten_bytes = remaining_unwritten_bytes
+            .saturating_add(meta.total_bytes.saturating_sub(meta.next_offset));
         if meta.client_item_id == client_item_id && matched_upload_id.is_none() {
             matched_upload_id = Some(meta.upload_id);
         }
     }
-    (matched_upload_id, reserved_total_bytes)
+    (
+        matched_upload_id,
+        reserved_total_bytes,
+        remaining_unwritten_bytes,
+    )
 }
 
 fn protocol_error(
@@ -854,9 +872,10 @@ fn protocol_error(
 }
 
 fn upload_not_found() -> Response {
+    let code = UploadReasonCode::UploadNotFound;
     protocol_error(
-        StatusCode::NOT_FOUND,
-        "upload_not_found",
+        code.status(),
+        code.as_wire(),
         "that upload is no longer open.",
         "upload session does not exist or has expired",
         None,
@@ -876,9 +895,10 @@ fn insufficient_space_response(
     if let Some(offset) = next_offset {
         extra.insert("next_offset".to_owned(), json!(offset));
     }
+    let code = UploadReasonCode::InsufficientJournalSpace;
     protocol_error(
-        StatusCode::INSUFFICIENT_STORAGE,
-        "insufficient_journal_space",
+        code.status(),
+        code.as_wire(),
         "your journal doesn't have enough free space for that file.",
         detail,
         Some(extra),
@@ -916,7 +936,47 @@ fn clean_trimmed(value: Option<&Value>) -> Option<String> {
 }
 
 /// `POST /app/import/api/uploads`
-pub(crate) async fn create(State(state): State<AppState>, Json(payload): Json<Value>) -> Response {
+pub(crate) async fn create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let is_json = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|val| val.to_str().ok())
+        .is_some_and(|ct| {
+            ct.split(';')
+                .next()
+                .unwrap_or(ct)
+                .trim()
+                .eq_ignore_ascii_case("application/json")
+        });
+    if !is_json {
+        let code = UploadReasonCode::UnsupportedMediaType;
+        return protocol_error(
+            code.status(),
+            code.as_wire(),
+            "upload creation body must be application/json.",
+            "Content-Type must be application/json",
+            None,
+        );
+    }
+    let raw_bytes = match to_bytes(body, MAX_JSON_CONTROL_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            let code = ImportReasonCode::MultipartPartTooLarge;
+            return error(
+                code.status(),
+                "journal.window.import.response.error.that.file.is.too.large.to",
+                code.as_wire(),
+                "create request body exceeds 64 KiB limit".to_owned(),
+                None,
+            );
+        }
+    };
+    let Ok(payload) = serde_json::from_slice::<Value>(&raw_bytes) else {
+        return invalid_state("request body must be valid JSON", None);
+    };
     let Some(obj) = payload.as_object() else {
         return invalid_state("request body must be a JSON object", None);
     };
@@ -966,6 +1026,19 @@ pub(crate) async fn create(State(state): State<AppState>, Json(payload): Json<Va
         Err(detail) => return invalid_state(detail, None),
     };
 
+    let client_bag = match obj.get("client") {
+        None | Some(Value::Null) => json!({}),
+        Some(val) if val.is_object() => {
+            let encoded_len = serde_json::to_vec(val)
+                .map(|bytes| bytes.len())
+                .unwrap_or(usize::MAX);
+            if encoded_len > MAX_CLIENT_BAG_BYTES {
+                return invalid_state("client metadata object exceeds 16 KiB limit", None);
+            }
+            val.clone()
+        }
+        Some(_) => json!({}),
+    };
     let mut data = json!({
         "imported_via": clean_trimmed(obj.get("imported_via")).unwrap_or_else(|| "web_dashboard".to_owned()),
         "source_hint": clean_trimmed(obj.get("source_hint")),
@@ -975,7 +1048,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(payload): Json<Va
         "observer_handle": clean_trimmed(obj.get("observer_handle")),
         "area": clean_trimmed(obj.get("area")),
         "device_noun": allowlisted_device_noun(obj.get("device_noun").and_then(Value::as_str)),
-        "client": obj.get("client").filter(|v| v.is_object()).cloned().unwrap_or_else(|| json!({})),
+        "client": client_bag,
     });
     if let Some(ref ctx) = context
         && let Some(setting) = ctx.get("setting")
@@ -1085,6 +1158,20 @@ fn resume_open_sync(
     total_bytes: u64,
     sha256: Option<String>,
 ) -> Response {
+    let _target_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(root)
+    {
+        Ok(guard) => guard,
+        Err(_) => {
+            let code = UploadReasonCode::JournalBusy;
+            return protocol_error(
+                code.status(),
+                code.as_wire(),
+                "your journal is busy right now.",
+                "journal restore is in progress",
+                None,
+            );
+        }
+    };
     let Some(dir) = contained_upload_dir(root, upload_id) else {
         return upload_not_found();
     };
@@ -1236,13 +1323,13 @@ fn create_sync(
 
     // 3. Resume existing open upload for the same `client_item_id` under its own upload lock.
     let now = now_ms();
-    let (existing_open_id, reserved_bytes) =
-        find_open_by_client_item_and_reserved_bytes(root, &client_item_id, now);
+    let (existing_open_id, reserved_bytes, remaining_unwritten_bytes) =
+        scan_open_uploads_for_create(root, &client_item_id, now);
     if let Some(upload_id) = existing_open_id {
         return CreateSyncOutcome::ResumeOpen { upload_id };
     }
 
-    // 4. Upfront aggregate cap + disk free-space check.
+    // 4. Upfront aggregate cap + disk free-space check (including other open uploads' remaining bytes).
     if reserved_bytes.saturating_add(total_bytes) > MAX_ACTIVE_UPLOADS_BYTES {
         let available_cap = MAX_ACTIVE_UPLOADS_BYTES.saturating_sub(reserved_bytes);
         return CreateSyncOutcome::Done(insufficient_space_response(
@@ -1252,7 +1339,9 @@ fn create_sync(
             None,
         ));
     }
-    let required_free = total_bytes.saturating_add(MIN_FREE_DISK_BYTES);
+    let required_free = remaining_unwritten_bytes
+        .saturating_add(total_bytes)
+        .saturating_add(MIN_FREE_DISK_BYTES);
     match query_available_disk_bytes(&uploads_dir) {
         Ok(available) if available < required_free => {
             return CreateSyncOutcome::Done(insufficient_space_response(
@@ -1952,7 +2041,7 @@ fn commit_sync(state: &AppState, upload_id: &str, commit_sha256: Option<String>)
             original_filename: meta.original_filename,
             mime_type: meta.mime_type,
             file_size: meta.total_bytes,
-            source_hash: SourceHash::new(actual_sha256),
+            precomputed_hash: Some(SourceHash::new(actual_sha256)),
             source_file: VerifiedSourceFile::UploadPart(part_path),
             client_item_id: meta.client_item_id,
             data: meta.data,
@@ -1960,10 +2049,17 @@ fn commit_sync(state: &AppState, upload_id: &str, commit_sha256: Option<String>)
         },
     );
 
+    let status = outcome.response.status();
+    if status.is_server_error() {
+        // Retain the verified upload and metadata on transient 5xx failures so a client retry
+        // of POST /uploads/{id}/commit finishes without re-uploading 4 GiB.
+        return outcome.response;
+    }
+
     let _ = remove_contained_tree(&state.root, &dir);
     clear_progress_throttle(upload_id);
 
-    if outcome.response.status().is_success() {
+    if status.is_success() {
         record_recent_commit(&state.root, upload_id, &client_item_id);
         emit_importer_event(
             &state.root,
@@ -2727,14 +2823,20 @@ mod tests {
         assert_eq!(del_resp["deleted"], true);
         assert!(!uploads_root(journal.path()).join(&cancel_id).exists());
 
-        // Test .save-tmp orphan sweep spares live active save while deleting dead SIGKILL orphan,
-        // and expired .uploads/<id> is swept.
+        // Test .save-tmp orphan sweep spares both live active saves AND young (< 1h) unheld
+        // files from an overlapping restart process, while deleting > 1h dead SIGKILL orphans.
         let save_tmp = journal.path().join("imports/.save-tmp");
         fs::create_dir_all(&save_tmp).unwrap();
         let dead_orphan = save_tmp.join(".tmp_dead_sigkill_orphan");
+        let young_other_process = save_tmp.join(".tmp_young_other_process");
         let live_in_flight = save_tmp.join(".tmp_live_in_flight");
         fs::write(&dead_orphan, b"orphan bytes").unwrap();
+        fs::write(&young_other_process, b"young bytes").unwrap();
         fs::write(&live_in_flight, b"live bytes").unwrap();
+        let two_hours_ago =
+            filetime::FileTime::from_unix_time((now_ms() / 1_000) - (2 * 60 * 60), 0);
+        filetime::set_file_mtime(&dead_orphan, two_hours_ago).unwrap();
+        filetime::set_file_mtime(&live_in_flight, two_hours_ago).unwrap();
         let _live_guard = save_stream::register_active_save_path(&live_in_flight);
 
         let (status, exp_created) = send_req(
@@ -2783,8 +2885,153 @@ mod tests {
         );
         assert!(!dead_orphan.exists(), "dead .save-tmp orphan must be swept");
         assert!(
+            young_other_process.exists(),
+            "young (< 1h) .save-tmp file must be spared across overlapping process restarts"
+        );
+        assert!(
             live_in_flight.exists(),
             "live in-flight .save-tmp file must never be deleted"
         );
+    }
+
+    #[tokio::test]
+    async fn commit_5xx_retains_verified_upload_and_open_uploads_reserve_free_space() {
+        // 1. Transient 5xx during commit retains payload.part + meta.json so retry succeeds.
+        let journal = setup_journal();
+        let payload = b"Resumable upload surviving a transient 5xx on commit.\n".repeat(128);
+        let sha = format!("{:x}", Sha256::digest(&payload));
+
+        let (status, created) = send_req(
+            journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(UPLOAD_COLLECTION_PATH)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "client_item_id": "transient-500-item",
+                        "filename": "note.md",
+                        "total_bytes": payload.len(),
+                        "sha256": &sha,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let upload_id = created["upload_id"].as_str().unwrap().to_owned();
+
+        let (status, _) = send_req(
+            journal.path(),
+            Request::builder()
+                .method("PUT")
+                .uri(format!("{UPLOAD_COLLECTION_PATH}/{upload_id}?offset=0"))
+                .header("content-length", payload.len().to_string())
+                .body(Body::from(payload.clone()))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        crate::lifecycle::fail_next_commit_metadata_write_for_root(journal.path());
+        let (status, failed_commit) = send_req(
+            journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(format!("{UPLOAD_COLLECTION_PATH}/{upload_id}/commit"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{failed_commit}");
+        assert!(
+            uploads_root(journal.path())
+                .join(&upload_id)
+                .join(PAYLOAD_PART_FILE)
+                .is_file(),
+            "payload.part must remain intact after transient 5xx commit failure"
+        );
+
+        let (status, retry_ok) = send_req(
+            journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(format!("{UPLOAD_COLLECTION_PATH}/{upload_id}/commit"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{retry_ok}");
+        assert_eq!(
+            fs::read(retry_ok["path"].as_str().unwrap()).unwrap(),
+            payload
+        );
+
+        // 2. Two 4 GiB creates on 5 GiB free: first succeeds, second fails 507 upfront because
+        //    the first open upload's 4 GiB remaining bytes are counted!
+        let five_gib_journal = setup_journal();
+        let _five_gib =
+            FreeSpaceOverrideGuard::set(five_gib_journal.path(), 5 * 1024 * 1024 * 1024);
+        let (status, _) = send_req(
+            five_gib_journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(UPLOAD_COLLECTION_PATH)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "client_item_id": "first-4g",
+                        "filename": "one.zip",
+                        "total_bytes": MAX_UPLOAD_FILE_BYTES,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let (status, second_err) = send_req(
+            five_gib_journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(UPLOAD_COLLECTION_PATH)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "client_item_id": "second-4g",
+                        "filename": "two.zip",
+                        "total_bytes": MAX_UPLOAD_FILE_BYTES,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INSUFFICIENT_STORAGE, "{second_err}");
+        assert_eq!(second_err["reason_code"], "insufficient_journal_space");
+
+        // 3. Create body > 64 KiB -> 413, oversized client bag -> 400 JSON.
+        let (status, bag_err) = send_req(
+            journal.path(),
+            Request::builder()
+                .method("POST")
+                .uri(UPLOAD_COLLECTION_PATH)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "client_item_id": "big-bag",
+                        "filename": "bag.txt",
+                        "total_bytes": 100,
+                        "client": { "blob": "x".repeat(20 * 1024) },
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bag_err}");
+        assert_eq!(bag_err["reason_code"], "invalid_operation_for_state");
     }
 }

@@ -146,6 +146,201 @@
         "kind": "nothing_to_import"
       }
     },
+    "upload_create_request": {
+      "client_item_id": "123e4567-e89b-42d3-a456-426614174000",
+      "filename": "scan.pdf",
+      "mime_type": "application/pdf",
+      "total_bytes": 33554432,
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "imported_via": "mobile_share",
+      "device_noun": "iphone"
+    },
+    "upload_created_201": {
+      "status": 201,
+      "body": {
+        "upload_id": "550e8400-e29b-41d4-a716-446655440000",
+        "client_item_id": "123e4567-e89b-42d3-a456-426614174000",
+        "status": "open",
+        "next_offset": 0,
+        "total_bytes": 33554432,
+        "chunk_bytes": 4194304,
+        "expires_at": "2026-12-01T22:00:00Z"
+      }
+    },
+    "upload_resumed_200": {
+      "status": 200,
+      "body": {
+        "upload_id": "550e8400-e29b-41d4-a716-446655440000",
+        "client_item_id": "123e4567-e89b-42d3-a456-426614174000",
+        "status": "open",
+        "next_offset": 4194304,
+        "total_bytes": 33554432,
+        "chunk_bytes": 4194304,
+        "expires_at": "2026-12-01T22:05:00Z"
+      }
+    },
+    "upload_already_staged_200": {
+      "status": 200,
+      "body": {
+        "status": "already_staged",
+        "replay": true,
+        "save_response": {
+          "schema_version": 1,
+          "status": "staged",
+          "replay": true,
+          "path": "/journal/imports/20261019_101500/scan.pdf",
+          "timestamp": "20261019_101500",
+          "source_timestamp": "20261019_101500",
+          "client_item_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source": "document",
+          "setting": null,
+          "recommended_action": "start",
+          "metadata": {
+            "original_filename": "scan.pdf",
+            "mime_type": "application/pdf",
+            "imported_via": "mobile_share",
+            "observer_handle": null,
+            "source_hint": null,
+            "client": {}
+          },
+          "diagnostics": {
+            "timestamp_detection_method": "upload_fallback",
+            "timestamp_detection_model_called": false,
+            "timestamp_detection_no_match_reason": null,
+            "source_inference": "default"
+          }
+        }
+      }
+    },
+    "upload_already_imported_200": {
+      "status": 200,
+      "body": {
+        "status": "already_imported",
+        "import_id": "20261019_101500",
+        "reason_code": "invalid_operation_for_state",
+        "kind": "already_imported"
+      }
+    },
+    "upload_chunk_200": {
+      "status": 200,
+      "body": {
+        "upload_id": "550e8400-e29b-41d4-a716-446655440000",
+        "next_offset": 4194304,
+        "total_bytes": 33554432,
+        "complete": false,
+        "expires_at": "2026-12-01T22:00:02Z"
+      }
+    },
+    "upload_offset_mismatch_409": {
+      "status": 409,
+      "body": {
+        "error": "upload offset does not match journal position.",
+        "reason_code": "offset_mismatch",
+        "detail": "client sent offset 0, journal expects 4194304",
+        "next_offset": 4194304,
+        "total_bytes": 33554432
+      }
+    },
+    "upload_chunk_checksum_mismatch_422": {
+      "status": 422,
+      "body": {
+        "error": "chunk integrity check failed.",
+        "reason_code": "chunk_checksum_mismatch",
+        "detail": "expected 0000000000000000000000000000000000000000000000000000000000000000, got 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "next_offset": 0,
+        "total_bytes": 33554432
+      }
+    },
+    "upload_insufficient_space_507": {
+      "status": 507,
+      "body": {
+        "error": "your journal doesn't have enough free space for that file.",
+        "reason_code": "insufficient_journal_space",
+        "detail": "journal volume does not have enough free space for this upload plus 256 MiB headroom",
+        "required_bytes": 301989888,
+        "available_bytes": 104857600
+      }
+    },
+    "upload_status_200": {
+      "status": 200,
+      "body": {
+        "upload_id": "550e8400-e29b-41d4-a716-446655440000",
+        "client_item_id": "123e4567-e89b-42d3-a456-426614174000",
+        "filename": "scan.pdf",
+        "status": "open",
+        "phase": "sending",
+        "next_offset": 4194304,
+        "total_bytes": 33554432,
+        "chunk_bytes": 4194304,
+        "imported_via": "mobile_share",
+        "device_noun": "iphone",
+        "source_hint": null,
+        "created_at": "2026-11-24T22:00:00Z",
+        "last_activity_at": "2026-11-24T22:00:02Z",
+        "expires_at": "2026-12-01T22:00:02Z"
+      }
+    },
+    "upload_commit_request": {
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    },
+    "upload_committed_200": {
+      "status": 200,
+      "body": {
+        "schema_version": 1,
+        "status": "staged",
+        "replay": false,
+        "path": "/journal/imports/20261019_101500/scan.pdf",
+        "timestamp": "20261019_101500",
+        "source_timestamp": "20261019_101500",
+        "client_item_id": "123e4567-e89b-42d3-a456-426614174000",
+        "source": "document",
+        "setting": null,
+        "recommended_action": "start",
+        "metadata": {
+          "original_filename": "scan.pdf",
+          "mime_type": "application/pdf",
+          "imported_via": "mobile_share",
+          "observer_handle": null,
+          "source_hint": null,
+          "client": {}
+        },
+        "diagnostics": {
+          "timestamp_detection_method": "upload_fallback",
+          "timestamp_detection_model_called": false,
+          "timestamp_detection_no_match_reason": null,
+          "source_inference": "default"
+        }
+      }
+    },
+    "upload_whole_checksum_mismatch_422": {
+      "status": 422,
+      "body": {
+        "error": "the uploaded file did not match its checksum, so your journal discarded the partial copy.",
+        "reason_code": "whole_file_checksum_mismatch",
+        "detail": "expected sha256 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff, computed 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "expected_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "actual_sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      }
+    },
+    "upload_abort_200": {
+      "status": 200,
+      "body": {
+        "deleted": true,
+        "upload_id": "550e8400-e29b-41d4-a716-446655440000"
+      }
+    },
+    "host_import_status_uploading": {
+      "id": "pick-1",
+      "item": "123e4567-e89b-42d3-a456-426614174000",
+      "name": "scan.pdf",
+      "state": "uploading",
+      "device_noun": "iphone",
+      "size_bytes": 33554432,
+      "bytes_sent": 4194304,
+      "bytes_total": 33554432,
+      "resumable": true,
+      "phase": "sending"
+    },
     "refusals": [
       {
         "status": 400,
@@ -190,6 +385,72 @@
       {
         "status": 500,
         "reason_code": "import_metadata_failed"
+      }
+    ],
+    "upload_refusals": [
+      {
+        "status": 404,
+        "reason_code": "upload_not_found"
+      },
+      {
+        "status": 409,
+        "reason_code": "offset_mismatch"
+      },
+      {
+        "status": 409,
+        "reason_code": "incomplete_upload"
+      },
+      {
+        "status": 409,
+        "reason_code": "journal_busy"
+      },
+      {
+        "status": 400,
+        "reason_code": "content_length_required"
+      },
+      {
+        "status": 400,
+        "reason_code": "incomplete_chunk_body"
+      },
+      {
+        "status": 400,
+        "reason_code": "invalid_chunk_length"
+      },
+      {
+        "status": 400,
+        "reason_code": "invalid_offset"
+      },
+      {
+        "status": 400,
+        "reason_code": "invalid_chunk_checksum"
+      },
+      {
+        "status": 400,
+        "reason_code": "chunk_exceeds_total_bytes"
+      },
+      {
+        "status": 417,
+        "reason_code": "invalid_chunk_framing"
+      },
+      {
+        "status": 413,
+        "reason_code": "chunk_too_large"
+      },
+      {
+        "status": 422,
+        "reason_code": "chunk_checksum_mismatch"
+      },
+      {
+        "status": 422,
+        "reason_code": "whole_file_checksum_mismatch"
+      },
+      {
+        "status": 507,
+        "reason_code": "insufficient_journal_space"
+      },
+      {
+        "status": 415,
+        "reason_code": "unsupported_media_type"
       }
     ]
   }

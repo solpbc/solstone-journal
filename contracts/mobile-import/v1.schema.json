@@ -1,12 +1,49 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Solstone mobile import v1",
-  "description": "A linked device brings an owner-chosen item into the journal over its tunnel: a multipart save stages the item, then a JSON start with the save's path and timestamp runs it.",
+  "description": "A linked device brings an owner-chosen item into the journal over its tunnel: items below 16 MiB use a single multipart POST /app/import/api/save, items at or above 16 MiB (when resumable_import_uploads is advertised) use resumable 4 MiB chunks under /app/import/api/uploads, and POST /app/import/api/start runs the staged item.",
   "x-solstone-rust-source": "core/crates/solstone-core-import-web/src/mobile_import_contract.rs",
   "x-solstone-regeneration-command": "cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib mobile_import_contract::regenerate_mobile_import_contract -- --ignored",
   "x-solstone-routes": {
     "save": "POST /app/import/api/save",
-    "start": "POST /app/import/api/start"
+    "start": "POST /app/import/api/start",
+    "system_status": "GET /api/system/status",
+    "sources": "GET /app/import/api/sources",
+    "uploads_create": "POST /app/import/api/uploads",
+    "uploads_list": "GET /app/import/api/uploads",
+    "uploads_status": "GET /app/import/api/uploads/{upload_id}",
+    "uploads_chunk": "PUT /app/import/api/uploads/{upload_id}?offset={offset}",
+    "uploads_commit": "POST /app/import/api/uploads/{upload_id}/commit",
+    "uploads_abort": "DELETE /app/import/api/uploads/{upload_id}"
+  },
+  "x-solstone-resumable-policy": {
+    "capability": "resumable_import_uploads",
+    "threshold_bytes": 16777216,
+    "chunk_bytes": 4194304,
+    "max_file_bytes": 4294967296,
+    "max_control_json_bytes": 65536,
+    "bridge_drain_ceiling_bytes": 8388608,
+    "min_free_disk_bytes": 268435456,
+    "max_active_uploads_bytes": 8589934592,
+    "partial_upload_ttl_ms": 604800000,
+    "active_paused_threshold_ms": 30000,
+    "retry_backoff_seconds": [
+      1,
+      2,
+      5,
+      10,
+      30,
+      60
+    ],
+    "fallback_on_404_or_405_when_capability_absent": true,
+    "pairing_switch_rule": "Bind upload_id and remote_offset to target journal instance_id; if target journal changes mid-upload, discard remote upload_id and start fresh from offset 0 on the new journal while retaining the staged local file.",
+    "chunk_wire_framing": {
+      "content_length_required": true,
+      "transfer_encoding_chunked_forbidden": true,
+      "expect_100_continue_forbidden": true,
+      "chunk_sha256_header": "X-Chunk-Sha256",
+      "server_drains_body_before_error_up_to_bytes": 8388608
+    }
   },
   "type": "object",
   "$defs": {
@@ -64,6 +101,101 @@
           "const": 500
         }
       }
+    },
+    "upload_reason_code": {
+      "type": "string",
+      "enum": [
+        "upload_not_found",
+        "offset_mismatch",
+        "incomplete_upload",
+        "journal_busy",
+        "content_length_required",
+        "incomplete_chunk_body",
+        "invalid_chunk_length",
+        "invalid_offset",
+        "invalid_chunk_checksum",
+        "chunk_exceeds_total_bytes",
+        "invalid_chunk_framing",
+        "chunk_too_large",
+        "chunk_checksum_mismatch",
+        "whole_file_checksum_mismatch",
+        "insufficient_journal_space",
+        "unsupported_media_type"
+      ]
+    },
+    "upload_reason_status": {
+      "description": "The HTTP status each upload protocol reason code is sent with.",
+      "type": "object",
+      "properties": {
+        "upload_not_found": {
+          "const": 404
+        },
+        "offset_mismatch": {
+          "const": 409
+        },
+        "incomplete_upload": {
+          "const": 409
+        },
+        "journal_busy": {
+          "const": 409
+        },
+        "content_length_required": {
+          "const": 400
+        },
+        "incomplete_chunk_body": {
+          "const": 400
+        },
+        "invalid_chunk_length": {
+          "const": 400
+        },
+        "invalid_offset": {
+          "const": 400
+        },
+        "invalid_chunk_checksum": {
+          "const": 400
+        },
+        "chunk_exceeds_total_bytes": {
+          "const": 400
+        },
+        "invalid_chunk_framing": {
+          "const": 417
+        },
+        "chunk_too_large": {
+          "const": 413
+        },
+        "chunk_checksum_mismatch": {
+          "const": 422
+        },
+        "whole_file_checksum_mismatch": {
+          "const": 422
+        },
+        "insufficient_journal_space": {
+          "const": 507
+        },
+        "unsupported_media_type": {
+          "const": 415
+        }
+      }
+    },
+    "device_noun": {
+      "type": "string",
+      "enum": [
+        "iphone",
+        "ipad",
+        "phone",
+        "mac",
+        "PC",
+        "computer",
+        "browser"
+      ]
+    },
+    "upload_phase": {
+      "type": "string",
+      "enum": [
+        "sending",
+        "paused",
+        "checking"
+      ]
     },
     "source": {
       "type": "string",
@@ -293,6 +425,628 @@
           "type": "boolean"
         }
       }
+    },
+    "upload_error_response": {
+      "description": "Refusal returned by /app/import/api/uploads* routes. Always sent only after draining bounded chunk bodies (<= 8 MiB).",
+      "type": "object",
+      "required": [
+        "error",
+        "reason_code",
+        "detail"
+      ],
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/upload_reason_code"
+            },
+            {
+              "$ref": "#/$defs/reason_code"
+            }
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/error_kind"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_chunk_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "actual_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "sources_resumable_advertisement": {
+      "description": "Top-level resumable limits object on GET /app/import/api/sources.",
+      "type": "object",
+      "required": [
+        "threshold_bytes",
+        "chunk_bytes",
+        "max_file_bytes"
+      ],
+      "properties": {
+        "threshold_bytes": {
+          "const": 16777216
+        },
+        "chunk_bytes": {
+          "const": 4194304
+        },
+        "max_file_bytes": {
+          "const": 4294967296
+        }
+      }
+    },
+    "upload_create_request": {
+      "description": "JSON request (<= 64 KiB) to POST /app/import/api/uploads. Native apps supply sha256 upfront so pre-upload deduplication can skip sending bytes; browser clients may omit sha256 on create and supply it on POST /uploads/{upload_id}/commit.",
+      "type": "object",
+      "required": [
+        "client_item_id",
+        "filename",
+        "total_bytes"
+      ],
+      "properties": {
+        "client_item_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "mime_type": {
+          "type": "string"
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "source_hint": {
+          "type": "string"
+        },
+        "imported_via": {
+          "type": "string"
+        },
+        "device_noun": {
+          "$ref": "#/$defs/device_noun"
+        },
+        "area": {
+          "type": "string",
+          "maxLength": 96
+        },
+        "setting": {
+          "type": "string"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "observer_handle": {
+          "type": "string"
+        },
+        "context": {
+          "description": "JSON object or JSON-encoded object string (<= 16 KiB).",
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "client": {
+          "type": "object",
+          "description": "Optional client metadata object (<= 16 KiB serialized)."
+        }
+      }
+    },
+    "upload_open_response": {
+      "description": "201 Created (new session) or 200 OK (resuming an open session for the same client_item_id).",
+      "type": "object",
+      "required": [
+        "upload_id",
+        "client_item_id",
+        "status",
+        "next_offset",
+        "total_bytes",
+        "chunk_bytes",
+        "expires_at"
+      ],
+      "properties": {
+        "upload_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "client_item_id": {
+          "type": "string"
+        },
+        "status": {
+          "const": "open"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "chunk_bytes": {
+          "const": 4194304
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "upload_already_staged_response": {
+      "description": "200 OK from POST /app/import/api/uploads when the file is already staged and ready for POST /app/import/api/start.",
+      "type": "object",
+      "required": [
+        "status",
+        "replay",
+        "save_response"
+      ],
+      "properties": {
+        "status": {
+          "const": "already_staged"
+        },
+        "replay": {
+          "type": "boolean"
+        },
+        "save_response": {
+          "$ref": "#/$defs/save_response"
+        }
+      }
+    },
+    "upload_already_imported_response": {
+      "description": "200 OK from POST /app/import/api/uploads when sha256 matches an already-imported item (excluding repeatable sources Strava and Apple Health).",
+      "type": "object",
+      "required": [
+        "status",
+        "import_id",
+        "reason_code",
+        "kind"
+      ],
+      "properties": {
+        "status": {
+          "const": "already_imported"
+        },
+        "import_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason_code": {
+          "const": "invalid_operation_for_state"
+        },
+        "kind": {
+          "const": "already_imported"
+        }
+      }
+    },
+    "upload_chunk_headers": {
+      "description": "Required HTTP headers on PUT /app/import/api/uploads/{upload_id}?offset={offset}. Never send Transfer-Encoding: chunked or Expect: 100-continue.",
+      "type": "object",
+      "required": [
+        "Content-Type",
+        "Content-Length"
+      ],
+      "properties": {
+        "Content-Type": {
+          "const": "application/octet-stream"
+        },
+        "Content-Length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4194304
+        },
+        "X-Chunk-Sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        }
+      }
+    },
+    "upload_chunk_response": {
+      "description": "200 OK from PUT /app/import/api/uploads/{upload_id}?offset={offset}.",
+      "type": "object",
+      "required": [
+        "upload_id",
+        "next_offset",
+        "total_bytes",
+        "complete",
+        "expires_at"
+      ],
+      "properties": {
+        "upload_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "upload_status_response": {
+      "description": "200 OK from GET /app/import/api/uploads/{upload_id} and element schema in GET /app/import/api/uploads items and GET /app/import/api/list active_uploads.",
+      "type": "object",
+      "required": [
+        "upload_id",
+        "client_item_id",
+        "filename",
+        "status",
+        "phase",
+        "next_offset",
+        "total_bytes",
+        "chunk_bytes",
+        "imported_via",
+        "device_noun",
+        "source_hint",
+        "created_at",
+        "last_activity_at",
+        "expires_at"
+      ],
+      "properties": {
+        "upload_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "client_item_id": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "status": {
+          "const": "open"
+        },
+        "phase": {
+          "$ref": "#/$defs/upload_phase"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunk_bytes": {
+          "const": 4194304
+        },
+        "imported_via": {
+          "type": "string"
+        },
+        "device_noun": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/device_noun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_activity_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "upload_list_response": {
+      "description": "200 OK from GET /app/import/api/uploads.",
+      "type": "object",
+      "required": [
+        "items",
+        "total"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/upload_status_response"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "upload_commit_request": {
+      "description": "Optional JSON body (<= 64 KiB) for POST /app/import/api/uploads/{upload_id}/commit. Required when sha256 was omitted on POST /uploads; may be empty or {} when sha256 was supplied on POST /uploads. On 5xx, the journal retains the verified partial upload so retrying commit succeeds without re-sending chunks.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        }
+      }
+    },
+    "upload_commit_response": {
+      "$ref": "#/$defs/save_response"
+    },
+    "upload_abort_response": {
+      "description": "200 OK from DELETE /app/import/api/uploads/{upload_id}.",
+      "type": "object",
+      "required": [
+        "deleted",
+        "upload_id"
+      ],
+      "properties": {
+        "deleted": {
+          "const": true
+        },
+        "upload_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "host_import_status_progress": {
+      "description": "Additive fields on window.solstoneJournalHost import.status (CustomEvent solstone-journal-host-status) during resumable or chunked uploads.",
+      "type": "object",
+      "required": [
+        "item",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string",
+          "description": "Matches client_item_id so consumers can correlate host events with SSE upload_progress."
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "waiting",
+            "uploading",
+            "attention",
+            "delivered",
+            "gone"
+          ]
+        },
+        "device_noun": {
+          "$ref": "#/$defs/device_noun"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_sent": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resumable": {
+          "type": "boolean"
+        },
+        "phase": {
+          "$ref": "#/$defs/upload_phase"
+        },
+        "import_id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "sse_importer_upload_events": {
+      "description": "Additive Callosum / SSE envelopes on tract 'importer' delivered over /sse/events.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "tract",
+            "event",
+            "upload_id",
+            "client_item_id",
+            "filename",
+            "bytes_received",
+            "total_bytes",
+            "phase"
+          ],
+          "properties": {
+            "tract": {
+              "const": "importer"
+            },
+            "event": {
+              "const": "upload_progress"
+            },
+            "upload_id": {
+              "type": "string"
+            },
+            "client_item_id": {
+              "type": "string"
+            },
+            "filename": {
+              "type": "string"
+            },
+            "bytes_received": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "phase": {
+              "$ref": "#/$defs/upload_phase"
+            },
+            "imported_via": {
+              "type": "string"
+            },
+            "device_noun": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/device_noun"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source_hint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "tract",
+            "event",
+            "upload_id",
+            "client_item_id",
+            "import_id",
+            "timestamp",
+            "total_bytes"
+          ],
+          "properties": {
+            "tract": {
+              "const": "importer"
+            },
+            "event": {
+              "const": "upload_committed"
+            },
+            "upload_id": {
+              "type": "string"
+            },
+            "client_item_id": {
+              "type": "string"
+            },
+            "import_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "tract",
+            "event",
+            "upload_id",
+            "client_item_id",
+            "reason"
+          ],
+          "properties": {
+            "tract": {
+              "const": "importer"
+            },
+            "event": {
+              "const": "upload_aborted"
+            },
+            "upload_id": {
+              "type": "string"
+            },
+            "client_item_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "cancelled",
+                "checksum_mismatch",
+                "refused"
+              ]
+            }
+          }
+        }
+      ]
     }
   }
 }

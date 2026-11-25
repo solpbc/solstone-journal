@@ -184,3 +184,69 @@ async fn save_transport_admits_the_raised_limit_and_rejects_one_byte_over() {
     .await;
     assert_eq!(status, 413, "{}", String::from_utf8_lossy(&body));
 }
+
+#[tokio::test]
+async fn conformance_script_passes_against_live_convey_server() {
+    use solstone_core_convey_shell::{ConveyServeOptions, router, serve};
+    use std::process::Command;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU64;
+    use std::time::Duration;
+
+    let journal = established_journal();
+    fs::write(
+        journal.path().join("config/journal.json"),
+        br#"{"timezone":"America/Denver","setup":{"completed_at":1767225600}}"#,
+    )
+    .expect("timezone config");
+    let principal = journal.path().join("entities/principal");
+    fs::create_dir_all(&principal).expect("principal dir");
+    fs::write(
+        principal.join("entity.json"),
+        br#"{"id":"principal","name":"Conformance Owner","type":"Person","is_principal":true}"#,
+    )
+    .expect("principal entity");
+
+    let handle = serve(ConveyServeOptions {
+        journal_root: journal.path().to_path_buf(),
+        loopback_port: 0,
+        door_port: 0,
+        handshake_timeout: Duration::from_secs(5),
+        stream_stall_timeout: Duration::from_secs(5),
+        router: router(journal.path().to_path_buf()),
+        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+    })
+    .await
+    .expect("start Convey loopback server");
+
+    let port = handle.loopback_ipv4_addr().port();
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("repository root")
+        .join("contracts/mobile-import/conformance.py");
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new("python3")
+            .arg(&script)
+            .arg("--validate-contract")
+            .arg("--origin")
+            .arg(format!("http://127.0.0.1:{port}"))
+            .output()
+            .expect("invoke python3 conformance.py")
+    })
+    .await
+    .expect("join conformance runner");
+    handle.shutdown();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "conformance.py failed:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("PASS [11/11]"),
+        "unexpected output:\n{stdout}"
+    );
+}

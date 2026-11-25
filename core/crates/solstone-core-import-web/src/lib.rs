@@ -95,7 +95,9 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
         )
         .route(
             uploads::UPLOAD_COLLECTION_PATH,
-            get(uploads::list_active).post(uploads::create),
+            get(uploads::list_active)
+                .post(uploads::create)
+                .layer(DefaultBodyLimit::max(uploads::MAX_JSON_CONTROL_BYTES)),
         )
         .route(
             uploads::UPLOAD_ITEM_PATH,
@@ -104,7 +106,10 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
                 .delete(uploads::abort)
                 .layer(DefaultBodyLimit::max(uploads::BRIDGE_DRAIN_CEILING_BYTES)),
         )
-        .route(uploads::UPLOAD_COMMIT_PATH, post(uploads::commit))
+        .route(
+            uploads::UPLOAD_COMMIT_PATH,
+            post(uploads::commit).layer(DefaultBodyLimit::max(uploads::MAX_JSON_CONTROL_BYTES)),
+        )
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
         .route(
