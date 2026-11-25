@@ -123,7 +123,7 @@ pub const KINDS: &[KindSpec] = &[
             "journal.window.agents.permission.kind.transactions.label",
             "journal.window.agents.permission.kind.transactions.description",
             "transactions",
-            "Receipts, order confirmations, bills, and shipping updates",
+            "receipts, order confirmations, bills and shipping updates.",
         )),
         checked_by_default: false,
     },
@@ -202,10 +202,10 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "womens_health",
         permission: Some(AdmittedCategory::WomensHealth),
         query_alias: None,
-        permission_copy: Some(PermissionCopy {
-            label_id: "journal.window.agents.permission.kind.womens.health.label",
-            description_id: "journal.window.agents.permission.kind.womens.health.description",
-        }),
+        permission_copy: Some(PermissionCopy::catalog(
+            "journal.window.agents.permission.kind.womens.health.label",
+            "journal.window.agents.permission.kind.womens.health.description",
+        )),
         checked_by_default: false,
     },
     KindSpec {

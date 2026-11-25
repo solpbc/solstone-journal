@@ -2682,18 +2682,15 @@ fn populate_backfill_activity_defaults(
     }
 
     let mut participants: BTreeMap<String, ParticipantDraft> = BTreeMap::new();
-    let has_corresponded = std::cell::Cell::new(false);
     let mut upsert = |display: String,
                       email: Option<String>,
                       role: &'static str,
                       src: &'static str,
                       conf: f64,
-                      ctx: String| {
+                      ctx: String|
+     -> bool {
         if is_owner(&display, email.as_deref()) {
-            return;
-        }
-        if role == "corresponded" {
-            has_corresponded.set(true);
+            return false;
         }
         let rank = match role {
             "attendee" => 5,
@@ -2704,7 +2701,7 @@ fn populate_backfill_activity_defaults(
         };
         let key = display.trim().to_lowercase();
         if key.is_empty() {
-            return;
+            return false;
         }
         let eid = resolve_id(&display, email.as_deref());
         match participants.get_mut(&key) {
@@ -2738,6 +2735,7 @@ fn populate_backfill_activity_defaults(
                 );
             }
         }
+        true
     };
 
     let is_email_stream = stream == "email"
@@ -2755,6 +2753,7 @@ fn populate_backfill_activity_defaults(
         let is_real_photo = has_image && !has_screenshot;
         let mut is_written_exchange = is_email_stream;
         let mut is_spoken = false;
+        let mut seg_has_header_corresponded = false;
 
         if let Ok(bytes) = std::fs::read(seg_dir.join("import_kind.json"))
             && let Ok(val) = serde_json::from_slice::<Value>(&bytes)
@@ -2815,35 +2814,40 @@ fn populate_backfill_activity_defaults(
                                         .get("email")
                                         .and_then(Value::as_str)
                                         .map(|s| s.trim().to_lowercase());
-                                    upsert(
+                                    if upsert(
                                         sender.to_owned(),
                                         email,
                                         "corresponded",
                                         "transcript",
                                         1.0,
                                         "Corresponded in written exchange.".to_owned(),
-                                    );
+                                    ) {
+                                        seg_has_header_corresponded = true;
+                                    }
                                 }
                             }
                         }
                     }
                 } else if (fname.ends_with("_transcript.md") || fname == "transcript.md")
-                    && let Ok(text) = std::fs::read_to_string(entry.path())
+                    && let Ok(file) = std::fs::File::open(entry.path())
                 {
-                    for line in text.lines().take(40) {
+                    use std::io::BufRead;
+                    for line in std::io::BufReader::new(file).lines().take(40).flatten() {
                         let trimmed = line.trim();
                         for prefix in ["From:", "To:", "**From:**", "**To:**"] {
                             if let Some(rest) = trimmed.strip_prefix(prefix) {
                                 is_written_exchange = true;
                                 for (person_name, email) in parse_header_people(rest) {
-                                    upsert(
+                                    if upsert(
                                         person_name,
                                         email,
                                         "corresponded",
                                         "transcript",
                                         1.0,
                                         "Corresponded in message.".to_owned(),
-                                    );
+                                    ) {
+                                        seg_has_header_corresponded = true;
+                                    }
                                 }
                             }
                         }
@@ -2853,7 +2857,7 @@ fn populate_backfill_activity_defaults(
             for (spk, count) in speaker_counts {
                 let role = if count >= 2 { "attendee" } else { "heard" };
                 let conf = if count >= 2 { 0.95 } else { 0.9 };
-                upsert(
+                let _ = upsert(
                     spk,
                     None,
                     role,
@@ -2887,13 +2891,13 @@ fn populate_backfill_activity_defaults(
                     .unwrap_or_default()
                     .to_owned();
                 if is_real_photo && level != "low" {
-                    upsert(name.to_owned(), None, "visible", "screen", 0.9, ctx);
+                    let _ = upsert(name.to_owned(), None, "visible", "screen", 0.9, ctx);
                 } else if is_written_exchange
                     && is_email_stream
                     && level == "high"
-                    && !has_corresponded.get()
+                    && !seg_has_header_corresponded
                 {
-                    upsert(
+                    let _ = upsert(
                         name.to_owned(),
                         None,
                         "corresponded",
@@ -2907,7 +2911,7 @@ fn populate_backfill_activity_defaults(
                     } else {
                         "transcript"
                     };
-                    upsert(name.to_owned(), None, "mentioned", src, 0.8, ctx);
+                    let _ = upsert(name.to_owned(), None, "mentioned", src, 0.8, ctx);
                 }
             }
         }
@@ -3112,6 +3116,60 @@ fn is_bulk_or_automated_actor(name: &str, email: Option<&str>) -> bool {
     false
 }
 
+fn backfill_span_fingerprint(
+    journal: &std::path::Path,
+    today_str: &str,
+    backfill_days: &[String],
+    enabled_facets: &[String],
+) -> Value {
+    let mut max_mtime_ns = 0_u128;
+    let mut total_bytes = 0_u64;
+    let mut stat_path = |p: &std::path::Path| {
+        if let Ok(meta) = std::fs::metadata(p) {
+            total_bytes = total_bytes.saturating_add(meta.len());
+            if let Ok(modified) = meta.modified()
+                && let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH)
+            {
+                max_mtime_ns = max_mtime_ns.max(dur.as_nanos());
+            }
+        }
+    };
+    stat_path(&journal.join("entities/identity_map.json"));
+    stat_path(&journal.join("config/journal.json"));
+    for facet in enabled_facets {
+        stat_path(&journal.join("facets").join(facet).join("hidden_names.json"));
+        stat_path(&journal.join("facets").join(facet).join("facet.json"));
+    }
+    for day in backfill_days {
+        stat_path(&journal.join("chronicle").join(day));
+        for facet in enabled_facets {
+            stat_path(
+                &journal
+                    .join("facets")
+                    .join(facet)
+                    .join("activities")
+                    .join(format!("{day}.jsonl")),
+            );
+            stat_path(
+                &journal
+                    .join("facets")
+                    .join(facet)
+                    .join("detections/entities")
+                    .join(format!("{day}.jsonl")),
+            );
+        }
+    }
+    serde_json::json!({
+        "today": today_str,
+        "day_count": backfill_days.len(),
+        "first_day": backfill_days.first(),
+        "last_day": backfill_days.last(),
+        "enabled_facets": enabled_facets,
+        "total_bytes": total_bytes,
+        "max_mtime_ns": max_mtime_ns.to_string(),
+    })
+}
+
 /// Deterministic span-aware entity promotion, dated observation seeding, and
 /// speculative-facet aggregation across historical backfill days (`day < today`
 /// and `day_is_backfill_only`).
@@ -3132,6 +3190,18 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
         return;
     }
 
+    let enabled_facets = observe_declared_facet_inventory(journal)
+        .map(|inv| inv.enabled)
+        .unwrap_or_default();
+    let stamp_path = journal.join("awareness/backfill_span_state.json");
+    let pre_fp = backfill_span_fingerprint(journal, &today_str, &backfill_days, &enabled_facets);
+    if let Ok(bytes) = std::fs::read(&stamp_path)
+        && let Ok(saved) = serde_json::from_slice::<Value>(&bytes)
+        && saved == pre_fp
+    {
+        return;
+    }
+
     if let Ok(candidates) = solstone_core_facets::aggregate_speculative_facets_with_backfill(
         journal,
         today_date,
@@ -3141,10 +3211,15 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
         let _ = solstone_core_facets::record_facet_candidates(journal, &today_str, &candidates);
     }
 
-    let Ok(inventory) = observe_declared_facet_inventory(journal) else {
-        return;
-    };
-    if inventory.enabled.is_empty() {
+    if enabled_facets.is_empty() {
+        let post_fp =
+            backfill_span_fingerprint(journal, &today_str, &backfill_days, &enabled_facets);
+        let _ = std::fs::create_dir_all(journal.join("awareness"));
+        let _ = solstone_core_journal_io::write_text(
+            &stamp_path,
+            &serde_json::to_string(&post_fp).unwrap_or_default(),
+            solstone_core_journal_io::AtomicWriteOptions::default(),
+        );
         return;
     }
 
@@ -3196,7 +3271,50 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
         day_notes: BTreeMap<String, String>,
     }
 
-    for facet in &inventory.enabled {
+    let mut day_emails_by_day: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for day in &backfill_days {
+        let mut day_emails: BTreeMap<String, String> = BTreeMap::new();
+        if let Ok(segs) = iter_segments(journal, PathOrDay::Day(day)) {
+            for seg in segs {
+                if solstone_core_segment::is_transactions_segment(&seg)
+                    || is_deleted_segment(seg.path())
+                {
+                    continue;
+                }
+                if let Ok(entries) = std::fs::read_dir(seg.path()) {
+                    for entry in entries.flatten() {
+                        let fname_os = entry.file_name();
+                        let Some(fname) = fname_os.to_str() else {
+                            continue;
+                        };
+                        if (fname.ends_with("_transcript.md") || fname == "transcript.md")
+                            && let Ok(file) = std::fs::File::open(entry.path())
+                        {
+                            use std::io::BufRead;
+                            for line in std::io::BufReader::new(file).lines().take(30).flatten() {
+                                let trimmed = line.trim();
+                                for prefix in ["From:", "To:", "**From:**", "**To:**"] {
+                                    if let Some(rest) = trimmed.strip_prefix(prefix) {
+                                        for (pname, pemail) in parse_header_people(rest) {
+                                            if let Some(em) = pemail {
+                                                day_emails.insert(
+                                                    solstone_core_facets::hidden_names::hidden_name_key(&pname),
+                                                    em,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        day_emails_by_day.insert(day.clone(), day_emails);
+    }
+
+    for facet in &enabled_facets {
         let Ok(hides) = solstone_core_facets::hidden_names::facet_hidden_keys(journal, facet)
         else {
             continue;
@@ -3248,45 +3366,10 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
 
         let mut raw_groups: BTreeMap<(String, String), SpanCandidate> = BTreeMap::new();
         let mut email_to_key: BTreeMap<String, (String, String)> = BTreeMap::new();
+        let empty_emails: BTreeMap<String, String> = BTreeMap::new();
 
         for day in &backfill_days {
-            let mut day_emails: BTreeMap<String, String> = BTreeMap::new();
-            if let Ok(segs) = iter_segments(journal, PathOrDay::Day(day)) {
-                for seg in segs {
-                    if solstone_core_segment::is_transactions_segment(&seg)
-                        || is_deleted_segment(seg.path())
-                    {
-                        continue;
-                    }
-                    if let Ok(entries) = std::fs::read_dir(seg.path()) {
-                        for entry in entries.flatten() {
-                            let fname_os = entry.file_name();
-                            let Some(fname) = fname_os.to_str() else {
-                                continue;
-                            };
-                            if (fname.ends_with("_transcript.md") || fname == "transcript.md")
-                                && let Ok(text) = std::fs::read_to_string(entry.path())
-                            {
-                                for line in text.lines().take(30) {
-                                    let trimmed = line.trim();
-                                    for prefix in ["From:", "To:", "**From:**", "**To:**"] {
-                                        if let Some(rest) = trimmed.strip_prefix(prefix) {
-                                            for (pname, pemail) in parse_header_people(rest) {
-                                                if let Some(em) = pemail {
-                                                    day_emails.insert(
-                                                        solstone_core_facets::hidden_names::hidden_name_key(&pname),
-                                                        em,
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            let day_emails = day_emails_by_day.get(day).unwrap_or(&empty_emails);
 
             if let Ok(activities) =
                 solstone_core_facets::load_activity_records_readable(journal, facet, day, false)
@@ -3486,8 +3569,9 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                     &canonical_name,
                     &latest_desc,
                 ) {
-                    Ok(_) => {}
-                    Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }) => {
+                    Ok(solstone_core_facets::FacetEntityCreateOutcome::Created { .. }) => {}
+                    Ok(solstone_core_facets::FacetEntityCreateOutcome::Exists)
+                    | Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }) => {
                         if !detached_or_blocked.contains(&canonical_name) {
                             let _ = solstone_core_facets::attach_or_reactivate_entity(
                                 journal,
@@ -3512,26 +3596,6 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                 continue;
             };
 
-            let obs_path =
-                solstone_core_entity::facet_entity_observations_path(journal, facet, &entity_dir);
-            let mut existing_obs: BTreeSet<(String, String)> = BTreeSet::new();
-            if let Ok(obs_path) = obs_path
-                && let Ok(text) = std::fs::read_to_string(&obs_path)
-                && let Ok(parsed) = solstone_core_facets::parse_observation_file(
-                    &text,
-                    solstone_core_facets::ObservationParseSource::Path(&obs_path),
-                )
-            {
-                for row in parsed.live_rows() {
-                    if let Some(ref sd) = row.source_day {
-                        existing_obs.insert((
-                            solstone_core_facets::normalize_observation_content(&row.content),
-                            sd.replace('-', ""),
-                        ));
-                    }
-                }
-            }
-
             let mut incoming = Vec::new();
             for (day, note) in cand
                 .day_notes
@@ -3542,11 +3606,9 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                 .into_iter()
                 .rev()
             {
-                let norm = solstone_core_facets::normalize_observation_content(note);
-                if norm.is_empty() || existing_obs.contains(&(norm.clone(), day.clone())) {
+                if solstone_core_facets::normalize_observation_content(note).is_empty() {
                     continue;
                 }
-                existing_obs.insert((norm, day.clone()));
                 let obs_ms = solstone_core_entity::journal_day_start_ms(day, &zone)
                     .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
                 incoming.push(solstone_core_facets::IncomingObservationRow {
@@ -3570,9 +3632,7 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
 
             if let Ok(scoped_now) =
                 solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
-                && let Some(ent) = scoped_now.iter().find(|e| {
-                    e.identity.get("name").and_then(Value::as_str) == Some(canonical_name.as_str())
-                })
+                && let Some(ent) = scoped_now.iter().find(|e| e.entity_dir == entity_dir)
             {
                 let canonical_slug = solstone_core_entity_matching::entity_slug(&canonical_name);
                 for alias in cand.names.keys() {
@@ -3591,6 +3651,7 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                     }
                 }
                 if !cand.emails.is_empty()
+                    && let Ok(_entity_trust) = solstone_core_entity::hold_entity_trust_lock(journal)
                     && let Ok(Some(snapshot)) =
                         solstone_core_entity::read_entity_identity(journal, &ent.entity_dir)
                 {
@@ -3615,7 +3676,7 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                             );
                             let _ = solstone_core_entity::save_entity_identity(
                                 journal,
-                                &ent.entity_dir,
+                                &ent.entity_id,
                                 &updated,
                                 None,
                             );
@@ -3625,6 +3686,14 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
             }
         }
     }
+
+    let post_fp = backfill_span_fingerprint(journal, &today_str, &backfill_days, &enabled_facets);
+    let _ = std::fs::create_dir_all(journal.join("awareness"));
+    let _ = solstone_core_journal_io::write_text(
+        &stamp_path,
+        &serde_json::to_string(&post_fp).unwrap_or_default(),
+        solstone_core_journal_io::AtomicWriteOptions::default(),
+    );
 }
 
 /// End a stream's live activities after the supervisor's idle window.
@@ -5704,8 +5773,67 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
         r#"{"identity":{"name":"Jordan Hale","preferred":"Jordan","timezone":"UTC"}}"#,
     )
     .unwrap();
+    solstone_core_facets::create_facet(journal, "personal", "Personal", "Life", "", "", None)
+        .unwrap();
     solstone_core_facets::create_facet(journal, "work", "Work", "Engineering", "", "", None)
         .unwrap();
+
+    // Seed Samira Patel in `personal` across 2019 so `work` exercises cross-facet `Exists` attachment.
+    for (day, act_id, summary) in [
+        (
+            "20190412",
+            "act_p1",
+            "Trail run and coffee catch-up with Samira Patel.",
+        ),
+        (
+            "20191103",
+            "act_p2",
+            "Thanksgiving travel planning with Samira Patel.",
+        ),
+    ] {
+        let seg = journal
+            .join("chronicle")
+            .join(day)
+            .join("import.email/090000_0");
+        std::fs::create_dir_all(&seg).unwrap();
+        std::fs::write(
+            seg.join("email_transcript.md"),
+            "From: Samira Patel <samira.personal@example.com>\nTo: Jordan Hale <jordan@hale.example>\n\nHi!\n",
+        )
+        .unwrap();
+        let act_dir = journal.join("facets/personal/activities");
+        std::fs::create_dir_all(&act_dir).unwrap();
+        std::fs::write(
+            act_dir.join(format!("{day}.jsonl")),
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "id": act_id,
+                    "facet": "personal",
+                    "activity": "email",
+                    "stream": "import.email",
+                    "segments": ["090000_0"],
+                    "summary": summary,
+                    "participation": [
+                        {"name": "Samira Patel", "role": "corresponded", "source": "transcript", "confidence": 1.0, "context": summary}
+                    ]
+                })
+            ),
+        )
+        .unwrap();
+    }
+
+    // Also include a 2020 deterministic transaction segment and verify 0-LLM boundary.
+    let tx_seg = journal.join("chronicle/20200214/import.email/120000_0");
+    std::fs::create_dir_all(&tx_seg).unwrap();
+    std::fs::write(
+        tx_seg.join("transaction_transcript.md"),
+        "Order #4821 receipt: $42.00\n",
+    )
+    .unwrap();
+    assert!(solstone_core_segment::day_holds_nothing_the_owner_did(
+        journal, "20200214"
+    ));
 
     for (day, act_id, summary, extra_person) in [
         (
@@ -5769,8 +5897,17 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
     assert_eq!(names, vec!["Samira Patel"]);
     assert_eq!(
         scoped[0].identity["emails"],
-        serde_json::json!(["samira@acme.example"])
+        serde_json::json!(["samira.personal@example.com", "samira@acme.example"])
     );
+
+    let scoped_personal =
+        solstone_core_facets::list_scoped_facet_entities(journal, "personal", false, false)
+            .expect("personal entities");
+    assert_eq!(scoped_personal.len(), 1);
+    assert_eq!(scoped_personal[0].entity_id, scoped[0].entity_id);
+
+    // Re-running consolidation is idempotent and hits the watermark without duplicating observations.
+    consolidate_historical_backfill_span(journal);
 
     let obs = solstone_core_facets::read_live_observations(
         journal,

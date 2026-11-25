@@ -594,14 +594,13 @@ pub(crate) fn build_people_range_summary(
                 json!(st.in_photo_activities),
             );
         }
-        let mut all_days = BTreeSet::new();
-        all_days.extend(st.present_days.iter().cloned());
-        all_days.extend(st.corresponded_days.iter().cloned());
-        all_days.extend(st.in_photo_days.iter().cloned());
-        let span_days = if !st.present_days.is_empty() && st.corresponded_days.is_empty() {
-            &st.present_days
+        let mut active_days = BTreeSet::new();
+        active_days.extend(st.present_days.iter().cloned());
+        active_days.extend(st.corresponded_days.iter().cloned());
+        let span_days = if active_days.is_empty() {
+            &st.in_photo_days
         } else {
-            &all_days
+            &active_days
         };
         if let Some(first) = span_days.first() {
             row.insert("first_day".to_owned(), json!(first));

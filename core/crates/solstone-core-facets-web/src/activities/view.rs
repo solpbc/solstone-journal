@@ -510,6 +510,18 @@ pub fn build_view_in(
                 attached_spans.push(span);
             }
         }
+        let day_date = jiff::civil::Date::strptime("%Y%m%d", day).ok();
+        let clamp_min = |at: jiff::civil::DateTime| -> u32 {
+            if let Some(d) = day_date {
+                if at.date() < d {
+                    return 0;
+                }
+                if at.date() > d {
+                    return 1440;
+                }
+            }
+            u32::from(at.hour() as u8) * 60 + u32::from(at.minute() as u8)
+        };
         for (idx, event) in calendar.iter().enumerate() {
             if event.declined {
                 continue;
@@ -520,12 +532,8 @@ pub fn build_view_in(
             {
                 continue;
             }
-            let start_min = event
-                .start
-                .map(|at| u32::from(at.hour() as u8) * 60 + u32::from(at.minute() as u8));
-            let end_min = event
-                .end
-                .map(|at| u32::from(at.hour() as u8) * 60 + u32::from(at.minute() as u8));
+            let start_min = event.start.map(clamp_min);
+            let end_min = event.end.map(clamp_min);
             standalone_calendar.push(json!({
                 "id": format!("scheduled_{idx}"),
                 "title": event.title,

@@ -2888,7 +2888,7 @@
       }
 
       // Untimed row click
-      const urow = e.target.closest('.act-untimed-row');
+      const urow = e.target.closest('button.act-untimed-row');
       if (urow) {
         selectBlock(urow.getAttribute('data-id'), urow.getAttribute('data-facet'));
         return;

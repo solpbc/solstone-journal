@@ -848,9 +848,40 @@ pub fn apply_observation_change(
                 return Ok(ObservationWriteOutcome::NoOp);
             }
 
+            let mut seen_live: std::collections::BTreeSet<(String, Option<String>)> = parsed
+                .live_rows()
+                .map(|r| {
+                    (
+                        normalize_observation_content(&r.content),
+                        r.source_day
+                            .as_deref()
+                            .and_then(normalize_day)
+                            .map(solstone_core_time::day_key),
+                    )
+                })
+                .collect();
+            let mut deduped = Vec::with_capacity(rows.len());
+            for incoming in rows {
+                let norm = normalize_observation_content(&incoming.content);
+                if norm.is_empty() {
+                    continue;
+                }
+                let sd_key = incoming
+                    .source_day
+                    .as_deref()
+                    .and_then(normalize_day)
+                    .map(solstone_core_time::day_key);
+                if seen_live.insert((norm, sd_key)) {
+                    deduped.push(incoming);
+                }
+            }
+            if deduped.is_empty() {
+                return Ok(ObservationWriteOutcome::NoOp);
+            }
+
             let next_id = parsed.full_rows.iter().map(|r| r.id).max().unwrap_or(0) + 1;
 
-            for (id, incoming) in (next_id..).zip(rows) {
+            for (id, incoming) in (next_id..).zip(deduped) {
                 parsed.full_rows.push(ObservationRow {
                     id,
                     content: incoming.content,
@@ -907,8 +938,9 @@ pub fn apply_observation_change(
             Ok(ObservationWriteOutcome::Edited)
         }
         ObservationChange::ApplyOps { ops, source_day } => {
+            let zone = solstone_core_journal_config::owner_zone(journal_root);
             let (after_rows, counts, changed) =
-                apply_ops_to_parsed(&parsed, &ops, source_day.as_deref())?;
+                apply_ops_to_parsed_in_zone(&parsed, &ops, source_day.as_deref(), &zone)?;
             if changed {
                 let serialized = serialize_observation_rows(&after_rows);
                 write_facet_entity_observations(journal_root, facet_dir, entity_dir, &serialized)?;
@@ -1479,6 +1511,15 @@ pub fn apply_ops_to_parsed(
     operations: &[Value],
     source_day: Option<&str>,
 ) -> Result<(Vec<ObservationRow>, ObservationOperationCounts, bool), ObservationWriteError> {
+    apply_ops_to_parsed_in_zone(parsed, operations, source_day, &TimeZone::UTC)
+}
+
+fn apply_ops_to_parsed_in_zone(
+    parsed: &ParsedObservations,
+    operations: &[Value],
+    source_day: Option<&str>,
+    zone: &TimeZone,
+) -> Result<(Vec<ObservationRow>, ObservationOperationCounts, bool), ObservationWriteError> {
     let mut rows = parsed.full_rows.clone();
     let mut counts = ObservationOperationCounts::default();
     let mut changed = false;
@@ -1595,9 +1636,10 @@ pub fn apply_ops_to_parsed(
             continue;
         }
 
-        let older_than_target = source_day
-            .and_then(normalize_day)
-            .zip(candidate.source_day.as_deref().and_then(normalize_day))
+        let op_date_opt = source_day.and_then(normalize_day);
+        let target_date_opt = observation_day(candidate, zone).and_then(|d| normalize_day(&d));
+        let older_than_target = op_date_opt
+            .zip(target_date_opt)
             .is_some_and(|(op_date, target_date)| op_date < target_date);
 
         match op_type {
@@ -1618,7 +1660,7 @@ pub fn apply_ops_to_parsed(
                     let already_present = rows.iter().any(|r| {
                         r.retired.is_none()
                             && normalize_observation_content(&r.content) == candidate_norm
-                            && r.source_day.as_deref() == source_day
+                            && r.source_day.as_deref().and_then(normalize_day) == op_date_opt
                             && r.relation.as_ref() == rel_val
                     });
                     if already_present {
@@ -1974,5 +2016,60 @@ mod tests {
         assert_eq!(newest.items[0].content, "Staff engineer at Acme Corp");
         assert_eq!(newest.items[1].source_day.as_deref(), Some("20140615"));
         assert_eq!(newest.items[1].content, "Intern at Kestrel Robotics");
+
+        // Undated 2026 live/owner observation (source_day: None, observed_at in 2026) is also protected.
+        let ts_2026 = 1_790_000_000_000_i64;
+        apply_observation_change(
+            root.path(),
+            "work",
+            "alice",
+            ObservationChange::AppendMany {
+                rows: vec![
+                    IncomingObservationRow {
+                        content: "Lives in Denver".to_owned(),
+                        observed_at: ts_2026,
+                        source_day: None,
+                        relation: None,
+                    },
+                    IncomingObservationRow {
+                        content: "Lives in Denver".to_owned(),
+                        observed_at: ts_2026,
+                        source_day: None,
+                        relation: None,
+                    },
+                ],
+                actor: "owner",
+            },
+        )
+        .unwrap();
+        let undated_ops = vec![
+            json!({"op": "drop", "target_id": 3, "target_quote": "Lives in Denver"}),
+            json!({"op": "replace", "target_id": 3, "target_quote": "Lives in Denver", "content": "Lived in Boston"}),
+        ];
+        let out2 = apply_observation_change(
+            root.path(),
+            "work",
+            "alice",
+            ObservationChange::ApplyOps {
+                ops: undated_ops,
+                source_day: Some("20150501".to_owned()),
+            },
+        )
+        .unwrap();
+        let ObservationWriteOutcome::OpsApplied { counts: c2 } = out2 else {
+            panic!("expected OpsApplied");
+        };
+        assert_eq!(
+            c2.refused, 1,
+            "2015 backfill cannot drop undated 2026 observation"
+        );
+        assert_eq!(
+            c2.replace, 0,
+            "2015 backfill cannot overwrite undated 2026 observation"
+        );
+        assert_eq!(
+            c2.add, 1,
+            "2015 replacement converts into dated historical addition"
+        );
     }
 }

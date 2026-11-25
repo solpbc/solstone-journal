@@ -5414,6 +5414,7 @@ fn segment_title(content_kinds: &[&str], unresolved: bool, day: &str) -> String 
     }
     let noun = |kind: &str| match kind {
         "messages" => "messages",
+        "transactions" => "transaction",
         "notes" => "note",
         "documents" => "document",
         "photos" => "photo",

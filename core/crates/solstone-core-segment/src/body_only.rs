@@ -238,9 +238,38 @@ pub fn is_body_only_segment(segment: &Segment) -> bool {
         .is_some_and(|stream| is_body_only_dir(stream, segment.path()))
 }
 
+fn is_transactions_tombstone(bytes: &[u8]) -> bool {
+    let Ok(body) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return false;
+    };
+    let Some(manifest) = body.get("manifest").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    let mut holds_tx = false;
+    for entry in manifest {
+        let Some(name) = entry
+            .as_str()
+            .and_then(|entry| Path::new(entry).file_name())
+        else {
+            return false;
+        };
+        if name == OsStr::new(TRANSACTION_TRANSCRIPT_FILE) {
+            holds_tx = true;
+        } else if name != OsStr::new(STREAM_MARKER)
+            && name != OsStr::new(TALENTS)
+            && name != OsStr::new(IMPORT_KIND_FILE)
+            && name != OsStr::new(EVENTS_FILE)
+            && !is_incidental_file_name(name)
+        {
+            return false;
+        }
+    }
+    holds_tx
+}
+
 /// Whether `dir` holds only deterministic transaction content
 /// (`transaction_transcript.md` and incidental/stream metadata, or a tombstone
-/// whose manifest held only `transaction_transcript.md`). Transaction segments
+/// whose manifest held only transaction segment artifacts). Transaction segments
 /// never enter Sense, activities, entities, or places.
 #[must_use]
 pub fn is_transactions_dir(dir: &Path) -> bool {
@@ -260,9 +289,7 @@ pub fn is_transactions_dir(dir: &Path) -> bool {
             let Ok(bytes) = fs::read(dir.join(TOMBSTONE)) else {
                 return false;
             };
-            if tombstone_record_of(&bytes, TRANSACTION_TRANSCRIPT_FILE)
-                != TombstoneRecord::BodyWindow
-            {
+            if !is_transactions_tombstone(&bytes) {
                 return false;
             }
             holds_tx = true;
@@ -597,6 +624,21 @@ mod tests {
             &root.join("chronicle/20210305/mail_sync/101500_0")
         ));
         assert!(day_holds_nothing_the_owner_did(root, "20210305"));
+
+        // Deleting a transaction segment that carried import_kind.json + events.jsonl keeps it transaction-only.
+        tombstoned(
+            root,
+            "20210306",
+            "101500_0",
+            r#"{"deleted_at":1700000000000,"manifest":["transaction_transcript.md","import_kind.json","events.jsonl","stream.json"]}"#,
+        );
+        assert!(
+            is_transactions_dir(&root.join("chronicle/20210306/00/101500_0"))
+                .then_some(())
+                .is_none()
+                || is_transactions_dir(&root.join("chronicle/20210306/101500_0"))
+        );
+        assert!(day_holds_nothing_the_owner_did(root, "20210306"));
 
         window(
             root,

@@ -462,8 +462,10 @@ pub fn build(
     let facets = segment_facets(&value);
     let candidates = candidate_rows(&value);
     let inline_output = build_inline_detection_output(&facets, &candidates);
-    Ok(PrePostState::EntityDetection(DetectionState {
-        packet: build_packet(
+    let packet = if inline_output.is_some() {
+        String::new()
+    } else {
+        build_packet(
             &context.journal,
             prepared
                 .config
@@ -472,7 +474,10 @@ pub fn build(
                 .unwrap_or_default(),
             &facets,
             &candidates,
-        ),
+        )
+    };
+    Ok(PrePostState::EntityDetection(DetectionState {
+        packet,
         inline_output,
     }))
 }

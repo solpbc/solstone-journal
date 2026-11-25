@@ -1580,6 +1580,36 @@ fn week_dom_contract() {
         "empty historical week returns Absent so routes stay 404"
     );
 
+    // Tombstoned week and path-traversal segments must also return Absent (404).
+    fs::create_dir_all(root.join("chronicle/20190501/import.email/100000_0")).unwrap();
+    fs::write(
+        root.join("chronicle/20190501/import.email/100000_0/tombstone.json"),
+        r#"{"deleted_at":1700000000000,"manifest":["transcript.md"]}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("facets/work/activities/20190501.jsonl"),
+        r#"{"id":"act_del","title":"Deleted","facet":"work","stream":"import.email","segments":["100000_0"]}
+{"id":"act_trav","title":"Traversal","facet":"work","stream":"../../outside","segments":["../escape"]}"#,
+    )
+    .unwrap();
+    assert!(
+        !solstone_core_home::weekly::has_factual_week_data(root, "20190428"),
+        "tombstoned and traversal-segment activities must not count as live factual week data"
+    );
+    assert!(
+        matches!(
+            solstone_core_home::weekly::page_model(
+                root,
+                "20190428",
+                2026,
+                &solstone_core_convey_shell::source_link::reference_is_moment,
+            ),
+            Err(solstone_core_home::weekly::WeekJudgment::Absent)
+        ),
+        "tombstoned historical week returns Absent (404)"
+    );
+
     let models = json!({
         "primary": model_primary,
         "left_out": model_left_out,

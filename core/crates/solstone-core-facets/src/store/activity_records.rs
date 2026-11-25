@@ -858,6 +858,23 @@ pub use solstone_core_format::content::{
 };
 use solstone_core_format::content::{edit_names, owner_edit};
 
+/// Fast containment-safe check for whether `{day}.jsonl` exists and contains
+/// all raw substring `needles`, allowing callers to skip full JSON parsing on
+/// historical days that cannot match.
+pub fn activity_day_mentions(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    needles: &[&str],
+) -> Result<bool, ActivityRecordStoreError> {
+    let path = day_path(root, facet, day)?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    let text = read_text(&path, String::new())?;
+    Ok(needles.iter().all(|n| text.contains(n)))
+}
+
 pub fn load_activity_records(
     root: &Path,
     facet: &str,

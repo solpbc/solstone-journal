@@ -1377,8 +1377,8 @@ pub fn page_model_in(
 }
 
 /// Whether the Sunday-to-Saturday week starting at `sunday` (`YYYYMMDD`) holds
-/// any visible factual journal data (enabled-facet activities or non-trivial
-/// chronicle segments) when `reflections/weekly/{sunday}.json` is absent.
+/// any renderable factual journal activities when `reflections/weekly/{sunday}.json`
+/// is absent.
 pub fn has_factual_week_data(journal: &Path, sunday: &str) -> bool {
     let Some(start_date) = week_day(sunday) else {
         return false;
@@ -1389,6 +1389,9 @@ pub fn has_factual_week_data(journal: &Path, sunday: &str) -> bool {
     let enabled_facets = solstone_core_facets::observe_declared_facet_inventory(journal)
         .map(|inv| inv.enabled)
         .unwrap_or_default();
+    if enabled_facets.is_empty() {
+        return false;
+    }
     let hidden_body = solstone_core_format::content::body_hidden_days::read_hidden_days(journal);
     for offset in 0..7_i64 {
         let Ok(date) = start_date.checked_add(jiff::Span::new().days(offset)) else {
@@ -1402,23 +1405,20 @@ pub fn has_factual_week_data(journal: &Path, sunday: &str) -> bool {
                 && rows.iter().any(|row| {
                     !(body_hidden && solstone_core_format::content::is_strava_reading(row))
                         && factual_activity_has_live_source(journal, &d, row)
+                        && (!record_string(row, "description").trim().is_empty()
+                            || !record_string(row, "title").trim().is_empty())
                 })
             {
                 return true;
             }
         }
-        if journal.join("chronicle").join(&d).is_dir()
-            && !solstone_core_segment::day_holds_nothing_the_owner_did(journal, &d)
-            && solstone_core_journal_io::iter_segments(
-                journal,
-                solstone_core_journal_io::PathOrDay::Day(&d),
-            )
-            .is_ok_and(|segs| !segs.is_empty())
-        {
-            return true;
-        }
     }
     false
+}
+
+fn is_single_normal_component(s: &str) -> bool {
+    let mut comps = Path::new(s).components();
+    matches!(comps.next(), Some(std::path::Component::Normal(_))) && comps.next().is_none()
 }
 
 fn factual_activity_has_live_source(
@@ -1426,6 +1426,9 @@ fn factual_activity_has_live_source(
     day: &str,
     row: &serde_json::Map<String, Value>,
 ) -> bool {
+    if !is_single_normal_component(day) {
+        return false;
+    }
     let segs: Vec<&str> = row
         .get("segments")
         .and_then(Value::as_array)
@@ -1437,7 +1440,17 @@ fn factual_activity_has_live_source(
         return true;
     }
     let stream = row.get("stream").and_then(Value::as_str);
+    if let Some(st) = stream
+        && !st.is_empty()
+        && st != "_default"
+        && (!is_single_normal_component(st) || !solstone_core_segment::is_safe_stream_component(st))
+    {
+        return false;
+    }
     segs.into_iter().any(|seg| {
+        if !is_single_normal_component(seg) {
+            return false;
+        }
         let seg_path = match stream {
             Some(st) if !st.is_empty() && st != "_default" => {
                 journal.join("chronicle").join(day).join(st).join(seg)
@@ -1551,6 +1564,10 @@ fn factual_page_model_in(
             "menu_href": menu_href,
             "left_out": false,
         }));
+    }
+
+    if rows.is_empty() {
+        return Err(WeekJudgment::Absent);
     }
 
     let intro = format_week_intro_in(shown_days, 0, locale)

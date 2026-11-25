@@ -10,8 +10,8 @@ use jiff::civil::Date;
 use jiff::{Span, ZonedDateTime};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
-    activity_value_or_empty, list_activity_day_stems, list_declared_facet_names,
-    load_activity_records,
+    activity_day_mentions, activity_value_or_empty, list_activity_day_stems,
+    list_declared_facet_names, load_activity_records,
 };
 
 use crate::error::{ProfileError, ProfileResult};
@@ -157,6 +157,18 @@ fn compute_correspondence(
                 && day.as_str() < recent_since.as_str()
             {
                 break;
+            }
+            if !entity_id.contains('"')
+                && !entity_id.contains('\\')
+                && !activity_day_mentions(
+                    journal_root,
+                    &facet,
+                    &day,
+                    &["\"corresponded\"", entity_id],
+                )
+                .map_err(ProfileError::internal)?
+            {
+                continue;
             }
             let records = load_activity_records(journal_root, &facet, &day, false)
                 .map_err(ProfileError::internal)?;
