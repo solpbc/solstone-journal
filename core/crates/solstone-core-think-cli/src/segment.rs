@@ -3137,8 +3137,9 @@ fn backfill_span_fingerprint(
     stat_path(&journal.join("entities/identity_map.json"));
     stat_path(&journal.join("config/journal.json"));
     for facet in enabled_facets {
-        stat_path(&journal.join("facets").join(facet).join("hidden_names.json"));
-        stat_path(&journal.join("facets").join(facet).join("facet.json"));
+        let facet_dir = journal.join("facets").join(facet);
+        stat_path(&facet_dir.join("hidden_names.json"));
+        stat_path(&solstone_core_facets::facet_declaration_file(&facet_dir));
     }
     for day in backfill_days {
         stat_path(&journal.join("chronicle").join(day));
