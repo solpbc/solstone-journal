@@ -649,6 +649,9 @@ pub fn segment_file_permission(path: &str) -> AdmittedCategory {
         return AdmittedCategory::Body;
     }
     if path.ends_with(".jsonl") {
+        if path.contains("/import.email/") && path.ends_with("/conversation_transcript.jsonl") {
+            return AdmittedCategory::Messages;
+        }
         return AdmittedCategory::Transcripts;
     }
     match path.rsplit('/').next().unwrap_or(path) {
@@ -803,6 +806,21 @@ mod tests {
             );
             assert_eq!(segment_file_permission(&path), permission);
         }
+    }
+
+    #[test]
+    fn selected_email_admits_messages_only_while_ai_chats_stay_excluded() {
+        let email_path = "20261118/import.email/101600_300/conversation_transcript.jsonl";
+        assert_eq!(
+            agent_indexed_permission(None, email_path),
+            Some(AdmittedCategory::Messages)
+        );
+        assert_eq!(
+            segment_file_permission(email_path),
+            AdmittedCategory::Messages
+        );
+        let chat_path = "20261118/import.chatgpt/101600_300/conversation_transcript.jsonl";
+        assert_eq!(agent_indexed_permission(None, chat_path), None);
     }
 
     #[test]

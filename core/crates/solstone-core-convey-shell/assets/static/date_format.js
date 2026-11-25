@@ -471,7 +471,7 @@
 
   // A saved conversation the journal resolved as written (messages), or
   // couldn't place (a conversation). Spoken transcripts keep importItem.
-  const CONVERSATION_SOURCES = { ChatGPT: 'chatgpt', Claude: 'claude', Gemini: 'gemini', imported: 'imported' };
+  const CONVERSATION_SOURCES = { ChatGPT: 'chatgpt', Claude: 'claude', Gemini: 'gemini', email: 'email', imported: 'imported' };
 
   function conversationKind(item) {
     if (!item) return null;
@@ -486,8 +486,9 @@
     if (kind !== 'messages' && kind !== 'conversation') return '';
     const source = CONVERSATION_SOURCES[item.source];
     if (!source) return '';
+    const labelKind = kind === 'messages' && item.turn_count === 1 ? 'message' : kind;
     return window.JournalI18n.render(IMPORT_ITEM_COPY + 'label', [
-      ['kind', window.JournalI18n.render(IMPORT_ITEM_COPY + 'kind.' + kind)],
+      ['kind', window.JournalI18n.render(IMPORT_ITEM_COPY + 'kind.' + labelKind)],
       ['source', window.JournalI18n.render(IMPORT_ITEM_COPY + 'source.' + source)],
     ]);
   }

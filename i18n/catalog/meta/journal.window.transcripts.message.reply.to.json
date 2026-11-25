@@ -1,0 +1,25 @@
+{
+  "description": "Summary label for the folded message this email answered, with sender and time.",
+  "context": "Journal window, transcripts view. Folded disclosure under an email message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "author",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "644e765db95fbb39b6ef0fde52450d5a227ff8086065df6274e9b3f7a6a0cdbc",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

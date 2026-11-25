@@ -1,0 +1,21 @@
+{
+  "description": "Attachment name shown under a message when the file was named.",
+  "context": "Journal window, transcripts view. Under a message body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3e589130d882eb9b3aa45d4283e7e729e226ca1fe47530c7649e84c02078f7f6",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

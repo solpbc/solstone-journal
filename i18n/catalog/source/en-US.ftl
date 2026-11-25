@@ -4396,6 +4396,10 @@ journal.window.search.message.everyone = everyone
 
 journal.window.search.message.meta = { $sender } to { $recipients }
 
+journal.window.search.message.meta.subject = { $base } · { $subject }
+
+journal.window.search.message.sender.subject = { $sender } · { $subject }
+
 journal.window.search.message.you = you
 
 journal.window.search.count.results.across.days = { $match_quantity ->
@@ -5991,11 +5995,15 @@ journal.window.shared.gate.drawer.threshold = needs { $threshold }
 
 journal.window.shared.import.item.kind.conversation = conversation
 
+journal.window.shared.import.item.kind.message = message
+
 journal.window.shared.import.item.kind.messages = messages
 
 journal.window.shared.import.item.source.chatgpt = ChatGPT
 
 journal.window.shared.import.item.source.claude = Claude
+
+journal.window.shared.import.item.source.email = email
 
 journal.window.shared.import.item.source.gemini = Gemini
 
@@ -15313,6 +15321,8 @@ journal.window.transcripts.consent.stretch.move.range = this moves everything in
 
 journal.window.transcripts.consent.trash.copy.conversation.conversation = conversation
 
+journal.window.transcripts.consent.trash.copy.messages.message = message
+
 journal.window.transcripts.consent.trash.copy.messages.messages = messages
 
 journal.window.transcripts.consent.trash.import.erase.files.count = { $retained_files_quantity ->
@@ -15460,15 +15470,38 @@ journal.window.transcripts.media.frames.decoding = { $decoded_quantity ->
     } ({ $percent }%)…
     }
 
+journal.window.transcripts.message.attached = attached { $name }
+
+journal.window.transcripts.message.cc.only = cc { $cc }
+
+journal.window.transcripts.message.forwarded.from = forwarded from { $author }
+
+journal.window.transcripts.message.forwarded.heading = forwarded message
+
+journal.window.transcripts.message.open.document = open the document
+
+journal.window.transcripts.message.possible.quote = possibly quoted
+
+journal.window.transcripts.message.reply.to = in reply to { $author } · { $date }
+
+journal.window.transcripts.message.reply.to.undated = in reply to { $author }
+
 journal.window.transcripts.message.show.from.start = show from the start
 
 journal.window.transcripts.message.to = to { $recipients }
+
+journal.window.transcripts.message.to.cc = to { $recipients } · cc { $cc }
 
 journal.window.transcripts.message.to.everyone = to everyone
 
 journal.window.transcripts.message.to.only = to { $recipient } only
 
 journal.window.transcripts.message.truncated = the rest of this message wasn't kept.
+
+journal.window.transcripts.message.truncated.chars = { $chars_quantity ->
+        [one] the rest of this message wasn't kept ({ $chars } character cut).
+       *[other] the rest of this message wasn't kept ({ $chars } characters cut).
+    }
 
 journal.window.transcripts.message.words.before = { $words_quantity ->
         [one] { $words } word before this passage

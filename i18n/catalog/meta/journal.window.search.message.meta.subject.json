@@ -1,0 +1,25 @@
+{
+  "description": "Search hit line for a message with recipients and a subject.",
+  "context": "Journal window, search view. Combines sender-to-recipients metadata with the message subject.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "base",
+      "type": "string"
+    },
+    {
+      "name": "subject",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "96450e895b4d90f27599b9ac0f6b0eba17a5e5a09f8abab028e4181be13d1ca6",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

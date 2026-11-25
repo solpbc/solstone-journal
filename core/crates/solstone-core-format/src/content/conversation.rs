@@ -75,6 +75,26 @@ pub struct ConversationItem {
     pub conversation_state: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_count: Option<usize>,
+}
+
+fn count_conversation_turns(path: &Path) -> Option<usize> {
+    let bytes = solstone_core_journal_io::read_regular_file_capped(path, 16 * 1024 * 1024).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    let count = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<serde_json::Map<String, Value>>(line).ok())
+        .filter(|row| {
+            row.contains_key("start")
+                && row
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| !s.is_empty())
+        })
+        .count();
+    Some(count)
 }
 
 pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<ConversationItem> {
@@ -84,6 +104,7 @@ pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<Conv
     // An import can keep unrelated Markdown beside its dialogue. Only the
     // generic text importer's historical Markdown has that file identity.
     let native_chat = matches!(stream, "import.chatgpt" | "import.claude" | "import.gemini");
+    let email_stream = stream == "import.email";
     let registered = match name {
         "imported_audio.jsonl" => native_chat,
         "conversation_transcript.jsonl" => {
@@ -116,6 +137,7 @@ pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<Conv
     let instant = |key: &str| {
         if untimed == Some(true)
             || (!native_chat
+                && !email_stream
                 && !relative
                     .split('/')
                     .nth(1)
@@ -141,6 +163,7 @@ pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<Conv
             Some("import.claude") => Some("Claude"),
             Some("import.gemini") => Some("Gemini"),
             Some("import.text") => Some("imported"),
+            Some("import.email") => Some("email"),
             _ => None,
         },
         content_kind,
@@ -148,6 +171,9 @@ pub fn conversation_item(root: &Path, relative: &str, name: &str) -> Option<Conv
         reason_code: content_kind
             .is_none()
             .then(|| unresolved_reason(root, &path)),
+        turn_count: email_stream
+            .then(|| count_conversation_turns(&path))
+            .flatten(),
     })
 }
 
@@ -210,7 +236,153 @@ pub fn message_fields(
     }) {
         fields["to"] = Value::from(to.clone());
     }
+    if let Some(cc) = row.get("cc").and_then(Value::as_array).filter(|names| {
+        !names.is_empty()
+            && names
+                .iter()
+                .all(|n| n.as_str().is_some_and(|s| !s.is_empty()))
+    }) {
+        fields["cc"] = Value::from(cc.clone());
+    }
+    if let Some(subject) = row
+        .get("subject")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        fields["subject"] = Value::from(subject);
+    }
+    if let Some(cut_chars) = row
+        .get("cut_chars")
+        .and_then(Value::as_u64)
+        .filter(|&n| n > 0)
+    {
+        fields["cut_chars"] = Value::from(cut_chars);
+    }
+    if let Some(reply) = row.get("reply_to").and_then(Value::as_object)
+        && let Some(projected) = project_reply_to(reply)
+    {
+        fields["reply_to"] = projected;
+    }
+    if let Some(forwarded) = row.get("forwarded").and_then(Value::as_array) {
+        let items: Vec<Value> = forwarded
+            .iter()
+            .filter_map(Value::as_object)
+            .filter_map(project_forwarded_item)
+            .collect();
+        if !items.is_empty() {
+            fields["forwarded"] = Value::Array(items);
+        }
+    }
+    if let Some(attachments) = row.get("attachments").and_then(Value::as_array) {
+        let items = project_attachments(attachments);
+        if !items.is_empty() {
+            fields["attachments"] = Value::Array(items);
+        }
+    }
     Some(fields)
+}
+
+fn project_attachments(attachments: &[Value]) -> Vec<Value> {
+    attachments
+        .iter()
+        .filter_map(Value::as_object)
+        .filter_map(|att| {
+            let name = att
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())?;
+            let mut out = serde_json::json!({ "name": name });
+            if att.get("inline").and_then(Value::as_bool) == Some(true) {
+                out["inline"] = Value::from(true);
+            }
+            if let Some(item_ref) = att
+                .get("item_ref")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                out["item_ref"] = Value::from(item_ref);
+            }
+            Some(out)
+        })
+        .collect()
+}
+
+fn project_reply_to(reply: &super::JsonObject) -> Option<Value> {
+    let text = reply
+        .get("text")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())?;
+    let mut out = serde_json::json!({
+        "text": text,
+        "blocks": message_blocks(text),
+    });
+    if let Some(author) = reply
+        .get("author")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        out["author"] = Value::from(author);
+    }
+    if let Some(sent) = reply
+        .get("sent_at")
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<jiff::Timestamp>().ok())
+    {
+        out["sent_at"] = Value::from(sent.to_string());
+    }
+    if let Some(truncated) = reply.get("truncated").and_then(Value::as_bool) {
+        out["truncated"] = Value::from(truncated);
+    }
+    if let Some(cut_chars) = reply
+        .get("cut_chars")
+        .and_then(Value::as_u64)
+        .filter(|&n| n > 0)
+    {
+        out["cut_chars"] = Value::from(cut_chars);
+    }
+    if let Some(attachments) = reply.get("attachments").and_then(Value::as_array) {
+        let items = project_attachments(attachments);
+        if !items.is_empty() {
+            out["attachments"] = Value::Array(items);
+        }
+    }
+    Some(out)
+}
+
+fn project_forwarded_item(item: &super::JsonObject) -> Option<Value> {
+    let text = item
+        .get("text")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())?;
+    let mut out = serde_json::json!({
+        "text": text,
+        "blocks": message_blocks(text),
+    });
+    for key in ["from", "date", "subject"] {
+        if let Some(v) = item
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            out[key] = Value::from(v);
+        }
+    }
+    if let Some(truncated) = item.get("truncated").and_then(Value::as_bool) {
+        out["truncated"] = Value::from(truncated);
+    }
+    if let Some(cut_chars) = item
+        .get("cut_chars")
+        .and_then(Value::as_u64)
+        .filter(|&n| n > 0)
+    {
+        out["cut_chars"] = Value::from(cut_chars);
+    }
+    Some(out)
 }
 
 /// Reconstruct the exact string saved by the chat indexer before binding a hit to a live row.
@@ -219,6 +391,75 @@ pub fn indexed_message(row: &super::JsonObject) -> Option<String> {
         super::ai_chat::indexed_turn_text(row)?,
         row,
     ))
+}
+
+/// Byte ranges in the original UTF-8 text, including Markdown delimiters, with
+/// any valid `uncertain_spans` preserved as folded `possible_quote` blocks.
+pub fn message_blocks_for_row(text: &str, row: &super::JsonObject) -> Vec<serde_json::Value> {
+    let mut spans: Vec<(usize, usize)> = row
+        .get("uncertain_spans")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|span| {
+            let start = usize::try_from(span.get("start")?.as_u64()?).ok()?;
+            let end = usize::try_from(span.get("end")?.as_u64()?).ok()?;
+            (start < end
+                && end <= text.len()
+                && text.is_char_boundary(start)
+                && text.is_char_boundary(end))
+            .then_some((start, end))
+        })
+        .collect();
+    if spans.is_empty() {
+        return message_blocks(text);
+    }
+    spans.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in spans {
+        if let Some(last) = merged.last_mut()
+            && start <= last.1
+        {
+            last.1 = last.1.max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    let mut out = Vec::new();
+    let mut cursor = 0usize;
+    for (start, end) in merged {
+        if cursor < start && !text[cursor..start].trim().is_empty() {
+            for mut block in message_blocks(&text[cursor..start]) {
+                if let Some(s) = block.get("start").and_then(Value::as_u64) {
+                    block["start"] = Value::from(s + cursor as u64);
+                }
+                if let Some(e) = block.get("end").and_then(Value::as_u64) {
+                    block["end"] = Value::from(e + cursor as u64);
+                }
+                out.push(block);
+            }
+        }
+        if !text[start..end].trim().is_empty() {
+            out.push(serde_json::json!({
+                "kind": "possible_quote",
+                "start": start,
+                "end": end,
+            }));
+        }
+        cursor = end;
+    }
+    if cursor < text.len() && !text[cursor..].trim().is_empty() {
+        for mut block in message_blocks(&text[cursor..]) {
+            if let Some(s) = block.get("start").and_then(Value::as_u64) {
+                block["start"] = Value::from(s + cursor as u64);
+            }
+            if let Some(e) = block.get("end").and_then(Value::as_u64) {
+                block["end"] = Value::from(e + cursor as u64);
+            }
+            out.push(block);
+        }
+    }
+    out
 }
 
 /// Byte ranges in the original UTF-8 text, including Markdown delimiters.
@@ -328,6 +569,9 @@ pub fn file_medium_with_header(
     let native_chat = matches!(stream, "import.chatgpt" | "import.claude" | "import.gemini");
     if !is_conversation_jsonl(stream, name) {
         return None;
+    }
+    if stream == "import.email" {
+        return Some(Written);
     }
     if is_transcribe() {
         if native_chat {
@@ -950,5 +1194,103 @@ mod tests {
         .unwrap();
         assert!(fields.get("role").is_none());
         assert_eq!(fields["author"], "Unknown");
+    }
+
+    #[test]
+    fn selected_email_fields_uncertain_blocks_and_turn_count() {
+        let root = tempfile::tempdir().unwrap();
+        let seg = root
+            .path()
+            .join("chronicle/20261118/import.email/101600_300");
+        std::fs::create_dir_all(&seg).unwrap();
+        let header = json!({
+            "source": "email",
+            "provider": "gmail",
+            "first_sent_at": "2026-11-18T17:16:00Z",
+            "last_sent_at": "2026-11-18T17:16:00Z",
+            "email_schema": 1
+        });
+        let row = json!({
+            "start": "10:16:00",
+            "source_ms": 1795022160000_i64,
+            "sent_at": "2026-11-18T10:16:00-07:00",
+            "speaker": "Robin",
+            "is_owner": true,
+            "to": ["Casey"],
+            "cc": ["Lee"],
+            "subject": "Agenda update",
+            "text": "Yes, the afternoon works.\n\nI've attached the revised agenda.\n\n> Quoted line maybe",
+            "truncated": false,
+            "uncertain_spans": [
+                { "start": 62, "end": 81, "reason": "uncorroborated_quote" }
+            ],
+            "reply_to": {
+                "author": "Casey",
+                "sent_at": "2026-11-17T16:20:00-07:00",
+                "text": "Could we meet on Thursday afternoon?",
+                "truncated": true,
+                "cut_chars": 4200
+            },
+            "forwarded": [
+                {
+                    "from": "Alex",
+                    "date": "2026-11-17T09:00:00-07:00",
+                    "subject": "Room booking",
+                    "text": "Room 7 is reserved.",
+                    "truncated": false
+                }
+            ],
+            "attachments": [
+                { "name": "agenda.pdf", "item_ref": "fixture-document-01" },
+                { "name": "site-photo.jpg", "inline": true }
+            ],
+            "email": { "provider": "gmail", "key": "gm:1" }
+        });
+        std::fs::write(
+            seg.join("conversation_transcript.jsonl"),
+            format!("{header}\n{row}\n"),
+        )
+        .unwrap();
+
+        let item = conversation_item(
+            root.path(),
+            "20261118/import.email/101600_300",
+            "conversation_transcript.jsonl",
+        )
+        .unwrap();
+        assert_eq!(item.source, Some("email"));
+        assert_eq!(item.content_kind, Some("messages"));
+        assert_eq!(item.turn_count, Some(1));
+        assert_eq!(item.first_sent_at.as_deref(), Some("2026-11-18T17:16:00Z"));
+
+        let row_map: crate::content::JsonObject = serde_json::from_value(row).unwrap();
+        let fields = message_fields(
+            "import.email",
+            "conversation_transcript.jsonl",
+            0,
+            &row_map,
+            false,
+        )
+        .unwrap();
+        assert_eq!(fields["is_owner"], true);
+        assert_eq!(fields["sent_at"], "2026-11-18T17:16:00Z");
+        assert_eq!(fields["to"], json!(["Casey"]));
+        assert_eq!(fields["cc"], json!(["Lee"]));
+        assert_eq!(fields["subject"], "Agenda update");
+        assert_eq!(fields["reply_to"]["author"], "Casey");
+        assert_eq!(fields["reply_to"]["sent_at"], "2026-11-17T23:20:00Z");
+        assert_eq!(fields["reply_to"]["truncated"], true);
+        assert_eq!(fields["reply_to"]["cut_chars"], 4200);
+        assert_eq!(fields["forwarded"][0]["from"], "Alex");
+        assert_eq!(fields["attachments"][0]["name"], "agenda.pdf");
+        assert_eq!(fields["attachments"][1]["name"], "site-photo.jpg");
+
+        let blocks = message_blocks_for_row(row_map["text"].as_str().unwrap(), &row_map);
+        assert!(
+            blocks
+                .iter()
+                .any(|b| b["kind"] == "possible_quote" && b["start"] == 62 && b["end"] == 81),
+            "{blocks:?}"
+        );
     }
 }

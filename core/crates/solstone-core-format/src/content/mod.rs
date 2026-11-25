@@ -390,6 +390,21 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         segment: None,
     },
     FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/document_transcript.md",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        kind: KindAssignment::Settled(Kind::Documents),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/screenshot_transcript.md",
         root: PatternRoot::DayRooted,
         format: FileFormat::Content(Family::Markdown),
@@ -989,6 +1004,21 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         condition: FileCondition::Path,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Excluded,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/import.email/*/conversation_transcript.jsonl",
+        format: FileFormat::Content(Family::AiChat),
+        classification: ContentResolution::Indexed(Family::AiChat),
+        kind: KindAssignment::Settled(Kind::Messages),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
         segment: None,
     },
     FilePattern {

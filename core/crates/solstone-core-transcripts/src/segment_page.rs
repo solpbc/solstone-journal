@@ -881,6 +881,7 @@ fn source_channel(
                 Some("import.chatgpt") => "ChatGPT Conversation",
                 Some("import.claude") => "Claude Conversation",
                 Some("import.gemini") => "Gemini Conversation",
+                Some("import.email") => "Email",
                 _ => "Imported Messages",
             };
         }
@@ -2793,5 +2794,125 @@ mod tests {
             .map(|(entry, kind)| (entry.channel, kind))
             .collect();
         assert_eq!(paired, vec![("Body Records", Some("body"))]);
+    }
+
+    #[test]
+    fn selected_email_fixture_respects_messages_and_documents_grants() {
+        use solstone_core_format::content::AdmittedCategory;
+
+        let root = tempfile::tempdir().unwrap();
+        let seg = root
+            .path()
+            .join("chronicle/20261118/import.email/101600_300");
+        fs::create_dir_all(&seg).unwrap();
+        let header = serde_json::json!({
+            "source": "email",
+            "provider": "gmail",
+            "first_sent_at": "2026-11-18T17:16:00Z",
+            "last_sent_at": "2026-11-18T17:16:00Z",
+            "email_schema": 1
+        });
+        let row = serde_json::json!({
+            "start": "10:16:00",
+            "source_ms": 1795022160000_i64,
+            "sent_at": "2026-11-18T10:16:00-07:00",
+            "speaker": "Robin",
+            "is_owner": true,
+            "to": ["Casey"],
+            "cc": ["Lee"],
+            "text": "Yes, the afternoon works.\n\nI've attached the revised agenda.",
+            "reply_to": {
+                "author": "Casey",
+                "sent_at": "2026-11-17T16:20:00-07:00",
+                "text": "Could we meet on Thursday afternoon?",
+                "truncated": true
+            },
+            "attachments": [
+                { "name": "agenda.pdf", "item_ref": "fixture-document-01" },
+                { "name": "site-photo.jpg" }
+            ],
+            "email": { "provider": "gmail", "key": "gm:1" }
+        });
+        fs::write(
+            seg.join("conversation_transcript.jsonl"),
+            format!("{header}\n{row}\n"),
+        )
+        .unwrap();
+        fs::write(
+            seg.join("document_transcript.md"),
+            "Plan B is in room seven.\n",
+        )
+        .unwrap();
+
+        let segment = iter_segments(root.path(), PathOrDay::Day("20261118"))
+            .unwrap()
+            .into_iter()
+            .find(|s| s.path() == seg)
+            .unwrap();
+
+        // Messages-only reader sees the exchange and both filenames, never the extracted PDF.
+        let messages_only = BTreeSet::from([AdmittedCategory::Messages]);
+        let page = super::read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&messages_only),
+        )
+        .unwrap();
+        assert_eq!(page.content_kinds, vec!["messages"]);
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.entries[0].channel, "Email");
+        let text = &page.entries[0].text;
+        assert!(text.contains("Yes, the afternoon works."), "{text}");
+        assert!(
+            text.contains("Could we meet on Thursday afternoon?"),
+            "{text}"
+        );
+        assert!(text.contains("agenda.pdf"), "{text}");
+        assert!(text.contains("site-photo.jpg"), "{text}");
+        assert!(!text.contains("Plan B is in room seven."), "{text}");
+
+        // Documents-only reader sees the extracted PDF, never the email exchange.
+        let docs_only = BTreeSet::from([AdmittedCategory::Documents]);
+        let doc_page = super::read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&docs_only),
+        )
+        .unwrap();
+        assert_eq!(doc_page.content_kinds, vec!["documents"]);
+        assert!(
+            doc_page
+                .entries
+                .iter()
+                .any(|e| e.text.contains("Plan B is in room seven."))
+        );
+        assert!(
+            !doc_page
+                .entries
+                .iter()
+                .any(|e| e.text.contains("afternoon works"))
+        );
+
+        // Transcripts-only (spoken) reader sees neither.
+        let transcripts_only = BTreeSet::from([AdmittedCategory::Transcripts]);
+        let err = super::read_segment_transcript_page_with_permissions(
+            &segment,
+            None,
+            None,
+            None,
+            &BTreeSet::new(),
+            Some(&transcripts_only),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::SegmentTranscriptReadError::NoPermittedFiles
+        ));
     }
 }

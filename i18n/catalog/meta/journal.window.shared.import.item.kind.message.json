@@ -1,0 +1,16 @@
+{
+  "description": "The kind of a single written message, such as one email.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of a filed message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c654dbaf60de8aa42dcfbb75ebe02af0ec66df1467990dbe4cd6f7777f271f0",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

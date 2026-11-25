@@ -1,0 +1,16 @@
+{
+  "description": "Summary label for a folded span in a message that might be quoted from an earlier email.",
+  "context": "Journal window, transcripts view. Disclosure inside a message body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f308884cbe71c1f76f28a3a7c77bf74e945b5ce08eab7562a13469c61f5ae2c1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

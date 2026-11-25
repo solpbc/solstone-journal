@@ -1,0 +1,21 @@
+{
+  "description": "CC line of a message when only copied recipients are present.",
+  "context": "Journal window, transcripts view. Under a message's sender.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "cc",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4f684cc8247132c85813ff24f3c988b44a090cdbd1bf2c147b05e157bf9feb29",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -172,6 +172,7 @@
         // segment holds its screenshot, not audio or frames.
         screenshot: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.screenshot.screenshot'),
         photo: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.photo.photo'),
+        message: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.messages.message'),
         messages: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.messages.messages'),
         conversation: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.conversation.conversation'),
       },
@@ -4427,8 +4428,23 @@
         }
         return `<pre class="tr-msg-code"><code>${escapeHtml(lines.join('\n'))}</code></pre>`;
       }
+      if (block.kind === 'possible_quote') {
+        const paragraphs = block.text
+          .trim()
+          .split(/\n{2,}/)
+          .filter(Boolean)
+          .map(p => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+          .join('');
+        return `<details class="tr-msg-possible-quote"><summary>${window.JournalI18n.renderHtml('journal.window.transcripts.message.possible.quote')}</summary><div class="tr-msg-possible-quote-body">${paragraphs}</div></details>`;
+      }
       const html = escapeHtml(block.text.trim()).replace(/\n/g, '<br>');
       return block.kind === 'quote' ? `<blockquote class="tr-msg-quote">${html}</blockquote>` : `<p>${html}</p>`;
+    }
+
+    function formatMessageNames(list) {
+      return typeof Intl.ListFormat === 'function'
+        ? new Intl.ListFormat(window.JournalI18n.formatLocale, { type: 'conjunction' }).format(list)
+        : list.join(', ');
     }
 
     // A message's own send time. On another day than the one shown, its date too.
@@ -4444,17 +4460,96 @@
     // a conversation addressed to everyone went to that person alone.
     function messageToLine(message, groupAudience) {
       const to = Array.isArray(message.to) ? message.to.filter(name => typeof name === 'string' && name.trim()) : [];
-      if (!to.length) return '';
-      if (to.length === 1 && to[0].trim().toLowerCase() === 'everyone') {
-        return window.JournalI18n.render('journal.window.transcripts.message.to.everyone');
+      const cc = Array.isArray(message.cc) ? message.cc.filter(name => typeof name === 'string' && name.trim()) : [];
+      if (!to.length && !cc.length) return '';
+      if (!to.length) {
+        return window.JournalI18n.render('journal.window.transcripts.message.cc.only', [['cc', formatMessageNames(cc)]]);
       }
-      if (to.length === 1 && groupAudience) {
+      if (to.length === 1 && to[0].trim().toLowerCase() === 'everyone') {
+        const base = window.JournalI18n.render('journal.window.transcripts.message.to.everyone');
+        return cc.length ? `${base} · ${window.JournalI18n.render('journal.window.transcripts.message.cc.only', [['cc', formatMessageNames(cc)]])}` : base;
+      }
+      if (to.length === 1 && groupAudience && !cc.length) {
         return window.JournalI18n.render('journal.window.transcripts.message.to.only', [['recipient', to[0]]]);
       }
-      const names = typeof Intl.ListFormat === 'function'
-        ? new Intl.ListFormat(window.JournalI18n.formatLocale, { type: 'conjunction' }).format(to)
-        : to.join(', ');
+      const names = formatMessageNames(to);
+      if (cc.length) {
+        return window.JournalI18n.render('journal.window.transcripts.message.to.cc', [
+          ['recipients', names],
+          ['cc', formatMessageNames(cc)],
+        ]);
+      }
       return window.JournalI18n.render('journal.window.transcripts.message.to', [['recipients', names]]);
+    }
+
+    function messageTruncatedHtml(truncated, cutChars) {
+      if (truncated !== true) return '';
+      if (Number.isInteger(cutChars) && cutChars > 0) {
+        return `<p class="tr-msg-cut">${window.JournalI18n.renderHtml('journal.window.transcripts.message.truncated.chars', [
+          ['chars_quantity', window.JournalI18n.cardinalQuantity(cutChars)],
+          ['chars', cutChars.toLocaleString(window.JournalI18n.formatLocale)],
+        ])}</p>`;
+      }
+      return `<p class="tr-msg-cut">${window.JournalI18n.renderHtml('journal.window.transcripts.message.truncated')}</p>`;
+    }
+
+    function messageAttachmentsHtml(attachments) {
+      const list = Array.isArray(attachments)
+        ? attachments.filter(item => item && typeof item.name === 'string' && item.name.trim())
+        : [];
+      if (!list.length) return '';
+      let html = '<ul class="tr-msg-attachments">';
+      for (const att of list) {
+        html += '<li>';
+        html += `<span>${window.JournalI18n.renderHtml('journal.window.transcripts.message.attached', [['name', att.name.trim()]])}</span>`;
+        if (typeof att.item_ref === 'string' && att.item_ref.trim()) {
+          html += ` <a class="tr-msg-doc-link" href="#${encodeURIComponent(att.item_ref.trim())}" data-item-ref="${escapeHtml(att.item_ref.trim())}">${window.JournalI18n.renderHtml('journal.window.transcripts.message.open.document')}</a>`;
+        }
+        html += '</li>';
+      }
+      html += '</ul>';
+      return html;
+    }
+
+    function messageForwardedHtml(forwarded) {
+      if (!forwarded || typeof forwarded !== 'object') return '';
+      const text = String(forwarded.text || '');
+      const hasBlocks = Array.isArray(forwarded.blocks) && forwarded.blocks.length > 0;
+      if (!text.trim() && !hasBlocks) return '';
+      const author = typeof forwarded.from === 'string' ? forwarded.from.trim() : '';
+      const heading = author
+        ? window.JournalI18n.renderHtml('journal.window.transcripts.message.forwarded.from', [['author', author]])
+        : window.JournalI18n.renderHtml('journal.window.transcripts.message.forwarded.heading');
+      const subject = typeof forwarded.subject === 'string' ? forwarded.subject.trim() : '';
+      const blocks = messageBlocks(forwarded, text);
+      let html = '<div class="tr-msg-forwarded">';
+      html += `<div class="tr-msg-forwarded-head">${heading}</div>`;
+      if (subject) html += `<div class="tr-msg-forwarded-subject">${escapeHtml(subject)}</div>`;
+      html += `<div class="tr-msg-forwarded-body">${blocks.map(messageBlockHtml).join('')}</div>`;
+      html += messageTruncatedHtml(forwarded.truncated, forwarded.cut_chars);
+      html += '</div>';
+      return html;
+    }
+
+    function messageReplyToHtml(reply) {
+      if (!reply || typeof reply !== 'object') return '';
+      const author = typeof reply.author === 'string' && reply.author.trim()
+        ? reply.author.trim()
+        : window.JournalI18n.render('journal.window.transcripts.message.unknown');
+      const text = String(reply.text || '');
+      const hasAttachments = Array.isArray(reply.attachments) && reply.attachments.length > 0;
+      if (!text.trim() && !hasAttachments) return '';
+      const sent = reply.sent_at ? messageSentLabel(reply.sent_at) : '';
+      const summary = sent
+        ? window.JournalI18n.renderHtml('journal.window.transcripts.message.reply.to', [['author', author], ['date', sent]])
+        : window.JournalI18n.renderHtml('journal.window.transcripts.message.reply.to.undated', [['author', author]]);
+      const blocks = text.trim() ? messageBlocks(reply, text) : [];
+      let html = `<details class="tr-msg-reply"><summary>${summary}</summary><div class="tr-msg-reply-body">`;
+      html += blocks.map(messageBlockHtml).join('');
+      html += messageTruncatedHtml(reply.truncated, reply.cut_chars);
+      html += messageAttachmentsHtml(reply.attachments);
+      html += '</div></details>';
+      return html;
     }
 
     function messageAddressedToEveryone(message) {
@@ -4488,6 +4583,7 @@
             : (message.author || '');
       const sent = message.sent_at ? messageSentLabel(message.sent_at) : '';
       const to = messageToLine(message, groupAudience);
+      const subject = typeof message.subject === 'string' ? message.subject.trim() : '';
       const blocks = messageBlocks(message, text);
       let fold = -1;
       if (passage && passage.turn === message.turn_id && passage.offset !== null && passage.offset > 0) {
@@ -4502,6 +4598,7 @@
         html += '</div>';
       }
       if (to) html += `<div class="tr-msg-to">${escapeHtml(to)}</div>`;
+      if (subject) html += `<div class="tr-msg-subject">${escapeHtml(subject)}</div>`;
       html += '<div class="tr-msg-body">';
       if (fold > 0) {
         const before = blocks.slice(0, fold);
@@ -4516,9 +4613,10 @@
         html += blocks.map(messageBlockHtml).join('');
       }
       html += '</div>';
-      if (message.truncated === true) {
-        html += `<p class="tr-msg-cut">${window.JournalI18n.renderHtml('journal.window.transcripts.message.truncated')}</p>`;
-      }
+      html += messageTruncatedHtml(message.truncated, message.cut_chars);
+      html += messageForwardedHtml(message.forwarded);
+      html += messageAttachmentsHtml(message.attachments);
+      html += messageReplyToHtml(message.reply_to);
       html += '</div>';
       return html;
     }
@@ -6746,7 +6844,10 @@
       // Saved written messages, or a conversation the journal can't place,
       // are the segment's own: no audio or frames to take.
       const kind = conversationKind(seg);
-      if (!audio && !screen && (kind === 'messages' || kind === 'conversation')) return { [kind]: true };
+      if (!audio && !screen && kind === 'messages') {
+        return conversationItem(seg)?.turn_count === 1 ? { message: true } : { messages: true };
+      }
+      if (!audio && !screen && kind === 'conversation') return { conversation: true };
       if (!audio && !screen) return null;
       return { audio, screen, transcript: true };
     }
@@ -6759,13 +6860,17 @@
     function segmentParts(segs, holdsLoc) {
       const kinds = segs.map((seg) => segmentKinds(seg) || { audio: true, screen: true, transcript: true });
       const any = (kind) => kinds.some((held) => held[kind]);
+      const messageCount = kinds.filter((held) => held.message).length;
+      const hasMessages = any('messages') || messageCount > 1;
+      const hasSingleMessage = !hasMessages && messageCount === 1;
       return [
         ...(any('audio') ? ['audio'] : []),
         ...(any('screen') ? ['screen'] : []),
         ...(any('photo') ? ['photo'] : []),
         ...(any('screenshot') ? ['screenshot'] : []),
         ...(any('transcript') ? ['transcript'] : []),
-        ...(any('messages') ? ['messages'] : []),
+        ...(hasSingleMessage ? ['message'] : []),
+        ...(hasMessages ? ['messages'] : []),
         ...(any('conversation') ? ['conversation'] : []),
         'analysis',
         ...(holdsLoc ? ['location'] : []),
@@ -6775,7 +6880,7 @@
     // What the dialog's segments would take of the imports that made them, read
     // when it opens: null until the journal answers, or if it doesn't.
     let dialogImports = null;
-    const BODY_IMPORT_STREAMS = new Set(['import.strava', 'import.apple_health', 'import.oura', 'import.garmin']);
+    const BODY_IMPORT_STREAMS = new Set(['import.strava', 'import.apple_health', 'import.oura', 'import.garmin', 'import.email']);
     const isImportStream = (stream) => typeof stream === 'string' && stream.startsWith('import.') && !BODY_IMPORT_STREAMS.has(stream);
 
     function readDialogImports(segs) {

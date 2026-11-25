@@ -1352,9 +1352,11 @@ fn imported_conversation_turns<'a>(
             "text": text,
         });
         if written {
-            use solstone_core_format::content::conversation::{message_blocks, message_fields};
+            use solstone_core_format::content::conversation::{
+                message_blocks_for_row, message_fields,
+            };
             let mut message = message_fields(context.stream, file, index, row, untimed)?;
-            message["blocks"] = json!(message_blocks(text));
+            message["blocks"] = json!(message_blocks_for_row(text, row));
             chunk["message"] = message;
         }
         Some(chunk)

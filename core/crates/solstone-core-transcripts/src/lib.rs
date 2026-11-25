@@ -2691,6 +2691,7 @@ fn transcript_header(stream: Option<&str>) -> &'static str {
         Some("import.chatgpt") => "ChatGPT Conversation",
         Some("import.claude") => "Claude Conversation",
         Some("import.gemini") => "Gemini Conversation",
+        Some("import.email") => "Email",
         Some("import.ics") => "Calendar Event",
         Some("import.obsidian") | Some("import.evernote") => "Note",
         Some("import.kindle") => "Highlights",

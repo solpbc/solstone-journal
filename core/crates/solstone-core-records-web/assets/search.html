@@ -128,10 +128,14 @@
   const sender=message.is_owner===true?window.JournalI18n.render('journal.window.search.message.you'):message.role==='assistant'&&(!message.author||message.author==='Assistant')?window.JournalI18n.render('journal.window.search.message.assistant'):message.role==='unknown'&&(!message.author||message.author==='Unknown')?window.JournalI18n.render('journal.window.search.message.unknown'):String(message.author||'');
   if(!sender)return '';
   const to=Array.isArray(message.to)?message.to.filter((name)=>typeof name==='string'&&name.trim()):[];
-  if(!to.length)return sender;
+  const subject=typeof message.subject==='string'?message.subject.trim():'';
+  if(!to.length){
+   return subject?window.JournalI18n.render('journal.window.search.message.sender.subject',[['sender',sender],['subject',subject]]):sender;
+  }
   const everyone=to.length===1&&to[0].trim().toLowerCase()==='everyone';
   const recipients=everyone?window.JournalI18n.render('journal.window.search.message.everyone'):(typeof Intl.ListFormat==='function'?new Intl.ListFormat(window.JournalI18n.formatLocale,{type:'conjunction'}).format(to):to.join(', '));
-  return window.JournalI18n.render('journal.window.search.message.meta',[['sender',sender],['recipients',recipients]]);
+  const base=window.JournalI18n.render('journal.window.search.message.meta',[['sender',sender],['recipients',recipients]]);
+  return subject?window.JournalI18n.render('journal.window.search.message.meta.subject',[['base',base],['subject',subject]]):base;
  }
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');

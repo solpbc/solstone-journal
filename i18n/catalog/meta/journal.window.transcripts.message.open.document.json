@@ -1,0 +1,16 @@
+{
+  "description": "Link text beside a named attachment whose extracted document is in the same segment.",
+  "context": "Journal window, transcripts view. Next to an attached filename.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efe114fdd45767d2ff7d11a6a81e53ebfe585fc4e12b563cf8770260efe981c2",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

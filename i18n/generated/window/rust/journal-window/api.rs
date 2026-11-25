@@ -5958,6 +5958,8 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e617373697374616e74,
     m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e65766572796f6e65,
     m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d657461,
+    m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d6574612e7375626a656374,
+    m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e73656e6465722e7375626a656374,
     m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e756e6b6e6f776e,
     m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e796f75,
     m6a6f75726e616c2e77696e646f772e7365617263682e706167696e672e61636365737369626c652e6e616d65,
@@ -7313,6 +7315,7 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e64617465642e6c6162656c,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e636f6e766572736174696f6e,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e646f63756d656e74,
+    m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6d657373616765,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6d65737361676573,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6e6f7465,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e70686f746f,
@@ -7321,6 +7324,7 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6c6162656c,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e63686174677074,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e636c61756465,
+    m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e656d61696c,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e657665726e6f7465,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e67656d696e69,
     m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e696d706f72746564,
@@ -9164,6 +9168,7 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e792e7468652e66696c65732e6974732e696d706f72742e6b6570742e73746179,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e792e74686569722e6f726967696e616c2e6d656469612e696e2e7468652e7472617368,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e796f6e652e6f746865722e7365676d656e742e66726f6d2e74686f73652e696d706f7274732e696e,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d657373616765732e6d657373616765,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d657373616765732e6d65737361676573,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d6f76652e69662e69742e732e7468652e6c6173742e7365676d656e74,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d6f76652e69662e74686573652e696e636c7564652e7468652e6c6173742e7365676d656e7473,
@@ -9307,11 +9312,21 @@ pub enum MessageId {
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e74726173682e636f70792e6c696e6b2e6f70656e2e7472617368,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e766964656f2e6572726f722e636f6465,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e617373697374616e74,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6174746163686564,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e63632e6f6e6c79,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e66726f6d,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e68656164696e67,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6f70656e2e646f63756d656e74,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e706f737369626c652e71756f7465,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f2e756e6461746564,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e73686f772e66726f6d2e7374617274,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6363,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e65766572796f6e65,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6f6e6c79,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e6361746564,
+    m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e63617465642e6368617273,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e756e6b6e6f776e,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e776f7264732e6265666f7265,
     m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e796f75,
@@ -15755,6 +15770,8 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.search.message.assistant", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e617373697374616e74),
         ("journal.window.search.message.everyone", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e65766572796f6e65),
         ("journal.window.search.message.meta", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d657461),
+        ("journal.window.search.message.meta.subject", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d6574612e7375626a656374),
+        ("journal.window.search.message.sender.subject", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e73656e6465722e7375626a656374),
         ("journal.window.search.message.unknown", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e756e6b6e6f776e),
         ("journal.window.search.message.you", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e796f75),
         ("journal.window.search.paging.accessible.name", MessageId::m6a6f75726e616c2e77696e646f772e7365617263682e706167696e672e61636365737369626c652e6e616d65),
@@ -17110,6 +17127,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.shared.import.item.dated.label", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e64617465642e6c6162656c),
         ("journal.window.shared.import.item.kind.conversation", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e636f6e766572736174696f6e),
         ("journal.window.shared.import.item.kind.document", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e646f63756d656e74),
+        ("journal.window.shared.import.item.kind.message", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6d657373616765),
         ("journal.window.shared.import.item.kind.messages", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6d65737361676573),
         ("journal.window.shared.import.item.kind.note", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6e6f7465),
         ("journal.window.shared.import.item.kind.photo", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e70686f746f),
@@ -17118,6 +17136,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.shared.import.item.label", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6c6162656c),
         ("journal.window.shared.import.item.source.chatgpt", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e63686174677074),
         ("journal.window.shared.import.item.source.claude", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e636c61756465),
+        ("journal.window.shared.import.item.source.email", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e656d61696c),
         ("journal.window.shared.import.item.source.evernote", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e657665726e6f7465),
         ("journal.window.shared.import.item.source.gemini", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e67656d696e69),
         ("journal.window.shared.import.item.source.imported", MessageId::m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e696d706f72746564),
@@ -18961,6 +18980,7 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.transcripts.consent.trash.copy.many.the.files.its.import.kept.stay", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e792e7468652e66696c65732e6974732e696d706f72742e6b6570742e73746179),
         ("journal.window.transcripts.consent.trash.copy.many.their.original.media.in.the.trash", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e792e74686569722e6f726967696e616c2e6d656469612e696e2e7468652e7472617368),
         ("journal.window.transcripts.consent.trash.copy.manyone.other.segment.from.those.imports.in", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e796f6e652e6f746865722e7365676d656e742e66726f6d2e74686f73652e696d706f7274732e696e),
+        ("journal.window.transcripts.consent.trash.copy.messages.message", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d657373616765732e6d657373616765),
         ("journal.window.transcripts.consent.trash.copy.messages.messages", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d657373616765732e6d65737361676573),
         ("journal.window.transcripts.consent.trash.copy.move.if.it.s.the.last.segment", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d6f76652e69662e69742e732e7468652e6c6173742e7365676d656e74),
         ("journal.window.transcripts.consent.trash.copy.move.if.these.include.the.last.segments", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d6f76652e69662e74686573652e696e636c7564652e7468652e6c6173742e7365676d656e7473),
@@ -19104,11 +19124,21 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.window.transcripts.media.trash.copy.link.open.trash", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e74726173682e636f70792e6c696e6b2e6f70656e2e7472617368),
         ("journal.window.transcripts.media.video.error.code", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e766964656f2e6572726f722e636f6465),
         ("journal.window.transcripts.message.assistant", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e617373697374616e74),
+        ("journal.window.transcripts.message.attached", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6174746163686564),
+        ("journal.window.transcripts.message.cc.only", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e63632e6f6e6c79),
+        ("journal.window.transcripts.message.forwarded.from", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e66726f6d),
+        ("journal.window.transcripts.message.forwarded.heading", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e68656164696e67),
+        ("journal.window.transcripts.message.open.document", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6f70656e2e646f63756d656e74),
+        ("journal.window.transcripts.message.possible.quote", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e706f737369626c652e71756f7465),
+        ("journal.window.transcripts.message.reply.to", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f),
+        ("journal.window.transcripts.message.reply.to.undated", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f2e756e6461746564),
         ("journal.window.transcripts.message.show.from.start", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e73686f772e66726f6d2e7374617274),
         ("journal.window.transcripts.message.to", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f),
+        ("journal.window.transcripts.message.to.cc", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6363),
         ("journal.window.transcripts.message.to.everyone", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e65766572796f6e65),
         ("journal.window.transcripts.message.to.only", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6f6e6c79),
         ("journal.window.transcripts.message.truncated", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e6361746564),
+        ("journal.window.transcripts.message.truncated.chars", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e63617465642e6368617273),
         ("journal.window.transcripts.message.unknown", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e756e6b6e6f776e),
         ("journal.window.transcripts.message.words.before", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e776f7264732e6265666f7265),
         ("journal.window.transcripts.message.you", MessageId::m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e796f75),
@@ -25580,6 +25610,8 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e617373697374616e74", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e65766572796f6e65", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d657461", prepare_m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d657461),
+    ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d6574612e7375626a656374", prepare_m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d6574612e7375626a656374),
+    ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e73656e6465722e7375626a656374", prepare_m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e73656e6465722e7375626a656374),
     ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e756e6b6e6f776e", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e796f75", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7365617263682e706167696e672e61636365737369626c652e6e616d65", no_arguments),
@@ -26935,6 +26967,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e64617465642e6c6162656c", prepare_m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e64617465642e6c6162656c),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e636f6e766572736174696f6e", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e646f63756d656e74", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6d657373616765", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6d65737361676573", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e6e6f7465", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6b696e642e70686f746f", no_arguments),
@@ -26943,6 +26976,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6c6162656c", prepare_m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e6c6162656c),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e63686174677074", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e636c61756465", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e656d61696c", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e657665726e6f7465", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e67656d696e69", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7368617265642e696d706f72742e6974656d2e736f757263652e696d706f72746564", no_arguments),
@@ -28786,6 +28820,7 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e792e7468652e66696c65732e6974732e696d706f72742e6b6570742e73746179", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e792e74686569722e6f726967696e616c2e6d656469612e696e2e7468652e7472617368", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d616e796f6e652e6f746865722e7365676d656e742e66726f6d2e74686f73652e696d706f7274732e696e", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d657373616765732e6d657373616765", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d657373616765732e6d65737361676573", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d6f76652e69662e69742e732e7468652e6c6173742e7365676d656e74", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e636f70792e6d6f76652e69662e74686573652e696e636c7564652e7468652e6c6173742e7365676d656e7473", no_arguments),
@@ -28929,11 +28964,21 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e74726173682e636f70792e6c696e6b2e6f70656e2e7472617368", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e766964656f2e6572726f722e636f6465", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e766964656f2e6572726f722e636f6465),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e617373697374616e74", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6174746163686564", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6174746163686564),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e63632e6f6e6c79", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e63632e6f6e6c79),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e66726f6d", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e66726f6d),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e68656164696e67", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6f70656e2e646f63756d656e74", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e706f737369626c652e71756f7465", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f2e756e6461746564", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f2e756e6461746564),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e73686f772e66726f6d2e7374617274", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6363", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6363),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e65766572796f6e65", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6f6e6c79", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6f6e6c79),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e6361746564", no_arguments),
+    ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e63617465642e6368617273", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e63617465642e6368617273),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e756e6b6e6f776e", no_arguments),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e776f7264732e6265666f7265", prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e776f7264732e6265666f7265),
     ("m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e796f75", no_arguments),
@@ -67291,6 +67336,54 @@ fn prepare_m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d657461
     Ok((_resource_key, f_args))
 }
 
+fn prepare_m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e6d6574612e7375626a656374(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["base", "subject"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "base").ok_or_else(|| RenderError::MissingArgument("base".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("base".to_string())),
+    };
+    f_args.set("base", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "subject").ok_or_else(|| RenderError::MissingArgument("subject".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("subject".to_string())),
+    };
+    f_args.set("subject", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7365617263682e6d6573736167652e73656e6465722e7375626a656374(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["sender", "subject"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "sender").ok_or_else(|| RenderError::MissingArgument("sender".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("sender".to_string())),
+    };
+    f_args.set("sender", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "subject").ok_or_else(|| RenderError::MissingArgument("subject".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("subject".to_string())),
+    };
+    f_args.set("subject", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
 fn prepare_m6a6f75726e616c2e77696e646f772e7365617263682e726573706f6e73652e646174652e666f726d6174(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
     const DECLARED: &[&str] = &["field"];
     for (name, _) in args {
@@ -85229,6 +85322,102 @@ fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d656469612e76
     Ok((_resource_key, f_args))
 }
 
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e6174746163686564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["name"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "name").ok_or_else(|| RenderError::MissingArgument("name".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("name".to_string())),
+    };
+    f_args.set("name", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e63632e6f6e6c79(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["cc"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "cc").ok_or_else(|| RenderError::MissingArgument("cc".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("cc".to_string())),
+    };
+    f_args.set("cc", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e666f727761726465642e66726f6d(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["author"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "author").ok_or_else(|| RenderError::MissingArgument("author".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("author".to_string())),
+    };
+    f_args.set("author", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["author", "date"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "author").ok_or_else(|| RenderError::MissingArgument("author".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("author".to_string())),
+    };
+    f_args.set("author", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "date").ok_or_else(|| RenderError::MissingArgument("date".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("date".to_string())),
+    };
+    f_args.set("date", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7265706c792e746f2e756e6461746564(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["author"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "author").ok_or_else(|| RenderError::MissingArgument("author".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("author".to_string())),
+    };
+    f_args.set("author", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
 fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
     const DECLARED: &[&str] = &["recipients"];
     for (name, _) in args {
@@ -85247,6 +85436,30 @@ fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d657373616765
     Ok((_resource_key, f_args))
 }
 
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6363(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["recipients", "cc"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "recipients").ok_or_else(|| RenderError::MissingArgument("recipients".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("recipients".to_string())),
+    };
+    f_args.set("recipients", FluentValue::from(v0.clone()));
+    let val_v1 = args.iter().find(|(n, _)| *n == "cc").ok_or_else(|| RenderError::MissingArgument("cc".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("cc".to_string())),
+    };
+    f_args.set("cc", FluentValue::from(v1.clone()));
+    Ok((_resource_key, f_args))
+}
+
 fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e746f2e6f6e6c79(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
     const DECLARED: &[&str] = &["recipient"];
     for (name, _) in args {
@@ -85262,6 +85475,32 @@ fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d657373616765
         _ => return Err(RenderError::InvalidArgumentType("recipient".to_string())),
     };
     f_args.set("recipient", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6d6573736167652e7472756e63617465642e6368617273(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["chars_quantity", "chars"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "chars_quantity").ok_or_else(|| RenderError::MissingArgument("chars_quantity".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("chars_quantity".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("chars_quantity".to_string())); }
+    f_args.set("chars_quantity", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "chars").ok_or_else(|| RenderError::MissingArgument("chars".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("chars".to_string())),
+    };
+    f_args.set("chars", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
     Ok((_resource_key, f_args))
 }
 

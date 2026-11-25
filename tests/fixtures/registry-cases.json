@@ -5,6 +5,11 @@
     "condition": "Path"
   },
   {
+    "path": "20260107/import.email/120000_60/document_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/document_transcript.md",
+    "condition": "Path"
+  },
+  {
     "path": "20260107/import.image/120000_60/image_transcript.md",
     "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.image/*/image_transcript.md",
     "condition": "Path"
@@ -162,6 +167,11 @@
   {
     "path": "20260107/import.text/120000_60/conversation_transcript.jsonl",
     "pattern": "*/import.text/*/conversation_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.email/120000_60/conversation_transcript.jsonl",
+    "pattern": "*/import.email/*/conversation_transcript.jsonl",
     "condition": "Path"
   },
   {

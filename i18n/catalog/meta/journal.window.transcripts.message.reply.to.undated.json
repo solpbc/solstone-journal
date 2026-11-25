@@ -1,0 +1,21 @@
+{
+  "description": "Summary label for the folded message this email answered when no send time is known.",
+  "context": "Journal window, transcripts view. Folded disclosure under an email message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "author",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aa93847510199de5dacae616f26301ac3b3cb09b20ad51a5e9c4133831b59c81",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

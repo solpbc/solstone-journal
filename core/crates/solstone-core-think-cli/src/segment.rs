@@ -2830,7 +2830,10 @@ fn populate_backfill_activity_defaults(
                                 {
                                     let email = val
                                         .get("email")
-                                        .and_then(Value::as_str)
+                                        .and_then(|v| {
+                                            v.as_str()
+                                                .or_else(|| v.get("from").and_then(Value::as_str))
+                                        })
                                         .map(|s| s.trim().to_lowercase());
                                     if upsert(
                                         sender.to_owned(),
@@ -2841,6 +2844,78 @@ fn populate_backfill_activity_defaults(
                                         "Corresponded in written exchange.".to_owned(),
                                     ) {
                                         seg_has_header_corresponded = true;
+                                    }
+                                }
+                                // Active email correspondents: `to` recipients and answered-message
+                                // author. Passive `cc` bystanders are intentionally excluded.
+                                if is_email_stream {
+                                    let to_addrs: Vec<Option<String>> = val
+                                        .get("email")
+                                        .and_then(|e| e.get("to_addresses"))
+                                        .and_then(Value::as_array)
+                                        .into_iter()
+                                        .flatten()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .map(|s| s.trim().to_lowercase())
+                                                .filter(|s| s.contains('@'))
+                                        })
+                                        .collect();
+                                    if let Some(to_list) = val.get("to").and_then(Value::as_array) {
+                                        for (idx, recipient) in to_list.iter().enumerate() {
+                                            let Some(raw) = recipient
+                                                .as_str()
+                                                .map(str::trim)
+                                                .filter(|s| !s.is_empty())
+                                            else {
+                                                continue;
+                                            };
+                                            let addr = to_addrs
+                                                .get(idx)
+                                                .cloned()
+                                                .flatten()
+                                                .or_else(|| {
+                                                    raw.contains('@').then(|| raw.to_lowercase())
+                                                });
+                                            if upsert(
+                                                raw.to_owned(),
+                                                addr,
+                                                "corresponded",
+                                                "transcript",
+                                                1.0,
+                                                "Corresponded in email.".to_owned(),
+                                            ) {
+                                                seg_has_header_corresponded = true;
+                                            }
+                                        }
+                                    }
+                                    if let Some(reply) =
+                                        val.get("reply_to").and_then(Value::as_object)
+                                    {
+                                        let r_addr = reply
+                                            .get("from")
+                                            .and_then(Value::as_str)
+                                            .map(|s| s.trim().to_lowercase())
+                                            .filter(|s| s.contains('@'));
+                                        let r_name = reply
+                                            .get("author")
+                                            .and_then(Value::as_str)
+                                            .map(str::trim)
+                                            .filter(|s| !s.is_empty())
+                                            .map(str::to_owned)
+                                            .or_else(|| r_addr.clone());
+                                        if let Some(name) = r_name
+                                            && upsert(
+                                                name,
+                                                r_addr,
+                                                "corresponded",
+                                                "transcript",
+                                                1.0,
+                                                "Corresponded in email reply.".to_owned(),
+                                            )
+                                        {
+                                            seg_has_header_corresponded = true;
+                                        }
                                     }
                                 }
                             }

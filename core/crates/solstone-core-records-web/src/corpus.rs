@@ -842,6 +842,71 @@ async fn owner_search_cites_the_current_message_and_utf8_offset() {
 }
 
 #[tokio::test]
+async fn selected_email_fixture_locates_second_paragraph_byte_offset_and_metadata() {
+    let fixture = Fixture::new("selected-email-search");
+    let file = fixture
+        .root
+        .join("chronicle/20260731/import.email/101600_300/conversation_transcript.jsonl");
+    let header = serde_json::json!({
+        "source": "email",
+        "provider": "gmail",
+        "first_sent_at": "2026-07-31T17:16:00Z",
+        "last_sent_at": "2026-07-31T17:16:00Z",
+        "email_schema": 1
+    });
+    let row = serde_json::json!({
+        "start": "10:16:00",
+        "source_ms": 1785518160000_i64,
+        "sent_at": "2026-07-31T10:16:00-07:00",
+        "speaker": "Robin",
+        "is_owner": true,
+        "to": ["Casey"],
+        "cc": ["Lee"],
+        "subject": null,
+        "text": "Yes, the afternoon works.\n\nI've attached the revised agenda.",
+        "reply_to": {
+            "author": "Casey",
+            "sent_at": "2026-07-30T16:20:00-07:00",
+            "text": "Could we meet on Thursday afternoon?",
+            "truncated": true
+        },
+        "truncated": false,
+        "attachments": [
+            { "name": "agenda.pdf", "item_ref": "fixture-document-01" },
+            { "name": "site-photo.jpg" }
+        ],
+        "email": { "provider": "gmail", "key": "gm:1" }
+    });
+    write(&file, &format!("{header}\n{row}\n"));
+    solstone_core_indexer_store::scan::scan_journal(&fixture.root, true).unwrap();
+
+    let data = response_json(
+        request(
+            &fixture.root,
+            "/app/search/api/search?q=attached&owner_view=true",
+        )
+        .await,
+    )
+    .await;
+    let hit = &data["days"][0]["results"][0];
+    assert_eq!(
+        hit["conversation_item"]["content_kind"], "messages",
+        "{data}"
+    );
+    assert_eq!(hit["conversation_item"]["source"], "email", "{data}");
+    assert_eq!(hit["conversation_item"]["turn_count"], 1, "{data}");
+    // "I've " is 5 bytes after byte 27 -> "attached" starts at byte 32 in row["text"].
+    let expected_offset = "Yes, the afternoon works.\n\nI've ".len();
+    assert_eq!(hit["message"]["offset"], expected_offset, "{data}");
+    assert_eq!(hit["message"]["is_owner"], true);
+    assert_eq!(hit["message"]["to"], serde_json::json!(["Casey"]));
+    assert_eq!(hit["message"]["cc"], serde_json::json!(["Lee"]));
+    assert_eq!(hit["message"]["reply_to"]["truncated"], true);
+    assert_eq!(hit["message"]["attachments"][0]["name"], "agenda.pdf");
+    assert_eq!(hit["message"]["attachments"][1]["name"], "site-photo.jpg");
+}
+
+#[tokio::test]
 async fn search_says_it_is_rebuilding_only_while_a_full_pass_works_through_an_unfinished_index() {
     use solstone_core_indexer_todo::{Token, enqueue_token, read_entry, rewrite, root};
     let fixture = Fixture::new("rebuilding-line");

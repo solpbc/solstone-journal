@@ -1,0 +1,16 @@
+{
+  "description": "Heading above forwarded message text when no original sender is named.",
+  "context": "Journal window, transcripts view. Inside a forwarded message block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06e0cea03fa0f2296e6a470b27e7829d441c96cde8f54455b45e10f2cf3fd92a",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

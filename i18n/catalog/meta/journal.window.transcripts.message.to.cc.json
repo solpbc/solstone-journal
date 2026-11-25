@@ -1,0 +1,25 @@
+{
+  "description": "Recipients line of a message naming both direct and copied recipients.",
+  "context": "Journal window, transcripts view. Under a message's sender.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "recipients",
+      "type": "string"
+    },
+    {
+      "name": "cc",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "bfb4591b62c8e5ad23abe8c1494256187d7eb7b4fdc864423a6758bafcb3eda1",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

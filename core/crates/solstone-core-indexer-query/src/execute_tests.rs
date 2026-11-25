@@ -4829,3 +4829,92 @@ fn connection_relevance_pagination_matches_between_keyed_and_fallback_paths() {
     assert_eq!(paged_fallback, single_shot);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn selected_email_search_requires_messages_permission_and_excludes_spoken_only() {
+    let root = temp_root("selected-email-messages-gate");
+    write_rel(&root, "facets/work/facet.json", r#"{"title":"Work"}"#);
+    write_rel(
+        &root,
+        "chronicle/20250618/import.email/101600_300/facets.json",
+        r#"{"facets":["work"]}"#,
+    );
+    let header = serde_json::json!({
+        "source": "email",
+        "provider": "gmail",
+        "first_sent_at": "2025-06-18T17:16:00Z",
+        "last_sent_at": "2025-06-18T17:16:00Z",
+        "email_schema": 1
+    });
+    let row = serde_json::json!({
+        "start": "10:16:00",
+        "source_ms": 1750266960000_i64,
+        "sent_at": "2025-06-18T10:16:00-07:00",
+        "speaker": "Robin",
+        "is_owner": true,
+        "to": ["Casey"],
+        "cc": ["Lee"],
+        "text": "Yes, the afternoon works.\n\nI've attached the revised agenda.",
+        "reply_to": {
+            "author": "Casey",
+            "sent_at": "2025-06-17T16:20:00-07:00",
+            "text": "Could we meet on Thursday afternoon?",
+            "truncated": true
+        },
+        "attachments": [
+            { "name": "agenda.pdf", "item_ref": "fixture-document-01" },
+            { "name": "site-photo.jpg" }
+        ],
+        "email": { "provider": "gmail", "key": "gm:1" }
+    });
+    write_rel(
+        &root,
+        "chronicle/20250618/import.email/101600_300/conversation_transcript.jsonl",
+        &format!("{header}\n{row}\n"),
+    );
+    write_rel(
+        &root,
+        "chronicle/20250618/import.email/101600_300/document_transcript.md",
+        "Plan B is in room seven.\n",
+    );
+    scan_journal(&root, true).expect("scan");
+
+    // Messages-only connection finds the owner turn, the answered message, and shared filenames,
+    // and never finds the sibling extracted PDF.
+    let messages_only = connection_boundary(&["messages"], ConnectionScope::WholeJournal);
+    let hit_owner = connection_search(&root, &messages_only, "revised agenda");
+    assert_eq!(hit_owner.results.len(), 1);
+    let hit_reply = connection_search(&root, &messages_only, "Thursday afternoon");
+    assert_eq!(hit_reply.results.len(), 1);
+    let hit_pdf = connection_search(&root, &messages_only, "room seven");
+    assert!(hit_pdf.results.is_empty());
+
+    // Transcripts-only connection finds neither the email nor the PDF.
+    let spoken_only = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+    assert!(
+        connection_search(&root, &spoken_only, "revised agenda")
+            .results
+            .is_empty()
+    );
+    assert!(
+        connection_search(&root, &spoken_only, "Thursday afternoon")
+            .results
+            .is_empty()
+    );
+
+    // Documents-only connection finds the sibling PDF, never the email.
+    let docs_only = connection_boundary(&["documents"], ConnectionScope::WholeJournal);
+    assert_eq!(
+        connection_search(&root, &docs_only, "room seven")
+            .results
+            .len(),
+        1
+    );
+    assert!(
+        connection_search(&root, &docs_only, "revised agenda")
+            .results
+            .is_empty()
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}

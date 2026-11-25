@@ -4173,6 +4173,121 @@ test('also at this time links timed overlapping items, and never an item with no
   assert.ok(env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('>00:00:02<'), 'a cue clock shows seconds');
 });
 
+test('a selected email renders cc, subject, folded reply_to, attachments, forwarded text, possible_quote, and singular message delete copy', async () => {
+  const emailSeg = {
+    key: '101600_300',
+    stream: 'import.email',
+    start: '10:16',
+    end: '10:21',
+    types: ['transcript'],
+    data_state: { messages: 'analyzed' },
+    conversation_items: [{
+      file: 'conversation_transcript.jsonl',
+      day: '20200115',
+      first_sent_at: '2020-01-15T17:16:00Z',
+      last_sent_at: '2020-01-15T17:16:00Z',
+      source: 'email',
+      content_kind: 'messages',
+      turn_count: 1,
+    }],
+  };
+  const body = "Yes, the afternoon works.\n\nMaybe this line was quoted.";
+  const p1End = Buffer.byteLength('Yes, the afternoon works.');
+  const qStart = Buffer.byteLength('Yes, the afternoon works.\n\n');
+  const qEnd = Buffer.byteLength(body);
+  const env = await conversationEnvironment(
+    'https://journal.example/app/transcripts/20200115?stream=import.email#101600_300/transcript',
+    [emailSeg]
+  );
+  await env.releasePendingSegmentGets('analyzed', {
+    conversation_items: emailSeg.conversation_items,
+    data_state: { messages: 'analyzed' },
+    chunks: [{
+      type: 'transcript',
+      time: '10:16:00',
+      timestamp: 0,
+      speaker: 'You',
+      text: body,
+      message: {
+        file: 'conversation_transcript.jsonl',
+        turn_id: 'conversation_transcript.jsonl#0-e1',
+        sent_at: '2020-01-15T17:16:00Z',
+        is_owner: true,
+        to: ['Casey'],
+        cc: ['Lee'],
+        subject: 'Thursday meeting',
+        blocks: [
+          { kind: 'paragraph', start: 0, end: p1End },
+          { kind: 'possible_quote', start: qStart, end: qEnd },
+        ],
+        forwarded: {
+          from: 'Jordan',
+          subject: 'Room schedule',
+          text: 'Room seven is free at two.',
+          truncated: true,
+          cut_chars: 420,
+          blocks: [{ kind: 'paragraph', start: 0, end: Buffer.byteLength('Room seven is free at two.') }],
+        },
+        reply_to: {
+          author: 'Casey',
+          sent_at: '2020-01-14T23:20:00Z',
+          text: 'Could we meet on Thursday afternoon?',
+          truncated: true,
+          cut_chars: 1200,
+          blocks: [{ kind: 'paragraph', start: 0, end: Buffer.byteLength('Could we meet on Thursday afternoon?') }],
+          attachments: [{ name: 'floorplan.png', inline: true }],
+        },
+        attachments: [
+          { name: 'agenda.pdf', item_ref: 'fixture-document-01' },
+          { name: 'site-photo.jpg' },
+        ],
+      },
+    }],
+  });
+  assert.strictEqual(
+    env.doc.querySelector('.tr-title').textContent,
+    env.window.JournalFormat.conversationItem(emailSeg.conversation_items[0]),
+  );
+  assert.ok(
+    env.doc.querySelector('.tr-title').textContent.includes(
+      env.window.JournalI18n.render('journal.window.shared.import.item.kind.message'),
+    ),
+    'single-turn email uses singular message label',
+  );
+  const pane = env.doc.querySelector('#tr-tabpanel-transcript');
+  const entry = pane.querySelector('.tr-msg');
+  assert.ok(entry, pane.innerHTML);
+  assert.strictEqual(
+    entry.querySelector('.tr-msg-to').textContent,
+    env.window.JournalI18n.render('journal.window.transcripts.message.to.cc', [['recipients', 'Casey'], ['cc', 'Lee']]),
+  );
+  assert.strictEqual(entry.querySelector('.tr-msg-subject').textContent, 'Thursday meeting');
+  const pq = entry.querySelector('.tr-msg-possible-quote');
+  assert.ok(pq, 'uncertain span renders as a folded possible_quote disclosure');
+  assert.strictEqual(pq.querySelector('summary').textContent, env.window.JournalI18n.render('journal.window.transcripts.message.possible.quote'));
+  assert.ok(pq.textContent.includes('Maybe this line was quoted.'));
+  const fwd = entry.querySelector('.tr-msg-forwarded');
+  assert.ok(fwd, 'forwarded block renders beside owner comment');
+  assert.ok(fwd.textContent.includes('Room seven is free at two.'));
+  assert.ok(fwd.querySelector('.tr-msg-cut'), 'truncated forwarded block shows cut count');
+  const reply = entry.querySelector('.tr-msg-reply');
+  assert.ok(reply, 'reply_to renders inside a collapsed disclosure');
+  assert.strictEqual(reply.hasAttribute('open'), false, 'reply_to is folded by default');
+  assert.ok(reply.querySelector('summary').textContent.includes('Casey'));
+  assert.ok(reply.textContent.includes('Could we meet on Thursday afternoon?'));
+  assert.ok(reply.querySelector('.tr-msg-cut'), 'truncated reply_to shows cut count');
+  const docLinks = entry.querySelectorAll('.tr-msg-doc-link');
+  assert.strictEqual(docLinks.length, 1, 'only attachments with item_ref get an open-document link');
+  assert.strictEqual(docLinks[0].dataset.itemRef, 'fixture-document-01');
+  assert.ok(entry.textContent.includes('agenda.pdf'));
+  assert.ok(entry.textContent.includes('site-photo.jpg'));
+  // Single-turn email delete confirm names singular message, and never adds file-import text.
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  const parts = env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').map(li => li.textContent);
+  assert.deepStrictEqual(parts, [TRASH_COPY.parts.message, TRASH_COPY.parts.analysis]);
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-import').length, 0);
+});
+
 // Devices on the detail rail, the key above the rails, and today kept live.
 
 const DEVICE_LABELS = {

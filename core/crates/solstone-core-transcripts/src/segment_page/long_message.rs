@@ -211,6 +211,13 @@ fn first(
         "partial_input",
         "participation_partial_input",
         "story",
+        "to",
+        "cc",
+        "subject",
+        "attachments",
+        "reply_to",
+        "forwarded",
+        "email",
     ] {
         if let Some(value) = fields.get(key) {
             if value.get().len() > 1024 && matches!(key, "speaker" | "start" | "sent_at") {

@@ -1,0 +1,30 @@
+{
+  "description": "Ends a message whose source copy was cut short, reporting how many characters were cut.",
+  "context": "Journal window, transcripts view. After the last kept words of a capped message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "chars_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "chars",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2917d76cc66627202f0f538caf93c9d8749f2980169ba896baffa2b6288a8016",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "chars_quantity",
+    "type": "cardinal"
+  }
+}

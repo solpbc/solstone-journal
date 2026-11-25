@@ -1,0 +1,16 @@
+{
+  "description": "Consent trash copy: the segment's single written message, listed among what a delete moves.",
+  "context": "Journal window, transcripts view. Consent trash copy single message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c654dbaf60de8aa42dcfbb75ebe02af0ec66df1467990dbe4cd6f7777f271f0",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

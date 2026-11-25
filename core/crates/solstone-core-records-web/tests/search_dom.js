@@ -376,6 +376,48 @@ test('fallback assistant and unknown message roles localize while real author na
   assert.ok(literalMeta.includes('Assistant'), literalMeta.join(' | '));
 });
 
+test('a selected email hit shows singular message · email, recipients with subject, and opens at the passage', () => {
+  const env = seededSearch();
+  const conversation = {
+    file: 'conversation_transcript.jsonl',
+    day: '20261118',
+    first_sent_at: '2026-11-18T17:16:00Z',
+    last_sent_at: '2026-11-18T17:16:00Z',
+    source: 'email',
+    content_kind: 'messages',
+    turn_count: 1,
+  };
+  const turn = 'conversation_transcript.jsonl#0-e1';
+  const card = env.window.renderHit({
+    day: '20261118',
+    stream: 'import.email',
+    path: '20261118/import.email/101600_300/conversation_transcript.jsonl',
+    idx: 0,
+    entry_id: 1,
+    text: "I've attached the <strong>revised agenda</strong>.",
+    ts: null,
+    conversation_item: conversation,
+    message: {
+      file: 'conversation_transcript.jsonl',
+      turn_id: turn,
+      sent_at: '2026-11-18T17:16:00Z',
+      is_owner: true,
+      to: ['Casey'],
+      subject: 'Thursday meeting',
+      offset: 27,
+    },
+  }, '/app/transcripts/20261118');
+  const meta = card.querySelector('.search-meta').querySelectorAll('span').map((span) => span.textContent);
+  assert.ok(meta.includes(env.window.JournalFormat.conversationItem(conversation)), meta.join(' | '));
+  assert.ok(meta.includes('message · email'), meta.join(' | '));
+  const msgMeta = card.querySelector('.search-message-meta').textContent;
+  assert.ok(msgMeta.includes('Casey') && msgMeta.includes('Thursday meeting'), msgMeta);
+  const href = new URL(card.querySelectorAll('a')[0].href, 'https://journal.example');
+  assert.strictEqual(href.searchParams.get('stream'), 'import.email');
+  assert.strictEqual(href.searchParams.get('turn'), turn);
+  assert.strictEqual(href.searchParams.get('at'), '27');
+});
+
 require('./search_contract_dom.js')({ manifestDir, searchHtml, dateFormatSource, test: asyncTest })
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((err) => { console.error(err); process.exit(1); });

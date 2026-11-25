@@ -1,0 +1,16 @@
+{
+  "description": "The source label for synced email exchanges.",
+  "context": "Journal window. Transcripts and search display the kind and provenance of an email item.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4f4592103c1c0a280db303c513193d776a8a133f2312b29c0d02551979ef377",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

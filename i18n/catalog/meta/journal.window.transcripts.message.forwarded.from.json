@@ -1,0 +1,21 @@
+{
+  "description": "Heading above forwarded message text naming the original sender.",
+  "context": "Journal window, transcripts view. Inside a forwarded message block.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "author",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38755574eb1fe2de8676eeed489f26d543ece7550bfd979747ddd1c687dce3be",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

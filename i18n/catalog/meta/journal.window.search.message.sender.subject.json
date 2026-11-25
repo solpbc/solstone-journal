@@ -1,0 +1,25 @@
+{
+  "description": "Search hit line for a message with a sender and a subject but no recipients.",
+  "context": "Journal window, search view. Combines sender metadata with the message subject.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "sender",
+      "type": "string"
+    },
+    {
+      "name": "subject",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e189f80890e48f864c446c578e132e304b5adeb8dff90ab7d59bbc802960d565",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

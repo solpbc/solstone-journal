@@ -1,0 +1,1 @@
+fixture document text
