@@ -1,0 +1,16 @@
+{
+  "description": "Fallback inline error if moving a Garmin sync run to trash fails without a server message.",
+  "context": "Journal window. Fallback inline error if moving a Garmin sync run to trash fails without a server message.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cf3af1a8367601f0e6fdd02eb27499ef48fac3dc8de4b38362072fa0326b6f4e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

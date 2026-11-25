@@ -1,0 +1,16 @@
+{
+  "description": "Dialog explanation clarifying that moving a Garmin sync run to trash affects only rows written by that run alone.",
+  "context": "Journal window. Dialog explanation clarifying that moving a Garmin sync run to trash affects only rows written by that run alone.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c01b2c520fc6becd89a7ffa197aba742ed6349b9cf8821ef37e4751b078e9af1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Settings Garmin key guide step 3. The key_prefix argument is replaced with a code element showing the prefix.",
+  "context": "Journal window. Settings Garmin key guide step 3. The key_prefix argument is replaced with a code element showing the prefix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "key_prefix",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d858b00ed24f70d1975a94af1d31c117147533efb421b57bb62c36e2dfc093c1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

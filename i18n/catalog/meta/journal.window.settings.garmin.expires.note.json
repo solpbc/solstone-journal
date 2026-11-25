@@ -1,0 +1,23 @@
+{
+  "description": "Helper text under the optional Garmin key expiration date input.",
+  "context": "Journal window. Helper text under the optional Garmin key expiration date input.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "067c5de3194b5c03b03696df3747a957bdd567f83da6e263c7f28b870f1bc456",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin_connect",
+      "kind": "accepted-input",
+      "value": "Garmin Connect"
+    }
+  ]
+}

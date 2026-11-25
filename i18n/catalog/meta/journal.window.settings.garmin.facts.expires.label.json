@@ -1,0 +1,16 @@
+{
+  "description": "Fact row label showing the owner-entered Garmin Personal API key expiration date.",
+  "context": "Journal window. Fact row label showing the owner-entered Garmin Personal API key expiration date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bdee6a76316b954305604fe3ea5d30cb4bedfc2ca57cdb83bb0899b8d745e05a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

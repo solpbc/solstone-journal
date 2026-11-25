@@ -454,6 +454,9 @@ test('try again replaces the error with the device it gets back', async () => {
       if (url === '/app/settings/api/plaud' || url === '/app/settings/api/granola') {
         return { status: 200, json: async () => ({ connected: false, syncing: false }) };
       }
+      if (url === '/app/settings/api/garmin') {
+        return { status: 200, json: async () => ({ available: true, connected: false, syncing: false }) };
+      }
       clientAttempts += 1;
       if (clientAttempts === 1) return { status: 503, json: async () => ({ reason_code: 'authorization_ledger_unreadable' }) };
       return { status: 200, json: async () => ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]).body };
@@ -468,6 +471,7 @@ test('try again replaces the error with the device it gets back', async () => {
     '/app/network/api/clients',
     '/app/settings/api/plaud',
     '/app/settings/api/granola',
+    '/app/settings/api/garmin',
     '/app/network/api/clients',
   ]);
   assert.ok(calls.every((call) => call.method === 'GET'));
@@ -682,6 +686,12 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
           json: async () => ({ connected: false, enabled: false, syncing: false }),
         };
       }
+      if (url === '/app/settings/api/garmin') {
+        return {
+          status: 200,
+          json: async () => ({ available: true, connected: false, syncing: false }),
+        };
+      }
       granolaAttempts += 1;
       if (granolaAttempts === 1) return { status: 400, json: async () => ({ error: 'storage', code: 'storage' }) };
       return {
@@ -720,9 +730,88 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
     '/app/network/api/clients',
     '/app/settings/api/plaud',
     '/app/settings/api/granola',
+    '/app/settings/api/garmin',
     '/app/network/api/clients',
     '/app/settings/api/granola',
   ]);
+});
+
+test('Garmin sync row renders on desktop, isolates failures, shows attention/expiring links, and hides cleanly when unavailable on mobile', () => {
+  // Desktop unconfigured mentions Garmin alongside Plaud and Granola.
+  const desktopEmpty = render({
+    clients: ok([]),
+    plaud: { status: 200, body: { connected: false, syncing: false } },
+    granola: { status: 200, body: { connected: false, syncing: false } },
+    garmin: { status: 200, body: { available: true, connected: false, syncing: false } },
+  });
+  assert.strictEqual(
+    desktopEmpty.querySelector('.sources-syncs-empty').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.empty.hint.with.garmin'),
+  );
+
+  // Embedded mobile (available: false) omits Garmin cleanly and keeps the mobile hint.
+  const mobileHidden = render({
+    clients: ok([]),
+    plaud: { status: 200, body: { connected: false, syncing: false } },
+    granola: { status: 200, body: { connected: false, syncing: false } },
+    garmin: { status: 200, body: { available: false, connected: false, syncing: false } },
+  });
+  assert.strictEqual(
+    mobileHidden.querySelector('.sources-syncs-empty').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.empty.hint'),
+  );
+  assert.strictEqual(mobileHidden.querySelector('[data-sync="garmin"]'), null);
+
+  // Connected Garmin row with last_added, last_sync, and key_expiring_soon fallback.
+  const connected = render({
+    clients: ok([]),
+    plaud: { status: 200, body: { connected: false, syncing: false } },
+    granola: { status: 200, body: { connected: false, syncing: false } },
+    garmin: {
+      status: 200,
+      body: {
+        available: true,
+        connected: true,
+        syncing: false,
+        last_added: iso(NOW - 12 * MIN),
+        last_sync: iso(NOW - 2 * MIN),
+        attention: null,
+        attention_code: null,
+        key_expiring_soon: true,
+      },
+    },
+  });
+  const row = connected.querySelector('[data-sync="garmin"]');
+  assert.notStrictEqual(row, null);
+  assert.strictEqual(
+    row.querySelector('.sources-sync-name').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.provider.garmin'),
+  );
+  assert.strictEqual(
+    row.querySelector('.sources-sync-status').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.last.added', [['when', '12 min ago']]),
+  );
+  assert.strictEqual(
+    row.querySelector('.sources-sync-secondary').textContent,
+    globalThis.JournalI18n.render('journal.window.sources.syncs.last.checked', [['when', '2 min ago']]),
+  );
+  const expLink = row.querySelector('.sources-sync-attention-garmin');
+  assert.notStrictEqual(expLink, null);
+  assert.strictEqual(expLink.getAttribute('href'), '/app/settings/#sync');
+  assert.strictEqual(expLink.textContent, globalThis.JournalI18n.render('journal.window.sources.syncs.garmin.expiring'));
+
+  // Server attention overrides expiring fallback; endpoint error isolates to Garmin row only.
+  const failedGarmin = render({
+    clients: ok([]),
+    plaud: { status: 200, body: { connected: true, enabled: true, syncing: false, last_added: iso(NOW - 5 * MIN), last_sync: iso(NOW - 1 * MIN) } },
+    granola: { status: 200, body: { connected: false, syncing: false } },
+    garmin: { status: 503, body: null },
+  });
+  const rows = failedGarmin.querySelectorAll('.sources-sync-row');
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].getAttribute('data-sync'), 'plaud');
+  assert.strictEqual(rows[1].getAttribute('data-sync'), 'garmin');
+  assert.notStrictEqual(rows[1].querySelector('.sources-sync-unavailable-garmin'), null);
 });
 
 (async () => {

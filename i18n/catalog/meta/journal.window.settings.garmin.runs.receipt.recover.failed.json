@@ -1,0 +1,16 @@
+{
+  "description": "Inline error if recovering a Garmin sync run from the sync card receipt fails.",
+  "context": "Journal window. Inline error if recovering a Garmin sync run from the sync card receipt fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1dc2dc77248a5ff0935956173990b55853e1926e6b1abd63f8dc6111cda1fe3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Status line shown after connecting Garmin before the first sync run starts.",
+  "context": "Journal window. Status line shown after connecting Garmin before the first sync run starts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c7b9cdefd703afe93a8333d477bcef1bd94e67041c04f160a43cb28b5d4006b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Live status line during initial Garmin setup before the first days have landed.",
+  "context": "Journal window. Live status line during initial Garmin setup before the first days have landed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "825d913e377304f75b8ea9ca0dc766b2b10c9dbdf983ceea076e44eff3945082",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

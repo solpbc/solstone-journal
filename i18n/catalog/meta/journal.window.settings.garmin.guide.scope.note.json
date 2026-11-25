@@ -1,0 +1,23 @@
+{
+  "description": "Settings Garmin key guide honesty note naming metrics not in Personal API and raw FIT files not downloaded.",
+  "context": "Journal window. Settings Garmin key guide honesty note naming metrics not in Personal API and raw FIT files not downloaded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b6857c19003ee17ca9677362485790cdeb0badfa64eccec1fde18c15f2257632",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

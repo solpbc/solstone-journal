@@ -1,0 +1,23 @@
+{
+  "description": "Settings Garmin key guide step 2 for accepting terms, picking expiry, and creating the key.",
+  "context": "Journal window. Settings Garmin key guide step 2 for accepting terms, picking expiry, and creating the key.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e76355507a4b06f91531a6c459c4f465270eea9cdaeb44e17e2febfebfeaf79d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

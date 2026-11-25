@@ -1,0 +1,37 @@
+{
+  "description": "Summary shown in the Off state on the Garmin sync card when disconnected with kept days in the journal.",
+  "context": "Journal window. Summary shown in the Off state on the Garmin sync card when disconnected with kept days in the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "115fface47c8dc76cfdf7593125923b178dfa8bb721a8bcc729e552e9aa12ceb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Empty-state hint in the syncs section on desktop journals when Plaud, Granola and Garmin are all disconnected.",
+  "context": "Journal window. Empty-state hint in the syncs section on desktop journals when Plaud, Granola and Garmin are all disconnected.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "06fecb37475a0da1a2f1daf432225beb81643a62609ec221354f2d8348980feb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "plaud",
+      "kind": "accepted-input",
+      "value": "Plaud"
+    },
+    {
+      "name": "granola",
+      "kind": "accepted-input",
+      "value": "Granola"
+    },
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

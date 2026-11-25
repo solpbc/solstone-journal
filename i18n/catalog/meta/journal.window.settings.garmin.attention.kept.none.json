@@ -1,0 +1,16 @@
+{
+  "description": "Reassurance inside the Garmin attention callout when zero Garmin days are in the journal yet.",
+  "context": "Journal window. Reassurance inside the Garmin attention callout when zero Garmin days are in the journal yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "198ad333e26fb4adeae45cf027a5ade0f5ebdbe8e674b4edae7c57c54aa84c4a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

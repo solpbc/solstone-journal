@@ -143,6 +143,17 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.ok(!impRow.textContent.includes(C.returned));
   assert.deepStrictEqual(quals(bareRow), [api.removalImportedLabel('20261102')], 'no file name and an unknown source leave no empty qualifier');
   assert.ok(bareRow.textContent.includes('1 segment'));
+  answers['/app/settings/api/trash'] = {
+    erase_after_days: 7,
+    items: [imp('g1', { source: 'garmin', label: 'ignored-file', days: ['20261101', '20261105'], imported_day: '20261106' })],
+  };
+  await api.loadTrash();
+  const [garminRow] = byId.trashList.children;
+  assert.deepStrictEqual(
+    quals(garminRow),
+    [api.REMOVAL_SOURCE.garmin, api.TRASH_COPY.bodySpan({ first: '20261101', last: '20261105' }), api.removalImportedLabel('20261106')],
+    'a Garmin body sync run names Garmin and its day span instead of a filename',
+  );
   assert.strictEqual(api.trashKindMessage('recover', [imp('i')], 1), 'recovered 1 import.');
   assert.strictEqual(api.trashKindMessage('recover', [imp('i'), imp('j')], 2), 'recovered 2 imports.');
   assert.strictEqual(api.trashKindMessage('recover', [imp('i'), seg('a')], 2), 'recovered 2 things.');

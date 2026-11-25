@@ -1,0 +1,21 @@
+{
+  "description": "Metadata label on a Garmin sync run row showing the day the sync ran.",
+  "context": "Journal window. Metadata label on a Garmin sync run row showing the day the sync ran.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d20a4004bf72cc284d796d26f2eca42fcd6da959f490e6977acb283c41f029c8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link label in the Garmin sync run trash receipt opening Settings -> Trash.",
+  "context": "Journal window. Link label in the Garmin sync run trash receipt opening Settings -> Trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "15f8b00a2cffe3567597bcc8fd13d2173bfe7f5a7f844791091dd758ebd0edd2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

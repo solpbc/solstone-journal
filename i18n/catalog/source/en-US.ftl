@@ -22769,3 +22769,137 @@ journal.window.settings.garmin.run.deletefailed = your journal couldn't move tha
 journal.window.settings.garmin.run.deleteheld = that sync run couldn't be moved to the trash right now. try again when any check or removal finishes.
 
 journal.window.settings.garmin.run.invalidrequest = couldn't move that sync run to the trash. reload and try again.
+
+journal.window.settings.garmin.description = your { $garmin_connect } workouts, sleep, HRV, heart rate, { $body_battery }, stress, SpO2, weight, steps, hydration, cycle and nutrition logs come into your journal automatically with your own Personal API key.
+
+journal.window.settings.garmin.guide.intro = { $garmin } lets you create one active Personal API key per account. making a new key elsewhere stops the one here from working. { $garmin } shows the key once, and keys expire after 30, 90 or 180 days, or 1 year.
+
+journal.window.settings.garmin.guide.link.label = { $garmin_connect } Personal API settings
+
+journal.window.settings.garmin.guide.step.open = open { $link } and sign in to your { $garmin_connect } account.
+
+journal.window.settings.garmin.guide.step.create = accept { $garmin }'s Personal API terms, pick an expiration (up to 1 year), and create your key.
+
+journal.window.settings.garmin.guide.step.paste = copy the key right away, which starts with { $key_prefix }, and paste it below.
+
+journal.window.settings.garmin.guide.scope.note = { $garmin }'s Personal API doesn't include Training Readiness, Training Status or skin temperature, and your journal doesn't download raw FIT files, so those don't come into your journal.
+
+journal.window.settings.garmin.key.note = your journal keeps the key and talks to { $garmin_connect } directly.
+
+journal.window.settings.garmin.expires.label = expires on
+
+journal.window.settings.garmin.expires.note = if you enter the date you chose on { $garmin_connect }, your journal shows a notice here and in sources a week ahead. otherwise it still shows one during the last 24 hours.
+
+journal.window.settings.garmin.key.empty = paste your Personal API key from { $garmin_connect } first.
+
+journal.window.settings.garmin.key.save.failed = couldn't save the key. try again.
+
+journal.window.settings.garmin.replace.note = your { $garmin } data stays in your journal while you switch keys.
+
+journal.window.settings.garmin.disconnect.note = disconnecting stops new { $garmin } data from coming in. everything already in your journal stays.
+
+journal.window.settings.garmin.load.failed = couldn't load { $garmin }. reopen sync to try again.
+
+journal.window.settings.garmin.disconnect.failed = couldn't disconnect { $garmin }. try again.
+
+journal.window.settings.garmin.progress.starting = bringing in your { $garmin } data, starting with your most recent weeks.
+
+journal.window.settings.garmin.progress.queued = your journal will start bringing in your { $garmin } data shortly.
+
+journal.window.settings.garmin.progress.days =
+    { $quantity ->
+        [one] bringing in your { $garmin } data. { $days } day in your journal so far.
+       *[other] bringing in your { $garmin } data. { $days } days in your journal so far.
+    }
+
+journal.window.settings.garmin.progress.reached = bringing in earlier { $garmin } history, back to { $day }.
+
+journal.window.settings.garmin.progress.earlier = bringing in earlier { $garmin } history.
+
+journal.window.settings.garmin.facts.data.label = in your journal
+
+journal.window.settings.garmin.facts.data.none = none yet
+
+journal.window.settings.garmin.facts.days =
+    { $quantity ->
+        [one] { $days } day
+       *[other] { $days } days
+    }
+
+journal.window.settings.garmin.facts.workouts =
+    { $quantity ->
+        [one] { $workouts } workout
+       *[other] { $workouts } workouts
+    }
+
+journal.window.settings.garmin.facts.days.and.workouts = { $days_text }, { $workouts_text }
+
+journal.window.settings.garmin.facts.expires.label = key expires
+
+journal.window.settings.garmin.expiring.soon = your { $garmin } Personal API key expires soon. create a new key on { $link } and choose "use a new key" below before syncing pauses.
+
+journal.window.settings.garmin.expiring.on = your { $garmin } Personal API key expires on { $date }. create a new key on { $link } and choose "use a new key" below before syncing pauses.
+
+journal.window.settings.garmin.attention.kept.days =
+    { $quantity ->
+        [one] { $days } day of { $garmin } data is still in your journal.
+       *[other] { $days } days of { $garmin } data are still in your journal.
+    }
+
+journal.window.settings.garmin.attention.kept.none = nothing in your journal was changed.
+
+journal.window.settings.garmin.attention.key.hint = { $garmin } keys expire after 30, 90 or 180 days, or 1 year, or stop working if you create another key elsewhere because { $garmin } allows one active key per account.
+
+journal.window.settings.garmin.disconnected.days =
+    { $quantity ->
+        [one] disconnected. { $days } day of { $garmin } data stays in your journal. connect again to keep syncing; nothing comes in twice.
+       *[other] disconnected. { $days } days of { $garmin } data stay in your journal. connect again to keep syncing; nothing comes in twice.
+    }
+
+journal.window.settings.garmin.runs.summary =
+    { $quantity ->
+        [one] sync runs ({ $count })
+       *[other] sync runs ({ $count })
+    }
+
+journal.window.settings.garmin.runs.note = each row is one sync run that added or updated { $garmin } data. moving a run to trash removes only what that run alone brought in.
+
+journal.window.settings.garmin.runs.synced.on = synced { $day }
+
+journal.window.settings.garmin.runs.rows =
+    { $quantity ->
+        [one] { $count } record
+       *[other] { $count } records
+    }
+
+journal.window.settings.garmin.runs.move.to.trash = move to trash
+
+journal.window.settings.garmin.runs.modal.title = move this sync run to trash?
+
+journal.window.settings.garmin.runs.modal.scope = this moves to trash only what this sync run brought in on its own. anything another sync run or another source brought in stays in your journal.
+
+journal.window.settings.garmin.runs.modal.shared =
+    { $quantity ->
+        [one] { $count } day in this range also has data from another { $garmin } sync run; that other data stays.
+       *[other] { $count } days in this range also have data from another { $garmin } sync run; that other data stays.
+    }
+
+journal.window.settings.garmin.runs.modal.recovery = you can recover it from the trash in settings until it's erased. regular hourly checks won't bring those removed items back on their own.
+
+journal.window.settings.garmin.runs.receipt.moved = moved that { $garmin } sync run to trash.
+
+journal.window.settings.garmin.runs.receipt.moved.erases = moved that { $garmin } sync run to trash. it will erase on { $date } unless you recover it.
+
+journal.window.settings.garmin.runs.receipt.recovered = recovered that { $garmin } sync run.
+
+journal.window.settings.garmin.runs.receipt.recover.failed = couldn't recover that sync run here. open trash to try again.
+
+journal.window.settings.garmin.runs.receipt.failed = couldn't move that sync run to trash. try again.
+
+journal.window.settings.garmin.runs.open.trash = open trash
+
+journal.window.sources.syncs.provider.garmin = { $provider }
+
+journal.window.sources.syncs.empty.hint.with.garmin = { $plaud }, { $granola } and { $garmin } show up here once connected in settings.
+
+journal.window.sources.syncs.garmin.expiring = key expires soon

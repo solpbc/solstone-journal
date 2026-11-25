@@ -14486,9 +14486,90 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e706c616365686f6c646
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e706c616365686f6c6465722e796f75722e7072656665727265642e6e616d65 = your preferred name
 
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e617474656e74696f6e2e6b6570742e64617973 = { $i18nCategory ->
+    [one] { $days } day of { "Garmin" } data is still in your journal.
+   *[other] { $days } days of { "Garmin" } data are still in your journal.
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e617474656e74696f6e2e6b6570742e6e6f6e65 = nothing in your journal was changed.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e617474656e74696f6e2e6b65792e68696e74 = { "Garmin" } keys expire after 30, 90 or 180 days, or 1 year, or stop working if you create another key elsewhere because { "Garmin" } allows one active key per account.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6465736372697074696f6e = your { "Garmin Connect" } workouts, sleep, HRV, heart rate, { "Body Battery" }, stress, SpO2, weight, steps, hydration, cycle and nutrition logs come into your journal automatically with your own Personal API key.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e646973636f6e6e6563742e6661696c6564 = couldn't disconnect { "Garmin" }. try again.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e646973636f6e6e6563742e6e6f7465 = disconnecting stops new { "Garmin" } data from coming in. everything already in your journal stays.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e646973636f6e6e65637465642e64617973 = { $i18nCategory ->
+    [one] disconnected. { $days } day of { "Garmin" } data stays in your journal. connect again to keep syncing; nothing comes in twice.
+   *[other] disconnected. { $days } days of { "Garmin" } data stay in your journal. connect again to keep syncing; nothing comes in twice.
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e657870697265732e6c6162656c = expires on
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e657870697265732e6e6f7465 = if you enter the date you chose on { "Garmin Connect" }, your journal shows a notice here and in sources a week ahead. otherwise it still shows one during the last 24 hours.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6578706972696e672e6f6e = your { "Garmin" } Personal API key expires on { $date }. create a new key on { $link } and choose "use a new key" below before syncing pauses.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6578706972696e672e736f6f6e = your { "Garmin" } Personal API key expires soon. create a new key on { $link } and choose "use a new key" below before syncing pauses.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e646174612e6c6162656c = in your journal
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e646174612e6e6f6e65 = none yet
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e64617973 = { $i18nCategory ->
+    [one] { $days } day
+   *[other] { $days } days
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e646179732e616e642e776f726b6f757473 = { $days_text }, { $workouts_text }
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e657870697265732e6c6162656c = key expires
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e776f726b6f757473 = { $i18nCategory ->
+    [one] { $workouts } workout
+   *[other] { $workouts } workouts
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e696e74726f = { "Garmin" } lets you create one active Personal API key per account. making a new key elsewhere stops the one here from working. { "Garmin" } shows the key once, and keys expire after 30, 90 or 180 days, or 1 year.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e6c696e6b2e6c6162656c = { "Garmin Connect" } Personal API settings
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e73636f70652e6e6f7465 = { "Garmin" }'s Personal API doesn't include Training Readiness, Training Status or skin temperature, and your journal doesn't download raw FIT files, so those don't come into your journal.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e737465702e637265617465 = accept { "Garmin" }'s Personal API terms, pick an expiration (up to 1 year), and create your key.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e737465702e6f70656e = open { $link } and sign in to your { "Garmin Connect" } account.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e737465702e7061737465 = copy the key right away, which starts with { $key_prefix }, and paste it below.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6b65792e656d707479 = paste your Personal API key from { "Garmin Connect" } first.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6b65792e6e6f7465 = your journal keeps the key and talks to { "Garmin Connect" } directly.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6b65792e736176652e6661696c6564 = couldn't save the key. try again.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6c6f61642e6661696c6564 = couldn't load { "Garmin" }. reopen sync to try again.
+
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70617374652e616363657373 = { "Garmin" } turned that key away. check your Personal API key in { "Garmin Connect" }, or create a new one.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70617374652e6b6579 = { "Garmin" } didn't accept that key. copy it again from { "Garmin Connect" }, or create a new one.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e64617973 = { $i18nCategory ->
+    [one] bringing in your { "Garmin" } data. { $days } day in your journal so far.
+   *[other] bringing in your { "Garmin" } data. { $days } days in your journal so far.
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e6561726c696572 = bringing in earlier { "Garmin" } history.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e717565756564 = your journal will start bringing in your { "Garmin" } data shortly.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e72656163686564 = bringing in earlier { "Garmin" } history, back to { $day }.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e7374617274696e67 = bringing in your { "Garmin" } data, starting with your most recent weeks.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e7265706c6163652e6e6f7465 = your { "Garmin" } data stays in your journal while you switch keys.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e726573706f6e73652e616363657373 = { "Garmin" } turned this key away. check your key in { "Garmin Connect" }, or add a new key to carry on.
 
@@ -14525,6 +14606,45 @@ m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e2e64656c657
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e2e696e76616c696472657175657374 = couldn't move that sync run to the trash. reload and try again.
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e2e6e6f74666f756e64 = that { "Garmin" } sync run isn't in your journal.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e7265636f76657279 = you can recover it from the trash in settings until it's erased. regular hourly checks won't bring those removed items back on their own.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e73636f7065 = this moves to trash only what this sync run brought in on its own. anything another sync run or another source brought in stays in your journal.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e736861726564 = { $i18nCategory ->
+    [one] { $count } day in this range also has data from another { "Garmin" } sync run; that other data stays.
+   *[other] { $count } days in this range also have data from another { "Garmin" } sync run; that other data stays.
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e7469746c65 = move this sync run to trash?
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f76652e746f2e7472617368 = move to trash
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6e6f7465 = each row is one sync run that added or updated { "Garmin" } data. moving a run to trash removes only what that run alone brought in.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6f70656e2e7472617368 = open trash
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e6661696c6564 = couldn't move that sync run to trash. try again.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e6d6f766564 = moved that { "Garmin" } sync run to trash.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e6d6f7665642e657261736573 = moved that { "Garmin" } sync run to trash. it will erase on { $date } unless you recover it.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e7265636f7665722e6661696c6564 = couldn't recover that sync run here. open trash to try again.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e7265636f7665726564 = recovered that { "Garmin" } sync run.
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726f7773 = { $i18nCategory ->
+    [one] { $count } record
+   *[other] { $count } records
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e73756d6d617279 = { $i18nCategory ->
+    [one] sync runs ({ $count })
+   *[other] sync runs ({ $count })
+}
+
+m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e73796e6365642e6f6e = synced { $day }
 
 m6a6f75726e616c2e77696e646f772e73657474696e67732e6772616e6f6c612e617474656e74696f6e2e6d656574696e672e636f756e74 = { $i18nCategory ->
     [one] the 1 meeting already in your journal stays.
@@ -18579,6 +18699,10 @@ m6a6f75726e616c2e77696e646f772e736f75726365732e73776974636865722e7461622e696d706
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e656d7074792e68696e74 = { "Plaud" } and { "Granola" } show up here once connected in settings.
 
+m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e656d7074792e68696e742e776974682e6761726d696e = { "Plaud" }, { "Granola" } and { "Garmin" } show up here once connected in settings.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e6761726d696e2e6578706972696e67 = key expires soon
+
 m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e68656164696e67 = syncs
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e6c6173742e6164646564 = last added { $when }
@@ -18586,6 +18710,8 @@ m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e6c6173742e6164646564 
 m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e6c6173742e636865636b6564 = last checked { $when }
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e6d616e616765 = manage syncs in settings
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e70726f76696465722e6761726d696e = { "Garmin" }
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e70726f76696465722e6772616e6f6c61 = { "Granola" }
 

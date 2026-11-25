@@ -24,11 +24,14 @@
     syncsHeading: global.JournalI18n.render('journal.window.sources.syncs.heading'),
     syncsManage: global.JournalI18n.render('journal.window.sources.syncs.manage'),
     syncsEmpty: global.JournalI18n.render('journal.window.sources.syncs.empty.hint'),
+    syncsEmptyWithGarmin: global.JournalI18n.render('journal.window.sources.syncs.empty.hint.with.garmin'),
     plaud: global.JournalI18n.render('journal.window.sources.syncs.provider.plaud'),
     granola: global.JournalI18n.render('journal.window.sources.syncs.provider.granola'),
+    garmin: global.JournalI18n.render('journal.window.sources.syncs.provider.garmin'),
     syncSyncing: global.JournalI18n.render('journal.window.sources.syncs.state.syncing'),
     syncPaused: global.JournalI18n.render('journal.window.sources.syncs.state.paused'),
     syncUnavailable: global.JournalI18n.render('journal.window.sources.syncs.unavailable'),
+    garminExpiring: global.JournalI18n.render('journal.window.sources.syncs.garmin.expiring'),
   };
 
   const SOURCES_HREF = '/app/sources/';
@@ -38,8 +41,10 @@
   const CLIENTS = '/app/network/api/clients';
   const PLAUD = '/app/settings/api/plaud';
   const GRANOLA = '/app/settings/api/granola';
+  const GARMIN = '/app/settings/api/garmin';
 
   const DEFAULT_SYNC = { status: 200, body: { connected: false, syncing: false } };
+  const DEFAULT_GARMIN_SYNC = { status: 200, body: { available: false, connected: false, syncing: false } };
 
   const GRANOLA_ATTENTION_KEYS = {
     invalid_key: 'journal.window.settings.granola.response.invalidkey',
@@ -216,6 +221,10 @@
     });
   }
 
+  function garminHidden(entry) {
+    return Boolean(entry && entry.status === 200 && entry.body && typeof entry.body === 'object' && entry.body.available === false);
+  }
+
   function syncFailed(entry) {
     if (!entry || entry.status !== 200) return true;
     if (!entry.body || typeof entry.body !== 'object') return true;
@@ -230,7 +239,10 @@
         return global.JournalI18n.render(GRANOLA_ATTENTION_KEYS[code]);
       }
     }
-    return typeof data.attention === 'string' ? data.attention.trim() : '';
+    const attention = typeof data.attention === 'string' ? data.attention.trim() : '';
+    if (attention !== '') return attention;
+    if (id === 'garmin' && data.key_expiring_soon === true) return COPY.garminExpiring;
+    return '';
   }
 
   function unpackPayload(payload) {
@@ -239,12 +251,14 @@
         clients: payload.clients,
         plaud: payload.plaud || DEFAULT_SYNC,
         granola: payload.granola || DEFAULT_SYNC,
+        garmin: payload.garmin || DEFAULT_GARMIN_SYNC,
       };
     }
     return {
       clients: payload || { status: 0, body: null },
       plaud: (payload && payload.plaud) || DEFAULT_SYNC,
       granola: (payload && payload.granola) || DEFAULT_SYNC,
+      garmin: (payload && payload.garmin) || DEFAULT_GARMIN_SYNC,
     };
   }
 
@@ -375,7 +389,7 @@
     return band;
   }
 
-  function paintSyncs(doc, plaudEntry, granolaEntry, opts) {
+  function paintSyncs(doc, plaudEntry, granolaEntry, garminEntry, opts) {
     const section = el(doc, 'section', 'sources-syncs');
     const head = el(doc, 'div', 'sources-syncs-head');
     head.appendChild(text(doc, 'h2', 'sources-syncs-title', COPY.syncsHeading));
@@ -384,19 +398,26 @@
 
     const plaudFailed = syncFailed(plaudEntry);
     const granolaFailed = syncFailed(granolaEntry);
+    const garminAvailable = !garminHidden(garminEntry);
+    const garminFailed = garminAvailable && syncFailed(garminEntry);
     const plaudConnected = !plaudFailed && plaudEntry.body.connected === true;
     const granolaConnected = !granolaFailed && granolaEntry.body.connected === true;
+    const garminConnected = garminAvailable && !garminFailed && garminEntry.body.connected === true;
 
-    if (!plaudFailed && !granolaFailed && !plaudConnected && !granolaConnected) {
-      section.appendChild(text(doc, 'p', 'sources-syncs-empty', COPY.syncsEmpty));
+    if (!plaudFailed && !granolaFailed && !garminFailed && !plaudConnected && !granolaConnected && !garminConnected) {
+      section.appendChild(text(doc, 'p', 'sources-syncs-empty', garminAvailable ? COPY.syncsEmptyWithGarmin : COPY.syncsEmpty));
       return section;
     }
 
     const list = el(doc, 'ul', 'sources-sync-list');
-    [
+    const providers = [
       ['plaud', COPY.plaud, plaudEntry, plaudFailed, plaudConnected],
       ['granola', COPY.granola, granolaEntry, granolaFailed, granolaConnected],
-    ].forEach((spec) => {
+    ];
+    if (garminAvailable) {
+      providers.push(['garmin', COPY.garmin, garminEntry, garminFailed, garminConnected]);
+    }
+    providers.forEach((spec) => {
       const id = spec[0];
       const providerName = spec[1];
       const entry = spec[2];
@@ -468,8 +489,10 @@
     'sources-syncs-manage',
     'sources-sync-unavailable-plaud',
     'sources-sync-unavailable-granola',
+    'sources-sync-unavailable-garmin',
     'sources-sync-attention-plaud',
     'sources-sync-attention-granola',
+    'sources-sync-attention-garmin',
   ];
 
   function focusedControl(doc, root) {
@@ -500,7 +523,7 @@
     const hasPairedDevices = clientsOk && clientsEntry.body.clients.length > 0;
     root.appendChild(paintSwitcher(doc, hasPairedDevices));
     root.appendChild(paintDevices(doc, root, clientsEntry, opts));
-    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, opts));
+    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, unpacked.garmin, opts));
   }
 
   // The state a drawn payload reports as the view's readiness.
@@ -532,21 +555,25 @@
     const prev = isRetry ? opts.last : null;
     const needPlaud = !prev || !prev.plaud || syncFailed(prev.plaud);
     const needGranola = !prev || !prev.granola || syncFailed(prev.granola);
+    const needGarmin = !prev || !prev.garmin || (!garminHidden(prev.garmin) && syncFailed(prev.garmin));
     const results = await Promise.all([
       fetchEndpoint(opts.fetch, CLIENTS, ended),
       needPlaud ? fetchEndpoint(opts.fetch, PLAUD, ended) : Promise.resolve(prev.plaud),
       needGranola ? fetchEndpoint(opts.fetch, GRANOLA, ended) : Promise.resolve(prev.granola),
+      needGarmin ? fetchEndpoint(opts.fetch, GARMIN, ended) : Promise.resolve(prev.garmin),
     ]);
-    if (ended() || !results[0] || !results[1] || !results[2]) return null;
+    if (ended() || !results[0] || !results[1] || !results[2] || !results[3]) return null;
     const clients = results[0];
     const plaud = results[1];
     const granola = results[2];
+    const garmin = results[3];
     const payload = {
       status: clients.status,
       body: clients.body,
       clients: clients,
       plaud: plaud,
       granola: granola,
+      garmin: garmin,
     };
     opts.last = payload;
     render(doc, root, payload, opts);

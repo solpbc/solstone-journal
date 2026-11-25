@@ -1,0 +1,16 @@
+{
+  "description": "Fact row value when Garmin is connected but no days or workouts have landed yet.",
+  "context": "Journal window. Fact row value when Garmin is connected but no days or workouts have landed yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c65034e558adc5b94a86bc26bf1f2ea13351c1c268d386b71c675375d665db17",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

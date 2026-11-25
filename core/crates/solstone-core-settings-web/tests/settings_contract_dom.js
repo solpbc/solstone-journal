@@ -566,6 +566,8 @@ function journal(overrides = {}) {
     '/app/settings/api/sync': { plaud: { available: false, enabled: false } },
     '/app/settings/api/plaud': { connected: false, account_label: null, enabled: false, syncing: false, recordings: 0, last_sync: null, last_added: null, attention: null, attention_code: null },
     '/app/settings/api/granola': { configured: false, syncing: false },
+    '/app/settings/api/garmin': { available: true, connected: false, syncing: false, key_expires_on: null, key_expiring_soon: false, last_sync: null, last_added: null, attention: null, attention_code: null, days_covered: 0, workouts: 0, backfill: { complete: true, reached_day: null }, runs: [] },
+    '/app/settings/api/garmin/body-facet': { offer: { state: 'declined', facet: null }, facets: [], copy: {} },
     '/app/settings/api/storage/config': { retention: { raw_media: 'keep', raw_media_days: null, keep_empty_audio: false, per_stream: {}, journal_logs: { enabled: true, days: 30 } }, streams: [] },
     '/app/settings/api/storage': { summary: { raw_media_human: '0 B', derived_human: '0 B', total_segments: 0, segments_with_raw: 0, segments_purged: 0 }, warnings: [] },
     '/app/settings/api/storage/removals': { entries: [], total: 0 },
@@ -1935,6 +1937,210 @@ module.exports = async function settingsContractCases(crateDir) {
     await settle();
     assert.ok(mutationsUnder(card, moved) > 0, 'a change is drawn');
     assert.ok(p.doc.activeElement === disconnect, `and focus stays on the same node: ${at(p)}`);
+  });
+
+  // ---- Garmin Connect
+
+  const GARMIN_ON = {
+    available: true,
+    connected: true,
+    syncing: false,
+    key_expires_on: '2027-02-22',
+    key_expiring_soon: false,
+    last_sync: '2026-11-24T17:00:00Z',
+    last_added: '2026-11-24T16:30:00Z',
+    attention: null,
+    attention_code: null,
+    days_covered: 42,
+    workouts: 18,
+    backfill: { complete: true, reached_day: '2025-11-24' },
+    runs: [
+      { id: '20261124_170000', imported_at: '2026-11-24T17:00:00Z', days: ['20261117', '20261124'], days_count: 8, rows: 312 },
+    ],
+  };
+
+  async function garminPage(start = {}, opts = {}) {
+    let state = {
+      available: true,
+      connected: false,
+      syncing: false,
+      key_expires_on: null,
+      key_expiring_soon: false,
+      last_sync: null,
+      last_added: null,
+      attention: null,
+      attention_code: null,
+      days_covered: 0,
+      workouts: 0,
+      backfill: { complete: true, reached_day: null },
+      runs: [],
+      ...start,
+    };
+    let facetState = opts.facetOffer || { offer: { state: 'declined', facet: null }, facets: [], copy: {} };
+    let lastPostBody = null;
+    let lastFacetBody = null;
+    let lastTrashRun = null;
+    let lastRecoverBody = null;
+    const base = journal();
+    const answers = (url, fetchOpts) => {
+      const u = new URL(url, ORIGIN);
+      const method = String(fetchOpts?.method || 'GET').toUpperCase();
+      if (u.pathname === '/app/settings/api/garmin') {
+        if (method === 'POST') {
+          lastPostBody = fetchOpts?.body ? JSON.parse(fetchOpts.body) : null;
+          state = { ...state, connected: true, key_expires_on: lastPostBody?.key_expires_on || null, attention: null, attention_code: null };
+          return { success: true };
+        }
+        if (method === 'DELETE') {
+          state = { ...state, connected: false, syncing: false, key_expires_on: null, key_expiring_soon: false, attention: null, attention_code: null };
+          return { success: true };
+        }
+        return state;
+      }
+      if (u.pathname === '/app/settings/api/garmin/sync' && method === 'POST') {
+        state = { ...state, syncing: true };
+        return { success: true };
+      }
+      if (u.pathname === '/app/settings/api/garmin/body-facet') {
+        if (method === 'POST') {
+          lastFacetBody = fetchOpts?.body ? JSON.parse(fetchOpts.body) : null;
+          facetState = {
+            ...facetState,
+            offer: lastFacetBody?.answer === 'yes' ? { state: 'chosen', facet: 'body' } : { state: 'declined', facet: null },
+          };
+          return facetState;
+        }
+        return facetState;
+      }
+      if (u.pathname === '/app/settings/api/garmin/runs/20261124_170000/delete' && method === 'GET') {
+        return { id: '20261124_170000', source: 'garmin', imported_at: '2026-11-24T17:00:00Z', segments: 8, days: ['20261117', '20261124'], shared_days: 2, bytes: 48120, deletes_here: true, waiting: 0 };
+      }
+      if (u.pathname === '/app/settings/api/garmin/runs/20261124_170000' && method === 'DELETE') {
+        lastTrashRun = fetchOpts?.body ? JSON.parse(fetchOpts.body) : null;
+        state = { ...state, runs: state.runs.filter(r => r.id !== '20261124_170000') };
+        return { success: true, trash: { id: 'trash-garmin-1', erase_at: '2026-12-24T17:00:00Z' }, search: 'ok' };
+      }
+      if (u.pathname === '/app/settings/api/trash/recover' && method === 'POST') {
+        lastRecoverBody = fetchOpts?.body ? JSON.parse(fetchOpts.body) : null;
+        state = { ...state, runs: GARMIN_ON.runs.slice() };
+        return { done: lastRecoverBody?.ids || [], failed: [] };
+      }
+      return base(url, fetchOpts);
+    };
+    const p = await boot(env, '/app/settings/#sync', { answers });
+    p.garmin = (next) => { state = { ...state, ...next }; };
+    p.lastPostBody = () => lastPostBody;
+    p.lastFacetBody = () => lastFacetBody;
+    p.lastTrashRun = () => lastTrashRun;
+    p.lastRecoverBody = () => lastRecoverBody;
+    return p;
+  }
+
+  await test('Garmin hides cleanly on embedded mobile journals (available: false) without flashing or reading body-facet', async () => {
+    const p = await garminPage({ available: false, connected: false });
+    assert.ok(p.byId('garminSyncCard').hidden, 'Garmin card stays hidden when unavailable on mobile');
+    assert.strictEqual(p.reads('/app/settings/api/garmin/body-facet').length, 0, 'never asks body-facet when unavailable');
+  });
+
+  await test('Garmin connect sends key + optional key_expires_on, holds focus busy, rejects double submit, and lands on check now', async () => {
+    const p = await garminPage();
+    assert.ok(!p.byId('garminSyncCard').hidden, 'card is shown on desktop');
+    assert.strictEqual(p.byId('garminState').dataset.state, 'ready');
+    const held = holdGranola(p, 'POST', '/app/settings/api/garmin');
+    const key = p.byId('garminKey');
+    const exp = p.byId('garminExpiresOn');
+    key.value = 'GCDC_test_key_123';
+    exp.value = '2027-02-22';
+    const connect = p.byId('garminConnect');
+    connect.focus();
+    p.press(connect);
+    await settle();
+    assert.ok(p.doc.activeElement === connect && busyNotDisabled(connect), `busy and focused: ${at(p)}`);
+    p.press(connect);
+    p.key(key, 'Enter');
+    await settle();
+    assert.strictEqual(granolaWrites(p, 'POST', '/app/settings/api/garmin'), 1, 'single POST while busy');
+    p.garmin({ connected: true, key_expires_on: '2027-02-22' });
+    held.release({ success: true });
+    await settle();
+    assert.strictEqual(p.byId('garminKey').value, '', 'key field cleared after connect');
+    assert.strictEqual(p.byId('garminExpiresOn').value, '', 'expiry field cleared after connect');
+    assert.strictEqual(at(p), 'BUTTON#garminCheck', 'connected controls took the key form\'s place');
+  });
+
+  await test('Garmin attention states: key fault auto-opens form and hides check now; key_expiring keeps check now with calm notice', async () => {
+    const deadKey = await garminPage({ ...GARMIN_ON, attention: 'key expired', attention_code: 'key' });
+    assert.strictEqual(deadKey.byId('garminState').dataset.state, 'attention');
+    assert.ok(!deadKey.byId('garminAttention').hidden, 'attention box shown');
+    assert.ok(!deadKey.byId('garminAttentionHint').hidden, 'single-key / expiry hint shown');
+    assert.ok(!deadKey.byId('garminKeyForm').hidden, 'key form opens automatically for key fault');
+    assert.ok(deadKey.byId('garminCheck').hidden, 'check now hidden while key is dead');
+    assert.ok(!deadKey.byId('garminDisconnect').hidden, 'disconnect stays available');
+
+    const expiring = await garminPage({ ...GARMIN_ON, attention: 'key expires soon', attention_code: 'key_expiring', key_expiring_soon: true });
+    assert.strictEqual(expiring.byId('garminState').dataset.state, 'attention');
+    assert.ok(expiring.byId('garminAttention').hidden, 'no duplicate fault box on pre-expiry');
+    assert.ok(!expiring.byId('garminExpiring').hidden, 'calm pre-expiry notice shown');
+    assert.ok(expiring.byId('garminKeyForm').hidden, 'key form stays closed until owner chooses use a new key');
+    assert.ok(!expiring.byId('garminCheck').hidden, 'check now remains available while key is still valid');
+  });
+
+  await test('Garmin first-connect body_facet offer asks once, posts answer with offer, hides, and lands focus cleanly', async () => {
+    const offer = {
+      offer: { state: 'ask_make_body', facet: 'body' },
+      facets: [{ name: 'work', title: 'Work' }],
+      copy: { heading: 'facet', ask_make_body: 'make a body facet?', no_means: 'stays in body app', yes: 'yes', no: 'no' },
+    };
+    const p = await garminPage(GARMIN_ON, { facetOffer: offer });
+    assert.ok(!p.byId('garminFacetOffer').hidden, 'body facet offer is shown when unset');
+    const yesBtn = p.byId('garminFacetYes');
+    yesBtn.focus();
+    p.press(yesBtn);
+    await settle();
+    assert.deepStrictEqual(p.lastFacetBody(), { answer: 'yes', offer: { state: 'ask_make_body', facet: 'body' } });
+    assert.ok(p.byId('garminFacetOffer').hidden, 'offer hides after answer');
+    assert.strictEqual(at(p), 'BUTTON#garminCheck', 'focus lands cleanly on check now');
+  });
+
+  await test('Garmin per-run Trash opens in-page modal, loads preview, trashes chosen run only, and recovers inline', async () => {
+    const p = await garminPage(GARMIN_ON);
+    assert.ok(!p.byId('garminRuns').hidden, 'sync runs disclosure shown');
+    const trashBtn = p.byId('garminRunsList').querySelector('button[data-garmin-trash-run="20261124_170000"]');
+    assert.ok(trashBtn !== null, 'run move-to-trash button present');
+    trashBtn.focus();
+    p.press(trashBtn);
+    await settle();
+    const modal = p.byId('garminRunTrashModal');
+    assert.strictEqual(modal.style.display, 'block', 'in-page modal opened');
+    assert.ok(p.reads('/app/settings/api/garmin/runs/20261124_170000/delete').length === 1, 'async delete preview fetched');
+    p.press(p.byId('garminRunTrashConfirm'));
+    await settle();
+    assert.deepStrictEqual(p.lastTrashRun(), { erase: false, backups: false }, 'reversible per-run trash sent');
+    assert.ok(p.byId('garminRuns').hidden, 'trashed run removed from list');
+    assert.ok(!p.byId('garminRunReceipt').hidden, 'inline receipt shown');
+    const recoverBtn = p.byId('garminRunReceiptActions').querySelector('button');
+    assert.ok(recoverBtn !== null, 'inline recover button shown');
+    p.press(recoverBtn);
+    await settle();
+    assert.deepStrictEqual(p.lastRecoverBody(), { ids: ['trash-garmin-1'] }, 'inline recover posts to /app/settings/api/trash/recover');
+    assert.ok(!p.byId('garminRuns').hidden, 'recovered run returns to list');
+  });
+
+  await test('Garmin disconnect keeps data in Off state and polling writes zero mutations when unchanged', async () => {
+    const p = await garminPage({ ...GARMIN_ON, syncing: true });
+    const card = p.byId('garminSyncCard');
+    const disconnect = p.byId('garminDisconnect');
+    disconnect.focus();
+    const from = mutationMark();
+    p.clock.advance(2000);
+    await settle();
+    assert.strictEqual(mutationsUnder(card, from), 0, `no-op poll writes nothing: ${mutationsSeen(card, from)}`);
+    assert.ok(p.doc.activeElement === disconnect, `focus stays on same node: ${at(p)}`);
+    p.press(disconnect);
+    await settle();
+    assert.strictEqual(p.byId('garminState').dataset.state, 'off');
+    assert.ok(!p.byId('garminOffKept').hidden, 'kept data note shown in Off state');
+    assert.strictEqual(at(p), 'P#garminOffKept', 'disconnect lands on kept summary');
   });
 
   // ---- Plaud OAuth sign-in via shared window.solstoneOAuthBroker, card states, manual check & disconnect

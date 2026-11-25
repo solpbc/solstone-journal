@@ -1,0 +1,23 @@
+{
+  "description": "Inline error shown when the Garmin sync status endpoint fails to load.",
+  "context": "Journal window. Inline error shown when the Garmin sync status endpoint fails to load.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74247bed72793e5252c8733dd0d7779ad3379032fb4427a1d7415b291fe5eaee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

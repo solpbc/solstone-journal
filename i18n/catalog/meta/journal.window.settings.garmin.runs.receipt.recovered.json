@@ -1,0 +1,23 @@
+{
+  "description": "Inline confirmation after recovering a trashed Garmin sync run from the sync card receipt.",
+  "context": "Journal window. Inline confirmation after recovering a trashed Garmin sync run from the sync card receipt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf51a3c98bdd8be80f3745cfacff00719401a50eefcee4b62d16d77d8f12b497",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

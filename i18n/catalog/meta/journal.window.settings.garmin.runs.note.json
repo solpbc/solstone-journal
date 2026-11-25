@@ -1,0 +1,23 @@
+{
+  "description": "Explanatory note inside the Garmin sync runs disclosure clarifying per-run scope.",
+  "context": "Journal window. Explanatory note inside the Garmin sync runs disclosure clarifying per-run scope.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9cf0720d7de7703862625240ede4e4a2e567354c9fb5f65e903ba99b7e0ba275",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

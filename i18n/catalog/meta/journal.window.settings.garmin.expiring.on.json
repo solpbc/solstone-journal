@@ -1,0 +1,32 @@
+{
+  "description": "Calm pre-expiry notice on the Garmin sync card showing the expiration date and link to Garmin Connect.",
+  "context": "Journal window. Calm pre-expiry notice on the Garmin sync card showing the expiration date and link to Garmin Connect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "date",
+      "type": "string"
+    },
+    {
+      "name": "link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5dd01feb2002030ef13999cf4925628f96e53a588463075a8b14a498f15fc209",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

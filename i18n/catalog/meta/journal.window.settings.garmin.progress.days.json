@@ -1,0 +1,37 @@
+{
+  "description": "Live progress line during initial Garmin backfill showing how many days have landed so far.",
+  "context": "Journal window. Live progress line during initial Garmin backfill showing how many days have landed so far.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "43931a8e2da3c67d8453a2ae3a689b9cb6776bfc8a205b71c36f04fa3db22844",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Calm status line while ongoing background backfill walks back without a reached day yet.",
+  "context": "Journal window. Calm status line while ongoing background backfill walks back without a reached day yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "864afa7c179242fd8835cb47eb257952cb0087f9a601e836be417f350c4fa79a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

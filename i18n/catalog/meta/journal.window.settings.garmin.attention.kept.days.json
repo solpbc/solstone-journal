@@ -1,0 +1,37 @@
+{
+  "description": "Reassurance inside the Garmin attention callout stating how many days of Garmin data remain in the journal.",
+  "context": "Journal window. Reassurance inside the Garmin attention callout stating how many days of Garmin data remain in the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "53033e269e7c975d9ab272a5ab90811336b5243ed6a736db6e407d1a4f71a401",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

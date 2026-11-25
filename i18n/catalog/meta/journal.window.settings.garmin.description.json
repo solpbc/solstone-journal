@@ -1,0 +1,28 @@
+{
+  "description": "Settings Garmin sync card description naming the Personal API categories brought into the journal.",
+  "context": "Journal window. Settings Garmin sync card description naming the Personal API categories brought into the journal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "08e6ddbaf33a22df199b263f9270d708e0cb4847183b5e861e70cf9b3728abdc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin_connect",
+      "kind": "accepted-input",
+      "value": "Garmin Connect"
+    },
+    {
+      "name": "body_battery",
+      "kind": "accepted-input",
+      "value": "Body Battery"
+    }
+  ]
+}

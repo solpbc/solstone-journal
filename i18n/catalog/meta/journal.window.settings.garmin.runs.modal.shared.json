@@ -1,0 +1,37 @@
+{
+  "description": "Dialog note shown when the delete preview reports overlapping days with another Garmin sync run.",
+  "context": "Journal window. Dialog note shown when the delete preview reports overlapping days with another Garmin sync run.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "9a8144b9ec19292a029f8ebaa9571b9add32018220f1dc31430bebfbebb80f16",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

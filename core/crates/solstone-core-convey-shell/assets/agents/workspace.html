@@ -1018,7 +1018,10 @@
       const precisionGroup = `<div id="places-precision-field" role="radiogroup" aria-label="${window.JournalI18n.renderHtml('journal.window.agents.permission.places.precision.heading')}" style="padding-left:26px" class="${cats.includes('places') ? '' : 'hidden'}"><small class="meta">${window.JournalI18n.renderHtml('journal.window.agents.permission.places.precision.heading')}</small>${precisionRadios}</div>`;
       const cells = [];
       for (const {word, label, description, option_of} of kinds) {
-        let html = `<label class="check"${option_of ? ' style="padding-left:26px"' : ''}><input type="checkbox" name="category" value="${esc(word)}"${cats.includes(word) ? ' checked' : ''}><span><strong>${esc(label)}</strong><small class="meta">${esc(description)}</small></span></label>`;
+        const parentOn = !option_of || cats.includes(option_of);
+        const optionAttr = option_of ? ` data-option-of="${esc(option_of)}" style="padding-left:26px"` : '';
+        const optionClass = option_of && !parentOn ? 'check hidden' : 'check';
+        let html = `<label class="${optionClass}"${optionAttr}><input type="checkbox" name="category" value="${esc(word)}"${cats.includes(word) ? ' checked' : ''}${parentOn ? '' : ' disabled'}><span><strong>${esc(label)}</strong><small class="meta">${esc(description)}</small></span></label>`;
         if (word === 'places') html += precisionGroup;
         if (option_of && cells.length && cells[cells.length - 1].word === option_of) cells[cells.length - 1].html += html;
         else cells.push({word, html});
@@ -1523,6 +1526,25 @@
         placesBox.addEventListener('change', syncPlaces);
         syncPlaces();
       }
+      const optionRows = [...(view.querySelectorAll?.('label[data-option-of]') || [])];
+      if (optionRows.length) {
+        const parents = new Set(optionRows.map(row => row.getAttribute('data-option-of')).filter(Boolean));
+        for (const parentWord of parents) {
+          const parentBox = view.querySelector?.(`input[name=category][value=${parentWord}]`);
+          if (!parentBox) continue;
+          const children = optionRows.filter(row => row.getAttribute('data-option-of') === parentWord);
+          const syncOptions = () => {
+            const on = Boolean(parentBox.checked);
+            for (const row of children) {
+              row.classList?.toggle?.('hidden', !on);
+              const box = row.querySelector?.('input[name=category]');
+              if (box) box.disabled = !on;
+            }
+          };
+          parentBox.addEventListener('change', syncOptions);
+          syncOptions();
+        }
+      }
       // A phone's late blur as a select's menu closes goes back to the select.
       if (scope) scope.addEventListener('change', () => window.SolFocus.keepAfterPick(scope, ctx));
       if (route.name === 'activity') {
@@ -1725,7 +1747,7 @@
         }
         else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
         else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
-        else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); const places_precision = categories.includes('places') ? (document.querySelectorAll('input[name=places_precision]:checked')[0]?.value || 'full') : undefined; const payload = places_precision ? {categories, scope, facets, places_precision} : {categories, scope, facets}; await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', payload)); route = {name:'home'}; await reload(true); }
+        else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].filter(node => !node.disabled).map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); const places_precision = categories.includes('places') ? (document.querySelectorAll('input[name=places_precision]:checked')[0]?.value || 'full') : undefined; const payload = places_precision ? {categories, scope, facets, places_precision} : {categories, scope, facets}; await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', payload)); route = {name:'home'}; await reload(true); }
         else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (await window.SolQuestion.ask({ message: window.JournalI18n.render(kind === 'bearer' ? 'journal.window.agents.connection.revoke.key.confirmation' : 'journal.window.agents.connection.disconnect.agent.confirmation'), action: kind === 'bearer' ? window.JournalI18n.render('journal.window.agents.window.state.text.revoke.key') : window.JournalI18n.render('journal.window.agents.window.state.text.disconnect.agent'), signal: ctx.signal, opener: () => findKey(view, busy) }) && !ctx.disposed) { const order = state.connections.map(item => rowKey(item.kind, item.id)); const at = order.indexOf(rowKey(kind, id)); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); landing = [order[at + 1], order[at - 1], '[data-agents-heading]']; route = {name:'home'}; await reload(true); } }
         else if (target.dataset.rename) { const id = target.dataset.rename; const name = await window.SolQuestion.ask({ message: window.JournalI18n.render('journal.window.agents.message.name.this.key'), action: window.JournalI18n.render('journal.window.agents.window.state.text.save.name'), value: route.connection.name, signal: ctx.signal, opener: () => findKey(view, busy) }); if (name && !ctx.disposed) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(id)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }
       } catch (error) { notify(error.message || window.JournalI18n.render('journal.window.agents.status.text.that.change.did.not.finish')); }

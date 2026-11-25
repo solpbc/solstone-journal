@@ -2370,7 +2370,7 @@ button:focus:not(:focus-visible) {
 .trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
 /* A control whose write is out stays focusable and drawn, dimmed; a switch
    draws through its slider, since its box is invisible. */
-:is(#section-trash, #section-storage, #section-localaccess, #section-transcription, #section-vision, #section-sync, #section-facets, #settings-facet-detail-view, #trashConfirmModal, #cleanupLogsModal, #ownerVoiceConsentModal, #facesClearModal, #facetCreateModal, #customActivityModal) :is([aria-busy="true"], [aria-busy="true"] + .slider) { opacity: .8; cursor: progress; }
+:is(#section-trash, #section-storage, #section-localaccess, #section-transcription, #section-vision, #section-sync, #section-facets, #settings-facet-detail-view, #trashConfirmModal, #garminRunTrashModal, #cleanupLogsModal, #ownerVoiceConsentModal, #facesClearModal, #facetCreateModal, #customActivityModal) :is([aria-busy="true"], [aria-busy="true"] + .slider) { opacity: .8; cursor: progress; }
 .trash-danger-outline { padding: .5em 1em; background: var(--paper); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; font-size: .9em; cursor: pointer; }
 .trash-result { padding: .5em 1em; border-bottom: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
 .trash-row { display: flex; align-items: flex-start; gap: .75em; padding: .65em 1em; font-size: .85em; cursor: pointer; }
@@ -2518,10 +2518,66 @@ button:focus:not(:focus-visible) {
 .granola-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--orange) 88%, var(--surface-dark)); }
 .granola-actions button:disabled { opacity: 0.6; cursor: default; }
 .granola-note { margin: 0.6em 0 0; color: var(--ink-faint); font-size: 0.85em; }
-.granola-key:not([hidden]) + #granolaConnected { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--hairline); }
+.granola-key:not([hidden]) + #granolaConnected,
+.granola-key:not([hidden]) + #garminConnected { margin-top: 1.25em; padding-top: 1em; border-top: 1px solid var(--hairline); }
 .granola-load-error { margin: 0.5em 0 0; color: var(--danger); font-size: 0.9em; }
+.garmin-expiring {
+  margin: 0 0 0.85em;
+  padding: 0.7em 0.9em;
+  border-radius: 6px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+.garmin-expiring p { margin: 0; }
+.garmin-expiring a { color: inherit; font-weight: 600; text-decoration: underline; }
+.garmin-facet {
+  margin: 0 0 1em;
+  padding: 0.85em 1em;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.garmin-facet-heading { margin: 0 0 0.35em; font-size: 0.92em; font-weight: 600; color: var(--ink); }
+.garmin-facet-question { margin: 0 0 0.35em; font-size: 0.92em; color: var(--ink); }
+.garmin-facet .granola-actions { margin-top: 0.7em; }
+.garmin-expires-field input[type="date"] { max-width: 14em; }
+.garmin-runs { margin: 1em 0 0; }
+.garmin-run-list { list-style: none; margin: 0.5em 0 0; padding: 0; }
+.garmin-run-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75em;
+  flex-wrap: wrap;
+  padding: 0.55em 0;
+  border-top: 1px solid var(--hairline);
+}
+.garmin-run-info { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+.garmin-run-span { color: var(--ink); font-weight: 600; }
+.garmin-run-meta { color: var(--ink-faint); font-size: 0.85em; }
+.garmin-run-receipt {
+  margin: 0.85em 0 0;
+  padding: 0.7em 0.9em;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.9em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65em;
+}
+.garmin-run-receipt[hidden] { display: none; }
+.garmin-run-receipt-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }
+.garmin-run-receipt-actions a { color: var(--orange-text-aa); font-weight: 600; text-decoration: underline; }
 @media (max-width: 480px) {
-  .granola-actions button { min-height: 44px; }
+  .granola-actions button,
+  .garmin-run-row button,
+  .garmin-run-receipt button,
+  .garmin-run-receipt a { min-height: 44px; display: inline-flex; align-items: center; }
 }
 </style>
 
@@ -3058,6 +3114,91 @@ button:focus:not(:focus-visible) {
         <p class="granola-load-error" id="plaudLoadError" role="alert" hidden>{{journal.window.settings.plaud.load.failed}}</p>
       </div>
 
+      <div id="garminSyncCard" class="granola-card" aria-labelledby="garminTitle" hidden>
+        <div class="granola-head">
+          <h3 class="settings-subsection-title" id="garminTitle">Garmin</h3>
+          <span class="granola-state" id="garminState" data-state="loading">{{journal.window.settings.visible.text.checking}}</span>
+        </div>
+        <p class="settings-subsection-desc">{{journal.window.settings.garmin.description}}</p>
+        <p class="granola-progress" id="garminProgress" role="status" aria-live="polite" hidden></p>
+        <div class="granola-attention" id="garminAttention" hidden>
+          <p class="granola-attention-reason" id="garminAttentionReason"></p>
+          <p class="granola-kept" id="garminAttentionHint" hidden></p>
+          <p class="granola-kept" id="garminAttentionKept"></p>
+        </div>
+        <div class="garmin-expiring" id="garminExpiring" hidden>
+          <p id="garminExpiringText"></p>
+        </div>
+        <dl class="granola-facts" id="garminFacts" hidden></dl>
+        <p class="granola-kept" id="garminOffKept" hidden></p>
+
+        <div class="garmin-facet" id="garminFacetOffer" hidden>
+          <h4 class="garmin-facet-heading" id="garminFacetHeading"></h4>
+          <p class="garmin-facet-question" id="garminFacetQuestion"></p>
+          <p class="granola-note" id="garminFacetNoMeans"></p>
+          <div class="granola-actions" role="group" aria-labelledby="garminFacetQuestion">
+            <button type="button" class="granola-primary" id="garminFacetYes"></button>
+            <button type="button" class="btn-secondary" id="garminFacetNo"></button>
+          </div>
+          <p class="granola-load-error" id="garminFacetError" role="alert" hidden></p>
+        </div>
+
+        <div class="granola-key" id="garminKeyForm" hidden>
+          <details class="granola-guide" id="garminGuide">
+            <summary>{{journal.window.settings.disclosure.label.how.to.get.your.key}}</summary>
+            <div class="granola-guide-body">
+              <p>{{journal.window.settings.garmin.guide.intro}}</p>
+              <ol>
+                <li data-garmin-guide="journal.window.settings.garmin.guide.step.open"><a data-inline="link" href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer">{{journal.window.settings.garmin.guide.link.label}}</a></li>
+                <li>{{journal.window.settings.garmin.guide.step.create}}</li>
+                <li data-garmin-guide="journal.window.settings.garmin.guide.step.paste"><code data-inline="key_prefix">GCDC_</code></li>
+              </ol>
+              <p>{{journal.window.settings.garmin.guide.scope.note}}</p>
+            </div>
+          </details>
+          <div class="settings-field granola-key-field">
+            <label for="garminKey" id="garminKeyLabel">{{journal.window.settings.field.label.personal.api.key}}</label>
+            <input type="password" id="garminKey" autocomplete="off" spellcheck="false" placeholder="GCDC_…" aria-describedby="garminKeyNote garminKeyError" data-1p-ignore data-lpignore="true" data-bwignore="true">
+            <small id="garminKeyNote">{{journal.window.settings.garmin.key.note}}</small>
+            <small id="garminKeyError" class="granola-key-error" role="alert" hidden></small>
+          </div>
+          <div class="settings-field granola-key-field garmin-expires-field">
+            <label for="garminExpiresOn">{{journal.window.settings.garmin.expires.label}} <span class="settings-optional">{{journal.window.settings.visible.text.optional}}</span></label>
+            <input type="date" id="garminExpiresOn" aria-describedby="garminExpiresNote">
+            <small id="garminExpiresNote">{{journal.window.settings.garmin.expires.note}}</small>
+          </div>
+          <div class="granola-actions">
+            <button type="button" class="granola-primary" id="garminConnect">{{journal.window.settings.button.label.connect}}</button>
+            <button type="button" class="btn-secondary" id="garminCancelKey" hidden>{{journal.window.settings.button.label.cancel}}</button>
+          </div>
+          <p class="granola-note" id="garminReplaceNote" hidden>{{journal.window.settings.garmin.replace.note}}</p>
+        </div>
+
+        <div id="garminConnected" hidden>
+          <div class="granola-actions">
+            <button type="button" class="btn-secondary" id="garminCheck">{{journal.window.settings.button.label.check.now}}</button>
+            <button type="button" class="btn-secondary" id="garminReplace">{{journal.window.settings.button.label.use.a.new.key}}</button>
+            <button type="button" class="btn-secondary" id="garminDisconnect">{{journal.window.settings.button.label.disconnect}}</button>
+          </div>
+          <p class="granola-note">{{journal.window.settings.garmin.disconnect.note}}</p>
+        </div>
+
+        <details class="granola-guide garmin-runs" id="garminRuns" hidden>
+          <summary id="garminRunsSummary"></summary>
+          <div class="granola-guide-body">
+            <p>{{journal.window.settings.garmin.runs.note}}</p>
+            <ul class="garmin-run-list" id="garminRunsList"></ul>
+          </div>
+        </details>
+
+        <div class="garmin-run-receipt" id="garminRunReceipt" role="status" aria-live="polite" hidden>
+          <span id="garminRunReceiptText"></span>
+          <span class="garmin-run-receipt-actions" id="garminRunReceiptActions"></span>
+        </div>
+
+        <p class="granola-load-error" id="garminLoadError" role="alert" hidden>{{journal.window.settings.garmin.load.failed}}</p>
+      </div>
+
       </form>
     </section>
 
@@ -3498,6 +3639,18 @@ button:focus:not(:focus-visible) {
   </div>
 </div>
 
+<!-- Garmin per-sync-run recoverable Trash confirmation -->
+<div id="garminRunTrashModal" class="color-modal trash-confirm" role="dialog" aria-modal="true" aria-labelledby="garminRunTrashHeading" aria-describedby="garminRunTrashBody">
+  <div class="color-modal-content" style="max-width: 480px;">
+    <h3 id="garminRunTrashHeading"></h3>
+    <div id="garminRunTrashBody" class="trash-confirm-body"></div>
+    <div class="trash-confirm-actions">
+      <button type="button" class="btn-secondary" id="garminRunTrashCancel">{{journal.window.settings.button.label.cancel}}</button>
+      <button type="button" class="granola-primary" id="garminRunTrashConfirm">{{journal.window.settings.garmin.runs.move.to.trash}}</button>
+    </div>
+  </div>
+</div>
+
 <!-- Operational Logs Cleanup Modal -->
 <div id="cleanupLogsModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="cleanupLogsHeading">
   <div class="color-modal-content" style="max-width: 560px;">
@@ -3792,6 +3945,10 @@ for (const step of document.querySelectorAll('[data-granola-guide]')) {
   const fixed = Object.fromEntries(Array.from(step.children, item => [item.dataset.inline, item]));
   step.replaceChildren(...window.JournalI18n.renderMarkup(step.dataset.granolaGuide, [], { fixed }));
 }
+for (const step of document.querySelectorAll('[data-garmin-guide]')) {
+  const fixed = Object.fromEntries(Array.from(step.children, item => [item.dataset.inline, item]));
+  step.replaceChildren(...window.JournalI18n.renderMarkup(step.dataset.garminGuide, [], { fixed }));
+}
 
 // Every timer is the mount's, and goes with it. A frame asked for while
 // settings was up does nothing once it has gone.
@@ -3899,7 +4056,8 @@ function settingsHeld(el) {
 
 // Every dialog settings opens, closed without putting focus back: by a back
 // between settings' own entries, and when settings goes.
-const SETTINGS_MODALS = ['ownerVoiceConsentModal', 'facesClearModal', 'customActivityModal', 'iconPickerModal', 'colorPickerModal', 'cleanupModal', 'trashConfirmModal', 'cleanupLogsModal', 'facetCreateModal'];
+let garminPendingTrash = null;
+const SETTINGS_MODALS = ['ownerVoiceConsentModal', 'facesClearModal', 'customActivityModal', 'iconPickerModal', 'colorPickerModal', 'cleanupModal', 'trashConfirmModal', 'garminRunTrashModal', 'cleanupLogsModal', 'facetCreateModal'];
 function closeSettingsDialogs() {
   let closed = false;
   SETTINGS_MODALS.forEach(id => {
@@ -3910,6 +4068,7 @@ function closeSettingsDialogs() {
     }
   });
   trashConfirmed = null;
+  garminPendingTrash = null;
   if (facetDialog) {
     closeFacetDeleteDialog(false);
     closed = true;
@@ -4085,6 +4244,7 @@ setupModalAccessibility('ownerVoiceConsentModal');
 setupModalAccessibility('facesClearModal');
 setupModalAccessibility('cleanupModal');
 setupModalAccessibility('trashConfirmModal');
+setupModalAccessibility('garminRunTrashModal');
 setupModalAccessibility('cleanupLogsModal');
 setupModalAccessibility('facetCreateModal');
 
@@ -6684,6 +6844,7 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
 async function loadSync() {
   loadGranola();
   loadPlaud();
+  loadGarmin();
   try {
     const [data, originals] = await Promise.all([
       settingsApi('/app/settings/api/sync'),
@@ -7562,7 +7723,641 @@ ctx.on(window.document, 'visibilitychange', () => {
   if (document.visibilityState === 'visible' && document.getElementById('section-sync')?.classList.contains('active')) {
     loadGranola();
     loadPlaud();
+    loadGarmin();
   }
+});
+
+// Garmin Connect: one card, five states, desktop-only (hidden when available === false),
+// first-connect body facet choice, and per-sync-run recoverable Trash.
+const GARMIN_TOKEN_URL = 'https://connect.garmin.com/app/settings/personalApiToken';
+const garmin = {
+  data: null,
+  replacing: false,
+  lastReplacing: false,
+  busy: false,
+  trashingRun: null,
+  poll: null,
+  facetOffer: null,
+  facetLoadedForConnect: false,
+  lastExpiringKey: null,
+  lastRunsKey: null,
+};
+const garminEl = id => document.getElementById(id);
+
+function garminDayKey(raw) {
+  if (typeof raw !== 'string') return null;
+  const compact = /^(\d{8})$/.exec(raw.trim());
+  if (compact) return compact[1];
+  const dashed = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
+  if (dashed) return `${dashed[1]}${dashed[2]}${dashed[3]}`;
+  return null;
+}
+
+function garminDayText(raw) {
+  const key = garminDayKey(raw);
+  return key ? removalDay(key) : '';
+}
+
+function garminRunSpan(run) {
+  const span = trashSpan(run?.days);
+  if (span) return span;
+  return garminDayText(run?.imported_at) || String(run?.id || '');
+}
+
+function garminMode(data) {
+  if (!data.connected) {
+    const hasKept = (data.days_covered || 0) > 0 || (data.workouts || 0) > 0 || (Array.isArray(data.runs) && data.runs.length > 0);
+    return hasKept ? 'off' : 'ready';
+  }
+  if (data.attention || data.attention_code) return 'attention';
+  if (!data.last_sync) return 'setting-up';
+  return 'on';
+}
+
+function garminLandings(held) {
+  const shown = id => garminEl(id);
+  if (garminEl('garminFacetOffer').contains(held)) {
+    return [shown('garminCheck'), shown('garminReplace'), shown('garminKey'), shown('garminTitle')];
+  }
+  if (garminEl('garminKeyForm').contains(held)) {
+    return garmin.lastReplacing
+      ? [shown('garminReplace'), shown('garminCheck'), shown('garminDisconnect')]
+      : [shown('garminCheck'), shown('garminReplace'), shown('garminDisconnect')];
+  }
+  if (garminEl('garminRuns').contains(held)) {
+    return [garminEl('garminRunsList').querySelector('button'), shown('garminRunsSummary'), shown('garminRunReceipt'), shown('garminCheck'), shown('garminTitle')];
+  }
+  return [shown('garminOffKept'), shown('garminKey'), shown('garminDisconnect')];
+}
+
+function garminFacetTitle(name) {
+  const found = ((garmin.facetOffer && garmin.facetOffer.facets) || []).find(facet => facet.name === name);
+  return found ? found.title : name;
+}
+
+function garminFacetQuestionText(offerData) {
+  const state = offerData?.offer?.state;
+  const copy = offerData?.copy || {};
+  const raw = String(copy[state] || '');
+  if (state === 'ask_existing') {
+    const title = garminFacetTitle(offerData?.offer?.facet);
+    if (raw.includes('{facet}')) return raw.replaceAll('{facet}', title);
+    return window.JournalI18n.render('journal.window.import.body.facet.apple.ask.named', [['facet_name', String(title || '')]]);
+  }
+  return raw;
+}
+
+function garminDataSummary(data) {
+  const days = Number(data.days_covered) || 0;
+  const workouts = Number(data.workouts) || 0;
+  if (days <= 0 && workouts <= 0) {
+    return window.JournalI18n.render('journal.window.settings.garmin.facts.data.none');
+  }
+  const daysText = days > 0
+    ? window.JournalI18n.render('journal.window.settings.garmin.facts.days', [['quantity', window.JournalI18n.cardinalQuantity(days)], ['days', String(days)]])
+    : '';
+  const workoutsText = workouts > 0
+    ? window.JournalI18n.render('journal.window.settings.garmin.facts.workouts', [['quantity', window.JournalI18n.cardinalQuantity(workouts)], ['workouts', String(workouts)]])
+    : '';
+  if (daysText && workoutsText) {
+    return window.JournalI18n.render('journal.window.settings.garmin.facts.days.and.workouts', [['days_text', daysText], ['workouts_text', workoutsText]]);
+  }
+  return daysText || workoutsText;
+}
+
+function renderGarminRuns(runs, syncing) {
+  const details = garminEl('garminRuns');
+  granolaHidden(details, runs.length === 0);
+  if (runs.length === 0) {
+    garmin.lastRunsKey = '';
+    return;
+  }
+  granolaText(
+    garminEl('garminRunsSummary'),
+    window.JournalI18n.render('journal.window.settings.garmin.runs.summary', [['quantity', window.JournalI18n.cardinalQuantity(runs.length)], ['count', String(runs.length)]]),
+  );
+  const runsKey = runs.map(run => [
+    run.id,
+    run.imported_at || '',
+    Array.isArray(run.days) ? run.days.join('-') : '',
+    run.days_count || 0,
+    run.rows || 0,
+  ].join(':')).join('|');
+  const list = garminEl('garminRunsList');
+  if (garmin.lastRunsKey !== runsKey) {
+    const moveLabel = window.JournalI18n.render('journal.window.settings.garmin.runs.move.to.trash');
+    const items = runs.map(run => {
+      const li = document.createElement('li');
+      li.className = 'garmin-run-row';
+      li.setAttribute('data-garmin-run', String(run.id));
+      const info = document.createElement('div');
+      info.className = 'garmin-run-info';
+      const spanEl = document.createElement('span');
+      spanEl.className = 'garmin-run-span';
+      spanEl.textContent = garminRunSpan(run);
+      info.appendChild(spanEl);
+      const metaParts = [];
+      const syncedDay = garminDayText(run.imported_at);
+      if (syncedDay) {
+        metaParts.push(window.JournalI18n.render('journal.window.settings.garmin.runs.synced.on', [['day', syncedDay]]));
+      }
+      const rowsCount = Number(run.rows) || 0;
+      if (rowsCount > 0) {
+        metaParts.push(window.JournalI18n.render('journal.window.settings.garmin.runs.rows', [['quantity', window.JournalI18n.cardinalQuantity(rowsCount)], ['count', String(rowsCount)]]));
+      }
+      if (metaParts.length > 0) {
+        const metaEl = document.createElement('span');
+        metaEl.className = 'garmin-run-meta';
+        metaEl.textContent = metaParts.join(' · ');
+        info.appendChild(metaEl);
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-secondary';
+      btn.setAttribute('data-garmin-trash-run', String(run.id));
+      btn.textContent = moveLabel;
+      btn.addEventListener('click', event => openGarminRunTrashModal(run, event.currentTarget));
+      li.appendChild(info);
+      li.appendChild(btn);
+      return li;
+    });
+    list.replaceChildren(...items);
+    garmin.lastRunsKey = runsKey;
+  }
+  list.querySelectorAll('button[data-garmin-trash-run]').forEach(btn => {
+    const id = btn.getAttribute('data-garmin-trash-run');
+    const mark = (garmin.busy === 'trash-run' && garmin.trashingRun === id)
+      ? 'busy'
+      : ((garmin.busy || syncing) ? 'off' : null);
+    granolaMark(btn, mark);
+  });
+}
+
+function renderGarmin() {
+  const data = garmin.data;
+  if (!data) return;
+  const card = garminEl('garminSyncCard');
+  if (data.available === false) {
+    granolaHidden(card, true);
+    return;
+  }
+  granolaHidden(card, false);
+  const held = card.contains(settingsPage.activeElement) ? settingsPage.activeElement : null;
+  const mode = garminMode(data);
+  const state = garminEl('garminState');
+  if (state.dataset.state !== mode) state.dataset.state = mode;
+  granolaText(state, GRANOLA_STATE_WORDS[mode]);
+
+  const progress = garminEl('garminProgress');
+  const backfillingOn = mode === 'on' && data.backfill && data.backfill.complete === false;
+  granolaHidden(progress, mode !== 'setting-up' && !backfillingOn);
+  if (mode === 'setting-up') {
+    const days = Number(data.days_covered) || 0;
+    granolaText(progress, data.syncing
+      ? (days > 0
+        ? window.JournalI18n.render('journal.window.settings.garmin.progress.days', [['quantity', window.JournalI18n.cardinalQuantity(days)], ['days', String(days)]])
+        : window.JournalI18n.render('journal.window.settings.garmin.progress.starting'))
+      : window.JournalI18n.render('journal.window.settings.garmin.progress.queued'));
+  } else if (backfillingOn) {
+    const reached = garminDayText(data.backfill.reached_day);
+    granolaText(progress, reached
+      ? window.JournalI18n.render('journal.window.settings.garmin.progress.reached', [['day', reached]])
+      : window.JournalI18n.render('journal.window.settings.garmin.progress.earlier'));
+  }
+
+  const keyFault = mode === 'attention' && data.attention_code === 'key';
+  const expiringAttention = mode === 'attention' && data.attention_code === 'key_expiring';
+  const showAttentionBox = mode === 'attention' && !expiringAttention;
+  granolaHidden(garminEl('garminAttention'), !showAttentionBox);
+  if (showAttentionBox) {
+    granolaText(garminEl('garminAttentionReason'), data.attention || '');
+    const hint = garminEl('garminAttentionHint');
+    granolaHidden(hint, !keyFault);
+    if (keyFault) {
+      granolaText(hint, window.JournalI18n.render('journal.window.settings.garmin.attention.key.hint'));
+    }
+    const days = Number(data.days_covered) || 0;
+    granolaText(garminEl('garminAttentionKept'), days > 0
+      ? window.JournalI18n.render('journal.window.settings.garmin.attention.kept.days', [['quantity', window.JournalI18n.cardinalQuantity(days)], ['days', String(days)]])
+      : window.JournalI18n.render('journal.window.settings.garmin.attention.kept.none'));
+  }
+
+  const showExpiring = expiringAttention || (data.connected && !showAttentionBox && data.key_expiring_soon === true);
+  granolaHidden(garminEl('garminExpiring'), !showExpiring);
+  if (showExpiring) {
+    const expDate = garminDayText(data.key_expires_on);
+    const expKey = expDate ? `on:${expDate}` : 'soon';
+    if (garmin.lastExpiringKey !== expKey) {
+      const link = document.createElement('a');
+      link.href = GARMIN_TOKEN_URL;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Garmin Connect';
+      const nodes = expDate
+        ? window.JournalI18n.renderMarkup('journal.window.settings.garmin.expiring.on', [['date', expDate]], { fixed: { link } })
+        : window.JournalI18n.renderMarkup('journal.window.settings.garmin.expiring.soon', [], { fixed: { link } });
+      garminEl('garminExpiringText').replaceChildren(...nodes);
+      garmin.lastExpiringKey = expKey;
+    }
+  } else {
+    garmin.lastExpiringKey = null;
+  }
+
+  const facts = garminEl('garminFacts');
+  const rows = [];
+  if (mode === 'on' || mode === 'attention') {
+    rows.push([window.JournalI18n.render('journal.window.settings.garmin.facts.data.label'), garminDataSummary(data)]);
+    if (data.last_added) rows.push([window.JournalI18n.render('journal.window.settings.granola.last.added'), granolaRelative(data.last_added)]);
+    if (data.last_sync) {
+      const checked = data.syncing ? window.JournalI18n.render('journal.window.settings.granola.checking.now') : granolaRelative(data.last_sync);
+      rows.push([window.JournalI18n.render('journal.window.settings.granola.last.checked'), checked]);
+    }
+    const expiresLabel = garminDayText(data.key_expires_on);
+    if (expiresLabel) {
+      rows.push([window.JournalI18n.render('journal.window.settings.garmin.facts.expires.label'), expiresLabel]);
+    }
+  }
+  granolaHidden(facts, rows.length === 0);
+  const words = rows.flat();
+  const drawn = Array.from(facts.children);
+  const sameFacts = drawn.length === words.length
+    && drawn.every((el, i) => el.tagName === (i % 2 ? 'DD' : 'DT') && el.textContent === words[i]);
+  if (!sameFacts) {
+    facts.replaceChildren(...rows.flatMap(([term, value]) => {
+      const dt = document.createElement('dt');
+      dt.textContent = term;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      return [dt, dd];
+    }));
+  }
+
+  const offKept = garminEl('garminOffKept');
+  granolaHidden(offKept, mode !== 'off');
+  if (mode === 'off') {
+    const days = Number(data.days_covered) || 0;
+    granolaText(offKept, days > 0
+      ? window.JournalI18n.render('journal.window.settings.garmin.disconnected.days', [['quantity', window.JournalI18n.cardinalQuantity(days)], ['days', String(days)]])
+      : window.JournalI18n.render('journal.window.settings.garmin.disconnect.note'));
+  }
+
+  const facetOffer = data.connected && garmin.facetOffer && String(garmin.facetOffer.offer?.state || '').startsWith('ask_')
+    ? garmin.facetOffer
+    : null;
+  granolaHidden(garminEl('garminFacetOffer'), !facetOffer);
+  if (facetOffer) {
+    granolaText(garminEl('garminFacetHeading'), String(facetOffer.copy?.heading || ''));
+    granolaText(garminEl('garminFacetQuestion'), garminFacetQuestionText(facetOffer));
+    granolaText(garminEl('garminFacetNoMeans'), String(facetOffer.copy?.no_means || ''));
+    granolaText(garminEl('garminFacetYes'), String(facetOffer.copy?.yes || ''));
+    granolaText(garminEl('garminFacetNo'), String(facetOffer.copy?.no || ''));
+    granolaMark(garminEl('garminFacetYes'), garmin.busy === 'facet-yes' ? 'busy' : (garmin.busy ? 'off' : null));
+    granolaMark(garminEl('garminFacetNo'), garmin.busy === 'facet-no' ? 'busy' : (garmin.busy ? 'off' : null));
+  }
+
+  const showKey = !data.connected || garmin.replacing || keyFault;
+  const replacingKey = data.connected && showKey;
+  granolaHidden(garminEl('garminKeyForm'), !showKey);
+  granolaHidden(garminEl('garminConnected'), !data.connected || garmin.replacing);
+  granolaHidden(garminEl('garminCheck'), keyFault);
+  granolaText(garminEl('garminKeyLabel'), replacingKey
+    ? window.JournalI18n.render('journal.window.settings.settings.feedback.new.personal.api.key')
+    : window.JournalI18n.render('journal.window.settings.settings.feedback.personal.api.key'));
+  granolaText(garminEl('garminConnect'), garmin.busy === 'connect'
+    ? window.JournalI18n.render('journal.window.settings.settings.feedback.checking.the.key')
+    : (replacingKey
+      ? window.JournalI18n.render('journal.window.settings.settings.feedback.use.this.key')
+      : window.JournalI18n.render('journal.window.settings.settings.feedback.connect')));
+  granolaHidden(garminEl('garminCancelKey'), !(garmin.replacing && !keyFault));
+  granolaHidden(garminEl('garminReplaceNote'), !replacingKey);
+  granolaHidden(garminEl('garminReplace'), replacingKey);
+  const guide = garminEl('garminGuide');
+  if (!guide.dataset.touched && guide.open !== (mode === 'ready')) guide.open = mode === 'ready';
+
+  const check = garminEl('garminCheck');
+  granolaText(check, data.syncing
+    ? window.JournalI18n.render('journal.window.settings.settings.feedback.checking')
+    : window.JournalI18n.render('journal.window.settings.settings.feedback.check.now'));
+  const other = name => (garmin.busy && garmin.busy !== name ? 'off' : null);
+  granolaMark(check, garmin.busy === 'check' || data.syncing ? 'busy' : other('check'));
+  granolaMark(garminEl('garminConnect'), garmin.busy === 'connect' ? 'busy' : other('connect'));
+  granolaMark(garminEl('garminDisconnect'), garmin.busy === 'disconnect' ? 'busy' : other('disconnect'));
+  granolaMark(garminEl('garminReplace'), garmin.busy ? 'off' : null);
+  granolaMark(garminEl('garminCancelKey'), garmin.busy ? 'off' : null);
+
+  renderGarminRuns(Array.isArray(data.runs) ? data.runs : [], Boolean(data.syncing));
+
+  if (held && !window.SolFocus.isShown(held)) settingsLand(held, garminLandings(held));
+}
+
+async function loadGarminFacetOffer() {
+  try {
+    const data = await settingsApi('/app/settings/api/garmin/body-facet');
+    garmin.facetOffer = data && data.offer ? data : null;
+  } catch (_) {
+    garmin.facetOffer = null;
+  }
+  renderGarmin();
+}
+
+async function answerGarminFacet(answer) {
+  if (garmin.busy || !garmin.facetOffer?.offer) return;
+  garmin.busy = answer === 'yes' ? 'facet-yes' : 'facet-no';
+  const errEl = garminEl('garminFacetError');
+  granolaHidden(errEl, true);
+  granolaText(errEl, '');
+  renderGarmin();
+  try {
+    const data = await settingsApi('/app/settings/api/garmin/body-facet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer, offer: garmin.facetOffer.offer }),
+    });
+    if (data && data.offer) {
+      garmin.facetOffer = data;
+    } else {
+      throw new Error(garmin.facetOffer?.copy?.answer_failed || '');
+    }
+  } catch (error) {
+    granolaText(errEl, error?.serverMessage || garmin.facetOffer?.copy?.answer_failed || window.JournalI18n.render('journal.window.import.body.facet.shared.answer.failed'));
+    granolaHidden(errEl, false);
+    if (error?.reason_code === 'body_facet_offer_changed') {
+      garmin.busy = false;
+      await loadGarminFacetOffer();
+      return;
+    }
+  } finally {
+    garmin.busy = false;
+  }
+  renderGarmin();
+}
+
+async function loadGarmin() {
+  try {
+    garmin.data = await settingsApi('/app/settings/api/garmin');
+    granolaHidden(garminEl('garminLoadError'), true);
+    renderGarmin();
+    if (garmin.data?.available !== false && garmin.data?.connected && !garmin.facetLoadedForConnect) {
+      garmin.facetLoadedForConnect = true;
+      loadGarminFacetOffer();
+    } else if (!garmin.data?.connected) {
+      garmin.facetLoadedForConnect = false;
+      garmin.facetOffer = null;
+    }
+  } catch (_) {
+    granolaHidden(garminEl('garminSyncCard'), false);
+    garminEl('garminLoadError').hidden = false;
+    garminEl('garminState').textContent = window.JournalI18n.render('journal.window.settings.visible.text.unavailable');
+    garminEl('garminState').dataset.state = 'unavailable';
+  }
+  const following = garmin.data && garmin.data.available !== false && (garmin.data.syncing || garminMode(garmin.data) === 'setting-up');
+  clearTimeout(garmin.poll);
+  if (following && document.visibilityState === 'visible') {
+    garmin.poll = setTimeout(loadGarmin, garmin.data.syncing ? 2000 : 30000);
+  }
+}
+
+function garminKeyError(message) {
+  const error = garminEl('garminKeyError');
+  error.hidden = !message;
+  error.textContent = message || '';
+}
+
+async function connectGarmin() {
+  if (garmin.busy) return;
+  const key = garminEl('garminKey');
+  const value = key.value.trim();
+  if (!value) {
+    garminKeyError(window.JournalI18n.render('journal.window.settings.garmin.key.empty'));
+    key.focus();
+    return;
+  }
+  const expiresInput = garminEl('garminExpiresOn');
+  const expiresOn = expiresInput ? expiresInput.value.trim() : '';
+  const payload = expiresOn ? { api_key: value, key_expires_on: expiresOn } : { api_key: value };
+  garmin.busy = 'connect';
+  garmin.lastReplacing = garmin.replacing;
+  garminKeyError('');
+  renderGarmin();
+  try {
+    await settingsApi('/app/settings/api/garmin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    key.value = '';
+    if (expiresInput) expiresInput.value = '';
+    garmin.replacing = false;
+    garmin.facetLoadedForConnect = false;
+  } catch (error) {
+    garminKeyError(error?.serverMessage || window.JournalI18n.render('journal.window.settings.garmin.key.save.failed'));
+  } finally {
+    garmin.busy = false;
+  }
+  await loadGarmin();
+}
+
+async function checkGarmin() {
+  if (garmin.busy || garmin.data?.syncing) return;
+  garmin.busy = 'check';
+  renderGarmin();
+  try {
+    await settingsApi('/app/settings/api/garmin/sync', { method: 'POST' });
+  } catch (_) {
+    // Already checking or unavailable: status refresh reports what happened.
+  } finally {
+    garmin.busy = false;
+  }
+  await loadGarmin();
+}
+
+async function disconnectGarmin() {
+  if (garmin.busy) return;
+  garmin.busy = 'disconnect';
+  renderGarmin();
+  try {
+    await settingsApi('/app/settings/api/garmin', { method: 'DELETE' });
+    garmin.replacing = false;
+    garmin.facetOffer = null;
+    garmin.facetLoadedForConnect = false;
+  } catch (error) {
+    garminEl('garminLoadError').textContent = error?.serverMessage || window.JournalI18n.render('journal.window.settings.garmin.disconnect.failed');
+    garminEl('garminLoadError').hidden = false;
+  } finally {
+    garmin.busy = false;
+  }
+  await loadGarmin();
+}
+
+function showGarminRunReceipt(message, { trashId = null, showTrashLink = false } = {}) {
+  const box = garminEl('garminRunReceipt');
+  const textEl = garminEl('garminRunReceiptText');
+  const actionsEl = garminEl('garminRunReceiptActions');
+  granolaText(textEl, message || '');
+  const actionNodes = [];
+  if (trashId) {
+    const recoverBtn = document.createElement('button');
+    recoverBtn.type = 'button';
+    recoverBtn.className = 'btn-secondary';
+    recoverBtn.textContent = window.JournalI18n.render('journal.window.settings.consent.trash.copy.recover.recover');
+    recoverBtn.addEventListener('click', () => recoverGarminRun(trashId, recoverBtn));
+    actionNodes.push(recoverBtn);
+  }
+  if (showTrashLink) {
+    const link = document.createElement('a');
+    link.href = '#trash';
+    link.textContent = window.JournalI18n.render('journal.window.settings.garmin.runs.open.trash');
+    link.addEventListener('click', event => {
+      event.preventDefault();
+      switchSection('trash');
+    });
+    actionNodes.push(link);
+  }
+  actionsEl.replaceChildren(...actionNodes);
+  granolaHidden(box, !message);
+}
+
+async function recoverGarminRun(trashId, button) {
+  if (garmin.busy || !trashId) return;
+  garmin.busy = 'recover-run';
+  granolaMark(button, 'busy');
+  try {
+    const res = await settingsApi('/app/settings/api/trash/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [trashId] }),
+    });
+    if (Array.isArray(res?.done) && res.done.includes(trashId)) {
+      showGarminRunReceipt(window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.recovered'));
+    } else {
+      showGarminRunReceipt(window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.recover.failed'), { showTrashLink: true });
+    }
+  } catch (_) {
+    showGarminRunReceipt(window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.recover.failed'), { showTrashLink: true });
+  } finally {
+    garmin.busy = false;
+  }
+  await loadGarmin();
+}
+
+function buildGarminRunTrashBody(run, preview = null) {
+  const nodes = [];
+  const metaParts = ['Garmin', garminRunSpan(run)];
+  const syncedDay = garminDayText(run.imported_at);
+  if (syncedDay) {
+    metaParts.push(window.JournalI18n.render('journal.window.settings.garmin.runs.synced.on', [['day', syncedDay]]));
+  }
+  const metaP = document.createElement('p');
+  const strong = document.createElement('strong');
+  strong.textContent = metaParts.filter(Boolean).join(' · ');
+  metaP.appendChild(strong);
+  nodes.push(metaP);
+
+  const scopeP = document.createElement('p');
+  scopeP.textContent = window.JournalI18n.render('journal.window.settings.garmin.runs.modal.scope');
+  nodes.push(scopeP);
+
+  const shared = Number(preview?.shared_days) || 0;
+  if (shared > 0) {
+    const sharedP = document.createElement('p');
+    sharedP.textContent = window.JournalI18n.render('journal.window.settings.garmin.runs.modal.shared', [['quantity', window.JournalI18n.cardinalQuantity(shared)], ['count', String(shared)]]);
+    nodes.push(sharedP);
+  }
+
+  const recoveryP = document.createElement('p');
+  recoveryP.textContent = window.JournalI18n.render('journal.window.settings.garmin.runs.modal.recovery');
+  nodes.push(recoveryP);
+  return nodes;
+}
+
+function closeGarminRunTrashModal(restoreFocus = true) {
+  const modal = garminEl('garminRunTrashModal');
+  garminPendingTrash = null;
+  if (!modal) return;
+  modal._closeAccessible();
+  window.ConveyModalLayer?.reconcile?.({ restore: false });
+  if (restoreFocus) modal._triggerEl?.focus?.();
+}
+
+function openGarminRunTrashModal(run, trigger) {
+  if (garmin.busy || garmin.data?.syncing || !run?.id) return;
+  const modal = garminEl('garminRunTrashModal');
+  if (!modal) return;
+  garminPendingTrash = { run, trigger };
+  granolaText(garminEl('garminRunTrashHeading'), window.JournalI18n.render('journal.window.settings.garmin.runs.modal.title'));
+  garminEl('garminRunTrashBody').replaceChildren(...buildGarminRunTrashBody(run, null));
+  modal.style.display = 'block';
+  modal._openAccessible(trigger);
+  const runId = run.id;
+  settingsApi(`/app/settings/api/garmin/runs/${encodeURIComponent(runId)}/delete`).then(preview => {
+    if (ctx.disposed || !garminPendingTrash || garminPendingTrash.run.id !== runId) return;
+    garminEl('garminRunTrashBody').replaceChildren(...buildGarminRunTrashBody(run, preview));
+  }).catch(() => {});
+}
+
+async function trashGarminRun(run) {
+  if (garmin.busy || !run?.id) return;
+  garmin.busy = 'trash-run';
+  garmin.trashingRun = run.id;
+  renderGarmin();
+  try {
+    const res = await settingsApi(`/app/settings/api/garmin/runs/${encodeURIComponent(run.id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ erase: false, backups: false }),
+    });
+    const trashId = res?.trash?.id || null;
+    const eraseDay = garminDayText(res?.trash?.erase_at);
+    const msg = eraseDay
+      ? window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.moved.erases', [['date', eraseDay]])
+      : window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.moved');
+    showGarminRunReceipt(msg, { trashId, showTrashLink: true });
+  } catch (error) {
+    showGarminRunReceipt(error?.serverMessage || window.JournalI18n.render('journal.window.settings.garmin.runs.receipt.failed'));
+  } finally {
+    garmin.busy = false;
+    garmin.trashingRun = null;
+  }
+  await loadGarmin();
+}
+
+garminEl('garminConnect').addEventListener('click', connectGarmin);
+garminEl('garminKey').addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); connectGarmin(); }
+});
+garminEl('garminExpiresOn').addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); connectGarmin(); }
+});
+garminEl('garminCheck').addEventListener('click', checkGarmin);
+garminEl('garminDisconnect').addEventListener('click', disconnectGarmin);
+garminEl('garminReplace').addEventListener('click', () => {
+  if (garmin.busy) return;
+  garmin.replacing = true;
+  renderGarmin();
+  garminEl('garminKey').focus();
+});
+garminEl('garminCancelKey').addEventListener('click', () => {
+  if (garmin.busy) return;
+  garmin.lastReplacing = true;
+  garmin.replacing = false;
+  garminEl('garminKey').value = '';
+  garminEl('garminExpiresOn').value = '';
+  garminKeyError('');
+  renderGarmin();
+});
+garminEl('garminGuide').addEventListener('toggle', event => {
+  if (event.isTrusted) event.target.dataset.touched = '1';
+});
+garminEl('garminFacetYes').addEventListener('click', () => answerGarminFacet('yes'));
+garminEl('garminFacetNo').addEventListener('click', () => answerGarminFacet('no'));
+garminEl('garminRunTrashCancel').addEventListener('click', () => closeGarminRunTrashModal(true));
+garminEl('garminRunTrashConfirm').addEventListener('click', () => {
+  const pending = garminPendingTrash;
+  closeGarminRunTrashModal(true);
+  if (pending?.run) trashGarminRun(pending.run);
+});
+garminEl('garminRunTrashModal').addEventListener('click', event => {
+  if (event.target === garminEl('garminRunTrashModal')) closeGarminRunTrashModal(true);
 });
 
 // ========== VISION ==========
@@ -9598,7 +10393,7 @@ const REMOVAL_SOURCE = {
   ics: window.JournalI18n.render('journal.window.settings.removal.source.ics.calendar'), chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', kindle: 'Kindle Highlights', journal_archive: window.JournalI18n.render('journal.window.settings.removal.source.journal.archive.journal'),
   audio_archive: window.JournalI18n.render('journal.window.settings.removal.source.audio.archive.audio.archive'), recording: window.JournalI18n.render('journal.window.settings.removal.source.recording.meeting.audio'), document: window.JournalI18n.render('journal.window.settings.removal.source.document.document'), image: window.JournalI18n.render('journal.window.settings.removal.source.image.image'),
   strava: 'Strava', quick: window.JournalI18n.render('journal.window.settings.removal.source.quick.quick.import'), plaud: 'Plaud', audio: window.JournalI18n.render('journal.window.settings.removal.source.audio.audio'), text: window.JournalI18n.render('journal.window.settings.removal.source.text.text'),
-  obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
+  obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura', garmin: 'Garmin',
 };
 
 function removalSourceName(source) {
@@ -10107,7 +10902,7 @@ function trashEraseDate(eraseAt, now) {
   return { text: TRASH_COPY.erasesOn({ date: day }), soon: day === 'today' || day === 'tomorrow' };
 }
 
-const TRASH_BODY_SOURCES = new Set(['strava', 'apple_health', 'oura']);
+const TRASH_BODY_SOURCES = new Set(['strava', 'apple_health', 'oura', 'garmin']);
 
 // A body import's own days, first to last; nothing when it took none.
 function trashSpan(days) {

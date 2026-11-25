@@ -1,0 +1,16 @@
+{
+  "description": "Field label for the optional Garmin Personal API key expiration date input.",
+  "context": "Journal window. Field label for the optional Garmin Personal API key expiration date input.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "22471fe291570c5a82ef1f9a5663ae12ef7004e104fe49a50913781c4b49f1b1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

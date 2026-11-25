@@ -67,7 +67,7 @@ class TextNode {
 }
 
 function simpleMatch(el, part) {
-  const re = /:nth-child\((\d+)\)|([a-zA-Z][a-zA-Z0-9-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:=["']?([^\]"']*)["']?)?\]/g;
+  const re = /:nth-child\((\d+)\)|(:checked)|([a-zA-Z][a-zA-Z0-9-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:=["']?([^\]"']*)["']?)?\]/g;
   let m;
   let any = false;
   while ((m = re.exec(part))) {
@@ -76,7 +76,11 @@ function simpleMatch(el, part) {
       if (!el.parentNode || el.parentNode.children.indexOf(el) + 1 !== Number(m[1])) return false;
       continue;
     }
-    m.splice(1, 1);
+    if (m[2]) {
+      if (!el.checked) return false;
+      continue;
+    }
+    m.splice(1, 2);
     if (m[1] && el.tagName !== m[1].toUpperCase()) return false;
     if (m[2] && el.getAttribute('id') !== m[2]) return false;
     if (m[3] && !el.classList.contains(m[3])) return false;
@@ -190,10 +194,10 @@ class Element extends Target {
   get target() { return this.getAttribute('target') || ''; }
   get hidden() { return this.hasAttribute('hidden'); }
   set hidden(v) { if (v) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
-  setAttribute(k, v) { this.attrs.set(k, String(v)); if (k === 'style') this._style = null; }
+  setAttribute(k, v) { this.attrs.set(k, String(v)); if (k === 'style') this._style = null; if (k === 'checked') this.checked = true; if (k === 'disabled') this.disabled = true; }
   getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
   hasAttribute(k) { return this.attrs.has(k); }
-  removeAttribute(k) { this.attrs.delete(k); }
+  removeAttribute(k) { this.attrs.delete(k); if (k === 'checked') this.checked = false; if (k === 'disabled') this.disabled = false; }
   toggleAttribute(k, on) { if (on) this.setAttribute(k, ''); else this.removeAttribute(k); }
   get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
   set textContent(v) { this.replaceChildren(); if (String(v ?? '')) this.append(String(v)); }
@@ -530,6 +534,7 @@ const permissionKinds = [
   ['screen_text', 'screen text', true],
   ['screenshots', 'include screenshots', false, 'screen_text'],
   ['body', 'body', true],
+  ['womens_health', 'cycle and pregnancy', false, 'body'],
   ['notes', 'notes', false],
   ['documents', 'documents', false],
   ['calendar', 'calendar', false],
@@ -1920,6 +1925,48 @@ module.exports = async function agentsContractCases(manifestDir) {
     assert.ok(p.q('[data-connect-phase="connected"]'), 'the agent connected');
     lands(p, p.q('[role="dialog"] h2'), 'the dialog\'s heading');
     assert.ok(p.doc.activeElement.textContent.includes('is connected'), 'which says so');
+  });
+
+  await test('option_of sub-options (body -> womens_health, screen_text -> screenshots) hide and disable when parent is unchecked and omit disabled children on save', async () => {
+    let saved = null;
+    const withBody = connection('oauth', 'g-body', 'Coach', 'local', {
+      permission: { read: { categories: ['transcripts', 'body', 'womens_health'], scope: { kind: 'whole_journal' } } },
+    });
+    const withoutBody = connection('oauth', 'g-nobody', 'Reader', 'local', {
+      permission: { read: { categories: ['transcripts'], scope: { kind: 'whole_journal' } } },
+    });
+    const { answers } = living({ local_door: DOOR_ON, connections: [withBody, withoutBody] }, {
+      'PUT /app/agents/api/connections/oauth/g-body/permission': (_box, _u, opts) => { saved = JSON.parse(opts.body); return { ok: true }; },
+    });
+    const p = await boot(env, '/app/agents/', { answers });
+    // Connection without body starts with womens_health hidden & disabled.
+    await keyPress(p, p.q('[data-connection="oauth:g-nobody"]'));
+    const hiddenRow = p.q('label[data-option-of="body"]');
+    const hiddenBox = hiddenRow.querySelector('input[name="category"]');
+    assert.ok(hiddenRow.classList.contains('hidden'), 'womens_health starts hidden when body is off');
+    assert.ok(hiddenBox.disabled, 'womens_health starts disabled when body is off');
+
+    // Turning body on reveals and enables womens_health (still unchecked by default).
+    const bodyBox0 = p.q('input[name="category"][value="body"]');
+    bodyBox0.checked = true;
+    p.doc.dispatch(bodyBox0, { type: 'change' });
+    assert.ok(!hiddenRow.classList.contains('hidden'), 'womens_health shows when body turns on');
+    assert.ok(!hiddenBox.disabled, 'womens_health enables when body turns on');
+    assert.ok(!hiddenBox.checked, 'womens_health remains unchecked until explicitly chosen');
+
+    // Connection with body + womens_health: unchecking body hides/disables womens_health and drops it from PUT payload.
+    await keyPress(p, p.q('[data-route="home"]'));
+    await keyPress(p, p.q('[data-connection="oauth:g-body"]'));
+    const row = p.q('label[data-option-of="body"]');
+    const whBox = row.querySelector('input[name="category"]');
+    const bodyBox = p.q('input[name="category"][value="body"]');
+    assert.ok(!row.classList.contains('hidden') && !whBox.disabled && whBox.checked, 'womens_health shown and checked with body');
+    bodyBox.checked = false;
+    p.doc.dispatch(bodyBox, { type: 'change' });
+    assert.ok(row.classList.contains('hidden') && whBox.disabled, 'unchecking body hides and disables womens_health');
+    await keyPress(p, p.q('[data-save-permission="oauth:g-body"]'));
+    assert.ok(saved && Array.isArray(saved.categories), 'permission save ran');
+    assert.ok(!saved.categories.includes('body') && !saved.categories.includes('womens_health'), `orphaned womens_health omitted: ${JSON.stringify(saved.categories)}`);
   });
 
   return cases;

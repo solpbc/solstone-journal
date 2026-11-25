@@ -1,0 +1,16 @@
+{
+  "description": "Dialog heading confirming per-run move to trash for a single Garmin sync run.",
+  "context": "Journal window. Dialog heading confirming per-run move to trash for a single Garmin sync run.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "78a1508907a7c1028ef164f4d0e11b6dd4602edf7db2efc5e023ea4d616c6b31",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

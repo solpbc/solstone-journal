@@ -19,7 +19,8 @@ const ORIGIN = 'http://journal.test';
 const CLIENTS = '/app/network/api/clients';
 const PLAUD = '/app/settings/api/plaud';
 const GRANOLA = '/app/settings/api/granola';
-const FIRST_READS = [CLIENTS, PLAUD, GRANOLA];
+const GARMIN = '/app/settings/api/garmin';
+const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN];
 
 let cases = 0;
 async function test(name, fn) {
@@ -288,9 +289,10 @@ function makePage(env, { wide = true, withApi = false } = {}) {
     root: () => doc.getElementById('sources-root'),
     reads: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET'),
     readsOf: (url) => calls.filter((c) => c.url === url && c.method === 'GET'),
-    answerSyncs({ plaud = [200, { connected: false, syncing: false }], granola = [200, { connected: false, syncing: false }] } = {}) {
+    answerSyncs({ plaud = [200, { connected: false, syncing: false }], granola = [200, { connected: false, syncing: false }], garmin = [200, { available: true, connected: false, syncing: false }] } = {}) {
       calls.filter((c) => c.url === PLAUD && !c.settled).forEach((c) => c.answer(plaud[0], plaud[1]));
       calls.filter((c) => c.url === GRANOLA && !c.settled).forEach((c) => c.answer(granola[0], granola[1]));
+      calls.filter((c) => c.url === GARMIN && !c.settled).forEach((c) => c.answer(garmin[0], garmin[1]));
     },
     last: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET').slice(-1)[0],
     leave() {
@@ -360,6 +362,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
     assert.strictEqual(p.reads().length, 1, 'one clients read');
     assert.strictEqual(p.readsOf(PLAUD).length, 1, 'one plaud read');
     assert.strictEqual(p.readsOf(GRANOLA).length, 1, 'one granola read');
+    assert.strictEqual(p.readsOf(GARMIN).length, 1, 'one garmin read');
     assert.ok(p.reads()[0].url === CLIENTS, 'of the clients, by its absolute address');
     assert.ok(p.media.query === '(max-width: 700px)', 'the layout query');
     assert.strictEqual(p.media.listenerCount(), 1, 'one media listener');
@@ -435,7 +438,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('leaving while the reads are out aborts them, and their late answers draw nothing', async () => {
     const p = await boot(env);
     const allCalls = [...p.calls];
-    assert.strictEqual(allCalls.length, 3, 'three reads in flight');
+    assert.strictEqual(allCalls.length, 4, 'four reads in flight');
     const root = p.root();
     p.leave();
     await settle();
@@ -504,13 +507,14 @@ module.exports = async function sourcesContractCases(manifestDir) {
         [ORIGIN + CLIENTS]: mkEarly(unreadable),
         [ORIGIN + PLAUD]: mkEarly({ connected: false, syncing: false }),
         [ORIGIN + GRANOLA]: mkEarly({ connected: false, syncing: false }),
+        [ORIGIN + GARMIN]: mkEarly({ available: true, connected: false, syncing: false }),
       },
     };
     p.loadScript();
     p.place();
     await p.mount();
-    assert.strictEqual(p.calls.length, 0, 'the first load takes all three early reads and asks nothing');
-    assert.strictEqual(p.window.__solEarly.stats.adopted, 3, 'adopted all three');
+    assert.strictEqual(p.calls.length, 0, 'the first load takes all four early reads and asks nothing');
+    assert.strictEqual(p.window.__solEarly.stats.adopted, 4, 'adopted all four');
     assert.deepStrictEqual(Object.keys(p.window.__solEarly.reads), [], 'all early reads are taken');
     assert.deepStrictEqual(p.ready, ['error'], 'it drew the unreadable device as the error state');
     p.root().querySelector('.sources-retry').click();

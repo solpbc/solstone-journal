@@ -1,0 +1,23 @@
+{
+  "description": "Settings Garmin key guide intro explaining one active key per account, one-time display, and expiration choices.",
+  "context": "Journal window. Settings Garmin key guide intro explaining one active key per account, one-time display, and expiration choices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e89e35e859b0404d4d8459f59f168986f856b54bbde604122a2477fc9c7f14fc",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

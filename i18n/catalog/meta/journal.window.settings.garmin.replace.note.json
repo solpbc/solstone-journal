@@ -1,0 +1,23 @@
+{
+  "description": "Reassurance shown beneath the replace-key form on the Garmin sync card.",
+  "context": "Journal window. Reassurance shown beneath the replace-key form on the Garmin sync card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6971fb8f343a044ec87bbd4d501e647fca5573d1b2debec5ec3845991fce772f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

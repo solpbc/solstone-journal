@@ -1,0 +1,23 @@
+{
+  "description": "Fallback inline error shown when disconnecting Garmin fails.",
+  "context": "Journal window. Fallback inline error shown when disconnecting Garmin fails.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b3f5794af8254ffae2227b4a7842c7f7ca867b6dcf78fd7fbb445c4af2eabf1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

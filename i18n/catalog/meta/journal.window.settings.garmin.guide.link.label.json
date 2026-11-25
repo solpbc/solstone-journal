@@ -1,0 +1,23 @@
+{
+  "description": "Settings Garmin key guide link text opening Garmin Connect Personal API token settings.",
+  "context": "Journal window. Settings Garmin key guide link text opening Garmin Connect Personal API token settings.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d5505b5b1c5a9db02aefc97909c76b9d953ed10b53345e6f3e868965bc986c4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin_connect",
+      "kind": "accepted-input",
+      "value": "Garmin Connect"
+    }
+  ]
+}

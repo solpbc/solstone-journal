@@ -1,0 +1,28 @@
+{
+  "description": "Settings Garmin key guide step 1. The link argument is replaced with an anchor element to Garmin Connect.",
+  "context": "Journal window. Settings Garmin key guide step 1. The link argument is replaced with an anchor element to Garmin Connect.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "link",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a85ca962ad1fd1cbb5663a6d58839920e08d3265eb117d5103a870231191b73c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin_connect",
+      "kind": "accepted-input",
+      "value": "Garmin Connect"
+    }
+  ]
+}

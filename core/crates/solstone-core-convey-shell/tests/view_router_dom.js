@@ -433,7 +433,7 @@ const ENTRY_TABLE = {
       fragment: '/app/sources/workspace',
       scripts: [],
       styles: [],
-      reads: [{ route: '/app/sources/', urls: ['/app/network/api/clients', '/app/settings/api/plaud', '/app/settings/api/granola'] }],
+      reads: [{ route: '/app/sources/', urls: ['/app/network/api/clients', '/app/settings/api/plaud', '/app/settings/api/granola', '/app/settings/api/garmin'] }],
       contract: true,
     },
     support: {
@@ -648,6 +648,7 @@ const SOURCES_CODE = `
           ctx.fetch('/app/network/api/clients', { method: 'GET' }),
           ctx.fetch('/app/settings/api/plaud', { method: 'GET' }),
           ctx.fetch('/app/settings/api/granola', { method: 'GET' }),
+          ctx.fetch('/app/settings/api/garmin', { method: 'GET' }),
         ]).then(() => {
           const heading = document.createElement('h1');
           heading.textContent = 'sources';
@@ -1183,6 +1184,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       server.answers.set('/app/network/api/clients', server.json({ clients: [] }));
       server.answers.set('/app/settings/api/plaud', server.json({ connected: false, syncing: false }));
       server.answers.set('/app/settings/api/granola', server.json({ connected: false, syncing: false }));
+      server.answers.set('/app/settings/api/garmin', server.json({ available: true, connected: false, syncing: false }));
       server.answers.set('/app/network/api/state', server.json({ posture: 'direct' }));
       server.answers.set('/app/agents/api/state', server.json({ connections: [] }));
       server.answers.set('/app/agents/api/memories', server.json({ agents: [] }));
@@ -3592,12 +3594,14 @@ asyncCase('sources: to and from every other contract view in the page, its decla
     const before = page.server.of('/app/network/api/clients').length;
     const beforePlaud = page.server.of('/app/settings/api/plaud').length;
     const beforeGranola = page.server.of('/app/settings/api/granola').length;
+    const beforeGarmin = page.server.of('/app/settings/api/garmin').length;
     page.click('/app/sources/');
     await page.clock.advance(400);
     assert.ok(page.view('sources'), `sources in the page (before ${href})`);
     assert.strictEqual(page.server.of('/app/network/api/clients').length, before + 1, 'one read of the clients a move');
     assert.strictEqual(page.server.of('/app/settings/api/plaud').length, beforePlaud + 1, 'one read of plaud a move');
     assert.strictEqual(page.server.of('/app/settings/api/granola').length, beforeGranola + 1, 'one read of granola a move');
+    assert.strictEqual(page.server.of('/app/settings/api/garmin').length, beforeGarmin + 1, 'one read of garmin a move');
     const active = page.document.activeElement;
     assert.ok(active === page.main(), `focus on the workspace: the heading sources draws is passed over (it is on ${active && active.tagName})`);
     assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'sources');

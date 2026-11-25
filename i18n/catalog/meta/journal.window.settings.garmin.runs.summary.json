@@ -1,0 +1,30 @@
+{
+  "description": "Disclosure summary showing the number of recorded Garmin sync runs that added data.",
+  "context": "Journal window. Disclosure summary showing the number of recorded Garmin sync runs that added data.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "536108749090146035ded349b5cbce95c4a5e0a4be327aff3b69c103fbf26b13",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

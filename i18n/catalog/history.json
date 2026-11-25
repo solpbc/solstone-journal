@@ -125166,6 +125166,571 @@
       "selector": null
     },
     {
+      "id": "journal.window.settings.garmin.attention.kept.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e617474656e74696f6e2e6b6570742e64617973",
+      "namespace": "journal.window.settings.garmin.attention.kept",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.attention.kept.none",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e617474656e74696f6e2e6b6570742e6e6f6e65",
+      "namespace": "journal.window.settings.garmin.attention.kept",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.attention.key.hint",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e617474656e74696f6e2e6b65792e68696e74",
+      "namespace": "journal.window.settings.garmin.attention.key",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6465736372697074696f6e",
+      "namespace": "journal.window.settings.garmin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin_connect",
+          "kind": "accepted-input",
+          "value": "Garmin Connect"
+        },
+        {
+          "name": "body_battery",
+          "kind": "accepted-input",
+          "value": "Body Battery"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.disconnect.failed",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e646973636f6e6e6563742e6661696c6564",
+      "namespace": "journal.window.settings.garmin.disconnect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.disconnect.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e646973636f6e6e6563742e6e6f7465",
+      "namespace": "journal.window.settings.garmin.disconnect",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.disconnected.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e646973636f6e6e65637465642e64617973",
+      "namespace": "journal.window.settings.garmin.disconnected",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.expires.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e657870697265732e6c6162656c",
+      "namespace": "journal.window.settings.garmin.expires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.expires.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e657870697265732e6e6f7465",
+      "namespace": "journal.window.settings.garmin.expires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin_connect",
+          "kind": "accepted-input",
+          "value": "Garmin Connect"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.expiring.on",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6578706972696e672e6f6e",
+      "namespace": "journal.window.settings.garmin.expiring",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "link",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.expiring.soon",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6578706972696e672e736f6f6e",
+      "namespace": "journal.window.settings.garmin.expiring",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "link",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.facts.data.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e646174612e6c6162656c",
+      "namespace": "journal.window.settings.garmin.facts.data",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.facts.data.none",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e646174612e6e6f6e65",
+      "namespace": "journal.window.settings.garmin.facts.data",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.facts.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e64617973",
+      "namespace": "journal.window.settings.garmin.facts",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.facts.days.and.workouts",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e646179732e616e642e776f726b6f757473",
+      "namespace": "journal.window.settings.garmin.facts.days.and",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "days_text",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "workouts_text",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.facts.expires.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e657870697265732e6c6162656c",
+      "namespace": "journal.window.settings.garmin.facts.expires",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.facts.workouts",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e66616374732e776f726b6f757473",
+      "namespace": "journal.window.settings.garmin.facts",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "workouts",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.guide.intro",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e696e74726f",
+      "namespace": "journal.window.settings.garmin.guide",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.guide.link.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e6c696e6b2e6c6162656c",
+      "namespace": "journal.window.settings.garmin.guide.link",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin_connect",
+          "kind": "accepted-input",
+          "value": "Garmin Connect"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.guide.scope.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e73636f70652e6e6f7465",
+      "namespace": "journal.window.settings.garmin.guide.scope",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.guide.step.create",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e737465702e637265617465",
+      "namespace": "journal.window.settings.garmin.guide.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.guide.step.open",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e737465702e6f70656e",
+      "namespace": "journal.window.settings.garmin.guide.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "link",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin_connect",
+          "kind": "accepted-input",
+          "value": "Garmin Connect"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.guide.step.paste",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e67756964652e737465702e7061737465",
+      "namespace": "journal.window.settings.garmin.guide.step",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "key_prefix",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.key.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6b65792e656d707479",
+      "namespace": "journal.window.settings.garmin.key",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin_connect",
+          "kind": "accepted-input",
+          "value": "Garmin Connect"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.key.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6b65792e6e6f7465",
+      "namespace": "journal.window.settings.garmin.key",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin_connect",
+          "kind": "accepted-input",
+          "value": "Garmin Connect"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.key.save.failed",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6b65792e736176652e6661696c6564",
+      "namespace": "journal.window.settings.garmin.key.save",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.load.failed",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e6c6f61642e6661696c6564",
+      "namespace": "journal.window.settings.garmin.load",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.window.settings.garmin.paste.access",
       "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70617374652e616363657373",
       "namespace": "journal.window.settings.garmin.paste",
@@ -125207,6 +125772,142 @@
           "name": "slot2",
           "kind": "mark-word",
           "value": "Garmin Connect"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.progress.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e64617973",
+      "namespace": "journal.window.settings.garmin.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "days",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.progress.earlier",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e6561726c696572",
+      "namespace": "journal.window.settings.garmin.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.progress.queued",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e717565756564",
+      "namespace": "journal.window.settings.garmin.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.progress.reached",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e72656163686564",
+      "namespace": "journal.window.settings.garmin.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.progress.starting",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e70726f67726573732e7374617274696e67",
+      "namespace": "journal.window.settings.garmin.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.replace.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e7265706c6163652e6e6f7465",
+      "namespace": "journal.window.settings.garmin.replace",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
         }
       ],
       "selector": null
@@ -125518,6 +126219,292 @@
           "value": "Garmin"
         }
       ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.modal.recovery",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e7265636f76657279",
+      "namespace": "journal.window.settings.garmin.runs.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.modal.scope",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e73636f7065",
+      "namespace": "journal.window.settings.garmin.runs.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.modal.shared",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e736861726564",
+      "namespace": "journal.window.settings.garmin.runs.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.modal.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f64616c2e7469746c65",
+      "namespace": "journal.window.settings.garmin.runs.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.move.to.trash",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6d6f76652e746f2e7472617368",
+      "namespace": "journal.window.settings.garmin.runs.move.to",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6e6f7465",
+      "namespace": "journal.window.settings.garmin.runs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.open.trash",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e6f70656e2e7472617368",
+      "namespace": "journal.window.settings.garmin.runs.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.receipt.failed",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e6661696c6564",
+      "namespace": "journal.window.settings.garmin.runs.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.receipt.moved",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e6d6f766564",
+      "namespace": "journal.window.settings.garmin.runs.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.receipt.moved.erases",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e6d6f7665642e657261736573",
+      "namespace": "journal.window.settings.garmin.runs.receipt.moved",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "date",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.receipt.recover.failed",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e7265636f7665722e6661696c6564",
+      "namespace": "journal.window.settings.garmin.runs.receipt.recover",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.receipt.recovered",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726563656970742e7265636f7665726564",
+      "namespace": "journal.window.settings.garmin.runs.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.rows",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e726f7773",
+      "namespace": "journal.window.settings.garmin.runs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e73756d6d617279",
+      "namespace": "journal.window.settings.garmin.runs",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.settings.garmin.runs.synced.on",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6761726d696e2e72756e732e73796e6365642e6f6e",
+      "namespace": "journal.window.settings.garmin.runs.synced",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
       "selector": null
     },
     {
@@ -147193,6 +148180,46 @@
       "selector": null
     },
     {
+      "id": "journal.window.sources.syncs.empty.hint.with.garmin",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e656d7074792e68696e742e776974682e6761726d696e",
+      "namespace": "journal.window.sources.syncs.empty.hint.with",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "plaud",
+          "kind": "accepted-input",
+          "value": "Plaud"
+        },
+        {
+          "name": "granola",
+          "kind": "accepted-input",
+          "value": "Granola"
+        },
+        {
+          "name": "garmin",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.syncs.garmin.expiring",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e6761726d696e2e6578706972696e67",
+      "namespace": "journal.window.sources.syncs.garmin",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.sources.syncs.heading",
       "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e68656164696e67",
       "namespace": "journal.window.sources.syncs",
@@ -147254,6 +148281,24 @@
       "format_intent": "text",
       "arguments": [],
       "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.syncs.provider.garmin",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e73796e63732e70726f76696465722e6761726d696e",
+      "namespace": "journal.window.sources.syncs.provider",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "provider",
+          "kind": "accepted-input",
+          "value": "Garmin"
+        }
+      ],
       "selector": null
     },
     {

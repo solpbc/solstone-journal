@@ -1,0 +1,16 @@
+{
+  "description": "Dialog note explaining trash recovery and that scheduled hourly Garmin syncs will not re-add deleted items.",
+  "context": "Journal window. Dialog note explaining trash recovery and that scheduled hourly Garmin syncs will not re-add deleted items.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c8088407902d068b761ad53a04062bce42daa2eda2e2ced2f99cfe9aca6ed76",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

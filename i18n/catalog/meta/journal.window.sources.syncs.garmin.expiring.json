@@ -1,0 +1,16 @@
+{
+  "description": "Attention link label on the sources view when Garmin reports key_expiring_soon without a server attention line.",
+  "context": "Journal window. Attention link label on the sources view when Garmin reports key_expiring_soon without a server attention line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae9a164cd312e5e0338972f2bb28ab1913ee9f3e6e281e6962e19c9ccb2f5050",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

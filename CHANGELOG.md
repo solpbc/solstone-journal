@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- connected agents with body permission now have a separate cycle and pregnancy option, off for every agent, including ones you've already connected, for menstrual cycle, fertility, pregnancy and related logs across your body sources. Garmin workout location coordinates follow your places permission and location detail (exact locations, ~1 km areas, or none on names only or when places is off).
+- when your journal runs on a computer, you can now sync Garmin Connect with your own Personal API key under settings → sync. your journal brings in workouts, sleep, HRV, heart rate, Body Battery, stress, SpO2, weight, steps, hydration, cycle and nutrition logs directly from Garmin Connect, lists Garmin under sources, and lets you move individual sync runs to trash from the Garmin card.
 - your journal now suggests possible duplicates among the people, companies and other entities in your journal when two share an email address or another name, or have similar names in different facets. they wait in entities under possible duplicates, and nothing is merged unless you choose it.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.

@@ -1,0 +1,30 @@
+{
+  "description": "Day count fragment shown in the Garmin sync card facts list.",
+  "context": "Journal window. Day count fragment shown in the Garmin sync card facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "e3f0cd9f1286b554b5e536d7b9c7dcde27527d1e5798bf71099c4ad9cac17529",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

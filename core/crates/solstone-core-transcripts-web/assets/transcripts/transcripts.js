@@ -6355,7 +6355,7 @@
     // What the dialog's segments would take of the imports that made them, read
     // when it opens: null until the journal answers, or if it doesn't.
     let dialogImports = null;
-    const BODY_IMPORT_STREAMS = new Set(['import.strava', 'import.apple_health', 'import.oura']);
+    const BODY_IMPORT_STREAMS = new Set(['import.strava', 'import.apple_health', 'import.oura', 'import.garmin']);
     const isImportStream = (stream) => typeof stream === 'string' && stream.startsWith('import.') && !BODY_IMPORT_STREAMS.has(stream);
 
     function readDialogImports(segs) {

@@ -1,0 +1,23 @@
+{
+  "description": "Provider name for Garmin in the syncs section on the sources view.",
+  "context": "Journal window. Provider name for Garmin in the syncs section on the sources view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4bac28d49a7ac3f3235eb9c3efb1dc32ec7e1ba11ac49d899d36de41b9e5af26",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "provider",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

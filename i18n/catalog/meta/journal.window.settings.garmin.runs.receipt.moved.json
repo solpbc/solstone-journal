@@ -1,0 +1,23 @@
+{
+  "description": "Inline confirmation after moving a Garmin sync run to trash when no erase date is shown.",
+  "context": "Journal window. Inline confirmation after moving a Garmin sync run to trash when no erase date is shown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8867d942d7174c6628f4d233347982f1ea0c6dfbcd4ed589e26cfa4110ac3781",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

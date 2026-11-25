@@ -1,0 +1,25 @@
+{
+  "description": "Combined days and workouts summary shown in the Garmin sync card facts list.",
+  "context": "Journal window. Combined days and workouts summary shown in the Garmin sync card facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days_text",
+      "type": "string"
+    },
+    {
+      "name": "workouts_text",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "62b6fb4782127c2452c0e28ca4328edc36081a13ad5542ceacb5cdacfaf8ab38",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

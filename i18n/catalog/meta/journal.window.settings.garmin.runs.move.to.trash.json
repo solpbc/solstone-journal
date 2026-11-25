@@ -1,0 +1,16 @@
+{
+  "description": "Button label on a Garmin sync run row and confirmation dialog for moving that single run to trash.",
+  "context": "Journal window. Button label on a Garmin sync run row and confirmation dialog for moving that single run to trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6a70a12fb99e453a3114672c921d9e1cc3fecc56bc3e9b191403925a03aff45",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

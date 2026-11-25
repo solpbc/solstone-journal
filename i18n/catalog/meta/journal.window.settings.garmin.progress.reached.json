@@ -1,0 +1,28 @@
+{
+  "description": "Calm status line while ongoing background backfill walks back to earlier Garmin history.",
+  "context": "Journal window. Calm status line while ongoing background backfill walks back to earlier Garmin history.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "445a78d06a128e8b1774fb302cb3cc4f07364bd39a3efb010b84b89d66d5d185",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}

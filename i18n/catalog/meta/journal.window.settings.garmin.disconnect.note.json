@@ -1,0 +1,23 @@
+{
+  "description": "Reassurance shown beneath the disconnect button on the Garmin sync card.",
+  "context": "Journal window. Reassurance shown beneath the disconnect button on the Garmin sync card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5de8b217367e418cf7d23779e2c8d5fdf0191c6bdbd4a032d4cf87da527dd9a6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "protected_slots": [
+    {
+      "name": "garmin",
+      "kind": "accepted-input",
+      "value": "Garmin"
+    }
+  ]
+}
