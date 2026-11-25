@@ -708,3 +708,167 @@ fn default_stream_suffixed_activities_and_anchored_user_rows_trash_and_recover()
     assert_eq!(restored_manual["title"], json!("Owner manual title"));
     assert_eq!(restored_manual["description"], json!("Owner manual words"));
 }
+
+#[test]
+fn experience_cascades_on_trash_recovers_on_untrash_and_scrubs_on_erase() {
+    use solstone_core_facets::{
+        ActivityRef, ComposedExperienceUpdate, ExperienceDirectPatch, ExperienceMoment,
+        apply_composed_experience, create_owner_experience, load_experiences,
+        update_experience_direct,
+    };
+
+    let root = journal();
+    let root_path = root.path();
+
+    // Experience 1 spans two activities: A/B/C and D, with owner-held title and two moments.
+    let exp_two = create_owner_experience(
+        root_path,
+        "work",
+        vec![
+            ActivityRef {
+                day: DAY.to_owned(),
+                stream: "laptop".to_owned(),
+                id: "meeting_090000_300".to_owned(),
+                facet: None,
+            },
+            ActivityRef {
+                day: DAY.to_owned(),
+                stream: "laptop".to_owned(),
+                id: "meeting_100000_300".to_owned(),
+                facet: None,
+            },
+        ],
+        Some("Launch day".to_owned()),
+        Some("Original summary".to_owned()),
+        "owner",
+        "2026-11-10T12:00:00Z",
+    )
+    .unwrap();
+    apply_composed_experience(
+        root_path,
+        "work",
+        DAY,
+        &exp_two.id,
+        ComposedExperienceUpdate {
+            title: "Launch day".to_owned(),
+            summary: "Planning and follow-up.".to_owned(),
+            locations: vec![],
+            entity_refs: vec![],
+            moments: vec![
+                ExperienceMoment {
+                    id: "m1".to_owned(),
+                    started_at: "2026-11-10 09:00".to_owned(),
+                    ended_at: "2026-11-10 09:15".to_owned(),
+                    summary: "Planning session.".to_owned(),
+                    activity_refs: vec![ActivityRef {
+                        day: DAY.to_owned(),
+                        stream: "laptop".to_owned(),
+                        id: "meeting_090000_300".to_owned(),
+                        facet: None,
+                    }],
+                    segment_refs: vec![format!("{DAY}/laptop/{A}")],
+                    media_refs: vec![],
+                },
+                ExperienceMoment {
+                    id: "m2".to_owned(),
+                    started_at: "2026-11-10 10:00".to_owned(),
+                    ended_at: "2026-11-10 10:05".to_owned(),
+                    summary: "Follow-up containing kestrel secret.".to_owned(),
+                    activity_refs: vec![ActivityRef {
+                        day: DAY.to_owned(),
+                        stream: "laptop".to_owned(),
+                        id: "meeting_100000_300".to_owned(),
+                        facet: None,
+                    }],
+                    segment_refs: vec![format!("{DAY}/laptop/{D}")],
+                    media_refs: vec![],
+                },
+            ],
+            started_at: None,
+            ended_at: None,
+        },
+        "2026-11-10T12:05:00Z",
+    )
+    .unwrap();
+    // Stamp an owner edit so `edits[].before` carries previous summary text (exercising erase scrub).
+    update_experience_direct(
+        root_path,
+        "work",
+        DAY,
+        &exp_two.id,
+        ExperienceDirectPatch {
+            title: Some("Owner held launch day".to_owned()),
+            summary: Some("Edited summary".to_owned()),
+            ..Default::default()
+        },
+        "owner",
+        "2026-11-10T12:10:00Z",
+    )
+    .unwrap();
+
+    // Experience 2 depends solely on segment D -> must retire when D is trashed.
+    let exp_one = create_owner_experience(
+        root_path,
+        "work",
+        vec![ActivityRef {
+            day: DAY.to_owned(),
+            stream: "laptop".to_owned(),
+            id: "meeting_100000_300".to_owned(),
+            facet: None,
+        }],
+        Some("Solo D meeting".to_owned()),
+        Some("Only segment D.".to_owned()),
+        "owner",
+        "2026-11-10T12:01:00Z",
+    )
+    .unwrap();
+
+    let made = MadeFromIt::new();
+    let d_item = delete(root_path, D, &made);
+
+    // After trashing D: exp_one is retired, exp_two keeps meeting_090000_300 + m1 + owner-held title,
+    // drops m2, and enqueues an OwnerAsk experience_compose!
+    let after_trash = load_experiences(root_path, "work", DAY, false).unwrap();
+    assert_eq!(after_trash.len(), 1);
+    assert_eq!(after_trash[0].id, exp_two.id);
+    assert_eq!(after_trash[0].title, "Owner held launch day");
+    assert_eq!(after_trash[0].activities.len(), 1);
+    assert_eq!(after_trash[0].activities[0].id, "meeting_090000_300");
+    assert_eq!(after_trash[0].moments.len(), 1);
+    assert_eq!(after_trash[0].moments[0].id, "m1");
+    let asks = solstone_core_system::owner_ask::read(root_path).unwrap();
+    assert!(
+        asks.values().any(|ask| {
+            ask.day == DAY
+                && ask.experiences.iter().any(|e| {
+                    e.facet == "work" && e.anchor_day == DAY && e.experience_id == exp_two.id
+                })
+        }),
+        "expected OwnerAsk for surviving experience after trash cascade, got {asks:?}"
+    );
+
+    // Recover D -> both experiences return intact!
+    crate::trash_kinds::with_kinds(root_path, |kinds| {
+        solstone_core_trash::attach(root_path, kinds, &d_item.id, Action::Recover, surface())
+    })
+    .unwrap();
+    let restored = load_experiences(root_path, "work", DAY, false).unwrap();
+    assert_eq!(restored.len(), 2);
+    assert!(restored.iter().any(|e| e.id == exp_one.id));
+    let restored_two = restored.iter().find(|e| e.id == exp_two.id).unwrap();
+    assert_eq!(restored_two.activities.len(), 2);
+    assert_eq!(restored_two.moments.len(), 2);
+
+    // Trash D again and erase it -> edit `before` history scrubbed on disk.
+    let d_item_2 = delete(root_path, D, &made);
+    crate::trash_kinds::with_kinds(root_path, |kinds| {
+        solstone_core_trash::erase(root_path, kinds, &d_item_2.id, Action::Erase, surface())
+    })
+    .unwrap();
+    let raw_after_erase =
+        fs::read_to_string(root_path.join(format!("facets/work/experiences/{DAY}.jsonl"))).unwrap();
+    assert!(
+        !raw_after_erase.contains("Original summary"),
+        "expected erased before-values scrubbed: {raw_after_erase}"
+    );
+}

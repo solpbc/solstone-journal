@@ -19,6 +19,11 @@ pub mod conversation;
 mod day_accumulator;
 mod desktop_activity;
 mod documents;
+pub mod experiences;
+pub use experiences::{
+    ActivityRef, ExperienceMoment, ExperienceRecord, MembershipSource, OwnerHolds,
+    ShareDetailPolicy, experience_field_held, experience_moment_held, is_hidden_experience,
+};
 mod events;
 pub use events::is_retired_event_plan;
 mod facet_entities;
@@ -98,6 +103,8 @@ pub enum Family {
     Markdown,
     Event,
     Activity,
+    /// Facet-scoped derived Experience records. This family is path-selected only.
+    Experience,
     ActionLog,
     StructuredImport,
     AiChat,
@@ -138,10 +145,11 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 23] = [
+const ALL_FAMILIES: [Family; 24] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
+    Family::Experience,
     Family::ActionLog,
     Family::StructuredImport,
     Family::AiChat,
@@ -202,7 +210,7 @@ pub struct IndexChunk {
 #[must_use]
 pub fn indexed(family: Family, chunk: &IndexChunk) -> bool {
     !chunk.content.trim().is_empty()
-        && !(family == Family::Activity
+        && !(matches!(family, Family::Activity | Family::Experience)
             && chunk
                 .source
                 .as_ref()
@@ -1061,6 +1069,21 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         pattern: "facets/*/activities/*.jsonl",
         format: FileFormat::Content(Family::Activity),
         classification: ContentResolution::Indexed(Family::Activity),
+        kind: KindAssignment::Settled(Kind::Facets),
+        unit: ContentUnit::Event,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT,
+        condition: FileCondition::Path,
+        root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::FacetOwned,
+        },
+        segment: None,
+    },
+    FilePattern {
+        pattern: "facets/*/experiences/*.jsonl",
+        format: FileFormat::Content(Family::Experience),
+        classification: ContentResolution::Indexed(Family::Experience),
         kind: KindAssignment::Settled(Kind::Facets),
         unit: ContentUnit::Event,
         offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT,
@@ -2383,6 +2406,7 @@ pub fn produce_chunks_by_shape_for_locale(
         },
         Family::Event => events::render_for_locale(rel_text, records, locale),
         Family::Activity => activities::render_for_locale(rel, records, locale),
+        Family::Experience => experiences::render_for_locale(rel, records, locale),
         Family::ActionLog => action_logs::render_for_locale(rel_text, records, locale),
         Family::StructuredImport => imports::render_for_locale(records, locale),
         Family::AiChat => ai_chat::render_for_locale(rel_text, records, locale),

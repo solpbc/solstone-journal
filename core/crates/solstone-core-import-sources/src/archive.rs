@@ -23,8 +23,8 @@ use solstone_core_entity::{
 use solstone_core_entity_matching::normalize_resolution_query;
 use solstone_core_facets::{
     ObservationParseSource, hold_facet_trust_lock, parse_observation_file, read_activity_file,
-    read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
-    serialize_observation_rows,
+    read_experience_file, read_facet_entity_link, read_facet_entity_observations, read_log_file,
+    read_news_file, serialize_observation_rows,
 };
 use solstone_core_format::content::body_hidden_days::{
     HIDDEN_DAYS_RELATIVE_PATH, HiddenDays, MAX_HIDDEN_DAYS_BYTES, hidden_days_path,
@@ -2627,9 +2627,9 @@ fn merge_facet_content(
     facet: &str,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
-    // Read once, and only when an activity day comes in.
+    // Read once, and only when an activity or experience day comes in.
     let mut facet_id = None;
-    for relative in ["activities", "logs", "news"] {
+    for relative in ["activities", "experiences", "logs", "news"] {
         let source_dir = source_facet.join(relative);
         if !source_dir.is_dir() {
             continue;
@@ -2642,6 +2642,7 @@ fn merge_facet_content(
                 .replace('\\', "/");
             let source_contents = match relative {
                 "activities" => read_activity_file(source, facet, &relative_file),
+                "experiences" => read_experience_file(source, facet, &relative_file),
                 "logs" => read_log_file(source, facet, &relative_file),
                 "news" => read_news_file(source, facet, &relative_file),
                 _ => unreachable!(),
@@ -2651,7 +2652,9 @@ fn merge_facet_content(
                 detail: archive_detail(&error),
             })?
             .unwrap_or_default();
-            let source_contents = if relative == "activities" && is_activity_day(&relative_file) {
+            let source_contents = if matches!(relative, "activities" | "experiences")
+                && is_activity_day(&relative_file)
+            {
                 if facet_id.is_none() {
                     facet_id = Some(target_facet_id(target, facet)?);
                 }
@@ -2664,6 +2667,7 @@ fn merge_facet_content(
             };
             let target_contents = match relative {
                 "activities" => read_activity_file(target, facet, &relative_file),
+                "experiences" => read_experience_file(target, facet, &relative_file),
                 "logs" => read_log_file(target, facet, &relative_file),
                 "news" => read_news_file(target, facet, &relative_file),
                 _ => unreachable!(),
@@ -2675,7 +2679,9 @@ fn merge_facet_content(
             let merged = match (relative, target_contents.as_deref()) {
                 ("news", Some(_)) => continue, // Target markdown is authoritative.
                 ("logs", Some(existing)) => dedupe_lines(existing, &source_contents),
-                ("activities", Some(existing)) if relative_file.ends_with(".jsonl") => {
+                ("activities" | "experiences", Some(existing))
+                    if relative_file.ends_with(".jsonl") =>
+                {
                     dedupe_jsonl(existing, &source_contents)
                 }
                 (_, Some(_)) => continue, // Nested activity bytes are create-only.
@@ -2762,7 +2768,7 @@ fn stamp_activity_rows(text: &str, facet_id: Option<&str>) -> String {
     stamped
 }
 
-/// Stamp the activity day files of a facet the import creates.
+/// Stamp the activity and experience day files of a facet the import creates.
 fn stamp_staged_activity_days(
     state: &MergeState,
     facet: &str,
@@ -2772,27 +2778,29 @@ fn stamp_staged_activity_days(
         facet: facet.to_owned(),
         detail,
     };
-    let activities = join_contained(&state.staged_publish, &format!("facets/{facet}/activities"))
-        .map_err(|error| staging_error(archive_detail(&error)))?;
-    if !activities.is_dir() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(&activities).map_err(|error| staging_error(archive_detail(&error)))? {
-        let entry = entry.map_err(|error| staging_error(archive_detail(&error)))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !entry.file_type().is_ok_and(|kind| kind.is_file()) || !is_activity_day(&name) {
+    for subdir in ["activities", "experiences"] {
+        let dir = join_contained(&state.staged_publish, &format!("facets/{facet}/{subdir}"))
+            .map_err(|error| staging_error(archive_detail(&error)))?;
+        if !dir.is_dir() {
             continue;
         }
-        let bytes =
-            fs::read(entry.path()).map_err(|error| staging_error(archive_detail(&error)))?;
-        // Bytes that aren't text are copied as they came.
-        let Ok(text) = String::from_utf8(bytes) else {
-            continue;
-        };
-        let stamped = stamp_activity_rows(&text, facet_id);
-        if stamped != text {
-            fs::write(entry.path(), stamped)
-                .map_err(|error| staging_error(archive_detail(&error)))?;
+        for entry in fs::read_dir(&dir).map_err(|error| staging_error(archive_detail(&error)))? {
+            let entry = entry.map_err(|error| staging_error(archive_detail(&error)))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !entry.file_type().is_ok_and(|kind| kind.is_file()) || !is_activity_day(&name) {
+                continue;
+            }
+            let bytes =
+                fs::read(entry.path()).map_err(|error| staging_error(archive_detail(&error)))?;
+            // Bytes that aren't text are copied as they came.
+            let Ok(text) = String::from_utf8(bytes) else {
+                continue;
+            };
+            let stamped = stamp_activity_rows(&text, facet_id);
+            if stamped != text {
+                fs::write(entry.path(), stamped)
+                    .map_err(|error| staging_error(archive_detail(&error)))?;
+            }
         }
     }
     Ok(())

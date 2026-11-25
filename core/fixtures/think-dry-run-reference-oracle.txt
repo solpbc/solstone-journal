@@ -43,7 +43,12 @@ Priority 57:
 
 Priority 58:
 
-Total: 2 agents
+Priority 60:
+
+Priority 65:
+  gen  experiences_detect (new)
+
+Total: 3 agents
 Post-phase: journal indexer --rescan
 Post-phase: journal journal-stats
 (exit 0)
@@ -124,7 +129,13 @@ Priority 57:
 Priority 58:
   skip entities:entity_observer — no activity: personal, work
 
-Total: 2 agents
+Priority 60:
+  skip experiences_detect_facet — no activity: personal, work
+
+Priority 65:
+  gen  experiences_detect (new)
+
+Total: 3 agents
 Post-phase: journal indexer --rescan
 Post-phase: journal journal-stats
 (exit 0)

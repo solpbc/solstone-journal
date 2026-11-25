@@ -427,6 +427,9 @@ fn read_daily_coverage_with_cache(
             if config.key == "morning_briefing" && !morning_briefing_applies(journal, day) {
                 continue;
             }
+            if config.key == "experiences_detect" && active.is_empty() {
+                continue;
+            }
             units.push(read_unit_coverage_cached(
                 journal, day, &config, None, cache,
             )?);
@@ -2079,13 +2082,26 @@ mod tests {
                 }
             }
         }
-        let expected = shared
+        let mut expected = shared
             .iter()
             .flat_map(|back| {
-                ["entities:entity_observer", "entities:entity_suggest"]
-                    .map(|name| (day(*back), name.to_owned(), "work".to_owned()))
+                [
+                    ("entities:entity_observer", "work"),
+                    ("entities:entity_suggest", "work"),
+                    ("experiences_detect", ""),
+                ]
+                .map(|(name, facet)| (day(*back), name.to_owned(), facet.to_owned()))
             })
             .collect::<std::collections::BTreeSet<_>>();
+        for (index, back) in shared.iter().enumerate() {
+            if facet_of(index) == "work" {
+                expected.insert((
+                    day(*back),
+                    "experiences_detect_facet".to_owned(),
+                    "work".to_owned(),
+                ));
+            }
+        }
         assert_eq!(owed, expected);
         // Each owed unit is one generate talent run: one model call.
         let configs = daily_configs(root, &talent, &apps).unwrap();
@@ -2097,7 +2113,7 @@ mod tests {
                 "{name}"
             );
         }
-        assert_eq!(owed.len(), 20);
+        assert_eq!(owed.len(), 35);
         // `home`'s units on the days only the workout chose it are no longer
         // read at all: a body tile makes no facet active.
         assert!(remaining < before, "{remaining} < {before}");

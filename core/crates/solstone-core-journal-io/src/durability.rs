@@ -116,6 +116,8 @@ pub enum ArtifactId {
     IndexAttempts,
     IndexRecovery,
     IntegrityReceipt,
+    FacetExperiences,
+    ExperienceCandidates,
 }
 
 /// One artifact the journal reads, with its declared class and path glob.
@@ -484,6 +486,20 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "daily talent execution unit records; unreadable sets aside and reports absent",
+    },
+    DurableArtifact {
+        id: ArtifactId::ExperienceCandidates,
+        path: "chronicle/*/health/experience-candidates/*.json",
+        class: DurabilityClass::Wipeable,
+        parser: ParserKind::WholeJson,
+        rationale: "per-facet daily experience detection proposals awaiting cross-facet arbitration; rebuilt on next daily pass",
+    },
+    DurableArtifact {
+        id: ArtifactId::FacetExperiences,
+        path: "facets/*/experiences/*.jsonl",
+        class: DurabilityClass::Healable,
+        parser: ParserKind::RecordFramedJsonl,
+        rationale: "facet-scoped derived experience records anchored by day; damaged lines are preserved or quarantined while live rows survive",
     },
     DurableArtifact {
         id: ArtifactId::SegmentFacets,

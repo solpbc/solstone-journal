@@ -119,7 +119,10 @@ pub(crate) fn decorate(mut plan: CommitPlan, prepared: &PreparedTalent) -> Commi
             }
             // Possible names carry no model text; a clipped packet still
             // answers every candidate it offered.
-            WriteIntent::PossibleNames { .. } => {}
+            WriteIntent::PossibleNames { .. }
+            | WriteIntent::ExperienceCandidates { .. }
+            | WriteIntent::ExperiencesCommit { .. }
+            | WriteIntent::ExperienceCompose { .. } => {}
         }
     }
     plan

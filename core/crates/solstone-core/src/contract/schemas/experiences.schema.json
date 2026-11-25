@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solstone-journal-format:experiences",
+  "title": "Experience Record",
+  "description": "One row of a facet day experience JSONL file under facets/<facet>/experiences/<YYYYMMDD>.jsonl.",
+  "type": "object",
+  "required": [
+    "id",
+    "primary_facet",
+    "anchor_day",
+    "started_at",
+    "ended_at",
+    "membership_source",
+    "hidden",
+    "title",
+    "summary",
+    "activities",
+    "moments"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "primary_facet": { "type": "string", "minLength": 1 },
+    "destination_id": { "type": ["string", "null"] },
+    "anchor_day": { "type": "string", "pattern": "^[0-9]{8}$" },
+    "started_at": { "type": "string" },
+    "ended_at": { "type": "string" },
+    "membership_source": { "type": "string", "enum": ["auto", "owner"] },
+    "hidden": { "type": "boolean" },
+    "owner_holds": {
+      "type": "object",
+      "properties": {
+        "activities": { "type": "boolean" },
+        "title": { "type": "boolean" },
+        "summary": { "type": "boolean" },
+        "moment_ids": { "type": "array", "items": { "type": "string" } },
+        "excluded_activities": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "edits": { "type": "array", "items": { "type": "object" } },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "locations": { "type": "array", "items": { "type": "string" } },
+    "activities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["day", "stream", "id"],
+        "properties": {
+          "day": { "type": "string", "pattern": "^[0-9]{8}$" },
+          "stream": { "type": "string" },
+          "id": { "type": "string", "minLength": 1 },
+          "facet": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "entity_refs": { "type": "array", "items": { "type": "string" } },
+    "moments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "started_at", "ended_at", "summary", "activity_refs", "segment_refs", "media_refs"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "started_at": { "type": "string" },
+          "ended_at": { "type": "string" },
+          "summary": { "type": "string" },
+          "activity_refs": { "type": "array", "items": { "type": "object" } },
+          "segment_refs": { "type": "array", "items": { "type": "string" } },
+          "media_refs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "category": { "type": ["string", "null"] },
+    "composed_at": { "type": ["string", "null"] },
+    "created_at": { "type": ["string", "null"] },
+    "updated_at": { "type": ["string", "null"] }
+  },
+  "x-journal-contract": {
+    "format_id": "experiences",
+    "schema_owner": "solstone-core-format",
+    "reference_writer": "solstone-core-facets",
+    "allowed_producers": ["solstone-core-facets"],
+    "write_discipline": "one file per facet anchor day, replaced whole and atomically under facet-trust, entity-trust, and day file lock; rows hold lightweight internal refs hydrated on read",
+    "file_kind": "experiences_jsonl",
+    "key_fields": ["id", "primary_facet", "anchor_day", "activities", "moments"],
+    "producer_write_paths": ["facets/{facet}/experiences/YYYYMMDD.jsonl"]
+  }
+}

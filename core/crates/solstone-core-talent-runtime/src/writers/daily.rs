@@ -55,6 +55,10 @@ pub enum PreparedDailyAction {
         before: Option<Vec<u8>>,
         after: Vec<u8>,
     },
+    ExperiencesCommit {
+        day: String,
+        experiences: Vec<crate::experiences::detect::DetectedExperienceCommit>,
+    },
 }
 
 fn error(detail: impl Into<MessageDetail>) -> StageError {
@@ -135,7 +139,9 @@ fn action_facet(action: &PreparedDailyAction) -> Option<(&str, &str)> {
         PreparedDailyAction::Output { facet_identity, .. } => facet_identity
             .as_ref()
             .map(|(facet, id)| (facet.as_str(), id.as_str())),
-        PreparedDailyAction::DailyTime { .. } => None,
+        PreparedDailyAction::DailyTime { .. } | PreparedDailyAction::ExperiencesCommit { .. } => {
+            None
+        }
     }
 }
 
@@ -456,6 +462,24 @@ pub fn prepare_daily_publication(
                 crate::entities::review::prepare_publication(root, &output, &facet, &day, prepared)
                     .map_err(|e| review_owner_error(&identity, e))?,
             );
+        }
+        CommitPlan::Write(WriteIntent::ExperienceCandidates {
+            output_path,
+            output,
+            ..
+        }) => {
+            actions.push(
+                prepare_frozen_output_action(
+                    root,
+                    &PathBuf::from(output_path),
+                    output.into_bytes(),
+                    prepared,
+                )
+                .map_err(daily_owner_error)?,
+            );
+        }
+        CommitPlan::Write(WriteIntent::ExperiencesCommit { day, experiences }) => {
+            actions.push(PreparedDailyAction::ExperiencesCommit { day, experiences });
         }
         CommitPlan::Write(_) => {
             return Err(error(MessageDetail::message(
@@ -785,6 +809,22 @@ pub(crate) fn publish_daily_publication_cancellable(
                     || changed_paths.push(path.clone()),
                 )
                 .map_err(make_review)?;
+            }
+            PreparedDailyAction::ExperiencesCommit { experiences, .. } => {
+                let now_iso = solstone_core_time::utc_z(
+                    jiff::Timestamp::now(),
+                    solstone_core_time::Precision::Secs,
+                );
+                let committed = crate::experiences::detect::apply_detected_experiences(
+                    &context.journal,
+                    experiences,
+                    &now_iso,
+                )
+                .map_err(|e| make_error(e.into()))?;
+                for (_, _, _, rel_path) in committed {
+                    changed_paths.push(rel_path);
+                }
+                receipt().map_err(|e| make_error(e.into()))?;
             }
         }
     }

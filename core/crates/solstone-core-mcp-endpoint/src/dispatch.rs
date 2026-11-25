@@ -41,8 +41,8 @@ use crate::permissions::{ConnectionReadSnapshot, PermissionDecision, evaluate_co
 use crate::possible_names::ConnectionPossibleNames;
 use crate::references::{
     ActivityReference, CursorReference, EntityListCursor, EntityReference, EntryReference,
-    FacetListCursor, ReferenceCodec, ReferenceKind, ReferenceTarget, SegmentReference,
-    TranscriptListCursor,
+    ExperienceReference, FacetListCursor, ReferenceCodec, ReferenceKind, ReferenceTarget,
+    SegmentReference, TranscriptListCursor,
 };
 use crate::registry::{ToolEntry, category_token, find_tool, requirement_refusal};
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
@@ -568,7 +568,7 @@ fn fetch_target_missing_kind(
                 .flatten()
                 .find(|kind| !snapshot.categories.contains(kind))?
         }
-        ReferenceTarget::Activity(_)
+        ReferenceTarget::Activity(_) | ReferenceTarget::Experience(_)
             if !snapshot.categories.contains(&AdmittedCategory::Facets) =>
         {
             AdmittedCategory::Facets
@@ -2578,54 +2578,112 @@ fn search(
                 continue;
             }
 
+            let live_experience =
+                if crate::experiences::parse_experience_path(&hit.metadata.path).is_some() {
+                    let Some(found) = crate::experiences::live_experience_for_indexed_hit(
+                        journal_root,
+                        snapshot,
+                        &hit.metadata.path,
+                        hit.metadata.idx,
+                    ) else {
+                        live_dropped = true;
+                        continue;
+                    };
+                    if !snapshot.categories.contains(&AdmittedCategory::Places) {
+                        let non_loc = crate::experiences::non_location_search_text(&found.0);
+                        if !filtered_text_matches_query(&non_loc, &batch_query, batch_relaxed) {
+                            live_dropped = true;
+                            continue;
+                        }
+                    }
+                    Some(found)
+                } else {
+                    None
+                };
+
             targets.push(format!("{}#{}", hit.metadata.path, hit.metadata.idx));
             let hit_activity_id = record_identity.clone();
-            let reference = codec()
-                .mint(
-                    principal.connection,
-                    snapshot.generation,
-                    ReferenceTarget::Entry(EntryReference {
-                        day: hit.metadata.day.clone(),
-                        stream: hit.metadata.stream.clone(),
-                        path: hit.metadata.path.clone(),
-                        idx: hit.metadata.idx,
-                        row_id: hit.row_id,
-                        activity_proof,
-                        record_identity,
-                        markdown_fingerprint: (!is_screen_text
-                            && hit.metadata.path.ends_with(".md"))
-                        .then(|| digest(&hit.text)),
-                        source_digest,
-                        byte_offset,
-                    }),
-                )
-                .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
-            let mut value = json!({
-                "title": entry_title(&hit.metadata.day),
-                "date": hit.metadata.day,
-                "snippet": if is_screen_text {
-                    screen_text_snippet(&served_text)
-                } else if imported {
-                    snippet(preview.as_deref().unwrap_or_default())
-                } else if request.query.trim().is_empty()
-                    && request.place.is_none()
-                    && let Some(full_text) = location_full_text.as_deref()
-                {
-                    snippet(&crate::places_view::search_day_places_snippet(
-                        full_text,
-                        MAX_SNIPPET_CHARS,
-                    ))
+            let reference =
+                if let Some((ref exp_rec, ref facet_id, ref facet_dir, _)) = live_experience {
+                    codec()
+                        .mint(
+                            principal.connection,
+                            snapshot.generation,
+                            ReferenceTarget::Experience(ExperienceReference {
+                                facet_id: facet_id.clone(),
+                                facet_dir: facet_dir.clone(),
+                                anchor_day: exp_rec.anchor_day.clone(),
+                                experience_id: exp_rec.id.clone(),
+                            }),
+                        )
+                        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
                 } else {
-                    snippet(&served_text)
-                },
-                "reference": reference,
-            });
-            owner_links.entry(
-                journal_root,
-                &mut value,
-                &hit.metadata.path,
-                hit_activity_id.as_deref(),
-            );
+                    codec()
+                        .mint(
+                            principal.connection,
+                            snapshot.generation,
+                            ReferenceTarget::Entry(EntryReference {
+                                day: hit.metadata.day.clone(),
+                                stream: hit.metadata.stream.clone(),
+                                path: hit.metadata.path.clone(),
+                                idx: hit.metadata.idx,
+                                row_id: hit.row_id,
+                                activity_proof,
+                                record_identity,
+                                markdown_fingerprint: (!is_screen_text
+                                    && hit.metadata.path.ends_with(".md"))
+                                .then(|| digest(&hit.text)),
+                                source_digest,
+                                byte_offset,
+                            }),
+                        )
+                        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
+                };
+            let mut value = if let Some((ref exp_rec, _, _, ref facet_title)) = live_experience {
+                let summary_text = if !exp_rec.summary.trim().is_empty() {
+                    exp_rec.summary.as_str()
+                } else {
+                    exp_rec.title.as_str()
+                };
+                json!({
+                    "title": exp_rec.title,
+                    "date": exp_rec.anchor_day,
+                    "snippet": snippet(summary_text),
+                    "reference": reference,
+                    "experience_id": exp_rec.id,
+                    "facet": facet_title,
+                    "derived": true,
+                })
+            } else {
+                json!({
+                    "title": entry_title(&hit.metadata.day),
+                    "date": hit.metadata.day,
+                    "snippet": if is_screen_text {
+                        screen_text_snippet(&served_text)
+                    } else if imported {
+                        snippet(preview.as_deref().unwrap_or_default())
+                    } else if request.query.trim().is_empty()
+                        && request.place.is_none()
+                        && let Some(full_text) = location_full_text.as_deref()
+                    {
+                        snippet(&crate::places_view::search_day_places_snippet(
+                            full_text,
+                            MAX_SNIPPET_CHARS,
+                        ))
+                    } else {
+                        snippet(&served_text)
+                    },
+                    "reference": reference,
+                })
+            };
+            if live_experience.is_none() {
+                owner_links.entry(
+                    journal_root,
+                    &mut value,
+                    &hit.metadata.path,
+                    hit_activity_id.as_deref(),
+                );
+            }
             let hit_kind = if record.as_ref().is_some_and(|record| {
                 solstone_core_facets::is_body_record(record)
                     || solstone_core_format::content::is_strava_reading(record)
@@ -3423,6 +3481,30 @@ fn fetch(
             if !live_allows(journal_root, &boundary, &entry.path, Some(&entry.stream)) {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
+            if crate::experiences::parse_experience_path(&entry.path).is_some() {
+                let Some((record, _, _, facet_title)) =
+                    crate::experiences::live_experience_for_indexed_hit(
+                        journal_root,
+                        snapshot,
+                        &entry.path,
+                        entry.idx,
+                    )
+                else {
+                    return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                };
+                let admitted_dirs = crate::experiences::admitted_facet_dirs(journal_root, snapshot);
+                let hydrated = solstone_core_facets::hydrate_experience(journal_root, record, None);
+                let value = crate::experiences::filter_hydrated_experience(
+                    journal_root,
+                    snapshot,
+                    &admitted_dirs,
+                    &hydrated,
+                    &facet_title,
+                    Some(request.reference.clone()),
+                );
+                let target = format!("{}#{}", entry.path, entry.idx);
+                return Ok(Prepared::new(value, 1, vec![target]));
+            }
             let topic = if topic_segment(&entry.path).is_some() {
                 Some(
                     TopicDocument::read(journal_root, &entry.path)
@@ -3874,6 +3956,27 @@ fn fetch(
         }
         ReferenceTarget::Activity(act_ref) => {
             fetch_activity(journal_root, principal, snapshot, &act_ref.into())
+        }
+        ReferenceTarget::Experience(exp_ref) => {
+            let Some((record, facet_title, admitted_dirs)) =
+                crate::experiences::live_experience_for_ref(journal_root, snapshot, &exp_ref)
+            else {
+                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+            };
+            let hydrated = solstone_core_facets::hydrate_experience(journal_root, record, None);
+            let value = crate::experiences::filter_hydrated_experience(
+                journal_root,
+                snapshot,
+                &admitted_dirs,
+                &hydrated,
+                &facet_title,
+                Some(request.reference.clone()),
+            );
+            let target = format!(
+                "experience:{}/{}/{}",
+                exp_ref.facet_dir, exp_ref.anchor_day, exp_ref.experience_id
+            );
+            Ok(Prepared::new(value, 1, vec![target]))
         }
         ReferenceTarget::LocationDay(location_day) => {
             let Some(precision) = snapshot.places_precision() else {

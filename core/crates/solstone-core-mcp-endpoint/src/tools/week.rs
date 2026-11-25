@@ -858,6 +858,23 @@ fn project_sunday(
     // Only a week with body faces carries the key, so a journal without body
     // data answers exactly as before.
     let mut value = value;
+    let today_day = solstone_core_time::day_key(now.date());
+    let clamped_exp_end = if end_day < today_day {
+        &end_day
+    } else {
+        &today_day
+    };
+    let experiences = crate::experiences::collect_range_experiences(
+        journal,
+        principal,
+        snapshot,
+        &facets,
+        &start_day,
+        clamped_exp_end,
+    );
+    if !experiences.is_empty() {
+        value["experiences"] = Value::Array(experiences);
+    }
     if !body_items.is_empty() {
         value["body"] = Value::Array(body_items);
     }
@@ -1449,8 +1466,20 @@ pub(crate) fn project_range_with_limits(
         }
     }
 
-    let facets: Vec<(String, String)> = available_facets(journal, snapshot)
-        .map_err(|_| ToolError::FileUnreadable)?
+    let available_range =
+        available_facets(journal, snapshot).map_err(|_| ToolError::FileUnreadable)?;
+    let facets_with_titles: Vec<(String, String, String)> = available_range
+        .iter()
+        .map(|(id, dir, decl)| {
+            let title = decl
+                .as_ref()
+                .filter(|d| !d.title.is_empty())
+                .map(|d| d.title.clone())
+                .unwrap_or_else(|| dir.clone());
+            (id.clone(), dir.clone(), title)
+        })
+        .collect();
+    let facets: Vec<(String, String)> = available_range
         .into_iter()
         .map(|(id, dir, _)| (id, dir))
         .collect();
@@ -1659,11 +1688,26 @@ pub(crate) fn project_range_with_limits(
         .chain(people_targets)
         .collect();
     let count = days.len();
+    let range_experiences = if cursor.is_none() {
+        crate::experiences::collect_range_experiences(
+            journal,
+            principal,
+            snapshot,
+            &facets_with_titles,
+            day_from,
+            &effective_end_day,
+        )
+    } else {
+        Vec::new()
+    };
     let mut value = json!({
         "range": {"start": day_from, "end": effective_end_day},
         "days": days,
         "next_cursor": next_cursor,
     });
+    if !range_experiences.is_empty() {
+        value["experiences"] = Value::Array(range_experiences);
+    }
     if let Some(precision) = places_precision {
         value["places_precision"] = json!(precision.wire_value());
     }

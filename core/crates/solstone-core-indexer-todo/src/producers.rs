@@ -12,6 +12,7 @@ pub const PRODUCERS: &[(Family, &str)] = &[
         "talent output, import publication, location projection and weekly reflection",
     ),
     (Family::Activity, "facets store publication"),
+    (Family::Experience, "facets store publication"),
     (Family::ActionLog, "facet and journal action logs"),
     (Family::StructuredImport, "import publication"),
     (Family::AiChat, "import publication"),

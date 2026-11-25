@@ -433,6 +433,14 @@ const PROBES: &[Probe] = &[
         stderr_anchor: Some(b"usage: solstone journal share [-h] {match,package} ...\n"),
     },
     Probe {
+        token: "experiences",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(
+            b"usage: solstone journal experiences [-h] {list,show,create,update,add-activity,remove-activity,mute,unmute,detect,recompose} ...\n",
+        ),
+    },
+    Probe {
         token: "service",
         argv: &["--nonsense"],
         expected_exit: 1,

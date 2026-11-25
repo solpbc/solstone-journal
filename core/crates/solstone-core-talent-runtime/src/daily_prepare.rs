@@ -19,6 +19,8 @@ enum FrozenState {
     EntitiesReview(crate::entities::review::ReviewState),
     EntitySuggest(crate::entities::suggest::SuggestState),
     EntityObserver(crate::entities::observer::ObserverState),
+    ExperiencesDetectFacet(Box<crate::experiences::Stage1APreState>),
+    ExperiencesDetect(Box<crate::experiences::Stage1BPreState>),
 }
 
 fn no_output_reason(reason: &str) -> bool {
@@ -91,6 +93,8 @@ pub fn freeze(
             );
             FrozenState::EntityObserver(v)
         }
+        PrePostState::ExperiencesDetectFacet(v) => FrozenState::ExperiencesDetectFacet(v),
+        PrePostState::ExperiencesDetect(v) => FrozenState::ExperiencesDetect(v),
         _ => {
             return Err(failure(
                 &prepared,
@@ -732,6 +736,13 @@ pub fn thaw(packet: &Value) -> Result<ThawedStage, String> {
         FrozenState::EntityObserver(v) => {
             (PrePostState::EntityObserver(v), "entities:entity_observer")
         }
+        FrozenState::ExperiencesDetectFacet(v) => (
+            PrePostState::ExperiencesDetectFacet(v),
+            "experiences_detect_facet",
+        ),
+        FrozenState::ExperiencesDetect(v) => {
+            (PrePostState::ExperiencesDetect(v), "experiences_detect")
+        }
     };
     if let Some(reason) = config.get("skip_reason").and_then(Value::as_str) {
         if !no_output_reason(reason) {
@@ -836,6 +847,9 @@ fn capture_owner_expectations(
             "entities:entities_review" => {
                 Some(format!("facets/{facet}/entities/{day}_review_outcome.json"))
             }
+            "experiences_detect_facet" => Some(format!(
+                "chronicle/{day}/health/experience-candidates/{facet}.json"
+            )),
             _ => None,
         };
         if let Some(relative) = relative {

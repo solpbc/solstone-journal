@@ -357,6 +357,64 @@ impl AskPass {
             }
         }
         let mut tasks = Vec::new();
+        for id in &ids {
+            checkpoint()?;
+            let Some(ask) = self.asks.get(id).cloned() else {
+                continue;
+            };
+            if ask.experiences.is_empty() {
+                continue;
+            }
+            let mut completed_exps = Vec::new();
+            for exp_ask in &ask.experiences {
+                let done = match solstone_core_facets::get_experience(
+                    journal,
+                    &exp_ask.facet,
+                    &exp_ask.anchor_day,
+                    &exp_ask.experience_id,
+                ) {
+                    Ok(None) => true,
+                    Ok(Some(rec)) => {
+                        rec.hidden
+                            || rec.activities.is_empty()
+                            || rec
+                                .composed_at
+                                .as_deref()
+                                .and_then(|s| s.parse::<jiff::Timestamp>().ok())
+                                .is_some_and(|ts| ts.as_millisecond() >= ask.created_at_ms)
+                    }
+                    Err(_) => false,
+                };
+                if done {
+                    completed_exps.push(exp_ask.clone());
+                } else if policy.permits(WorkBand::Waiting) {
+                    let mut priority = solstone_core_system::priority::classify(
+                        &canonical_journal_command([
+                            "think",
+                            "--day",
+                            &exp_ask.anchor_day,
+                            "--facet",
+                            &exp_ask.facet,
+                            "--experience",
+                            &exp_ask.experience_id,
+                        ]),
+                        today,
+                    );
+                    priority.band = WorkBand::Waiting;
+                    tasks.push(experience_task(exp_ask, priority));
+                }
+            }
+            if !completed_exps.is_empty() {
+                self.apply(journal, id, |current| {
+                    let mut next = current.clone();
+                    let mut changed = false;
+                    for done in &completed_exps {
+                        changed |= next.experiences.remove(done);
+                    }
+                    changed.then_some(Some(next))
+                });
+            }
+        }
         for (sunday, members) in weeks {
             checkpoint()?;
             let saturday = sunday
@@ -470,6 +528,8 @@ impl AskPass {
             }
             let waiting_on = if self.day(&ask.day).holds {
                 "activities"
+            } else if !ask.experiences.is_empty() {
+                "experiences"
             } else if (ask.thaw && !ask.thaw_done) || briefings[&ask.day].owed {
                 "briefing"
             } else {
@@ -681,6 +741,35 @@ pub(crate) fn asked_days(journal: &Path) -> BTreeMap<String, String> {
             Some((ask.day, week_reference(&start)))
         })
         .collect()
+}
+
+fn experience_task(
+    exp: &solstone_core_system::owner_ask::AskedExperience,
+    priority: WorkPriority,
+) -> DiscoveredTask {
+    DiscoveredTask {
+        request: BusTaskRequest {
+            cmd: TaskArgv::from_wire(canonical_journal_command([
+                "think",
+                "--day",
+                &exp.anchor_day,
+                "--facet",
+                &exp.facet,
+                "--experience",
+                &exp.experience_id,
+            ]))
+            .expect("experience compose command"),
+            reference: format!(
+                "supervisor-owner-exp-{}-{}-{}",
+                exp.anchor_day, exp.facet, exp.experience_id
+            ),
+            day: Some(exp.anchor_day.clone()),
+            scheduler_name: None,
+            queue_if_active_cmd_differs: false,
+            priority: Some(priority),
+            daily_catchup_provenance: None,
+        },
+    }
 }
 
 fn week_task(start: &str, saturday: &str, priority: WorkPriority) -> DiscoveredTask {

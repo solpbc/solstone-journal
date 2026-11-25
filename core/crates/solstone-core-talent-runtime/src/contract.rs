@@ -21,6 +21,9 @@ pub enum StageId {
     SpeakerAttribution,
     WeeklyReflection,
     PossibleNames,
+    ExperiencesDetectFacet,
+    ExperiencesDetect,
+    ExperienceCompose,
 }
 
 #[derive(Clone, Copy)]
@@ -79,6 +82,9 @@ pub enum PrePostState {
     SpeakerAttribution(crate::speaker_attribution::SpeakerAttributionState),
     WeeklyReflection(crate::weekly_reflection::WeeklyReflectionState),
     PossibleNames(Box<crate::possible_names::PossibleNamesState>),
+    ExperiencesDetectFacet(Box<crate::experiences::Stage1APreState>),
+    ExperiencesDetect(Box<crate::experiences::Stage1BPreState>),
+    ExperienceCompose(Box<crate::experiences::ComposePreState>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,7 +125,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 14] = [
+pub const HOOK_TABLE: [HookBinding; 17] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -175,6 +181,18 @@ pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "entities:possible_names",
         stage: StageId::PossibleNames,
+    },
+    HookBinding {
+        hook: "experiences_detect_facet",
+        stage: StageId::ExperiencesDetectFacet,
+    },
+    HookBinding {
+        hook: "experiences_detect",
+        stage: StageId::ExperiencesDetect,
+    },
+    HookBinding {
+        hook: "experience_compose",
+        stage: StageId::ExperienceCompose,
     },
 ];
 
@@ -379,6 +397,54 @@ pub static POSSIBLE_NAMES: StageSpec = StageSpec {
     writes_as_intent: Some(crate::writers::apply_prepared),
     output_override: None,
 };
+pub static EXPERIENCES_DETECT_FACET: StageSpec = StageSpec {
+    stage: StageId::ExperiencesDetectFacet,
+    gate: None,
+    build: Some(|prepared, context, _| {
+        crate::experiences::detect::build_stage1a(prepared, context)
+    }),
+    prompt_override: Some(crate::experiences::detect::apply_prompt_override_stage1a),
+    commit: Some(CommitSpec {
+        parse: crate::experiences::detect::parse_stage1a,
+        commit: crate::experiences::detect::commit_stage1a,
+    }),
+    unavailable_commit: None,
+    unavailable_before_generate: None,
+    writes_as_intent: Some(crate::writers::apply_prepared),
+    output_override: None,
+};
+pub static EXPERIENCES_DETECT: StageSpec = StageSpec {
+    stage: StageId::ExperiencesDetect,
+    gate: None,
+    build: Some(|prepared, context, _| {
+        crate::experiences::detect::build_stage1b(prepared, context)
+    }),
+    prompt_override: Some(crate::experiences::detect::apply_prompt_override_stage1b),
+    commit: Some(CommitSpec {
+        parse: crate::experiences::detect::parse_stage1b,
+        commit: crate::experiences::detect::commit_stage1b,
+    }),
+    unavailable_commit: None,
+    unavailable_before_generate: None,
+    writes_as_intent: Some(crate::writers::apply_prepared),
+    output_override: None,
+};
+pub static EXPERIENCE_COMPOSE: StageSpec = StageSpec {
+    stage: StageId::ExperienceCompose,
+    gate: None,
+    build: Some(|prepared, context, _| {
+        crate::experiences::compose::build_compose(prepared, context)
+    }),
+    prompt_override: Some(crate::experiences::compose::apply_prompt_override_compose),
+    commit: Some(CommitSpec {
+        parse: crate::experiences::compose::parse_compose,
+        commit: crate::experiences::compose::commit_compose,
+    }),
+    unavailable_commit: None,
+    unavailable_before_generate: None,
+    writes_as_intent: Some(crate::writers::apply_prepared),
+    output_override: None,
+};
 
 pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
     let binding = HOOK_TABLE.iter().find(|binding| binding.hook == hook)?;
@@ -397,6 +463,9 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::SpeakerAttribution => &SPEAKER_ATTRIBUTION,
         StageId::WeeklyReflection => &WEEKLY_REFLECTION,
         StageId::PossibleNames => &POSSIBLE_NAMES,
+        StageId::ExperiencesDetectFacet => &EXPERIENCES_DETECT_FACET,
+        StageId::ExperiencesDetect => &EXPERIENCES_DETECT,
+        StageId::ExperienceCompose => &EXPERIENCE_COMPOSE,
     })
 }
 

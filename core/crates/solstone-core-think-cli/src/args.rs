@@ -16,6 +16,7 @@ pub(crate) struct ThinkArgs {
     pub segments: bool,
     pub facet: Option<String>,
     pub activity: Option<String>,
+    pub experience: Option<String>,
     pub stream: Option<String>,
     pub flush: bool,
     pub settle: bool,
@@ -51,6 +52,7 @@ impl Default for ThinkArgs {
             segments: false,
             facet: None,
             activity: None,
+            experience: None,
             stream: None,
             flush: false,
             settle: false,
@@ -121,6 +123,7 @@ pub(crate) fn parse_in(
             "--segments" => parsed.segments = true,
             "--facet" => parsed.facet = Some(value("--facet")?),
             "--activity" => parsed.activity = Some(value("--activity")?),
+            "--experience" => parsed.experience = Some(value("--experience")?),
             "--reactivate" => parsed.reactivate = true,
             "--stream" => parsed.stream = Some(value("--stream")?),
             "--flush" => parsed.flush = true,
@@ -189,6 +192,9 @@ pub(crate) fn sense_batch_offenders(args: &ThinkArgs) -> Vec<&'static str> {
     if args.activity.is_some() {
         offenders.push("--activity");
     }
+    if args.experience.is_some() {
+        offenders.push("--experience");
+    }
     if args.updated {
         offenders.push("--updated");
     }
@@ -211,6 +217,9 @@ pub(crate) fn updated_offenders(args: &ThinkArgs) -> Vec<&'static str> {
     }
     if args.activity.is_some() {
         offenders.push("--activity");
+    }
+    if args.experience.is_some() {
+        offenders.push("--experience");
     }
     if args.flush {
         offenders.push("--flush");

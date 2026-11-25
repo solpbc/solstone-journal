@@ -33,6 +33,7 @@ pub(crate) enum ReferenceKind {
     SegmentSpan,
     WeekRange,
     LocationDay,
+    Experience,
 }
 
 impl ReferenceKind {
@@ -52,6 +53,7 @@ impl ReferenceKind {
             Self::SegmentSpan => 12,
             Self::WeekRange => 13,
             Self::LocationDay => 14,
+            Self::Experience => 15,
         }
     }
 
@@ -71,6 +73,7 @@ impl ReferenceKind {
             12 => Some(Self::SegmentSpan),
             13 => Some(Self::WeekRange),
             14 => Some(Self::LocationDay),
+            15 => Some(Self::Experience),
             _ => None,
         }
     }
@@ -354,6 +357,14 @@ pub(crate) struct LocationDayReference {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct ExperienceReference {
+    pub facet_id: String,
+    pub facet_dir: String,
+    pub anchor_day: String,
+    pub experience_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "target", rename_all = "snake_case")]
 pub(crate) enum ReferenceTarget {
     Entry(EntryReference),
@@ -370,6 +381,7 @@ pub(crate) enum ReferenceTarget {
     SegmentSpan(SegmentSpanReference),
     WeekRange(WeekRangeCursor),
     LocationDay(LocationDayReference),
+    Experience(ExperienceReference),
 }
 
 impl ReferenceTarget {
@@ -389,6 +401,7 @@ impl ReferenceTarget {
             Self::SegmentSpan(_) => ReferenceKind::SegmentSpan,
             Self::WeekRange(_) => ReferenceKind::WeekRange,
             Self::LocationDay(_) => ReferenceKind::LocationDay,
+            Self::Experience(_) => ReferenceKind::Experience,
         }
     }
 }
@@ -569,6 +582,7 @@ impl ReferenceCodec {
         if kind != ReferenceKind::Entry
             && kind != ReferenceKind::Activity
             && kind != ReferenceKind::LocationDay
+            && kind != ReferenceKind::Experience
         {
             return Err(ReferenceError::NotFound);
         }
@@ -629,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_kind_tags_roundtrip_1_through_14() {
+    fn reference_kind_tags_roundtrip_1_through_15() {
         for (kind, expected_tag) in [
             (ReferenceKind::Entry, 1),
             (ReferenceKind::Segment, 2),
@@ -645,11 +659,12 @@ mod tests {
             (ReferenceKind::SegmentSpan, 12),
             (ReferenceKind::WeekRange, 13),
             (ReferenceKind::LocationDay, 14),
+            (ReferenceKind::Experience, 15),
         ] {
             assert_eq!(kind.tag(), expected_tag);
             assert_eq!(ReferenceKind::from_tag(expected_tag), Some(kind));
         }
-        for unknown in [0, 15, 255] {
+        for unknown in [0, 16, 255] {
             assert_eq!(ReferenceKind::from_tag(unknown), None);
         }
     }

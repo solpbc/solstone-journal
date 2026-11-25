@@ -11,6 +11,7 @@ use super::error::FacetStoreError;
 #[derive(Clone, Copy)]
 pub(super) enum FacetContentKind {
     Activities,
+    Experiences,
     News,
     Logs,
 }
@@ -19,6 +20,7 @@ impl FacetContentKind {
     fn directory(self) -> &'static str {
         match self {
             Self::Activities => "activities",
+            Self::Experiences => "experiences",
             Self::News => "news",
             Self::Logs => "logs",
         }
@@ -68,6 +70,13 @@ pub(super) fn activities_dir(
     content_dir(journal_root, facet_dir, FacetContentKind::Activities)
 }
 
+pub(super) fn experiences_dir(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<PathBuf, FacetStoreError> {
+    content_dir(journal_root, facet_dir, FacetContentKind::Experiences)
+}
+
 pub(super) fn news_dir(journal_root: &Path, facet_dir: &str) -> Result<PathBuf, FacetStoreError> {
     content_dir(journal_root, facet_dir, FacetContentKind::News)
 }
@@ -84,6 +93,7 @@ pub(super) fn content_file_path(
 ) -> Result<PathBuf, FacetStoreError> {
     let directory = match kind {
         FacetContentKind::Activities => activities_dir(journal_root, facet_dir)?,
+        FacetContentKind::Experiences => experiences_dir(journal_root, facet_dir)?,
         FacetContentKind::News => news_dir(journal_root, facet_dir)?,
         FacetContentKind::Logs => logs_dir(journal_root, facet_dir)?,
     };

@@ -335,6 +335,18 @@ fn generation_completion(
     {
         return Ok(("entity_suggest", r#"{"entities":[]}"#));
     }
+    if prompt.contains("Per-Facet Experience Detection") && prompt.contains("activity_handles") {
+        return Ok(("experiences_detect_facet", r#"{"experiences":[]}"#));
+    }
+    if prompt.contains("Cross-Facet Experience Arbitration") && prompt.contains("cand_id") {
+        return Ok(("experiences_detect", r#"{"verdicts":[]}"#));
+    }
+    if prompt.contains("Experience Composition") && prompt.contains("moments") {
+        return Ok((
+            "experience_compose",
+            r#"{"title":"Quiet session","summary":"The owner completed a brief activity.","moments":[],"people_refs":[],"locations":[]}"#,
+        ));
+    }
     Err("unexpected-talent")
 }
 

@@ -817,6 +817,237 @@
       },
       "source": "core/crates/solstone-core-ingest-contract/src/browser.schema.json"
     },
+    "experiences": {
+      "schema": {
+        "$id": "solstone-journal-format:experiences",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "One row of a facet day experience JSONL file under facets/<facet>/experiences/<YYYYMMDD>.jsonl.",
+        "properties": {
+          "activities": {
+            "items": {
+              "properties": {
+                "day": {
+                  "pattern": "^[0-9]{8}$",
+                  "type": "string"
+                },
+                "facet": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "stream": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "day",
+                "stream",
+                "id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "anchor_day": {
+            "pattern": "^[0-9]{8}$",
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "composed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "destination_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edits": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ended_at": {
+            "type": "string"
+          },
+          "entity_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "locations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "membership_source": {
+            "enum": [
+              "auto",
+              "owner"
+            ],
+            "type": "string"
+          },
+          "moments": {
+            "items": {
+              "properties": {
+                "activity_refs": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "ended_at": {
+                  "type": "string"
+                },
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "media_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "segment_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "started_at": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "started_at",
+                "ended_at",
+                "summary",
+                "activity_refs",
+                "segment_refs",
+                "media_refs"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "owner_holds": {
+            "properties": {
+              "activities": {
+                "type": "boolean"
+              },
+              "excluded_activities": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "moment_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "type": "boolean"
+              },
+              "title": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "primary_facet": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "primary_facet",
+          "anchor_day",
+          "started_at",
+          "ended_at",
+          "membership_source",
+          "hidden",
+          "title",
+          "summary",
+          "activities",
+          "moments"
+        ],
+        "title": "Experience Record",
+        "type": "object",
+        "x-journal-contract": {
+          "allowed_producers": [
+            "solstone-core-facets"
+          ],
+          "file_kind": "experiences_jsonl",
+          "format_id": "experiences",
+          "key_fields": [
+            "id",
+            "primary_facet",
+            "anchor_day",
+            "activities",
+            "moments"
+          ],
+          "producer_write_paths": [
+            "facets/{facet}/experiences/YYYYMMDD.jsonl"
+          ],
+          "reference_writer": "solstone-core-facets",
+          "schema_owner": "solstone-core-format",
+          "write_discipline": "one file per facet anchor day, replaced whole and atomically under facet-trust, entity-trust, and day file lock; rows hold lightweight internal refs hydrated on read"
+        }
+      },
+      "source": "core/crates/solstone-core/src/contract/schemas/experiences.schema.json"
+    },
     "observer-ingest-envelope": {
       "schema": {
         "$id": "solstone-journal-format:observer-ingest-envelope",

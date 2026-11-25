@@ -53,6 +53,7 @@ mod dispatch;
 mod door_state_writer;
 #[cfg(all(test, not(feature = "full-tests")))]
 mod downgrade_tests;
+mod experiences;
 mod http1;
 mod journal_links;
 mod jsonrpc;

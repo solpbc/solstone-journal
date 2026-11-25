@@ -367,6 +367,36 @@ pub fn build_view_in(
     let mut captures = Vec::new();
     let mut receipts_by_facet = BTreeMap::new();
     let hidden_entities = solstone_core_entity::hidden_participation_entity_ids(root);
+    let mut experience_backrefs: BTreeMap<(String, String, String), Vec<Value>> = BTreeMap::new();
+    for f in &declared {
+        if let Ok(exps) =
+            solstone_core_facets::load_experiences_overlapping_day(root, f, day, false)
+        {
+            for exp in exps {
+                let summary_ref = json!({
+                    "id": exp.id,
+                    "primary_facet": exp.primary_facet,
+                    "anchor_day": exp.anchor_day,
+                    "title": exp.title,
+                });
+                for act in &exp.activities {
+                    if act.day != day {
+                        continue;
+                    }
+                    let eff_facet = act.effective_facet(&exp.primary_facet).to_owned();
+                    let list = experience_backrefs
+                        .entry((eff_facet, act.stream.clone(), act.id.clone()))
+                        .or_default();
+                    if !list
+                        .iter()
+                        .any(|existing| existing["id"] == summary_ref["id"])
+                    {
+                        list.push(summary_ref.clone());
+                    }
+                }
+            }
+        }
+    }
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
         if is_hidden && !include_hidden {
@@ -430,6 +460,20 @@ pub fn build_view_in(
             // answer stands.
             if item.get("corrected") == Some(&Value::Bool(false)) && answers.hold(root, day, row) {
                 item.insert("corrected".to_owned(), Value::Bool(true));
+            }
+            let stream = string_field(row, "stream");
+            let mut backrefs = experience_backrefs
+                .get(&(facet.clone(), stream.clone(), id.clone()))
+                .cloned()
+                .unwrap_or_default();
+            if backrefs.is_empty() && !stream.is_empty() {
+                backrefs = experience_backrefs
+                    .get(&(facet.clone(), String::new(), id.clone()))
+                    .cloned()
+                    .unwrap_or_default();
+            }
+            if !backrefs.is_empty() {
+                item.insert("experiences".to_owned(), Value::Array(backrefs));
             }
         }
         items.push(item);

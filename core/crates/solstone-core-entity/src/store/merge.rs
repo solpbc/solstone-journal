@@ -360,6 +360,18 @@ fn preview_related_counts(
                 activities += usize::from(rewrite_activity(&mut row, &names, target).0);
             }
         }
+        for file in list_dir_entries(&facet.path.join("experiences")).map_err(refused)? {
+            if file.kind != DirEntryKind::File
+                || file.path.extension().and_then(|s| s.to_str()) != Some("jsonl")
+            {
+                continue;
+            }
+            let rows: Vec<Value> =
+                read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise).map_err(refused)?;
+            for mut row in rows {
+                activities += usize::from(rewrite_experience(&mut row, source, target).0);
+            }
+        }
     }
     for day in day_dirs(journal).map_err(refused)?.into_values() {
         for segment in iter_segments(journal, PathOrDay::Directory(&day)).map_err(refused)? {
@@ -1041,6 +1053,41 @@ fn rewrite_activity(row: &mut Value, names: &ActivityNames, target_id: &str) -> 
     (changed, fields)
 }
 
+fn rewrite_experience(row: &mut Value, source_id: &str, target_id: &str) -> (bool, usize) {
+    let Some(obj) = row.as_object_mut() else {
+        return (false, 0);
+    };
+    let Some(refs) = obj.get_mut("entity_refs").and_then(Value::as_array_mut) else {
+        return (false, 0);
+    };
+    let mut changed = false;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut next = Vec::with_capacity(refs.len());
+    for item in refs.iter() {
+        let Some(eid) = item.as_str() else {
+            next.push(item.clone());
+            continue;
+        };
+        let mapped = if eid == source_id {
+            changed = true;
+            target_id
+        } else {
+            eid
+        };
+        if seen.insert(mapped.to_owned()) {
+            next.push(Value::String(mapped.to_owned()));
+        } else {
+            changed = true;
+        }
+    }
+    if changed {
+        *refs = next;
+        (true, 1)
+    } else {
+        (false, 0)
+    }
+}
+
 pub(crate) fn merge_activities(
     journal: &Path,
     names: &ActivityNames,
@@ -1113,6 +1160,61 @@ pub(crate) fn merge_activities(
             stats.rewritten_paths.push(file.path.clone());
             inject_failure(injector, "activities", artifact_index)?;
             artifact_index += 1;
+            stats.files_rewritten += 1;
+        }
+        let experiences = facet.path.join("experiences");
+        for file in list_dir_entries(&experiences)
+            .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+        {
+            if file.kind != DirEntryKind::File
+                || file.path.extension().and_then(|value| value.to_str()) != Some("jsonl")
+            {
+                continue;
+            }
+            stats.files_scanned += 1;
+            let mut preview_rows: Vec<Value> =
+                read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let would_change = preview_rows
+                .iter_mut()
+                .any(|row| rewrite_experience(row, names.source_id, target_id).0);
+            if !would_change {
+                continue;
+            }
+            let (newly_locked, _direct_lock) = match rollback.as_deref_mut() {
+                Some(rollback) => (rollback.lock_file(&file.path)?, None),
+                None => (
+                    false,
+                    hold_or_reuse_lock(&file.path, LockOptions::default())
+                        .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+                ),
+            };
+            let mut rows: Vec<Value> =
+                read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let mut file_changed = false;
+            let mut file_records = 0;
+            let mut file_fields = 0;
+            for row in rows.iter_mut() {
+                let (changed, fields) = rewrite_experience(row, names.source_id, target_id);
+                file_fields += fields;
+                if changed {
+                    file_records += 1;
+                    file_changed = true;
+                }
+            }
+            if !file_changed {
+                if newly_locked && let Some(rollback) = rollback.as_deref_mut() {
+                    rollback.unlock_file(&file.path);
+                }
+                continue;
+            }
+            capture_rollback_file(&mut rollback, journal, &file.path)?;
+            write_jsonl(&file.path, rows, AtomicWriteOptions::default())
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            stats.records_rewritten += file_records;
+            stats.fields_rewritten += file_fields;
+            stats.rewritten_paths.push(file.path.clone());
             stats.files_rewritten += 1;
         }
     }

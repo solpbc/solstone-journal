@@ -29,6 +29,15 @@ pub struct AskedActivity {
     pub activity: String,
 }
 
+/// One Experience an ask re-composes via `experience_compose`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AskedExperience {
+    pub facet: String,
+    pub anchor_day: String,
+    pub experience_id: String,
+}
+
 /// How far an ask's week page step has come. Only attempts are counted here;
 /// whether the page is owed is read from the page itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,6 +88,9 @@ pub struct OwnerAsk {
     /// item's change adds nothing while another item's change asks again.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub items: BTreeSet<String>,
+    /// Experiences queued for `experience_compose` re-composition.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub experiences: BTreeSet<AskedExperience>,
 }
 
 /// The cause prefix of an ask the trash files.
@@ -94,7 +106,10 @@ impl OwnerAsk {
 
     /// Every step this ask asked for has finished.
     pub fn finished(&self) -> bool {
-        self.to_seed.is_empty() && (!self.thaw || self.thaw_done) && self.week.ended.is_some()
+        self.to_seed.is_empty()
+            && self.experiences.is_empty()
+            && (!self.thaw || self.thaw_done)
+            && self.week.ended.is_some()
     }
 }
 
@@ -274,6 +289,7 @@ pub fn record(
         week: WeekStep::default(),
         cause: None,
         items: BTreeSet::new(),
+        experiences: BTreeSet::new(),
     };
     let saved = ask.clone();
     mutate(journal, |asks| {
@@ -328,6 +344,7 @@ pub fn record_for_trash(
                 week: WeekStep::default(),
                 cause: Some(cause.clone()),
                 items: BTreeSet::from([item.to_owned()]),
+                experiences: BTreeSet::new(),
             };
             asks.insert(fresh_id.clone(), ask.clone());
             return Ok((ask, true));
@@ -398,6 +415,96 @@ pub fn ask_corrected(root: &Path, day: &str, activities: &[AskedActivity]) -> Re
         )?;
         Ok(())
     }
+}
+
+/// Record an ask to compose or re-compose one or more Experiences via `experience_compose`.
+pub fn record_experiences(
+    journal: &Path,
+    day: &str,
+    experiences: &[AskedExperience],
+    cause: Option<&str>,
+    now_ms: i64,
+) -> Result<OwnerAsk, AskError> {
+    if !valid_day(day) {
+        return Err(AskError::InvalidDay);
+    }
+    if experiences.is_empty() {
+        return Err(AskError::Empty);
+    }
+    for exp in experiences {
+        if !valid_day(&exp.anchor_day)
+            || exp.facet.trim().is_empty()
+            || exp.experience_id.trim().is_empty()
+        {
+            return Err(AskError::InvalidActivity);
+        }
+    }
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|error| AskError::Write(error.to_string()))?;
+    let fresh_id: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    mutate(journal, |asks| {
+        let existing = cause.and_then(|c| {
+            asks.values()
+                .find(|ask| ask.day == day && ask.cause.as_deref() == Some(c))
+                .map(|ask| ask.id.clone())
+        });
+        if let Some(id) = existing {
+            let current = asks[&id].clone();
+            let mut next = current.clone();
+            for exp in experiences {
+                next.experiences.insert(exp.clone());
+            }
+            next.created_at_ms = next.created_at_ms.max(now_ms);
+            let changed = next != current;
+            asks.insert(id, next.clone());
+            return Ok((next, changed));
+        }
+        let ask = OwnerAsk {
+            id: fresh_id.clone(),
+            day: day.to_owned(),
+            created_at_ms: now_ms,
+            to_seed: BTreeSet::new(),
+            seeded: BTreeSet::new(),
+            thaw: false,
+            thaw_done: false,
+            thaw_capped: false,
+            dropped: BTreeMap::new(),
+            week: WeekStep {
+                attempts: 0,
+                counted_at_ms: None,
+                ended: Some(WEEK_BUILT.to_owned()),
+            },
+            cause: cause.map(str::to_owned),
+            items: BTreeSet::new(),
+            experiences: experiences.iter().cloned().collect(),
+        };
+        asks.insert(fresh_id.clone(), ask.clone());
+        Ok((ask, true))
+    })
+}
+
+/// Record an owner Experience composition ask and wake work discovery.
+pub fn ask_experience_compose(
+    journal: &Path,
+    facet: &str,
+    anchor_day: &str,
+    experience_id: &str,
+    cause: Option<&str>,
+) -> Result<OwnerAsk, AskError> {
+    let ask = record_experiences(
+        journal,
+        anchor_day,
+        &[AskedExperience {
+            facet: facet.to_owned(),
+            anchor_day: anchor_day.to_owned(),
+            experience_id: experience_id.to_owned(),
+        }],
+        cause,
+        jiff::Timestamp::now().as_millisecond(),
+    )?;
+    #[cfg(not(test))]
+    wake(journal, anchor_day);
+    Ok(ask)
 }
 
 /// Wake work discovery for `day`. Best effort: the next pass finds the ask.

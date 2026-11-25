@@ -65,6 +65,7 @@ pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolutio
                 | Family::Calendar
                 | Family::PossibleNames
                 | Family::Audio
+                | Family::Experience
         )
     {
         return ContentResolution::Indexed(spec.family);

@@ -205,6 +205,11 @@
     "condition": "Path"
   },
   {
+    "path": "facets/case39/experiences/case39.jsonl",
+    "pattern": "facets/*/experiences/*.jsonl",
+    "condition": "Path"
+  },
+  {
     "path": "facets/case40/logs/case40.jsonl",
     "pattern": "facets/*/logs/*.jsonl",
     "condition": "Path"

@@ -22,6 +22,7 @@ mod daily_rebuild;
 mod day;
 mod dispatch;
 mod dry_run;
+mod experience;
 mod flush;
 mod gate;
 mod helpers;
@@ -755,6 +756,16 @@ fn execute_parsed_command(
         };
         return logged_mode_outcome(log, run, result);
     }
+    if let Some(experience_id) = parsed.experience.as_deref() {
+        let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
+        let result = experience::run(
+            context,
+            &mut log,
+            parsed.facet.as_deref().expect("validated experience facet"),
+            experience_id,
+        );
+        return logged_mode_outcome(log, run, result);
+    }
     if parsed.flush {
         let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
         let result = flush::run(
@@ -1245,12 +1256,31 @@ fn validate(
             &[],
         ));
     }
-    if args.facet.is_some() && args.activity.is_none() {
+    if args.facet.is_some() && args.activity.is_none() && args.experience.is_none() {
         return usage(solstone_core_cli_copy::render_for(
             locale,
             "journal.cli.think.validation.facet.requires.activity",
             &[],
         ));
+    }
+    if args.experience.is_some() && args.facet.is_none() {
+        return usage("--experience requires --facet".to_owned());
+    }
+    if args.experience.is_some() && args.day.is_none() {
+        return usage("--experience requires --day".to_owned());
+    }
+    if args.experience.is_some()
+        && (args.activity.is_some()
+            || args.segment.is_some()
+            || args.segments
+            || args.flush
+            || args.weekly
+            || args.cadence)
+    {
+        return usage(
+            "--experience cannot be combined with --activity, --segment, --segments, --flush, --weekly, or --cadence"
+                .to_owned(),
+        );
     }
     if args.activity.is_some() && args.facet.is_none() {
         return usage(solstone_core_cli_copy::render_for(
@@ -1726,14 +1756,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            108 | 132 | 141 => {
+            113 | 143 | 152 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            194 => {
+            205 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -1743,7 +1773,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            223 => {
+            234 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(cadence, format!(r#"{{"pulse":{now_ms}}}"#)).unwrap();
@@ -6747,7 +6777,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![30, 51, 64, 77, 81, 90, 96, 102, 108, 132, 141, 194, 223]
+            vec![30, 56, 69, 82, 86, 95, 101, 107, 113, 143, 152, 205, 234]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());

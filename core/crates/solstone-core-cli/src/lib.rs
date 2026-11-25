@@ -39,6 +39,7 @@ macro_rules! core_usage_syntax {
             "  solstone-core journal-stats [args...]\n",
             "  solstone-core talent [args...]\n",
             "  solstone-core share [args...]\n",
+            "  solstone-core experiences [args...]\n",
             "  solstone-core reprocess [args...]\n",
             "  solstone-core backfill-processing-records [args...]\n"
         )
@@ -904,6 +905,7 @@ pub enum Command {
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
     Share(Vec<OsString>),
+    Experiences(Vec<OsString>),
     Backfill(Vec<OsString>),
     BackfillFacetIds {
         commit: bool,
@@ -1772,7 +1774,8 @@ fn parser_locale_with(args: &[OsString], terminal: Option<&'static str>) -> &'st
         | "journal-stats"
         | "reprocess"
         | "backfill-processing-records"
-        | "share" => &[],
+        | "share"
+        | "experiences" => &[],
         "talent" if word(0) == Some("worker") => return ENGLISH,
         "talent" => &[],
         JOURNAL_BRAIN_OWNER_SENTINEL => &["--expected-fingerprint"],
@@ -1990,6 +1993,9 @@ fn evaluate_args_with_copy(copy: ParserCopy<'_>, args: &[OsString]) -> Result<Co
             Ok(Command::Talent(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("share") => Ok(Command::Share(rest.to_vec())),
+        [command, rest @ ..] if command == OsStr::new("experiences") => {
+            Ok(Command::Experiences(rest.to_vec()))
+        }
         [command, rest @ ..] if command == OsStr::new("backfill-processing-records") => {
             Ok(Command::Backfill(rest.to_vec()))
         }
@@ -8613,6 +8619,7 @@ mod tests {
             "backup",
             "journal-stats",
             "share",
+            "experiences",
             "reprocess",
             "backfill-processing-records",
             "setup-copy",
@@ -8632,6 +8639,22 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["share", "match", "--person", "jane_doe"])),
             Ok(Command::Share(args(&["match", "--person", "jane_doe"])))
+        );
+    }
+
+    #[test]
+    fn experiences_passes_its_arguments_through() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "experiences",
+                "list",
+                "--day",
+                "20260304",
+                "--json"
+            ])),
+            Ok(Command::Experiences(args(&[
+                "list", "--day", "20260304", "--json"
+            ])))
         );
     }
 

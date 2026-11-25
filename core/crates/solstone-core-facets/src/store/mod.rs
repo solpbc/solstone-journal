@@ -11,6 +11,7 @@ mod detected_entities;
 mod detected_entity_activity;
 mod error;
 mod event_topic_migration;
+pub(crate) mod experiences;
 mod facet_entities;
 mod facet_entity_move;
 mod facet_id;
@@ -92,6 +93,16 @@ pub use error::{
     FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetStoreError, FacetWriteError,
 };
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
+pub use experiences::{
+    ComposedExperienceUpdate, ExperienceActivitiesMutation, ExperienceCascadeResult,
+    ExperienceDirectPatch, ExperienceStoreError, adopt_moved_experience_rows,
+    apply_composed_experience, cascade_experiences_for_removed_segments, compute_activities_span,
+    create_owner_experience, deterministic_experience_id, get_experience,
+    list_experience_day_stems, list_experiences_in_range, load_experiences,
+    load_experiences_overlapping_day, mutate_experience_activities, read_experience_file,
+    restore_experiences_snapshot, scrub_experience_edit_befores, set_experience_hidden,
+    update_experience_direct, upsert_detected_experience, write_experience_file,
+};
 #[cfg(any(test, feature = "test-hooks"))]
 pub use facet_entities::create_facet_entity_if_absent_with_hook;
 pub use facet_entities::{

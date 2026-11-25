@@ -24,6 +24,7 @@ use solstone_core_time::{Precision, day_key, utc_z};
 
 use crate::{Clock, http};
 
+mod experiences;
 mod lines;
 mod view;
 
@@ -90,6 +91,46 @@ pub fn routes(root: PathBuf, clock: Clock) -> Router {
         .route(
             "/app/activities/api/day/{day}/record/{span_id}/separate",
             post(separate),
+        )
+        .route(
+            "/app/activities/api/experiences",
+            get(experiences::list_range),
+        )
+        .route(
+            "/app/activities/api/experiences/stats/{month}",
+            get(experiences::month_stats),
+        )
+        .route(
+            "/app/activities/api/day/{day}/experiences",
+            get(experiences::list_day),
+        )
+        .route(
+            "/app/activities/api/day/{anchor_day}/experience/{exp_id}",
+            get(experiences::detail),
+        )
+        .route(
+            "/app/activities/api/experiences/create",
+            post(experiences::create),
+        )
+        .route(
+            "/app/activities/api/day/{anchor_day}/experience/{exp_id}/update",
+            post(experiences::update),
+        )
+        .route(
+            "/app/activities/api/day/{anchor_day}/experience/{exp_id}/activities",
+            post(experiences::mutate_activities),
+        )
+        .route(
+            "/app/activities/api/day/{anchor_day}/experience/{exp_id}/mute",
+            post(experiences::mute),
+        )
+        .route(
+            "/app/activities/api/day/{anchor_day}/experience/{exp_id}/unmute",
+            post(experiences::unmute),
+        )
+        .route(
+            "/app/activities/api/day/{anchor_day}/experience/{exp_id}/share-preview",
+            get(experiences::share_preview),
         )
         .with_state((root, clock))
 }

@@ -156,6 +156,8 @@ impl CortexBoundary for HistoryCortex {
                 "entities:entity_suggest" | "entities:entity_observer" => {
                     serde_json::json!({"entities":[]})
                 }
+                "experiences_detect_facet" => serde_json::json!({"experiences":[]}),
+                "experiences_detect" => serde_json::json!({"verdicts":[]}),
                 other => panic!("unexpected synthetic Generate task: {other}"),
             };
             Ok(generated(req, reply))

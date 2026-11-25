@@ -224,6 +224,19 @@ fn count_activities(
                 }
             }
         }
+        let experience_dir = entry.path.join("experiences");
+        for experience in list_dir_entries(&experience_dir)? {
+            if experience.kind != DirEntryKind::File
+                || experience.path.extension() != Some("jsonl".as_ref())
+            {
+                continue;
+            }
+            for row in jsonl_rows(&experience.path, counts) {
+                if key_value_contains(&row, entity_id, &["entity_refs"]) {
+                    counts.activity += 1;
+                }
+            }
+        }
     }
     Ok(())
 }

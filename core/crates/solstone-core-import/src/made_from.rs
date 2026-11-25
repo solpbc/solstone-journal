@@ -28,7 +28,7 @@ use serde_json::{Map, Value};
 use solstone_core_retention::made_from::MadeFrom;
 use solstone_core_retention::receipt::Target;
 use solstone_core_system::activity_state::{Rederived, rederive_with};
-use solstone_core_system::owner_ask::{self, AskedActivity};
+use solstone_core_system::owner_ask::{self, AskedActivity, AskedExperience};
 use solstone_core_trash::{Change, Item};
 
 /// What the trash keeps with an item: the activities over its recordings as
@@ -47,6 +47,15 @@ struct Kept {
 /// What the trash keeps of the detections naming its recordings, in its own
 /// file: a detach an older build started kept `made-from.json` without them.
 const KEPT_DETECTIONS: &str = "detections.json";
+
+/// What the trash keeps of facet Experiences touched by removed recordings.
+const KEPT_EXPERIENCES: &str = "experiences.json";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct KeptExperiences {
+    version: u32,
+    records: Vec<solstone_core_facets::ExperienceRecord>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct KeptDetections {
@@ -634,6 +643,19 @@ impl MadeFrom for MadeFromIt {
                 Err(error) => failed.push(format!("{day}/{facet}: {error}")),
             }
         }
+        let before_iso = solstone_core_time::utc_z(before, solstone_core_time::Precision::Secs);
+        if let Ok(Some(exp_bytes)) = solstone_core_trash::kept(journal, &item.id, KEPT_EXPERIENCES)
+            && let Ok(kept_exps) = serde_json::from_slice::<KeptExperiences>(&exp_bytes)
+            && let Ok(changed) = solstone_core_facets::scrub_experience_edit_befores(
+                journal,
+                &kept_exps.records,
+                &before_iso,
+            )
+        {
+            for path in changed {
+                self.touch(journal, path);
+            }
+        }
         if failed.is_empty() {
             Ok(())
         } else {
@@ -761,6 +783,128 @@ impl MadeFrom for MadeFromIt {
                 self.skipped.borrow_mut().insert(format!("{day}/ask"));
             }
             self.touch_day(journal, day);
+        }
+        // Cascade trash detach/attach onto derived facet Experiences and enqueue
+        // experience_compose via OwnerAsk for any surviving Experience whose span changed.
+        match change {
+            Change::Detached => {
+                let removed_segments: Vec<(String, String, String)> = segments
+                    .iter()
+                    .map(|target| {
+                        let seg_key = solstone_core_format::segment::segment_key(&target.dir)
+                            .unwrap_or_else(|| target.dir.clone());
+                        (target.day.clone(), target.stream.clone(), seg_key)
+                    })
+                    .collect();
+                let now_iso = solstone_core_time::utc_z(
+                    jiff::Timestamp::now(),
+                    solstone_core_time::Precision::Secs,
+                );
+                match solstone_core_facets::cascade_experiences_for_removed_segments(
+                    journal,
+                    &removed_segments,
+                    &[],
+                    &now_iso,
+                ) {
+                    Ok(cascade) => {
+                        if !cascade.snapshots.is_empty()
+                            && solstone_core_trash::kept(journal, &item.id, KEPT_EXPERIENCES)
+                                .ok()
+                                .flatten()
+                                .is_none()
+                            && let Ok(bytes) = serde_json::to_vec(&KeptExperiences {
+                                version: 1,
+                                records: cascade.snapshots,
+                            })
+                            && let Err(error) = solstone_core_trash::keep(
+                                journal,
+                                &item.id,
+                                KEPT_EXPERIENCES,
+                                &bytes,
+                            )
+                        {
+                            log::warn!("trash: experiences snapshot wasn't kept: {error}");
+                        }
+                        for path in cascade.changed_files {
+                            self.touch(journal, path);
+                        }
+                        let mut by_day = BTreeMap::<String, Vec<AskedExperience>>::new();
+                        for (facet, anchor_day, experience_id) in cascade.recompose {
+                            by_day
+                                .entry(anchor_day.clone())
+                                .or_default()
+                                .push(AskedExperience {
+                                    facet,
+                                    anchor_day,
+                                    experience_id,
+                                });
+                        }
+                        let cause = format!("{}{operation}", owner_ask::TRASH_CAUSE);
+                        let now_ms = jiff::Timestamp::now().as_millisecond();
+                        for (day, exps) in by_day {
+                            if let Err(error) = owner_ask::record_experiences(
+                                journal,
+                                &day,
+                                &exps,
+                                Some(&cause),
+                                now_ms,
+                            ) {
+                                log::warn!("trash: experience ask failed for {day}: {error}");
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("trash: experiences cascade failed: {error}");
+                        self.skipped.borrow_mut().insert("experiences".to_owned());
+                    }
+                }
+            }
+            Change::Attached => {
+                if let Ok(Some(bytes)) =
+                    solstone_core_trash::kept(journal, &item.id, KEPT_EXPERIENCES)
+                    && let Ok(kept_exps) = serde_json::from_slice::<KeptExperiences>(&bytes)
+                {
+                    match solstone_core_facets::restore_experiences_snapshot(
+                        journal,
+                        &kept_exps.records,
+                    ) {
+                        Ok((recompose, changed_files)) => {
+                            for path in changed_files {
+                                self.touch(journal, path);
+                            }
+                            let mut by_day = BTreeMap::<String, Vec<AskedExperience>>::new();
+                            for (facet, anchor_day, experience_id) in recompose {
+                                by_day.entry(anchor_day.clone()).or_default().push(
+                                    AskedExperience {
+                                        facet,
+                                        anchor_day,
+                                        experience_id,
+                                    },
+                                );
+                            }
+                            let cause = format!("{}{operation}", owner_ask::TRASH_CAUSE);
+                            let now_ms = jiff::Timestamp::now().as_millisecond();
+                            for (day, exps) in by_day {
+                                if let Err(error) = owner_ask::record_experiences(
+                                    journal,
+                                    &day,
+                                    &exps,
+                                    Some(&cause),
+                                    now_ms,
+                                ) {
+                                    log::warn!(
+                                        "trash: experience restore ask failed for {day}: {error}"
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            log::warn!("trash: experiences weren't restored: {error}");
+                            self.skipped.borrow_mut().insert("experiences".to_owned());
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }

@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "properties": {
+    "experiences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "topic_anchor": {
+            "type": "string"
+          },
+          "title_hint": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "social_gathering",
+              "meeting_or_call",
+              "outing_or_errand",
+              "solo_milestone"
+            ]
+          },
+          "extends_experience_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activity_handles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "topic_anchor",
+          "title_hint",
+          "category",
+          "extends_experience_id",
+          "activity_handles"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "experiences"
+  ],
+  "additionalProperties": false
+}

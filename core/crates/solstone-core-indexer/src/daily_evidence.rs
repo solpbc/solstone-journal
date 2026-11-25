@@ -36,6 +36,8 @@ const OUTPUTS: &[&str] = &[
     "topics",
     "objects",
     "screen_text",
+    "experiences_detect_facet",
+    "experiences_detect",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -364,7 +366,7 @@ fn project_sources(
         // daily unit reads them.
         if matches!(
             resolution,
-            ContentResolution::Indexed(Family::Calendar | Family::BodyRecords)
+            ContentResolution::Indexed(Family::Calendar | Family::BodyRecords | Family::Experience)
         ) {
             continue;
         }
@@ -604,6 +606,8 @@ pub fn daily_hook(name: &str, metadata: &Map<String, Value>) -> Result<String, S
             | "entities:entities_review"
             | "entities:entity_suggest"
             | "entities:entity_observer"
+            | "experiences_detect_facet"
+            | "experiences_detect"
     ) || pre.zip(post).is_some_and(|(a, b)| a != b)
     {
         return Err(format!("unsupported daily hook: {effective}"));
@@ -1005,6 +1009,11 @@ pub fn compute_daily_evidence_cached(
             );
             sources.extend(if hook == "entities:entities_review" {
                 capture_facet_day_sources(journal, &d, "entities", facet, &cache.locale)?.sources
+            } else if matches!(
+                hook.as_str(),
+                "experiences_detect_facet" | "experiences_detect"
+            ) {
+                capture_facet_day_sources(journal, &d, "activities", facet, &cache.locale)?.sources
             } else if cache.journal == journal && cache.day == d {
                 cache.sources()?
             } else {
@@ -1020,6 +1029,36 @@ pub fn compute_daily_evidence_cached(
                 .join(format!("{day}_observer_suggestions.json"));
             if let Ok(bytes) = fs::read(&sugg_path) {
                 format!("{:x}", Sha256::digest(&bytes))
+            } else {
+                "missing".to_string()
+            }
+        } else if hook == "experiences_detect" {
+            let cand_dir = journal
+                .join("chronicle")
+                .join(day)
+                .join("health")
+                .join("experience-candidates");
+            let mut hasher = Sha256::new();
+            let mut found = false;
+            if let Ok(read_dir) = fs::read_dir(&cand_dir) {
+                let mut entries: Vec<_> = read_dir.filter_map(Result::ok).collect();
+                entries.sort_by_key(|e| e.file_name());
+                for entry in entries {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.ends_with(".json")
+                        && let Ok(bytes) = fs::read(entry.path())
+                    {
+                        hasher.update(name_str.as_bytes());
+                        hasher.update(b"\0");
+                        hasher.update(&bytes);
+                        hasher.update(b"\0");
+                        found = true;
+                    }
+                }
+            }
+            if found {
+                format!("{:x}", hasher.finalize())
             } else {
                 "missing".to_string()
             }

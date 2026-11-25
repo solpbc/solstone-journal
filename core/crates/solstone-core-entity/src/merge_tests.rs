@@ -3092,3 +3092,68 @@ fn commit_merge_rewrites_participation_names_dedups_drops_self_edges_and_enqueue
     );
     assert!(!todo_entries.contains(&"facets/personal/activities/20261112.jsonl".to_owned()));
 }
+
+#[test]
+fn commit_entity_merge_rewrites_experience_entity_refs_and_enqueues_reindex() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "ada_short",
+        &json!({"id": "ada_short", "name": "Ada", "type": "Person"}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "ada_full",
+        &json!({"id": "ada_full", "name": "Ada Lovelace", "type": "Person"}),
+        None,
+    )
+    .unwrap();
+    let exp_path = journal.join("facets/work/experiences/20261112.jsonl");
+    fs::create_dir_all(exp_path.parent().unwrap()).unwrap();
+    let exp = json!({
+        "id": "exp_001",
+        "primary_facet": "work",
+        "anchor_day": "20261112",
+        "started_at": "2026-11-12 09:00",
+        "ended_at": "2026-11-12 10:00",
+        "membership_source": "auto",
+        "hidden": false,
+        "title": "Design review",
+        "summary": "Review with Ada.",
+        "entity_refs": ["ada_short", "ada_full", "grace"],
+        "activities": [{"day": "20261112", "stream": "talk", "id": "m1"}],
+        "moments": []
+    });
+    fs::write(&exp_path, format!("{exp}\n")).unwrap();
+
+    commit_entity_merge(
+        &journal,
+        "ada_short",
+        "ada_full",
+        EntityMergeOptions::default(),
+    )
+    .unwrap();
+
+    let updated: serde_json::Value =
+        serde_json::from_str(fs::read_to_string(&exp_path).unwrap().trim()).unwrap();
+    assert_eq!(updated["entity_refs"], json!(["ada_full", "grace"]));
+
+    let todo_entries = solstone_core_indexer_todo::entry_paths(&journal.join("indexer/todo"))
+        .unwrap()
+        .into_iter()
+        .map(|p| {
+            serde_json::from_str::<solstone_core_indexer_todo::Entry>(
+                &fs::read_to_string(p).unwrap(),
+            )
+            .unwrap()
+            .key
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        todo_entries.contains(&"facets/work/experiences/20261112.jsonl".to_owned()),
+        "expected rewritten experience path in indexer/todo, got {todo_entries:?}"
+    );
+    fs::remove_dir_all(journal).unwrap();
+}

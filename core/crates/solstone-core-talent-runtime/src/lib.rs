@@ -27,6 +27,7 @@ pub mod daily_prepare;
 pub mod daily_schedule;
 pub mod documents;
 pub mod entities;
+pub mod experiences;
 mod floor_reading;
 mod import_facet;
 pub mod morning_briefing;
@@ -1807,6 +1808,42 @@ pub(crate) fn generate_and_write(
         sense_grounding::ground(prepared, &context.journal, &response).unwrap_or(response);
     let response = sense_idle::enforce(prepared, &context.journal, &response).unwrap_or(response);
     let response = sense_redaction::scrub(prepared, &response).unwrap_or(response);
+    let mut response = response;
+    if let Some((stage, state)) = &stage
+        && matches!(stage.stage, contract::StageId::ExperienceCompose)
+        && let PrePostState::ExperienceCompose(compose_state) = state
+        && let Ok(raw_val) = serde_json::from_str::<Value>(&response)
+    {
+        let (_first_composed, first_audit) =
+            crate::experiences::compose::postprocess_compose_output(
+                &raw_val,
+                &compose_state.packet,
+            );
+        if first_audit.needs_retry {
+            let suffix = crate::experiences::compose::build_corrective_retry_suffix(
+                &first_audit,
+                &compose_state.packet.owner.preferred,
+            );
+            let mut retry_prepared = prepared.clone();
+            if let Some(Value::String(prompt)) = retry_prepared.config.get_mut("prompt") {
+                prompt.push_str(&suffix);
+            }
+            if let Ok((retry_resp, _retry_usage, _retry_degraded)) =
+                generate_response(&mut retry_prepared, generate, writer)
+                && !cancellation.is_cancelled()
+                && let Ok(retry_val) = serde_json::from_str::<Value>(&retry_resp)
+            {
+                let (_second_composed, second_audit) =
+                    crate::experiences::compose::postprocess_compose_output(
+                        &retry_val,
+                        &compose_state.packet,
+                    );
+                if second_audit.retry_reasons.len() <= first_audit.retry_reasons.len() {
+                    response = retry_resp;
+                }
+            }
+        }
+    }
     if let Some((stage, state)) = stage {
         if let Some(callback) = stage.unavailable_commit
             && prepared

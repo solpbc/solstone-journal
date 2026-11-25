@@ -135,6 +135,9 @@ pub(crate) fn run(
                 {
                     continue;
                 }
+                if config.key == "experiences_detect" && active_facets.is_empty() {
+                    continue;
+                }
                 rebuild_targets.push(solstone_core_journal_io::DailyUnitIdentity::new(
                     &context.day,
                     &config.key,
@@ -265,6 +268,10 @@ pub(crate) fn run(
                     )
                 {
                     log_skip(log, context, &config.key, "historical_day", None);
+                    continue;
+                }
+                if config.key == "experiences_detect" && active_facets.is_empty() {
+                    log_skip(log, context, &config.key, "no_active_facets", None);
                     continue;
                 }
                 let queued = queue_daily(

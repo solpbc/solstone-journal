@@ -42,7 +42,7 @@ pub(crate) fn validate_contract_file(
     match kind {
         "json" | "ingest_envelope" => validate_json(filename, content, schema),
         "headered_jsonl" => validate_headered_jsonl(filename, content, schema),
-        "browser_jsonl" | "body_jsonl" => Vec::new(),
+        "browser_jsonl" | "body_jsonl" | "experiences_jsonl" => Vec::new(),
         _ => vec![ContractIssue {
             path: filename.into(),
             message: solstone_core_cli_copy::display_for(

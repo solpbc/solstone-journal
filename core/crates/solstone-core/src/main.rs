@@ -42,6 +42,7 @@ mod brain_owner;
 mod check;
 mod config;
 mod contract;
+mod experiences_cli;
 mod facet_candidates;
 mod health;
 mod health_logs;
@@ -1020,6 +1021,7 @@ fn main() -> ExitCode {
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
         Ok(Command::Talent(args)) => run_talent(args),
         Ok(Command::Share(args)) => run_share(args),
+        Ok(Command::Experiences(args)) => run_experiences(args),
         Ok(Command::Backfill(args)) => run_backfill(args),
         Ok(Command::BackfillFacetIds { commit }) => run_backfill_facet_ids(commit),
         Ok(Command::BackfillFacetIdsHelp) => {
@@ -2269,6 +2271,59 @@ fn run_share(args: Vec<OsString>) -> ExitCode {
     print!("{}", run.stdout);
     eprint!("{}", run.stderr);
     ExitCode::from(u8::try_from(run.exit_code).unwrap_or(1))
+}
+
+fn run_experiences(args: Vec<OsString>) -> ExitCode {
+    let cmd = experiences_cli::parse(&args);
+    let run = if !cmd.needs_journal() {
+        experiences_cli::execute(cmd, Path::new(""), None, None)
+    } else {
+        let locale = host_locale();
+        let journal = match resolve_journal_config_path(
+            cmd.journal_override().map(|p| p.as_os_str().to_os_string()),
+        ) {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error_in(locale, error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        };
+        if cmd.needs_generate() {
+            let (talent_root, apps_root) = match cmd.talent_root_override() {
+                Some(override_root) => {
+                    let apps = override_root.parent().unwrap_or(override_root).join("apps");
+                    (override_root.clone(), apps)
+                }
+                None => match solstone_core_talent_runtime::resolve_runtime_paths() {
+                    Ok(paths) => (paths.talent_root, paths.apps_root),
+                    Err(error) => {
+                        eprintln!("experiences startup failed: {error}");
+                        return ExitCode::from(EXIT_TEMPFAIL);
+                    }
+                },
+            };
+            let generate = match solstone_core_generate::OneShotClient::resolve_sibling() {
+                Ok(client) => {
+                    client.with_env("SOLSTONE_JOURNAL", journal.to_string_lossy().into_owned())
+                }
+                Err(error) => {
+                    eprintln!("experiences startup failed: {error:?}");
+                    return ExitCode::from(EXIT_TEMPFAIL);
+                }
+            };
+            experiences_cli::execute(
+                cmd,
+                &journal,
+                Some(&generate),
+                Some((&talent_root, &apps_root)),
+            )
+        } else {
+            experiences_cli::execute(cmd, &journal, None, None)
+        }
+    };
+    print!("{}", run.stdout);
+    eprint!("{}", run.stderr);
+    ExitCode::from(run.exit_code)
 }
 
 fn run_backfill(args: Vec<OsString>) -> ExitCode {

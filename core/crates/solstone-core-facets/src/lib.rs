@@ -11,6 +11,7 @@ mod activity_placement;
 mod body_facet;
 pub mod cli_copy;
 pub mod entity_trash;
+mod experiences;
 pub mod facet_trash;
 mod link_heal;
 mod moment_copies;
@@ -32,11 +33,21 @@ pub use body_facet::{
     BodyFacetAsk, BodyFacetOfferRead, BodyFacetReadError, apply_body_facet_answer, body_facet_ask,
     body_facet_offer, default_for_unattended,
 };
+pub use experiences::{
+    HydratedActivity, HydratedExperience, HydratedMedia, HydratedPerson, HydratedRefs,
+    HydratedSegmentEvidence, NearbyCandidateActivity, ShareProjectedExperience,
+    ShareProjectedMoment, extract_compact_image_caption, hydrate_experience,
+    nearby_candidate_activities, project_experience_for_share,
+};
 pub use link_heal::{FacetLinkHealError, FacetLinkHealReport, self_heal_facet_links};
 pub use moment_copies::{Moment, merge_moment_copies, moment_key};
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_entity::hidden_names;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};
+pub use solstone_core_format::content::experiences::{
+    ActivityRef, ExperienceMoment, ExperienceRecord, MembershipSource, OwnerHolds,
+    ShareDetailPolicy, experience_field_held, experience_moment_held, is_hidden_experience,
+};
 pub use solstone_core_journal_io::AppendError;
 pub use speculative_facets::{
     BACKFILL_FACET_CANDIDATE_CAP, BACKFILL_FACET_CANDIDATE_MIN_SEGMENTS,
@@ -119,6 +130,16 @@ pub use store::{
     BodyMoveOutcome, BodyRecordPlace, LineRemoval, OpenBodyMove, body_record_key,
     complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
     write_body_record_with,
+};
+pub use store::{
+    ComposedExperienceUpdate, ExperienceActivitiesMutation, ExperienceCascadeResult,
+    ExperienceDirectPatch, ExperienceStoreError, adopt_moved_experience_rows,
+    apply_composed_experience, cascade_experiences_for_removed_segments, compute_activities_span,
+    create_owner_experience, deterministic_experience_id, get_experience,
+    list_experience_day_stems, list_experiences_in_range, load_experiences,
+    load_experiences_overlapping_day, mutate_experience_activities, read_experience_file,
+    restore_experiences_snapshot, scrub_experience_edit_befores, set_experience_hidden,
+    update_experience_direct, upsert_detected_experience, write_experience_file,
 };
 pub use store::{DetectedNameDays, detected_name_days};
 pub use store::{

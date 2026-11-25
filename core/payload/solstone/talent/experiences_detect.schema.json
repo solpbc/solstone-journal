@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cand_id": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "keep",
+              "drop_duplicate_cross_facet",
+              "drop_passive_spectacle",
+              "drop_routine_or_trivial"
+            ]
+          },
+          "duplicate_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "cand_id",
+          "decision",
+          "duplicate_of"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "verdicts"
+  ],
+  "additionalProperties": false
+}

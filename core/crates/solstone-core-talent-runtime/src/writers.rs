@@ -93,6 +93,22 @@ pub enum WriteIntent {
         segment_dir: PathBuf,
         sidecar: solstone_core_possible_names::Sidecar,
     },
+    ExperienceCandidates {
+        day: String,
+        facet: String,
+        output_path: String,
+        output: String,
+    },
+    ExperiencesCommit {
+        day: String,
+        experiences: Vec<crate::experiences::detect::DetectedExperienceCommit>,
+    },
+    ExperienceCompose {
+        facet: String,
+        anchor_day: String,
+        experience_id: String,
+        composed: Box<solstone_core_facets::ComposedExperienceUpdate>,
+    },
 }
 
 pub fn write_output_if_configured(
@@ -604,6 +620,79 @@ fn apply_with_sources(
                     )
                 },
             )?;
+            Ok(CommitDisposition::Written)
+        }
+        CommitPlan::Write(WriteIntent::ExperienceCandidates {
+            output_path,
+            output,
+            ..
+        }) => {
+            write_output_with_sources_cancellable(
+                PathBuf::from(output_path),
+                &output,
+                sources,
+                cancellation,
+            )
+            .map_err(|e| {
+                StageError::new(
+                    "write-intent",
+                    "experiences_detect_facet",
+                    "experiences_detect_facet",
+                    e.to_string(),
+                )
+            })?;
+            Ok(CommitDisposition::Written)
+        }
+        CommitPlan::Write(WriteIntent::ExperiencesCommit { experiences, .. }) => {
+            let now_iso = solstone_core_time::utc_z(
+                jiff::Timestamp::now(),
+                solstone_core_time::Precision::Secs,
+            );
+            let committed = crate::experiences::detect::apply_detected_experiences(
+                &context.journal,
+                &experiences,
+                &now_iso,
+            )
+            .map_err(|detail| {
+                StageError::new(
+                    "write-intent",
+                    "experiences_detect",
+                    "experiences_detect",
+                    detail,
+                )
+            })?;
+            Ok(if committed.is_empty() {
+                CommitDisposition::CommittedNoOutput
+            } else {
+                CommitDisposition::Written
+            })
+        }
+        CommitPlan::Write(WriteIntent::ExperienceCompose {
+            facet,
+            anchor_day,
+            experience_id,
+            composed,
+        }) => {
+            let now_iso = solstone_core_time::utc_z(
+                jiff::Timestamp::now(),
+                solstone_core_time::Precision::Secs,
+            );
+            solstone_core_facets::apply_composed_experience(
+                &context.journal,
+                &facet,
+                &anchor_day,
+                &experience_id,
+                *composed,
+                &now_iso,
+            )
+            .map_err(|e| {
+                StageError::new(
+                    "write-intent",
+                    "experience_compose",
+                    "experience_compose",
+                    e.to_string(),
+                )
+            })?;
             Ok(CommitDisposition::Written)
         }
     }

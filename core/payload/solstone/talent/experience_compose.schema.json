@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "moments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "ended_at": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "activity_handles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "segment_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "started_at",
+          "ended_at",
+          "summary",
+          "activity_handles",
+          "segment_refs",
+          "media_refs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "people_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "locations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "title",
+    "summary",
+    "moments",
+    "people_refs",
+    "locations"
+  ],
+  "additionalProperties": false
+}

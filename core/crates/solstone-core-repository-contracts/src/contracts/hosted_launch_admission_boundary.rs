@@ -47,6 +47,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
+        "experiences_cli",
+        include_str!("../../../solstone-core/src/experiences_cli.rs"),
+    ),
+    (
+        "core",
         "facet_candidates",
         include_str!("../../../solstone-core/src/facet_candidates.rs"),
     ),
