@@ -2231,7 +2231,8 @@ mod tests {
     }
 
     fn setup_journal() -> TempDir {
-        let dir = TempDir::new_in("/var/tmp").expect("tempdir");
+        let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+        let dir = TempDir::new_in(parent).expect("tempdir");
         fs::create_dir_all(dir.path().join("config")).expect("config dir");
         fs::write(
             dir.path().join("config/journal.json"),
