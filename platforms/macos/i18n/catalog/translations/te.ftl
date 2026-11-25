@@ -253,7 +253,7 @@ journal.mac.runtime.journal.child.breaker.tripped = మీ జర్నల్ �
 
 journal.mac.runtime.journal.child.containment.unresolved = మీ జర్నల్ ఆగిపోయింది, దాని ప్రాసెస్‌లన్నీ మూసుకుపోయాయని నిర్ధారించలేకపోయింది
 
-journal.mac.runtime.journal.drive.cannot.run = మీ జర్నల్‌కు కావలసినట్టు ఫైళ్లు సేవ్ చేయలేని డ్రైవ్ కాబట్టి, ఈ డ్రైవ్‌పై మీ జర్నల్ నడవలేదు. మీ జర్నల్ కోసం mac ఫార్మాట్ డ్రైవ్ వాడండి.
+journal.mac.runtime.journal.drive.cannot.run = ఈ డ్రైవ్‌లో మీ జర్నల్ నడవదు, ఎందుకంటే మీ జర్నల్‌కు కావలసిన విధంగా ఈ డ్రైవ్ ఫైల్‌లను సేవ్ చేయలేదు. మీ జర్నల్ కోసం mac ఫార్మాట్ చేసిన డ్రైవ్ వాడండి.
 
 journal.mac.runtime.journal.materialize.failed = జర్నల్ రన్‌టైమ్‌ను సిద్ధం చేయలేకపోయింది
 

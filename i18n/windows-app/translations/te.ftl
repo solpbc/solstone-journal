@@ -218,7 +218,7 @@ journal.windows.network.failed = మీ నెట్‌వర్క్‌లో�
 
 journal.windows.network.not.reachable = పరికరాలు ఇప్పుడు మీ జర్నల్‌కు చేరలేకపోతున్నాయి.
 
-journal.windows.network.open = మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరిచి ఉంది
+journal.windows.network.open = మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరవండి
 
 journal.windows.network.open.agents = "మీ నెట్‌వర్క్‌లోని ఏజెంట్‌లు" ఆన్‌లో ఉన్నంతవరకు మీ జర్నల్ మీ నెట్‌వర్క్‌లోని పరికరాలకు తెరిచి ఉంటుంది.
 
