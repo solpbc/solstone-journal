@@ -444,7 +444,7 @@ journal.mac.window.model.run.state = stato di esecuzione
 
 journal.mac.window.model.running = in esecuzione
 
-journal.mac.window.model.starting = avvio…
+journal.mac.window.model.starting = avvio in corso…
 
 journal.mac.window.model.startup = avvio
 

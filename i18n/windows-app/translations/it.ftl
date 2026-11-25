@@ -64,7 +64,7 @@ journal.windows.display.other.account = non in esecuzione
 
 journal.windows.display.running = in esecuzione
 
-journal.windows.display.starting = avvio…
+journal.windows.display.starting = avvio in corso…
 
 journal.windows.display.stopped = fermato
 
@@ -196,15 +196,15 @@ journal.windows.mark.name = { $first }, { $second } · { $words }
 
 journal.windows.mark.placeholder.words = tuo·diario
 
-journal.windows.mark.unavailable.name = la marca del tuo diario, non disponibile ora
+journal.windows.mark.unavailable.name = la marca del tuo diario, non disponibile in questo momento
 
 journal.windows.mark.unavailable.words = marca·non disponibile
 
 journal.windows.models.downloading = scaricamento…
 
-journal.windows.models.missing = ripara o installa di nuovo l'app del diario, poi riavvia il tuo diario.
+journal.windows.models.missing = ripara o reinstalla l'app del diario, poi riavvia il tuo diario.
 
-journal.windows.network.close.confirm = chiudi il tuo diario ai dispositivi sulla tua rete? ogni dispositivo connesso ora attraverso la tua rete si disconnetterà.
+journal.windows.network.close.confirm = chiudere il tuo diario ai dispositivi sulla tua rete? qualsiasi dispositivo connesso ora sulla tua rete si disconnetterà.
 
 journal.windows.network.close.cta = chiudi ai dispositivi sulla tua rete
 
@@ -418,7 +418,7 @@ journal.windows.updates.available.title = la versione { $target } è disponibile
 
 journal.windows.updates.check.again = controlla di nuovo
 
-journal.windows.updates.check.now = cerca ora
+journal.windows.updates.check.now = controlla ora
 
 journal.windows.updates.checking = controllo…
 
