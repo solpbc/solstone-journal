@@ -1,0 +1,16 @@
+{
+  "description": "Shown when the calendar event has no title.",
+  "context": "Journal window, activities day view. A calendar event shown on its own in the day's timeline, with no activity beside it. Shown when the calendar event has no title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "368921751322fb6cccc28134054418b273f3d5913baa9d9743f02ea5b0ec7906",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

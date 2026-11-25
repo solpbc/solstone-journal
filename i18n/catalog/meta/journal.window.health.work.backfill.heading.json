@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the progress row of imports and older history being added to the journal.",
+  "context": "Journal window, status view (the work in your journal card). Small heading above a progress bar. Older history is past days the owner chose to bring in from connected sources.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "388c035bc83886323f26a2eea173152bcb4392a0f93b439fe8e439f91aeb328c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

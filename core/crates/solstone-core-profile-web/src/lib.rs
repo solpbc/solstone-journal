@@ -20,12 +20,17 @@ pub(crate) mod routes;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-/// Native HTTP routes for `solstone call profile`.
+/// Native HTTP routes for `solstone call profile`, plus the cadence line the
+/// entities view reads for the entity it shows.
 pub fn routes(journal_root: PathBuf) -> Router {
     Router::new()
         .route("/api/profile/{name}", get(routes::full))
         .route("/api/profile/{name}/brief", get(routes::brief))
         .route("/api/profile/{name}/cadence", get(routes::cadence))
         .route("/api/profiles/active", get(routes::active))
+        .route(
+            "/app/entities/api/journal/entity/{entity_id}/cadence",
+            get(routes::entity_cadence),
+        )
         .with_state(routes::RouteState { journal_root })
 }

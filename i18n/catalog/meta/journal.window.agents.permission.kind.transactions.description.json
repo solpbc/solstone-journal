@@ -1,0 +1,16 @@
+{
+  "description": "Consent description for transactions in the journal's agents view.",
+  "context": "Journal window, agents view. Consent description for transactions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5271f68ad0cbde963673cfad4bee9f66e05005c8d08b051685b2ae4ecd2e1fd8",
+  "max_length": 91,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

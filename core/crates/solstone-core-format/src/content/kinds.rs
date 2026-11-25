@@ -119,11 +119,9 @@ pub const KINDS: &[KindSpec] = &[
         stored_word: "transactions",
         permission: Some(AdmittedCategory::Transactions),
         query_alias: Some("Transactions"),
-        permission_copy: Some(PermissionCopy::with_fallback(
+        permission_copy: Some(PermissionCopy::catalog(
             "journal.window.agents.permission.kind.transactions.label",
             "journal.window.agents.permission.kind.transactions.description",
-            "transactions",
-            "receipts, order confirmations, bills and shipping updates.",
         )),
         checked_by_default: false,
     },

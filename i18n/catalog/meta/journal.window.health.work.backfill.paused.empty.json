@@ -1,0 +1,16 @@
+{
+  "description": "Imports and older history are paused before any item arrived; recent days keep processing.",
+  "context": "Journal window, status view (the work in your journal card). Shown when paused with nothing counted yet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "edd77c6117d4671db21962c11f85a017373725c3eb6d09c9e29de404d2e14854",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

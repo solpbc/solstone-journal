@@ -8078,6 +8078,30 @@
       "selector": null
     },
     {
+      "id": "journal.window.agents.permission.kind.transactions.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+      "namespace": "journal.window.agents.permission.kind.transactions",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.agents.permission.kind.transactions.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+      "namespace": "journal.window.agents.permission.kind.transactions",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.agents.permission.kind.transcripts.description",
       "resource": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e736372697074732e6465736372697074696f6e",
       "namespace": "journal.window.agents.permission.kind.transcripts",
@@ -38853,6 +38877,46 @@
       "selector": null
     },
     {
+      "id": "journal.window.entities.detail.last.message.date",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+      "namespace": "journal.window.entities.detail.last.message",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.detail.last.spoke.or.met.date",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+      "namespace": "journal.window.entities.detail.last.spoke.or.met",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.entities.detected.hidden.heading",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657465637465642e68696464656e2e68656164696e67",
       "namespace": "journal.window.entities.detected.hidden",
@@ -50212,6 +50276,38 @@
           "max": null
         }
       ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.calendar.standalone.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+      "namespace": "journal.window.facets.activities.calendar.standalone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "meeting_title",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.facets.activities.calendar.standalone.untitled",
+      "resource": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
+      "namespace": "journal.window.facets.activities.calendar.standalone",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
       "protected_slots": [],
       "selector": null
     },
@@ -71942,6 +72038,132 @@
       "selector": null
     },
     {
+      "id": "journal.window.health.work.backfill.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+      "namespace": "journal.window.health.work.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.health.work.backfill.pause",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+      "namespace": "journal.window.health.work.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.health.work.backfill.paused",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+      "namespace": "journal.window.health.work.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.health.work.backfill.paused.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+      "namespace": "journal.window.health.work.backfill.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.health.work.backfill.progress",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+      "namespace": "journal.window.health.work.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.health.work.backfill.resume",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+      "namespace": "journal.window.health.work.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.health.work.band.activities",
       "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e61637469766974696573",
       "namespace": "journal.window.health.work.band",
@@ -72004,6 +72226,18 @@
         "enum_values": [],
         "enum_default": null
       }
+    },
+    {
+      "id": "journal.window.health.work.band.paused",
+      "resource": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
+      "namespace": "journal.window.health.work.band",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
     },
     {
       "id": "journal.window.health.work.band.permission",

@@ -9,7 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - your journal now runs a daily local integrity check and shows its results under status → journal integrity, naming how many days were checked and what the check covers. you can run a check anytime or verify kept original files against their saved checksums on disk. when issues turn up, you can set aside damaged transcript lines, record unexplained missing originals, move empty or changed segment originals and set-aside incoming files to the trash, add facet folders not listed in settings or move them to the trash, and queue search updates or rebuilds. urgent integrity issues and incomplete checks also show on home and on home's side-rail badge.
-- connected agents now have a separate transactions permission (off by default) on the agents page and when connecting an agent, for receipts, order confirmations, bills and shipping updates. transaction entries stay out of activities, entities, places and model runs.
+- connected agents now have a separate transactions permission (off by default) on the agents page and when connecting an agent, for receipts, orders, bookings, payments and transfers. transaction entries stay out of activities, entities, places and model runs.
 - imported photos that include camera GPS coordinates now add point locations to places and the map in your journal, and connected agents allowed to see places can read them in weekly and date-range summaries without treating a single photo as a multi-hour stay.
 - connected agents with body permission now have a separate cycle and pregnancy option, off for every agent, including ones you've already connected, for menstrual cycle, fertility, pregnancy and related logs across your body sources. Garmin workout location coordinates follow your places permission and location detail (exact locations, ~1 km areas, or none on names only or when places is off).
 - when your journal runs on a computer, you can now sync Garmin Connect with your own Personal API key under settings → sync. your journal brings in workouts, sleep, HRV, heart rate, Body Battery, stress, SpO2, weight, steps, hydration, cycle and nutrition logs directly from Garmin Connect, lists Garmin under sources, and lets you move individual sync runs to trash from the Garmin card.
@@ -18,6 +18,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
+- status now shows imports and older history as their own progress bar under work in your journal, apart from anything that needs your attention, with a pause button that stops only that older work while recent days keep going.
+- a person's page in entities now shows the last day you spoke or met in recent months and the last day a message or email passed between you, beside the day they were last mentioned.
 - in a facet's list of entities, you can now select several and detach them from that facet in one go. they stay in your journal, your journal won't add them back to that facet on its own, and you can re-attach any of them anytime. thanks @dvanduzer for the suggestion (#429).
 
 ### Changed

@@ -3087,6 +3087,36 @@ function fillLastMentionedDate(element, day) {
   element.appendChild(visibleSpan);
 }
 
+let entityCadenceRequest = 0;
+// When the owner last spoke with or met a person, and the last message
+// between them, sit beside "last mentioned". The journal reads them from
+// different roles and neither stands in for the other, so each shows only
+// when it has a day.
+function renderEntityCadence(entity, indicatorsId) {
+  const request = ++entityCadenceRequest;
+  const container = document.getElementById(indicatorsId);
+  container?.querySelector('[data-entity-cadence]')?.remove();
+  if (!container || !entity?.id || entity.type !== 'Person' || entity.is_principal) return;
+  fetch(`/app/entities/api/journal/entity/${encodeURIComponent(entity.id)}/cadence`)
+    .then(response => (response.ok ? response.json() : null))
+    .then(cadence => {
+      if (request !== entityCadenceRequest || !cadence) return;
+      const parts = [];
+      if (cadence.last_seen) {
+        parts.push(window.JournalI18n.renderHtml('journal.window.entities.detail.last.spoke.or.met.date', [['day', String(formatDateShort(cadence.last_seen))]]));
+      }
+      if (cadence.last_corresponded) {
+        parts.push(window.JournalI18n.renderHtml('journal.window.entities.detail.last.message.date', [['day', String(formatDateShort(cadence.last_corresponded))]]));
+      }
+      if (!parts.length) return;
+      const span = document.createElement('span');
+      span.setAttribute('data-entity-cadence', '');
+      span.innerHTML = (container.textContent.trim() ? ' · ' : '') + parts.join(' · ');
+      container.appendChild(span);
+    })
+    .catch(() => {});
+}
+
 // Get display date for entity using server-derived journal-local source day (YYYYMMDD)
 function getEntityDisplayDate(entity) {
   if (entity.last_active_ts) {
@@ -4906,6 +4936,7 @@ function renderJournalDetailView(entity) {
     indicators.push(window.JournalI18n.renderHtml('journal.window.entities.detail.facets.count', [...entityCountArgs('facets', facets.length, String(facets.length))]));
   }
   document.getElementById('journal-detail-indicators').innerHTML = indicators.join(' · ');
+  renderEntityCadence(entity, 'journal-detail-indicators');
   renderJournalDetailIdNote(entity);
 
   // Facet relationships
@@ -6633,6 +6664,7 @@ function renderDetailView(entity, observations, detailData) {
     indicators.push(`<span class="voiceprint-icon" aria-hidden="true">${window.ConveyIcons?.svg('mic-vocal') || ''}</span> ${window.JournalI18n.renderHtml('journal.window.entities.visible.text.has.voiceprint')}`);
   }
   document.getElementById('detail-indicators').innerHTML = indicators.join(' · ');
+  renderEntityCadence(entity, 'detail-indicators');
   renderFacetPhotoHint(entity);
 
   // Description

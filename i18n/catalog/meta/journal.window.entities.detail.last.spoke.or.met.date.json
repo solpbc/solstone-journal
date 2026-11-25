@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. The last day the owner spoke with or met this person.",
+  "context": "Journal window. Entities view, a person's detail line beside the last mentioned date. day is an already-formatted date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "cf658f2ab434000acb921b032bd4874b45397f6ed96bffe7083ce89a9497c939",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -15882,6 +15882,66 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.agents.permission.kind.transactions.description\u0004m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.agents.permission.kind.transactions.description",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "receipts, orders, bookings, payments and transfers.",
+      "message_id": "journal.window.agents.permission.kind.transactions.description",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.agents.permission.kind.transactions.description\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.agents.permission.kind.transactions.label\u0004m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.agents.permission.kind.transactions.label",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "transactions",
+      "message_id": "journal.window.agents.permission.kind.transactions.label",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.agents.permission.kind.transactions.label\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.agents.permission.kind.transcripts.description\u0004m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e736372697074732e6465736372697074696f6e",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e736372697074732e6465736372697074696f6e_plural",
         "gettext_unsigned_quantity": null,
@@ -69393,6 +69453,82 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.detail.last.message.date\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.detail.last.message.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Last message: ⁨sample⁩",
+      "message_id": "journal.window.entities.detail.last.message.date",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.detail.last.message.date\", [[\"day\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.detail.last.spoke.or.met.date\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.detail.last.spoke.or.met.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Last spoke or met: ⁨sample⁩",
+      "message_id": "journal.window.entities.detail.last.spoke.or.met.date",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.detail.last.spoke.or.met.date\", [[\"day\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "facet_name",
             "type": "string",
             "value": "sample"
@@ -87726,6 +87862,74 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.facets.activities.calendar.scheduled.title\", [[\"meeting_title\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7363686564756c65642e7469746c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "meeting_title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.facets.activities.calendar.standalone.title\u0004m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.facets.activities.calendar.standalone.title",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "meeting_title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "on your calendar: ⁨sample⁩",
+      "message_id": "journal.window.facets.activities.calendar.standalone.title",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.facets.activities.calendar.standalone.title\", [[\"meeting_title\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.facets.activities.calendar.standalone.untitled\u0004m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.facets.activities.calendar.standalone.untitled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "on your calendar",
+      "message_id": "journal.window.facets.activities.calendar.standalone.untitled",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.facets.activities.calendar.standalone.untitled\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
       "target": "classic"
     },
     {
@@ -124091,6 +124295,226 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.heading\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "imports and older history",
+      "message_id": "journal.window.health.work.backfill.heading",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.heading\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.pause\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.pause",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "pause",
+      "message_id": "journal.window.health.work.backfill.pause",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.pause\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "done",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.paused\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.paused",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "done": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "paused at ⁨sample⁩ of ⁨sample⁩ items. recent days keep going.",
+      "message_id": "journal.window.health.work.backfill.paused",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.paused\", [[\"done\", \"sample\"], [\"quantity\", 0], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.paused.empty\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.paused.empty",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused. recent days keep going.",
+      "message_id": "journal.window.health.work.backfill.paused.empty",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.paused.empty\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "done",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.progress\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.progress",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "done": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ items done. recent days go first.",
+      "message_id": "journal.window.health.work.backfill.progress",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.progress\", [[\"done\", \"sample\"], [\"quantity\", 0], [\"total\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.resume\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.resume",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "resume",
+      "message_id": "journal.window.health.work.backfill.resume",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.resume\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "count",
@@ -124174,6 +124598,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.owner.requests\", [[\"count\", \"sample\"], [\"quantity\", 0]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e6f776e65722e7265717565737473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.band.paused\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.band.paused",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused",
+      "message_id": "journal.window.health.work.band.paused",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.paused\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
       "target": "classic"
     },
     {
@@ -347664,6 +348118,66 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.agents.permission.kind.transactions.description\u0004m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.agents.permission.kind.transactions.description",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "receipts, orders, bookings, payments and transfers.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "receipts, orders, bookings, payments and transfers.",
+      "message_id": "journal.window.agents.permission.kind.transactions.description",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.agents.permission.kind.transactions.description\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6465736372697074696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.agents.permission.kind.transactions.label\u0004m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.agents.permission.kind.transactions.label",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "transactions",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "transactions",
+      "message_id": "journal.window.agents.permission.kind.transactions.label",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.agents.permission.kind.transactions.label\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e73616374696f6e732e6c6162656c",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.agents.permission.kind.transcripts.description\u0004m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e736372697074732e6465736372697074696f6e",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6167656e74732e7065726d697373696f6e2e6b696e642e7472616e736372697074732e6465736372697074696f6e_plural",
         "gettext_unsigned_quantity": null,
@@ -401175,6 +401689,82 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.detail.last.message.date\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.detail.last.message.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Last message: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Last message: ⁨sample⁩",
+      "message_id": "journal.window.entities.detail.last.message.date",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.detail.last.message.date\", &[(\"day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e6d6573736167652e64617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.detail.last.spoke.or.met.date\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.detail.last.spoke.or.met.date",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "Last spoke or met: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "Last spoke or met: ⁨sample⁩",
+      "message_id": "journal.window.entities.detail.last.spoke.or.met.date",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.detail.last.spoke.or.met.date\", &[(\"day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e64657461696c2e6c6173742e73706f6b652e6f722e6d65742e64617465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "facet_name",
             "type": "string",
             "value": "sample"
@@ -419508,6 +420098,74 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.facets.activities.calendar.scheduled.title\", &[(\"meeting_title\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7363686564756c65642e7469746c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "meeting_title",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.facets.activities.calendar.standalone.title\u0004m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.facets.activities.calendar.standalone.title",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "on your calendar: ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "meeting_title": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "on your calendar: ⁨sample⁩",
+      "message_id": "journal.window.facets.activities.calendar.standalone.title",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.facets.activities.calendar.standalone.title\", &[(\"meeting_title\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e7469746c65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.facets.activities.calendar.standalone.untitled\u0004m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.facets.activities.calendar.standalone.untitled",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "on your calendar",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "on your calendar",
+      "message_id": "journal.window.facets.activities.calendar.standalone.untitled",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.facets.activities.calendar.standalone.untitled\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6661636574732e616374697669746965732e63616c656e6461722e7374616e64616c6f6e652e756e7469746c6564",
       "target": "rust"
     },
     {
@@ -455873,6 +456531,226 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.heading\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.heading",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "imports and older history",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "imports and older history",
+      "message_id": "journal.window.health.work.backfill.heading",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.heading\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e68656164696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.pause\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.pause",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "pause",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "pause",
+      "message_id": "journal.window.health.work.backfill.pause",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.pause\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "done",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.paused\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.paused",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused at ⁨sample⁩ of ⁨sample⁩ items. recent days keep going.",
+      "folder": null,
+      "inputs": {
+        "done": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "paused at ⁨sample⁩ of ⁨sample⁩ items. recent days keep going.",
+      "message_id": "journal.window.health.work.backfill.paused",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.paused\", &[(\"done\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e706175736564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.paused.empty\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.paused.empty",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused. recent days keep going.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused. recent days keep going.",
+      "message_id": "journal.window.health.work.backfill.paused.empty",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.paused.empty\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e7061757365642e656d707479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "done",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "total",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "quantity",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.progress\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.progress",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "⁨sample⁩ of ⁨sample⁩ items done. recent days go first.",
+      "folder": null,
+      "inputs": {
+        "done": "sample",
+        "quantity": 0,
+        "total": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "⁨sample⁩ of ⁨sample⁩ items done. recent days go first.",
+      "message_id": "journal.window.health.work.backfill.progress",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.progress\", &[(\"done\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0)), (\"total\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e70726f6772657373",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.backfill.resume\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.backfill.resume",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "resume",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "resume",
+      "message_id": "journal.window.health.work.backfill.resume",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.backfill.resume\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e6261636b66696c6c2e726573756d65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "count",
@@ -455956,6 +456834,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.owner.requests\", &[(\"count\", Value::String(\"sample\")), (\"quantity\", Value::Cardinal(0))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e6f776e65722e7265717565737473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.health.work.band.paused\u0004m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.health.work.band.paused",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "paused",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "paused",
+      "message_id": "journal.window.health.work.band.paused",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.health.work.band.paused\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e6865616c74682e776f726b2e62616e642e706175736564",
       "target": "rust"
     },
     {

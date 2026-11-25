@@ -6,9 +6,10 @@
 use std::path::Path;
 
 use jiff::ZonedDateTime;
+use solstone_core_entity::load_all_journal_entities;
 
 use crate::cadence::{compute_cadence, list_active_entity_ids};
-use crate::error::ProfileResult;
+use crate::error::{ProfileError, ProfileResult};
 use crate::relationships::{
     description_for, detached_facets, load_facet_descriptions, selected_facets,
 };
@@ -77,6 +78,20 @@ pub(crate) fn cadence(
     };
     compute_cadence(journal_root, &target.entity_id, include_mentions, now)
         .map(|(cadence, _)| Some(cadence))
+}
+
+/// Cadence for the journal entity with exactly this id. The entities view
+/// asks about the entity it is showing, so no name match may stand in for it.
+pub(crate) fn cadence_by_id(
+    journal_root: &Path,
+    entity_id: &str,
+    now: &ZonedDateTime,
+) -> ProfileResult<Option<Cadence>> {
+    let entities = load_all_journal_entities(journal_root).map_err(ProfileError::internal)?;
+    if !entities.iter().any(|entity| entity.id == entity_id) {
+        return Ok(None);
+    }
+    compute_cadence(journal_root, entity_id, false, now).map(|(cadence, _)| Some(cadence))
 }
 
 pub(crate) fn list_active(

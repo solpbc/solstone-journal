@@ -1,0 +1,34 @@
+{
+  "description": "Imports and older history are paused at this count; recent days keep processing.",
+  "context": "Journal window, status view (the work in your journal card). done and total are already-formatted counts of items; quantity selects the plural for total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1750653bcbc35e2c8f724a6e448d7aac02320d9c6608519f2f0add87d0c54c9d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -23819,3 +23819,35 @@ journal.window.home.integrity.issue.search.newer.generation = search needs a new
 journal.window.home.integrity.issue.search.repeated.rebuild = search has had to rebuild itself more than once this week.
 
 journal.window.home.integrity.issue.search.check.overdue = the daily search check hasn't finished recently.
+
+journal.window.health.work.backfill.heading = imports and older history
+
+journal.window.health.work.backfill.progress = { $quantity ->
+        [one] { $done } of { $total } item done. recent days go first.
+       *[other] { $done } of { $total } items done. recent days go first.
+    }
+
+journal.window.health.work.backfill.paused = { $quantity ->
+        [one] paused at { $done } of { $total } item. recent days keep going.
+       *[other] paused at { $done } of { $total } items. recent days keep going.
+    }
+
+journal.window.health.work.backfill.paused.empty = paused. recent days keep going.
+
+journal.window.health.work.backfill.pause = pause
+
+journal.window.health.work.backfill.resume = resume
+
+journal.window.health.work.band.paused = paused
+
+journal.window.agents.permission.kind.transactions.label = transactions
+
+journal.window.agents.permission.kind.transactions.description = receipts, orders, bookings, payments and transfers.
+
+journal.window.entities.detail.last.spoke.or.met.date = Last spoke or met: { $day }
+
+journal.window.entities.detail.last.message.date = Last message: { $day }
+
+journal.window.facets.activities.calendar.standalone.title = on your calendar: { $meeting_title }
+
+journal.window.facets.activities.calendar.standalone.untitled = on your calendar

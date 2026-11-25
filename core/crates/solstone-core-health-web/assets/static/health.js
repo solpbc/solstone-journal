@@ -891,6 +891,8 @@
     const reach = section.querySelector('[data-work-reach]');
     const rows = section.querySelector('[data-work-bands]');
     rows.replaceChildren();
+    // The import band's own row says it once; the list doesn't repeat it.
+    const backfillShown = renderWorkBackfill(work);
     // A finished pass stays current until its next one is due, as on the journal.
     const fresh = inventory && Date.now() >= inventory.as_of_ms
       && Date.now() - Math.max(inventory.as_of_ms, inventory.next_pass_ms ?? inventory.as_of_ms) < 180000;
@@ -906,6 +908,7 @@
       reach.textContent = window.JournalI18n.render(`journal.window.health.work.inspection.${freshness}`, args);
       const names = [window.JournalI18n.render('journal.window.health.status.today'), window.JournalI18n.render('journal.window.health.window.explanation.your.requests.and.yesterday'), window.JournalI18n.render('journal.window.health.status.recent.days'), window.JournalI18n.render('journal.window.health.status.imports'), window.JournalI18n.render('journal.window.health.status.finishing.older.days'), window.JournalI18n.render('journal.window.health.status.updating.older.days')];
       inventory.bands.forEach((band, i) => {
+        if (backfillShown && i === 3) return;
         const row = document.createElement('li');
         const args = [['band', names[i]], ['recordings_ready', String(band.segments_complete)],
           ['recordings_left', String(band.segments_owed)], ['outputs_ready', String(band.daily_units_complete)],
@@ -917,7 +920,11 @@
         const details = [];
         if (band.activities_owed) details.push(renderCount('journal.window.health.work.band.activities', band.activities_owed));
         if (band.owner_requests) details.push(renderCount('journal.window.health.work.band.owner.requests', band.owner_requests));
-        if (band.permission_held) details.push(renderCount('journal.window.health.work.band.permission', band.permission_held));
+        // Pause holds every band from imports on, and those holds are the
+        // owner's choice, not a permission they still owe.
+        if (work?.backfill?.paused === true && i >= 3) {
+          if (band.permission_held) details.push(window.JournalI18n.render('journal.window.health.work.band.paused'));
+        } else if (band.permission_held) details.push(renderCount('journal.window.health.work.band.permission', band.permission_held));
         if (band.prerequisite_held) details.push(renderCount('journal.window.health.work.band.recordings', band.prerequisite_held));
         if (details.length) args.push(['details', details.join('; ')]);
         row.textContent = window.JournalI18n.render(details.length
@@ -977,6 +984,59 @@
         result.textContent = window.JournalI18n.render('journal.window.health.visible.text.your.choice.could.not.be.saved');
       }
     };
+  }
+
+  // Imports and older history (the import band) get their own calm progress
+  // row, apart from anything that needs a hand, and a pause that leaves
+  // recent days running. Returns whether the row is showing.
+  function renderWorkBackfill(work) {
+    const block = document.getElementById('workProgress')?.querySelector('[data-work-backfill]');
+    if (!block) return false;
+    const backfill = work?.backfill;
+    const number = value => Math.max(0, Number(value) || 0);
+    const paused = backfill?.paused === true;
+    const total = number(backfill?.landed_segments);
+    const done = Math.min(number(backfill?.interpreted_segments), total);
+    // Shown while items are left or while paused, so the owner can resume.
+    // Day outputs or activities left with no items stay in the band list.
+    const shown = Boolean(backfill) && (paused || number(backfill.owed_segments) > 0);
+    block.hidden = !shown;
+    if (!shown) return false;
+    block.classList.toggle('is-paused', paused);
+    const bar = block.querySelector('[data-work-backfill-bar]');
+    bar.hidden = total === 0;
+    bar.setAttribute('aria-valuemax', String(total));
+    bar.setAttribute('aria-valuenow', String(done));
+    bar.querySelector('[data-work-backfill-fill]').style.width = total ? `${(done / total) * 100}%` : '0%';
+    const args = [['done', done.toLocaleString()], ['total', total.toLocaleString()],
+      ['quantity', window.JournalI18n.cardinalQuantity(total)]];
+    block.querySelector('[data-work-backfill-line]').textContent = paused && total === 0
+      ? window.JournalI18n.render('journal.window.health.work.backfill.paused.empty')
+      : window.JournalI18n.render(paused ? 'journal.window.health.work.backfill.paused' : 'journal.window.health.work.backfill.progress', args);
+    const toggle = block.querySelector('[data-work-backfill-toggle]');
+    toggle.textContent = window.JournalI18n.render(paused
+      ? 'journal.window.health.work.backfill.resume' : 'journal.window.health.work.backfill.pause');
+    toggle.disabled = false;
+    toggle.onclick = async () => {
+      const result = block.querySelector('[data-work-backfill-result]');
+      toggle.disabled = true;
+      result.hidden = true;
+      result.textContent = '';
+      try {
+        const response = await fetch('/app/health/api/work/pause-backfill', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paused: !paused }),
+        });
+        if (!response.ok) throw new Error('save failed');
+        await loadHealthState();
+      } catch {
+        result.hidden = false;
+        result.textContent = window.JournalI18n.render('journal.window.health.visible.text.your.choice.could.not.be.saved');
+      } finally {
+        toggle.disabled = false;
+      }
+    };
+    return true;
   }
 
   let healthStateRequest = null;
@@ -2481,7 +2541,8 @@
   function setAsideHolds() {
     const inventory = state.work?.inventory;
     const records = new Map((state.work?.retry_records || []).map(record => [record.id, record]));
-    const holds = (inventory?.holds || []).map((hold, index) => ({
+    // A pause the owner chose is shown with its own row, never as set-aside work.
+    const holds = (inventory?.holds || []).filter(hold => hold.reason !== 'backfill_paused').map((hold, index) => ({
       key: hold.retry_unit ? 'unit:' + hold.retry_unit : 'work:' + [hold.day, hold.stream, hold.segment, hold.reason].join(':'),
       unit: hold.retry_unit, day: hold.day, reason: hold.reason, count: hold.count || 1,
       label: [hold.day, hold.segment, talentName(records.get(hold.retry_unit)?.unit?.talent)].filter(Boolean).join(' · '),

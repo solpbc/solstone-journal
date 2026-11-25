@@ -1,0 +1,21 @@
+{
+  "description": "$meeting_title is the recorded calendar title.",
+  "context": "Journal window, activities day view. A calendar event shown on its own in the day's timeline, with no activity beside it. $meeting_title is the recorded calendar title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "meeting_title",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "581386381257618e5d7b00b40d7d9544e16f02ce34c4c722acde7c55be9d95a7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

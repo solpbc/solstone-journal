@@ -92,6 +92,21 @@ pub(crate) async fn cadence(
     }
 }
 
+pub(crate) async fn entity_cadence(
+    State(state): State<RouteState>,
+    Path(entity_id): Path<String>,
+) -> Response {
+    match profile::cadence_by_id(
+        &state.journal_root,
+        &entity_id,
+        &local_now(&state.journal_root),
+    ) {
+        Ok(Some(cadence)) => Json(cadence).into_response(),
+        Ok(None) => entity_not_found(&entity_id),
+        Err(error) => internal_error(error),
+    }
+}
+
 pub(crate) async fn active(
     State(state): State<RouteState>,
     Query(query): Query<ActiveQuery>,
@@ -286,6 +301,71 @@ mod tests {
         let (status, active) = send_request(router, "GET", "/api/profiles/active", None).await;
         assert_eq!(status, StatusCode::OK);
         assert!(active.get("items").is_some());
+    }
+
+    #[tokio::test]
+    async fn entity_cadence_reads_the_exact_id_and_keeps_written_apart_from_seen() {
+        let temporary = journal();
+        write_json(
+            temporary.path(),
+            "facets/work/facet.json",
+            json!({"id":"00000000-0000-4000-8000-000000000001","name":"work","muted":false}),
+        );
+        write_json(
+            temporary.path(),
+            "entities/pat/entity.json",
+            json!({"id":"pat","name":"Pat","type":"Person"}),
+        );
+        // Named like the other entity's id: a name match would answer for it.
+        write_json(
+            temporary.path(),
+            "entities/sam/entity.json",
+            json!({"id":"sam","name":"pat","type":"Person"}),
+        );
+        write_jsonl(
+            temporary.path(),
+            "facets/work/activities/20210914.jsonl",
+            &[json!({
+                "id": "email_1",
+                "created_at": 100,
+                "participation": [{"entity_id": "pat", "role": "corresponded"}]
+            })],
+        );
+
+        let router = crate::routes(temporary.path().to_path_buf());
+        let (status, cadence) = send_request(
+            router,
+            "GET",
+            "/app/entities/api/journal/entity/pat/cadence",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cadence["last_corresponded"], "20210914");
+        assert_eq!(cadence["last_seen"], Value::Null);
+        assert!(cadence.get("cadence").is_none());
+
+        let router = crate::routes(temporary.path().to_path_buf());
+        let (status, other) = send_request(
+            router,
+            "GET",
+            "/app/entities/api/journal/entity/sam/cadence",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(other.get("last_corresponded").is_none());
+
+        let router = crate::routes(temporary.path().to_path_buf());
+        let (status, body) = send_request(
+            router,
+            "GET",
+            "/app/entities/api/journal/entity/Pat/cadence",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "entity_not_found");
     }
 
     #[tokio::test]

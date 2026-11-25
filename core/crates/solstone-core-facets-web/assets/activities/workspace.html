@@ -1451,7 +1451,8 @@
       ? state.view.calendar.map((ev, idx) => ({
           id: ev.id || `scheduled_${idx}`,
           facet: '',
-          title: ev.title ? activityText('calendar.scheduled.title', [['meeting_title', String(ev.title)]]) : STRINGS['calendar-then-untitled'],
+          // Standalone, so no "then": there is no activity for it to sit beside.
+          title: ev.title ? activityText('calendar.standalone.title', [['meeting_title', String(ev.title)]]) : activityText('calendar.standalone.untitled'),
           activity_label: '',
           kind: 'scheduled',
           start: ev.start || null,

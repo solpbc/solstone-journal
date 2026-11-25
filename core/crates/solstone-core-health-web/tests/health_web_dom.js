@@ -1290,6 +1290,105 @@ test('work progress keeps unknown and stale reach honest and only confirms after
   assert.strictEqual(section.querySelector('pre').textContent, '<unreadable>');
 });
 
+test('the import band gets its own calm row with a pause that only covers older work', async () => {
+  const { doc, context } = createEnvironment();
+  const section = doc.createElement('section');
+  section.id = 'workProgress';
+  for (const key of ['reach', 'history', 'bands', 'confirm', 'cost', 'details', 'allow', 'action-result']) {
+    const child = doc.createElement('div');
+    child.setAttribute('data-work-' + key, '');
+    section.appendChild(child);
+    if (key === 'details') child.appendChild(doc.createElement('pre'));
+  }
+  const block = doc.createElement('div');
+  block.setAttribute('data-work-backfill', '');
+  const bar = doc.createElement('div');
+  bar.setAttribute('data-work-backfill-bar', '');
+  const fill = doc.createElement('div');
+  fill.setAttribute('data-work-backfill-fill', '');
+  bar.appendChild(fill);
+  block.appendChild(bar);
+  for (const key of ['line', 'toggle', 'result']) {
+    const child = doc.createElement(key === 'toggle' ? 'button' : 'p');
+    child.setAttribute('data-work-backfill-' + key, '');
+    block.appendChild(child);
+  }
+  section.appendChild(block);
+  doc.body.appendChild(section);
+  const now = 1800000000000;
+  context.Date = class extends Date { static now() { return now; } };
+  let refreshed = 0;
+  context.loadHealthState = async () => { refreshed += 1; };
+  vm.runInContext(sourceBlock(loadHealthSource(), 'function renderWorkProgress(', 'let healthStateRequest = null;'), context);
+  const bands = Array.from({ length: 6 }, () => ({ segments_complete: 1, segments_owed: 2, daily_units_complete: 3, daily_units_owed: 4 }));
+  const inventory = { as_of_ms: now, complete: true, oldest_day: '20210101', newest_day: '20261124', days_inspected: 2, days_total: 2, unreadable: [], bands };
+  const backfill = { paused: false, landed_segments: 1420, interpreted_segments: 612, owed_segments: 808, activities_owed: 4, daily_units_owed: 0, permission_held: 0 };
+  const line = block.querySelector('[data-work-backfill-line]');
+  const toggle = block.querySelector('[data-work-backfill-toggle]');
+
+  // Older work in flight: its own row, and the band list doesn't repeat it.
+  context.work = { inventory, backfill };
+  vm.runInContext('renderWorkProgress(work)', context);
+  assert.strictEqual(block.hidden, false);
+  assert.strictEqual(section.querySelector('[data-work-bands]').children.length, 5);
+  assert.strictEqual(bar.getAttribute('aria-valuenow'), '612');
+  assert.strictEqual(bar.getAttribute('aria-valuemax'), '1420');
+  assert.ok(Math.abs(parseFloat(fill.style.width) - (612 / 1420) * 100) < 0.001);
+  assert.ok(line.textContent.includes((612).toLocaleString()) && line.textContent.includes((1420).toLocaleString()));
+  assert.strictEqual(block.classList.contains('is-paused'), false);
+  const running = line.textContent;
+  const pauseLabel = toggle.textContent;
+
+  // Pausing posts the flip and refreshes; a refused save says so and keeps the button.
+  let posted;
+  context.fetch = async (route, options) => {
+    assert.strictEqual(route, '/app/health/api/work/pause-backfill');
+    assert.strictEqual(options.method, 'POST');
+    posted = JSON.parse(options.body);
+    return { ok: false };
+  };
+  await toggle.onclick();
+  assert.deepStrictEqual(posted, { paused: true });
+  assert.strictEqual(refreshed, 0);
+  assert.strictEqual(block.querySelector('[data-work-backfill-result]').hidden, false);
+  assert.strictEqual(toggle.disabled, false);
+  context.fetch = async (route, options) => { posted = JSON.parse(options.body); return { ok: true }; };
+  await toggle.onclick();
+  assert.strictEqual(refreshed, 1);
+  assert.strictEqual(block.querySelector('[data-work-backfill-result]').hidden, true);
+
+  // Paused: different words and button, same counts; resume posts the reverse.
+  // Older bands held by the pause say paused, not that permission is owed.
+  const permissionLine = section.querySelector('[data-work-bands]').children[4].textContent;
+  inventory.bands.forEach((band) => { band.permission_held = 2; });
+  context.work.backfill = { ...backfill, paused: true, permission_held: 3 };
+  vm.runInContext('renderWorkProgress(work)', context);
+  assert.strictEqual(block.classList.contains('is-paused'), true);
+  assert.notStrictEqual(line.textContent, running);
+  assert.notStrictEqual(toggle.textContent, pauseLabel);
+  const pausedBand = section.querySelector('[data-work-bands]').children[4].textContent;
+  assert.notStrictEqual(pausedBand, permissionLine);
+  assert.ok(!pausedBand.includes('2 waiting'));
+  assert.ok(section.querySelector('[data-work-bands]').children[0].textContent.includes('2 waiting'));
+  await toggle.onclick();
+  assert.deepStrictEqual(posted, { paused: false });
+
+  // Paused before anything arrived: no bar, still a way back.
+  context.work.backfill = { paused: true, landed_segments: 0, interpreted_segments: 0, owed_segments: 0 };
+  vm.runInContext('renderWorkProgress(work)', context);
+  assert.strictEqual(block.hidden, false);
+  assert.strictEqual(bar.hidden, true);
+
+  // Finished, only day outputs left, or never started: the list keeps all six bands.
+  for (const finished of [{ paused: false, landed_segments: 1420, interpreted_segments: 1420, owed_segments: 0 },
+    { paused: false, landed_segments: 0, interpreted_segments: 0, owed_segments: 0, daily_units_owed: 5, activities_owed: 2 }, undefined]) {
+    context.work.backfill = finished;
+    vm.runInContext('renderWorkProgress(work)', context);
+    assert.strictEqual(block.hidden, true);
+    assert.strictEqual(section.querySelector('[data-work-bands]').children.length, 6);
+  }
+});
+
 function createBackupEnvironment() {
   const env = createDeviceEnvironment();
   const { doc, context, state } = env;

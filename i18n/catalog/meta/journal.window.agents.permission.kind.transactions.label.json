@@ -1,0 +1,16 @@
+{
+  "description": "Consent label for transactions in the journal's agents view.",
+  "context": "Journal window, agents view. Consent label for transactions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd618975845e9de0402c93a4dbf4142d6a52fd8a3dd467ff5ce5f383ce337769",
+  "max_length": 60,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

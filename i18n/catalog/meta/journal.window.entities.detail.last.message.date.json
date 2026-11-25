@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. The last day a message or email passed between the owner and this person.",
+  "context": "Journal window. Entities view, a person's detail line beside the last mentioned date. day is an already-formatted date.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ce716636e730b2bfb072c8b0501d462a51f045b260492082c112adbd1703efea",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

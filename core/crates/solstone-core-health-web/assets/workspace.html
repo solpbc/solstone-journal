@@ -1988,6 +1988,13 @@ h2.card-title {
     <h2 class="card-title" id="workProgressTitle">{{journal.window.health.section.heading.work.in.your.journal}}</h2>
     <p data-work-reach>{{journal.window.health.visible.text.checking.what.is.left}}</p>
     <p data-work-history hidden></p>
+    <div class="work-backfill" data-work-backfill hidden>
+      <h3 class="work-backfill-title" id="workBackfillTitle">{{journal.window.health.work.backfill.heading}}</h3>
+      <div class="work-backfill-track" data-work-backfill-bar role="progressbar" aria-labelledby="workBackfillTitle" aria-valuemin="0"><div class="work-backfill-fill" data-work-backfill-fill></div></div>
+      <p class="work-backfill-line" data-work-backfill-line></p>
+      <button type="button" class="action-btn" data-work-backfill-toggle></button>
+      <p data-work-backfill-result role="status" hidden></p>
+    </div>
     <ol data-work-bands></ol>
     <div data-work-confirm hidden>
       <p data-work-cost>{{journal.window.health.visible.text.finishing.older.recordings.and.day.updates}}</p>
@@ -2007,6 +2014,15 @@ h2.card-title {
   </section>
 
   <style>
+    .work-backfill { margin: 1rem 0; padding: 0.75rem 0; border-top: 1px solid var(--hairline-2); border-bottom: 1px solid var(--hairline-2); }
+    .work-backfill-title { margin: 0 0 0.5rem; font-size: 0.95em; font-weight: 600; }
+    .work-backfill-track { height: 6px; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--surface-dark) 10%, transparent); }
+    .work-backfill-track[hidden] { display: none; }
+    .work-backfill-fill { height: 100%; width: 0; background: var(--orange); transition: width 0.3s ease; }
+    .work-backfill.is-paused .work-backfill-fill { background: var(--ink-faint); }
+    .work-backfill-line { margin: 0.5rem 0 0; }
+    .work-backfill .action-btn { margin-top: 0.5rem; min-height: 44px; }
+    @media (prefers-reduced-motion: reduce) { .work-backfill-fill { transition: none; } }
     .backup-health-card dl { margin: 1rem 0; }
     .backup-health-card dl > div { display: grid; grid-template-columns: minmax(8rem, 1fr) 3fr; gap: 0.5rem 1rem; padding: 0.4rem 0; }
     .backup-health-card dt, .backup-health-card .backup-history-note { color: var(--ink-soft-paper); }
