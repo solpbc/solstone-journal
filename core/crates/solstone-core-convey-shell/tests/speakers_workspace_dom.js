@@ -258,6 +258,7 @@ async function overviewFailuresStayUnavailable(workspace) {
     ownerConfirmed: () => calls.push(['confirmed']),
     pollRelabel: () => calls.push(['poll']),
     renderQuality: () => calls.push(['quality']),
+    syncOverviewSpeakersPinOffer: () => {},
   };
   journalContext(context);
   for (const name of ['loadOwner', 'loadQuality']) {

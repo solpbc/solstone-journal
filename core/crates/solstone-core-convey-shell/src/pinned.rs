@@ -95,13 +95,6 @@ pub fn resolve_pin_offers_seen(stored: Option<&Value>) -> Vec<String> {
     resolved
 }
 
-/// Read the resolved pin list. A missing file, a missing `convey` object, or
-/// a non-object `convey` resolves to the defaults and does not write.
-#[cfg(test)]
-pub fn read_pinned_views(journal_root: &Path) -> Result<Vec<String>, ConfigLoadError> {
-    Ok(read_shell_pin_state(journal_root)?.pinned)
-}
-
 /// Read both `pinned` and `pin_offers_seen` from a single `read_journal_config` call.
 pub fn read_shell_pin_state(journal_root: &Path) -> Result<ShellPinState, ConfigLoadError> {
     let read = read_journal_config(journal_root)?;

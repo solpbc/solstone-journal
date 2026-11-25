@@ -261,6 +261,10 @@ class Element {
     notifyMutation({ target: this, attributeName: name });
   }
 
+  get firstElementChild() {
+    return this.children[0] || null;
+  }
+
   appendChild(child) {
     if (child.parentElement) child.parentElement.removeChild(child);
     child.parentElement = this;
@@ -638,7 +642,7 @@ function createHarness(options = {}) {
     CustomEvent: window.CustomEvent,
     fetch,
     AbortController,
-    console: { ...console, warn(message) { warnings.push(message); } },
+    console: { ...console, debug() {}, warn(message) { warnings.push(message); } },
     performance: { mark(name, options) { marks.push({ name, detail: options?.detail }); } },
   });
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
@@ -2529,11 +2533,20 @@ asyncCase('websocket and status_pane update live region, solShellStatus, and she
   renderChrome(harness, 'home');
   harness.window.EventSource = class EventSource {
     constructor() {
-      setImmediate(() => { if (this.onopen) this.onopen(); });
+      this.listeners = {};
+      setImmediate(() => {
+        if (this.onopen) this.onopen();
+        for (const listener of this.listeners.continuity || []) {
+          listener({ data: JSON.stringify({ state: 'connected' }) });
+        }
+      });
     }
-    addEventListener() {}
+    addEventListener(type, listener) {
+      (this.listeners[type] ||= []).push(listener);
+    }
     close() {}
   };
+  harness.context.EventSource = harness.window.EventSource;
   harness.window.setInterval = () => 0;
   harness.window.addEventListener('sol:shell-status', (ev) => statusEvents.push(ev.detail));
 
