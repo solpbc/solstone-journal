@@ -23089,3 +23089,205 @@ journal.window.thinking.response.error.key.check.status = your key couldn't be c
 journal.window.settings.http.detail.status = something went wrong. try again, and if it keeps happening, check journal status.
 
 journal.window.settings.visible.text.see.in.status = see in status ›
+
+journal.window.transcripts.damaged.headline = { $damaged_quantity ->
+        [one] 1 damaged line couldn't be read
+       *[other] { $damaged } damaged lines couldn't be read
+    }
+
+journal.window.transcripts.damaged.body.kept = { $valid_quantity ->
+        [one] your journal kept 1 valid line. { $damaged_quantity ->
+        [one] the damaged line wasn't loaded.
+       *[other] the damaged lines weren't loaded.
+    }
+       *[other] your journal kept { $valid } valid lines. { $damaged_quantity ->
+        [one] the damaged line wasn't loaded.
+       *[other] the damaged lines weren't loaded.
+    }
+    }
+
+journal.window.transcripts.damaged.body.kept.tail = { $valid_quantity ->
+        [one] your journal kept 1 valid line. { $damaged_quantity ->
+        [one] the damaged line at the end wasn't loaded.
+       *[other] the damaged lines at the end weren't loaded.
+    }
+       *[other] your journal kept { $valid } valid lines. { $damaged_quantity ->
+        [one] the damaged line at the end wasn't loaded.
+       *[other] the damaged lines at the end weren't loaded.
+    }
+    }
+
+journal.window.transcripts.damaged.body.none = { $damaged_quantity ->
+        [one] the damaged line wasn't loaded.
+       *[other] the damaged lines weren't loaded.
+    }
+
+journal.window.transcripts.damaged.body.none.tail = { $damaged_quantity ->
+        [one] the damaged line at the end wasn't loaded.
+       *[other] the damaged lines at the end weren't loaded.
+    }
+
+journal.window.transcripts.damaged.set.aside.action = { $damaged_quantity ->
+        [one] set aside damaged line
+       *[other] set aside damaged lines
+    }
+
+journal.window.transcripts.damaged.set.aside.busy = setting aside…
+
+journal.window.transcripts.damaged.set.aside.confirm.title = { $damaged_quantity ->
+        [one] set aside 1 damaged line?
+       *[other] set aside { $damaged } damaged lines?
+    }
+
+journal.window.transcripts.damaged.set.aside.confirm.body = { $damaged_quantity ->
+        [one] your journal will move the damaged line into a side file in the same folder and keep every valid line. nothing is deleted.
+       *[other] your journal will move the damaged lines into a side file in the same folder and keep every valid line. nothing is deleted.
+    }
+
+journal.window.transcripts.damaged.set.aside.confirm.action = set aside
+
+journal.window.transcripts.damaged.set.aside.failed = couldn't set that aside. try again.
+
+journal.window.transcripts.damaged.details.trigger = technical details
+
+journal.window.transcripts.damaged.details.row = { $damaged_quantity ->
+        [one] { $file } · 1 damaged · { $valid_quantity ->
+        [one] 1 valid kept
+       *[other] { $valid } valid kept
+    }
+       *[other] { $file } · { $damaged } damaged · { $valid_quantity ->
+        [one] 1 valid kept
+       *[other] { $valid } valid kept
+    }
+    }
+
+journal.window.transcripts.damaged.details.row.tail = { $damaged_quantity ->
+        [one] { $file } · 1 damaged at end · { $valid_quantity ->
+        [one] 1 valid kept
+       *[other] { $valid } valid kept
+    }
+       *[other] { $file } · { $damaged } damaged at end · { $valid_quantity ->
+        [one] 1 valid kept
+       *[other] { $valid } valid kept
+    }
+    }
+
+journal.window.transcripts.analysis.state.empty.no.audio = empty recording · no audio found
+
+journal.window.transcripts.analysis.state.empty.no.frames = empty screen media · no frames found
+
+journal.window.transcripts.analysis.state.empty.no.speech = no speech found
+
+journal.window.transcripts.analysis.state.empty.screen = nothing to describe
+
+journal.window.transcripts.analysis.state.empty.image = no photo details found
+
+journal.window.transcripts.analysis.state.empty.other = nothing found
+
+journal.window.transcripts.analysis.state.failed.final = couldn't read this file
+
+journal.window.transcripts.analysis.state.failed.audio = couldn't transcribe this recording
+
+journal.window.transcripts.analysis.state.failed.screen = couldn't describe this screen media
+
+journal.window.transcripts.analysis.state.failed.other = couldn't process this segment
+
+journal.window.transcripts.analysis.state.purged = original unavailable
+
+journal.window.transcripts.state.empty.no.audio.desc = this audio file has no playable sound, so trying again won't work.
+
+journal.window.transcripts.state.empty.no.frames.desc = this screen media has no readable frames, so trying again won't work.
+
+journal.window.transcripts.state.empty.no.speech.desc = your journal checked this recording and found no spoken words.
+
+journal.window.transcripts.state.empty.screen.desc = your journal checked this screen media and found nothing to describe.
+
+journal.window.transcripts.state.empty.image.desc = your journal checked this photo and found no details to add.
+
+journal.window.transcripts.state.empty.other.desc = your journal checked this segment and found nothing to add.
+
+journal.window.transcripts.state.failed.final.audio.desc = the audio file is damaged, so trying again won't work.
+
+journal.window.transcripts.state.failed.final.screen.desc = the screen media file is damaged, so trying again won't work.
+
+journal.window.transcripts.state.failed.final.other.desc = this file is damaged, so trying again won't work.
+
+journal.window.transcripts.state.failed.final.no.audio.stream.desc = this file has no audio track, so trying again won't work.
+
+journal.window.transcripts.state.failed.final.exhausted.desc = this segment couldn't be processed after repeated tries.
+
+journal.window.transcripts.state.action.move.to.trash = move segment to trash
+
+journal.window.transcripts.state.action.open.backup = open backup status
+
+journal.window.transcripts.media.removal.missing.unrecorded.audio = this segment's original audio is missing with no deletion record.
+
+journal.window.transcripts.media.removal.missing.unrecorded.screen = this segment's original screen media is missing with no deletion record.
+
+journal.window.search.banner.absent.waiting = { $waiting_quantity ->
+        [one] your journal hasn't built its search index yet (1 entry waiting).
+       *[other] your journal hasn't built its search index yet ({ $waiting } entries waiting).
+    }
+
+journal.window.search.banner.absent = your journal hasn't built its search index yet.
+
+journal.window.search.banner.build.action = build search index
+
+journal.window.search.banner.rebuilding = building search index…
+
+journal.window.search.banner.rebuilding.progress = building search index… ({ $indexed } of { $discovered } entries indexed)
+
+journal.window.search.banner.rebuilding.waiting = { $waiting_quantity ->
+        [one] building search index… (1 entry waiting)
+       *[other] building search index… ({ $waiting } entries waiting)
+    }
+
+journal.window.search.banner.behind.changes = { $changes_quantity ->
+        [one] search is catching up with 1 change, so some results may not be up to date yet.
+       *[other] search is catching up with { $changes } changes, so some results may not be up to date yet.
+    }
+
+journal.window.search.banner.behind = search isn't up to date with your journal yet, so some results may be out of date.
+
+journal.window.search.banner.update.action = update now
+
+journal.window.search.banner.update.busy = updating…
+
+journal.window.search.banner.update.failed = couldn't start the search index update. try again.
+
+journal.window.search.banner.failing = the search index has a problem, so results may be incomplete or unavailable.
+
+journal.window.search.banner.unreadable = the search index couldn't be read, so search isn't available right now.
+
+journal.window.search.banner.open.status = open status
+
+journal.window.settings.storage.originals.summary = { $quantity ->
+        [one] { $raw } with originals · { $purged_quantity ->
+        [one] { $purged } with originals removed
+       *[other] { $purged } with originals removed
+    }
+       *[other] { $raw } with originals · { $purged_quantity ->
+        [one] { $purged } with originals removed
+       *[other] { $purged } with originals removed
+    }
+    }
+
+journal.window.settings.storage.originals.missing.link = { $missing_quantity ->
+        [one] { $missing } missing with no deletion record
+       *[other] { $missing } missing with no deletion record
+    }
+
+journal.window.settings.storage.originals.zero.byte.note = { $quantity ->
+        [one] 1 segment has a 0-byte original on disk.
+       *[other] { $count } segments have 0-byte originals on disk.
+    }
+
+journal.window.settings.storage.originals.zero.byte.link = open status
+
+journal.window.entities.merge.evidence.same.email = same email address
+
+journal.window.entities.merge.evidence.shared.alias = shared alias
+
+journal.window.entities.merge.evidence.name.variant = similar name
+
+journal.window.entities.merge.preview.direction.keep.aka = { $source_name } merges into { $target_name } · keeps "{ $source_name }" as another name

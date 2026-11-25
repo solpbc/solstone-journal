@@ -1,0 +1,16 @@
+{
+  "description": "Entities view. merge evidence name variant.",
+  "context": "Journal window. Entities view. merge evidence name variant.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfd799419ad53b9f1ba57888237867a2f31897badef5abbd05168bebfb631622",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

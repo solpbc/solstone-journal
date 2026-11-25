@@ -1,0 +1,30 @@
+{
+  "description": "Settings view. storage originals missing link.",
+  "context": "Journal window. Settings view. storage originals missing link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "missing_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "missing",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1ebc5f99df9c1eea9b8c03bb04c9e9c3c1f4e1b12bfcb19fa2d5d4b49b103cfb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "missing_quantity",
+    "type": "cardinal"
+  }
+}

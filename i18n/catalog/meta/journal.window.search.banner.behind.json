@@ -1,0 +1,16 @@
+{
+  "description": "Search view. banner behind.",
+  "context": "Journal window. Search view. banner behind.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "05abd126a7aa45759b427e1758037919c537dae5791a9dffa9e1423a79091f02",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

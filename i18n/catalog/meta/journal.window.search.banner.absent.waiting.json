@@ -1,0 +1,30 @@
+{
+  "description": "Search view. banner absent waiting.",
+  "context": "Journal window. Search view. banner absent waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "waiting_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "waiting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "429644ad099ecaf996dff7398505fa53ae5a5cbc448454aca10e455888ee2cbf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "waiting_quantity",
+    "type": "cardinal"
+  }
+}

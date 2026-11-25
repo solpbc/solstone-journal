@@ -1,0 +1,30 @@
+{
+  "description": "Search view. banner behind changes.",
+  "context": "Journal window. Search view. banner behind changes.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "changes_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "changes",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f0c5de920fad72591639ae3c46c67b4a063f9d8261cb39381235f4a3913a5ebf",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "changes_quantity",
+    "type": "cardinal"
+  }
+}

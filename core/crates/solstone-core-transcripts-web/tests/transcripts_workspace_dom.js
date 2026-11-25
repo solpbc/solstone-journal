@@ -686,6 +686,12 @@ function createTranscriptsDOM() {
   panel.innerHTML = '<div class="surface-state surface-state--empty" data-day-invitation="true"></div>';
   doc.body.appendChild(panel);
 
+  const damagedNotice = doc.createElement('div');
+  damagedNotice.id = 'trDamagedNotice';
+  damagedNotice.className = 'tr-damaged-notice';
+  damagedNotice.hidden = true;
+  doc.body.appendChild(damagedNotice);
+
   const warningNotice = doc.createElement('div');
   warningNotice.id = 'trWarningNotice';
   const warningSummary = doc.createElement('div');
@@ -855,8 +861,8 @@ async function createEnvironment(
   const daySegments = segments !== null && segments !== undefined ? segments : defaultSegments;
 
   const dayPayload = {
-    audio: [{ start: '00:30', end: '23:30', streams: ['room', 'desk'], state: 'analyzed' }],
-    screen: [],
+    audio: options.audioRanges || [{ start: '00:30', end: '23:30', streams: ['room', 'desk'], state: 'analyzed' }],
+    screen: options.screenRanges || [],
     segments: daySegments,
   };
 
@@ -1034,6 +1040,9 @@ async function createEnvironment(
                 transcripts_copy: payloadOverride?.transcripts_copy ?? {},
                 warnings: payloadOverride?.warnings,
                 warning_details: payloadOverride?.warning_details,
+                damaged_lines: payloadOverride?.damaged_lines,
+                processing_reason_code: payloadOverride?.processing_reason_code,
+                reason_code: payloadOverride?.reason_code,
               }),
             });
           }
@@ -1146,6 +1155,19 @@ async function createEnvironment(
     encodeURIComponent,
   };
 
+  const solQuestions = [];
+  windowObj.SolQuestion = {
+    ask: async (opts) => {
+      solQuestions.push(opts);
+      return typeof options.questionAnswer === 'function'
+        ? options.questionAnswer(opts)
+        : (options.questionAnswer !== undefined ? options.questionAnswer : true);
+    },
+  };
+  windowObj.confirm = () => {
+    throw new Error('browser window.confirm must not be called');
+  };
+
   for (const name of ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'ResizeObserver', 'MutationObserver', 'IntersectionObserver']) {
     if (windowObj[name] === undefined) windowObj[name] = sandbox[name];
   }
@@ -1170,6 +1192,7 @@ async function createEnvironment(
     pendingLocationGets,
     posts,
     deletes,
+    solQuestions,
     view: mounted,
     context,
     requested,
@@ -4693,4 +4716,203 @@ test('imported photo: burst photos in the same minute split horizontally instead
   assert.strictEqual(pills.length, 3, 'all three burst photos render in the zoom rail');
   const lefts = pills.map(pill => pill.style.left);
   assert.strictEqual(new Set(lefts).size, 3, 'each burst photo receives its own horizontal sub-column: ' + lefts.join(', '));
+});
+
+test('torn JSONL banner preserves valid turns, gates set-aside to allowlisted leaves, confirms via SolQuestion, and reloads fresh', async () => {
+  const env = await createEnvironment('https://journal.example/app/transcripts/20200115', 'analyzed', false);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    chunks: [
+      { type: 'audio', time: '11:45:01', timestamp: 1, markdown: 'kept valid turn one' },
+      { type: 'audio', time: '11:45:03', timestamp: 3, markdown: 'kept valid turn two' },
+    ],
+    damaged_lines: [
+      {
+        type: 'audio',
+        file: 'chronicle/20200115/room/114500_300/audio.jsonl',
+        valid: 3,
+        damaged: 1,
+        truncated_tail: true,
+        interior: 0,
+      },
+      {
+        type: 'transcript',
+        file: 'chronicle/20200115/room/114500_300/conversation_transcript.jsonl',
+        valid: 2,
+        damaged: 1,
+        truncated_tail: false,
+        interior: 1,
+      },
+    ],
+  });
+
+  const banner = env.doc.getElementById('trDamagedNotice');
+  assert.strictEqual(banner.hidden, false);
+  assert.ok(banner.classList.contains('visible'));
+  assert.ok(env.doc.querySelector('#trPanel').innerHTML.includes('kept valid turn one'), 'valid turns stay visible below banner');
+  const detailsItems = banner.querySelectorAll('.tr-damaged-list li');
+  assert.strictEqual(detailsItems.length, 2, 'technical details list both damaged files');
+  assert.ok(detailsItems[0].textContent.includes('chronicle/20200115/room/114500_300/audio.jsonl'));
+  assert.ok(!banner.textContent.includes('/Users/') && !banner.textContent.includes('/home/'));
+
+  const setAsideBtn = banner.querySelector('button[data-action="set-aside-damaged"]');
+  assert.ok(setAsideBtn, 'eligible audio.jsonl exposes set-aside action');
+  setAsideBtn.dispatchEvent({ type: 'click' });
+  await new Promise(r => setTimeout(r, 10));
+
+  assert.strictEqual(env.solQuestions.length, 1, 'uses SolQuestion in-page confirm dialog');
+  const post = env.posts.find(p => p.url === '/app/health/api/integrity/set-aside-lines');
+  assert.ok(post, 'posts to /app/health/api/integrity/set-aside-lines');
+  assert.deepStrictEqual(
+    post.body,
+    { paths: ['chronicle/20200115/room/114500_300/audio.jsonl'] },
+    'only backend-allowlisted transcript leaves are sent'
+  );
+
+  // Reloading fresh clears the banner when damaged_lines is empty.
+  assert.strictEqual(env.segmentGetRequests.length, 2, 'fetches segment fresh after set-aside');
+  env.segmentGetRequests[1].resolve('analyzed', {
+    chunks: [{ type: 'audio', time: '11:45:01', timestamp: 1, markdown: 'kept valid turn one' }],
+    damaged_lines: [],
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(banner.hidden, true);
+  assert.strictEqual(banner.classList.contains('visible'), false);
+});
+
+test('torn JSONL banner hides set-aside button when every damaged leaf is outside the backend allowlist', async () => {
+  const env = await createEnvironment('https://journal.example/app/transcripts/20200115', 'analyzed', false);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    chunks: [{ type: 'transcript', time: '11:45:01', timestamp: 1, text: 'imported turn' }],
+    damaged_lines: [
+      { type: 'transcript', file: 'chronicle/20200115/room/114500_300/conversation_transcript.jsonl', valid: 4, damaged: 1, truncated_tail: true, interior: 0 },
+      { type: 'audio', file: 'chronicle/20200115/room/114500_300/imported_audio.jsonl', valid: 2, damaged: 1, truncated_tail: false, interior: 1 },
+      { type: 'image', file: 'chronicle/20200115/room/114500_300/photo_01.jsonl', valid: 1, damaged: 1, truncated_tail: false, interior: 1 },
+      { type: 'audio', file: 'chronicle/20200115/room/114500_300/mic_audio.jsonl', valid: 1, damaged: 1, truncated_tail: false, interior: 1 },
+    ],
+  });
+
+  const banner = env.doc.getElementById('trDamagedNotice');
+  assert.strictEqual(banner.hidden, false);
+  assert.strictEqual(banner.querySelector('button[data-action="set-aside-damaged"]'), null, 'no dead HTTP 400 button for unsupported leaves');
+  assert.strictEqual(banner.querySelectorAll('.tr-damaged-list li').length, 4);
+});
+
+test('timeline pills, day rail, and detail view render honest modality-aware processing_reason_code states without pending or looping retry', async () => {
+  const segs = [
+    { key: '111000_60', stream: 'room', start: '11:10', end: '11:11', types: ['audio'], data_state: { audio: 'empty' }, processing_reason_code: { audio: 'no_decodable_audio' } },
+    { key: '111500_60', stream: 'room', start: '11:15', end: '11:16', types: ['audio'], data_state: { audio: 'empty' }, processing_reason_code: { audio: 'no_speech' } },
+    { key: '112000_60', stream: 'room', start: '11:20', end: '11:21', types: ['screen'], data_state: { screen: 'empty' }, processing_reason_code: { screen: 'no_decodable_frames' } },
+    { key: '112500_60', stream: 'room', start: '11:25', end: '11:26', types: ['audio'], data_state: { audio: 'failed_final' }, processing_reason_code: { audio: 'corrupt_input' } },
+    { key: '113000_60', stream: 'room', start: '11:30', end: '11:31', types: ['screen'], data_state: { screen: 'failed_final' }, processing_reason_code: { screen: 'corrupt_input' } },
+    { key: '113500_60', stream: 'room', start: '11:35', end: '11:36', types: ['audio'], data_state: { audio: 'failed' }, processing_reason_code: { audio: 'analysis_failed' } },
+    { key: '114000_60', stream: 'room', start: '11:40', end: '11:41', types: ['audio'], data_state: { audio: 'purged' } },
+  ];
+  const env = await createEnvironment('https://journal.example/app/transcripts/20200115', 'analyzed', false, segs, {
+    audioRanges: [{ start: '11:25', end: '11:26', streams: ['room'], state: 'pending' }],
+    screenRanges: [{ start: '11:20', end: '11:21', streams: ['room'], state: 'pending' }],
+  });
+
+  const pills = getZoomPills(env.doc);
+  assert.strictEqual(pills.length, 7);
+  for (const pill of pills) {
+    assert.strictEqual(pill.classList.contains('tr-zoom-pill-pending'), false, 'settled or failed pills never get pending class: ' + pill.dataset.key);
+    assert.ok(!pill.title.includes('· pending'), 'settled or failed pills never say pending: ' + pill.title);
+  }
+  const dayBlocks = env.doc.querySelectorAll('#trSegments .tr-seg');
+  for (const block of dayBlocks) {
+    assert.strictEqual(block.classList.contains('tr-seg-pending'), false, 'day rail derives honest state from overlapping segments');
+    assert.ok(!block.title.includes('· pending'), 'day rail never labels failed_final or empty as pending: ' + block.title);
+  }
+
+  // 1. empty + no_decodable_audio -> trash action, zero retry button
+  pills[0].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve('empty', {
+    chunks: [],
+    data_state: { audio: 'empty' },
+    processing_reason_code: { audio: 'no_decodable_audio' },
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(env.doc.querySelector('#trPanel .tr-analyze-action'), null, 'no retry button on no_decodable_audio');
+  assert.ok(env.doc.querySelector('#trPanel .tr-trash-segment-action'), 'offers move segment to trash on no_decodable_audio');
+
+  // 2. empty + no_speech -> calm, zero retry and zero trash button
+  pills[1].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve('empty', {
+    chunks: [],
+    data_state: { audio: 'empty' },
+    processing_reason_code: { audio: 'no_speech' },
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(env.doc.querySelector('#trPanel .tr-analyze-action'), null);
+  assert.strictEqual(env.doc.querySelector('#trPanel .tr-trash-segment-action'), null);
+
+  // 3. screen empty + no_decodable_frames -> trash action, zero retry, never claims no speech
+  pills[2].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve('empty', {
+    chunks: [],
+    data_state: { screen: 'empty' },
+    processing_reason_code: { screen: 'no_decodable_frames' },
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(env.doc.querySelector('#trPanel .tr-analyze-action'), null);
+  assert.ok(env.doc.querySelector('#trPanel .tr-trash-segment-action'));
+  assert.ok(!env.doc.querySelector('#trPanel').innerHTML.toLowerCase().includes('no speech'));
+
+  // 4. audio failed_final + corrupt_input -> NO retry, offers trash + open backup
+  pills[3].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve('failed_final', {
+    chunks: [],
+    data_state: { audio: 'failed_final' },
+    processing_reason_code: { audio: 'corrupt_input' },
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(env.doc.querySelector('#trPanel .tr-analyze-action'), null, 'no looping retry on failed_final');
+  const trashAction = env.doc.querySelector('#trPanel .tr-trash-segment-action');
+  assert.ok(trashAction, 'offers move segment to trash on failed_final');
+  assert.ok(env.doc.querySelector('#trPanel a[href="/app/health/#backup"]'), 'links open backup on failed_final');
+  env.doc.getElementById('trPanel').dispatchEvent({ type: 'click', target: trashAction, preventDefault: () => {} });
+  assert.strictEqual(env.doc.getElementById('trDeleteSegmentModal').style.display, 'flex', 'clicking trash button opens existing segment delete modal');
+  env.doc.getElementById('trDeleteSegmentModal').style.display = 'none';
+
+  // 5. screen failed_final + corrupt_input -> NO retry, screen-specific explanation
+  pills[4].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve('failed_final', {
+    chunks: [],
+    data_state: { screen: 'failed_final' },
+    processing_reason_code: { screen: 'corrupt_input' },
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(env.doc.querySelector('#trPanel .tr-analyze-action'), null);
+  assert.ok(env.doc.querySelector('#trPanel .tr-trash-segment-action'));
+
+  // 6. retryable audio failed -> retains try again reprocess control
+  pills[5].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve('failed', {
+    chunks: [],
+    data_state: { audio: 'failed' },
+    processing_reason_code: { audio: 'analysis_failed' },
+  });
+  await new Promise(r => setTimeout(r, 10));
+  assert.ok(env.doc.querySelector('#trPanel .tr-analyze-action'), 'retryable transient failure retains reprocess button');
+});
+
+test('unrecorded missing original adds distinct warning class while recorded removal stays quiet', async () => {
+  const env = await createEnvironment('https://journal.example/app/transcripts/20200115', 'analyzed', false);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    chunks: [{ type: 'audio', time: '11:45:01', timestamp: 1, text: 'transcript remains' }],
+    media_purged: { audio: true, screen: false },
+    media_removal: {
+      audio: 'MISSING-UNRECORDED-REASON',
+      screen: null,
+      audio_in_trash: false,
+      screen_in_trash: false,
+      audio_missing_unrecorded: true,
+    },
+  });
+  const html = env.doc.querySelector('#tr-tabpanel-transcript').innerHTML;
+  assert.ok(html.includes('tr-purge-notice--unrecorded') && html.includes('data-missing-unrecorded="true"'), html);
+  assert.ok(html.includes('MISSING-UNRECORDED-REASON'), html);
 });

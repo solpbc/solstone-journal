@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. analysis state empty no frames.",
+  "context": "Journal window. Transcripts view. analysis state empty no frames.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd282056fbb95457e0a6e04cefe558ba1ede83ad91b6d031241e40c39e688d48",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

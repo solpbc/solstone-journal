@@ -1,0 +1,16 @@
+{
+  "description": "Search view. banner absent.",
+  "context": "Journal window. Search view. banner absent.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "aa4d52a5b78834348faa7a37814d6c6267a7ddc1aaaf304a02d873d5ef434cd6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

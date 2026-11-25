@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state empty image desc.",
+  "context": "Journal window. Transcripts view. state empty image desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc5864c0edd4ad77be8409eb42b16e131c6b15c3cfe8c1b987936509064efa47",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

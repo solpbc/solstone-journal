@@ -1739,6 +1739,57 @@ async function testCase(name, fn) {
     assert.strictEqual(rejected, true, '500 error envelope must reject with ApiError through saveControl');
   });
 
+  await testCase('storage summary renders 2-bucket vs 3-bucket missing link and 0-byte note cleanly', async () => {
+    const h = createHarness();
+    // 1. missing === 0, zero_byte === 0 -> 2-bucket summary, no link, hidden note
+    h.window.apiJson = async () => ({
+      summary: {
+        raw_media_human: '6 GiB',
+        derived_human: '12 MiB',
+        total_segments: 18,
+        segments_with_raw: 6,
+        segments_purged: 12,
+        segments_missing_unrecorded: 0,
+        segments_damaged_zero_byte: 0,
+      },
+      warnings: [],
+    });
+    await run(h, 'measureStorage()');
+    const detail = h.document.getElementById('storageSummaryDetail');
+    const zeroNote = h.document.getElementById('storageSummaryZeroByteNote');
+    assert.strictEqual(detail.querySelector('a'), null, 'no missing link when segments_missing_unrecorded is 0');
+    assert.ok(detail.textContent.includes('6') && detail.textContent.includes('12'));
+    assert.strictEqual(zeroNote.hidden, true);
+
+    // 2. missing > 0 and zero_byte > 0 -> 3-bucket link + quiet zero-byte note linking /app/health/#integrity
+    h.window.apiJson = async () => ({
+      summary: {
+        raw_media_human: '6 GiB',
+        derived_human: '12 MiB',
+        total_segments: 23,
+        segments_with_raw: 6,
+        segments_purged: 12,
+        segments_missing_unrecorded: 4,
+        segments_damaged_zero_byte: 1,
+      },
+      warnings: [],
+    });
+    await run(h, 'measureStorage()');
+    const missingLink = detail.querySelector('a[data-role="storage-missing-link"]');
+    assert.ok(missingLink, 'renders clickable missing-without-record link');
+    assert.strictEqual(missingLink.getAttribute('href'), '/app/health/#integrity');
+    assert.ok(missingLink.textContent.includes('4'));
+    assert.strictEqual(zeroNote.hidden, false);
+    const zeroLink = zeroNote.querySelector('a[data-role="storage-zero-byte-link"]');
+    assert.ok(zeroLink && zeroLink.getAttribute('href') === '/app/health/#integrity');
+
+    // 3. measurement error clears both detail and zero-byte note
+    h.window.apiJson = async () => { throw new Error('disk read failed'); };
+    await run(h, 'measureStorage()');
+    assert.strictEqual(detail.textContent, '');
+    assert.strictEqual(zeroNote.hidden, true);
+  });
+
   // Settings on the view contract, through the real contract, store and router.
   cases += await require('./settings_contract_dom.js')(crateDir);
 

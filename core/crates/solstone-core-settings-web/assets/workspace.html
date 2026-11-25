@@ -1121,6 +1121,31 @@ input:checked + .slider:before {
   text-align: center;
 }
 
+.storage-summary-detail {
+  margin-top: 0.75em;
+  font-size: 0.8em;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.storage-summary-note {
+  margin-top: 0.45em;
+  font-size: 0.8em;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.storage-summary-note[hidden] {
+  display: none;
+}
+
+.storage-summary-detail a,
+.storage-summary-note a {
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .provider-key-warning {
   display: flex;
   align-items: center;
@@ -3259,7 +3284,8 @@ button:focus:not(:focus-visible) {
             <div class="storage-stat-label">{{journal.window.settings.visible.text.segments}}</div>
           </div>
         </div>
-        <div style="margin-top: 0.75em; font-size: 0.8em; color: var(--ink-faint); text-align: center;" id="storageSummaryDetail"></div>
+        <div class="storage-summary-detail" id="storageSummaryDetail"></div>
+        <div class="storage-summary-note" id="storageSummaryZeroByteNote" hidden></div>
       </div>
 
       <div class="settings-field" id="retentionModeField">
@@ -9469,7 +9495,9 @@ async function measureStorage() {
       } catch (err) {
         if (!currentView()) return;
         for (const id of ['storageSummaryRaw', 'storageSummaryDerived', 'storageSummarySegments']) document.getElementById(id).textContent = '—';
-        document.getElementById('storageSummaryDetail').textContent = '';
+        document.getElementById('storageSummaryDetail').replaceChildren();
+        const zeroNote = document.getElementById('storageSummaryZeroByteNote');
+        if (zeroNote) { zeroNote.replaceChildren(); zeroNote.hidden = true; }
         document.getElementById('storageWarnings').innerHTML = '';
         const state = document.getElementById('storageMeasurementState');
         state.textContent = window.JournalI18n.render('journal.window.settings.visible.text.storage.use.couldn.t.be.measured');
@@ -9505,13 +9533,47 @@ function populateStorageMeasurement(data) {
   document.getElementById('storageSummaryRaw').textContent = s.raw_media_human;
   document.getElementById('storageSummaryDerived').textContent = s.derived_human;
   document.getElementById('storageSummarySegments').textContent = Number(s.total_segments).toLocaleString();
-  document.getElementById('storageSummaryDetail').textContent =
-    window.JournalI18n.render('journal.window.settings.storage.media.summary', [
-      ['quantity', window.JournalI18n.cardinalQuantity(Number(s.segments_with_raw))],
-      ['raw_segments', Number(s.segments_with_raw).toLocaleString()],
-      ['purged_quantity', window.JournalI18n.cardinalQuantity(Number(s.segments_purged))],
-      ['purged_segments', Number(s.segments_purged).toLocaleString()]
+  const rawCount = Number(s.segments_with_raw) || 0;
+  const purgedCount = Number(s.segments_purged) || 0;
+  const missingCount = Number(s.segments_missing_unrecorded) || 0;
+  const zeroByteCount = Number(s.segments_damaged_zero_byte) || 0;
+  const detailEl = document.getElementById('storageSummaryDetail');
+  const summaryText = window.JournalI18n.render('journal.window.settings.storage.originals.summary', [
+    ['quantity', window.JournalI18n.cardinalQuantity(rawCount)],
+    ['raw', rawCount.toLocaleString()],
+    ['purged_quantity', window.JournalI18n.cardinalQuantity(purgedCount)],
+    ['purged', purgedCount.toLocaleString()]
+  ]);
+  if (missingCount > 0) {
+    const link = document.createElement('a');
+    link.href = '/app/health/#integrity';
+    link.setAttribute('data-role', 'storage-missing-link');
+    link.textContent = window.JournalI18n.render('journal.window.settings.storage.originals.missing.link', [
+      ['missing_quantity', window.JournalI18n.cardinalQuantity(missingCount)],
+      ['missing', missingCount.toLocaleString()]
     ]);
+    detailEl.replaceChildren(summaryText, ' · ', link);
+  } else {
+    detailEl.replaceChildren(summaryText);
+  }
+  const zeroNoteEl = document.getElementById('storageSummaryZeroByteNote');
+  if (zeroNoteEl) {
+    if (zeroByteCount > 0) {
+      const noteText = window.JournalI18n.render('journal.window.settings.storage.originals.zero.byte.note', [
+        ['quantity', window.JournalI18n.cardinalQuantity(zeroByteCount)],
+        ['count', zeroByteCount.toLocaleString()]
+      ]);
+      const statusLink = document.createElement('a');
+      statusLink.href = '/app/health/#integrity';
+      statusLink.setAttribute('data-role', 'storage-zero-byte-link');
+      statusLink.textContent = window.JournalI18n.render('journal.window.settings.storage.originals.zero.byte.link');
+      zeroNoteEl.replaceChildren(noteText, ' ', statusLink);
+      zeroNoteEl.hidden = false;
+    } else {
+      zeroNoteEl.replaceChildren();
+      zeroNoteEl.hidden = true;
+    }
+  }
 
 }
 

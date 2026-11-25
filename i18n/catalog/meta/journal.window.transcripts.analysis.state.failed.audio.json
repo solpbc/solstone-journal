@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. analysis state failed audio.",
+  "context": "Journal window. Transcripts view. analysis state failed audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c529db07f7d29c2c812104286a50064013099db7ce8e2dab0cdcc3bc8d3c67ea",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

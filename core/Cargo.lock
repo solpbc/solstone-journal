@@ -6403,6 +6403,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-memory-original",
  "solstone-core-possible-names",
+ "solstone-core-system-health",
  "solstone-core-time",
  "tempfile",
  "tokio",

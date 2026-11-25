@@ -410,6 +410,21 @@
   border-color: var(--ink-faint);
 }
 
+.tr-seg-empty,
+.tr-seg-purged {
+  opacity: 0.65;
+  border-style: dotted;
+  background: color-mix(in srgb, var(--tr-kind) 16%, transparent);
+  border-color: var(--hairline-2);
+}
+
+.tr-seg-failed {
+  opacity: 1;
+  border-style: solid;
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+
 @keyframes tr-analyzing-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
@@ -1395,6 +1410,20 @@
   border-color: var(--ink-faint);
 }
 
+.tr-zoom-pill-empty,
+.tr-zoom-pill-purged {
+  opacity: 0.7;
+  border-style: dotted;
+  background: color-mix(in srgb, var(--tr-kind) 16%, transparent);
+  border-color: var(--hairline-2);
+}
+
+.tr-zoom-pill-failed {
+  border-style: solid;
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+
 /* Dragging state */
 .tr-dragging {
   user-select: none;
@@ -2029,10 +2058,62 @@
   border-left: 3px solid var(--hairline-2);
 }
 
+.tr-purge-notice--unrecorded {
+  color: var(--warn-ink);
+  background: var(--warn-wash);
+  border-left-color: var(--warn);
+}
+
 /* The way to the trash, beside a missing original that waits there. */
 .tr-purge-notice a,
 .surface-state-action a {
-  color: var(--ink-link, var(--orange-deep, inherit));
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tr-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.tr-trash-segment-action {
+  min-height: 44px;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tr-trash-segment-action:hover {
+  background: var(--cream-bright);
+}
+
+.tr-trash-segment-action:focus-visible,
+.tr-state-link:focus-visible,
+.tr-damaged-set-aside:focus-visible,
+.tr-damaged-details summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.tr-state-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .tr-entry {
@@ -2620,6 +2701,98 @@
   display: flex;
 }
 
+.tr-damaged-notice {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--warn-ink);
+  background: var(--warn-wash);
+  border: 1px solid var(--hairline-2);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.tr-damaged-notice.visible {
+  display: flex;
+}
+
+.tr-damaged-notice[hidden] {
+  display: none;
+}
+
+.tr-damaged-head {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-damaged-body {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.tr-damaged-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tr-damaged-set-aside {
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tr-damaged-set-aside:hover:not(:disabled) {
+  background: var(--cream-bright);
+}
+
+.tr-damaged-set-aside:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.tr-damaged-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.tr-damaged-details {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.tr-damaged-details summary {
+  cursor: pointer;
+  padding: 4px 0;
+  color: var(--ink-soft);
+}
+
+.tr-damaged-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.tr-damaged-list li {
+  margin: 2px 0;
+}
+
 .tr-warning-summary {
   display: flex;
   align-items: center;
@@ -3020,6 +3193,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         </span>
       </div>
       <div class="tr-tabs" id="trTabs"></div>
+      <div id="trDamagedNotice" class="tr-damaged-notice" role="status" aria-live="polite" hidden></div>
 	      <div id="trWarningNotice" class="tr-warning-notice" aria-expanded="false">
 	        <div class="tr-warning-summary" role="button" tabindex="0">
 	          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>

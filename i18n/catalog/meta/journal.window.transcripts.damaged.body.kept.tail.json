@@ -1,0 +1,35 @@
+{
+  "description": "Transcripts view. damaged body kept tail.",
+  "context": "Journal window. Transcripts view. damaged body kept tail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "valid_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "valid",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0fd0bebc9f3fd81e8312bc23257635b72b4898bf862d2b495a2386a8a02913e7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "valid_quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. damaged set aside failed.",
+  "context": "Journal window. Transcripts view. damaged set aside failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5e1dc3fd48f7c9aec64758c129fa79ed4f9e4078f7c8cb0ce469c162df0a3a1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

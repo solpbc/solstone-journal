@@ -8836,6 +8836,45 @@ function planDuplicateMerge(members, selected) {
   return {kept, leaving};
 }
 
+function duplicateProvenanceNode(item) {
+  const bases = Array.isArray(item.bases) ? item.bases : [];
+  const labels = [];
+  const shownBases = [];
+  if (bases.includes('same-email')) {
+    labels.push(window.JournalI18n.render('journal.window.entities.merge.evidence.same.email'));
+    shownBases.push('same-email');
+  }
+  if (bases.includes('shared-alias')) {
+    labels.push(window.JournalI18n.render('journal.window.entities.merge.evidence.shared.alias'));
+    shownBases.push('shared-alias');
+  }
+  if (bases.includes('name-variant')) {
+    labels.push(window.JournalI18n.render('journal.window.entities.merge.evidence.name.variant'));
+    shownBases.push('name-variant');
+  }
+  if (!labels.length) return null;
+  const reason = document.createElement('span');
+  reason.className = 'journal-dup-reason';
+  reason.dataset.mergeBasis = shownBases.join(',');
+  reason.textContent = labels.join(' · ');
+  return reason;
+}
+
+function mergePairDirectionText(member) {
+  const sourceName = String(member.names[0] || '');
+  const targetName = String(member.names[1] || '');
+  if (sourceName && targetName && sourceName !== targetName) {
+    return window.JournalI18n.render('journal.window.entities.merge.preview.direction.keep.aka', [
+      ['source_name', sourceName],
+      ['target_name', targetName],
+    ]);
+  }
+  return window.JournalI18n.render('journal.window.entities.merge.preview.direction', [
+    ['source_name', sourceName],
+    ['target_name', targetName],
+  ]);
+}
+
 function renderDupsPanel() {
   const panel = document.getElementById('journal-dups-panel');
   if (!panel) return;
@@ -8982,6 +9021,8 @@ function renderDupsPanel() {
       const name = document.createElement('span');
       name.className = 'journal-row-name';
       name.textContent = window.JournalI18n.render('journal.window.entities.merge.preview.direction', [['source_name', String(item.names[0])], ['target_name', String(item.names[1])]]);
+      const provenance = duplicateProvenanceNode(item);
+      if (provenance) name.append(provenance);
       if ((item.bases || []).includes(FACES_MERGE_BASIS)) name.append(facesMergeReason(item));
       const facets = document.createElement('span');
       facets.className = 'journal-dup-facets';
@@ -9009,7 +9050,7 @@ function renderMergeConfirm(plan) {
   const previewLoads = [];
   plan.kept.forEach(member => {
     const li = document.createElement('li');
-    li.textContent = `${member.names[0]} → ${member.names[1]}`;
+    li.textContent = mergePairDirectionText(member);
     const counts = document.createElement('p');
     counts.setAttribute('aria-busy', 'true');
     li.append(counts);

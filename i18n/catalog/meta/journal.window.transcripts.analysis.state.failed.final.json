@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. analysis state failed final.",
+  "context": "Journal window. Transcripts view. analysis state failed final.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69cc7a8d2ece032c0b301973c64ed8371942e077222b390fe5f359e5c53c5774",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

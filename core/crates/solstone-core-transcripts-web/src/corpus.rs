@@ -537,9 +537,16 @@ mod tests {
                     let audio_purged = actual["media_purged"]["audio"].as_bool().unwrap_or(false);
                     let screen_purged = actual["media_purged"]["screen"].as_bool().unwrap_or(false);
                     if audio_purged {
+                        let expected_audio = if actual["media_removal"]["audio_missing_unrecorded"]
+                            .as_bool()
+                            .unwrap_or(false)
+                        {
+                            "this segment's original audio is missing with no deletion record."
+                        } else {
+                            "this segment's original audio is no longer in your journal"
+                        };
                         assert_eq!(
-                            actual["media_removal"]["audio"],
-                            "this segment's original audio is no longer in your journal",
+                            actual["media_removal"]["audio"], expected_audio,
                             "{}",
                             case["path"]
                         );
@@ -552,9 +559,17 @@ mod tests {
                         );
                     }
                     if screen_purged {
+                        let expected_screen =
+                            if actual["media_removal"]["screen_missing_unrecorded"]
+                                .as_bool()
+                                .unwrap_or(false)
+                            {
+                                "this segment's original screen media is missing with no deletion record."
+                            } else {
+                                "this segment's original screen media is no longer in your journal"
+                            };
                         assert_eq!(
-                            actual["media_removal"]["screen"],
-                            "this segment's original screen media is no longer in your journal",
+                            actual["media_removal"]["screen"], expected_screen,
                             "{}",
                             case["path"]
                         );

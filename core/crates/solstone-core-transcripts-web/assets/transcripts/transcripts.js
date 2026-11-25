@@ -515,6 +515,7 @@
       next.focus();
     });
     const panel = document.getElementById('trPanel');
+    const damagedNotice = document.getElementById('trDamagedNotice');
     const warningNotice = document.getElementById('trWarningNotice');
     const warningText = document.getElementById('trWarningText');
     const warningDetails = document.getElementById('trWarningDetails');
@@ -664,6 +665,276 @@
         return window.JournalI18n.render(`journal.window.transcripts.analysis.${state}.${modality}`);
       }
       return window.JournalI18n.render(`journal.window.transcripts.analysis.${state}.other`, [['modality', String(modality)]]);
+    }
+
+    function modalityReasonCode(source, modality) {
+      const code = source?.processing_reason_code?.[modality] || source?.reason_code?.[modality];
+      return typeof code === 'string' ? code : '';
+    }
+
+    function modalityStateLabel(modality, state, reason = '') {
+      if (state === 'analyzing') {
+        return window.JournalI18n.render('journal.window.transcripts.analysis.state.analyzing');
+      }
+      if (state === 'pending') {
+        return window.JournalI18n.render('journal.window.transcripts.analysis.state.pending');
+      }
+      if (state === 'empty') {
+        if (modality === 'audio' && reason === 'no_decodable_audio') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.no.audio');
+        }
+        if (modality === 'screen' && reason === 'no_decodable_frames') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.no.frames');
+        }
+        if (modality === 'audio') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.no.speech');
+        }
+        if (modality === 'screen') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.screen');
+        }
+        if (modality === 'image') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.image');
+        }
+        return window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.other');
+      }
+      if (state === 'failed_final') {
+        return reason === 'corrupt_input'
+          ? window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.final')
+          : window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.other');
+      }
+      if (state === 'failed') {
+        if (modality === 'audio') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.audio');
+        }
+        if (modality === 'screen') {
+          return window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.screen');
+        }
+        return window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.other');
+      }
+      if (state === 'purged') {
+        return window.JournalI18n.render('journal.window.transcripts.analysis.state.purged');
+      }
+      return '';
+    }
+
+    function segmentTimelineState(seg) {
+      const dataState = seg.data_state || {};
+      const types = seg.types || [];
+      const findState = (target) => types.find(type => dataState[type] === target);
+      const analyzingMod = findState('analyzing');
+      if (analyzingMod) {
+        return { kind: 'analyzing', label: modalityStateLabel(analyzingMod, 'analyzing') };
+      }
+      const failedFinalMod = findState('failed_final');
+      if (failedFinalMod) {
+        return {
+          kind: 'failed',
+          label: modalityStateLabel(failedFinalMod, 'failed_final', modalityReasonCode(seg, failedFinalMod)),
+        };
+      }
+      const failedMod = findState('failed');
+      if (failedMod) {
+        return {
+          kind: 'failed',
+          label: modalityStateLabel(failedMod, 'failed', modalityReasonCode(seg, failedMod)),
+        };
+      }
+      const pendingMod = findState('pending');
+      if (pendingMod) {
+        return { kind: 'pending', label: modalityStateLabel(pendingMod, 'pending') };
+      }
+      const hasAnalyzed = types.some(type => dataState[type] === 'analyzed');
+      if (!hasAnalyzed) {
+        const emptyMod = findState('empty');
+        if (emptyMod) {
+          return {
+            kind: 'empty',
+            label: modalityStateLabel(emptyMod, 'empty', modalityReasonCode(seg, emptyMod)),
+          };
+        }
+        const purgedMod = findState('purged');
+        if (purgedMod) {
+          return { kind: 'purged', label: modalityStateLabel(purgedMod, 'purged') };
+        }
+      }
+      if (seg.think === 'awaiting') {
+        return { kind: 'awaiting', label: AWAITING_THINKING_LABEL };
+      }
+      return { kind: 'analyzed', label: '' };
+    }
+
+    function isSetAsideEligiblePath(rel) {
+      if (typeof rel !== 'string' || !rel || rel.startsWith('/') || rel.includes('\\') || rel.includes('\0')) {
+        return false;
+      }
+      const parts = rel.split('/');
+      if (parts.length !== 4 && parts.length !== 5) return false;
+      if (parts.some(part => !part || part === '.' || part === '..')) return false;
+      if (parts[0] !== 'chronicle' || !/^\d{8}$/.test(parts[1])) return false;
+      if (parts[2] === 'observer' || parts[2] === 'health') return false;
+      const leaf = parts[parts.length - 1];
+      if (!leaf.endsWith('.jsonl')) return false;
+      return leaf === 'audio.jsonl'
+        || leaf === 'screen.jsonl'
+        || leaf.startsWith('browser_')
+        || leaf.endsWith('_desktop_activity.jsonl')
+        || (leaf.startsWith('p') && leaf.length > 7 && /^\d/.test(leaf.slice(1)));
+    }
+
+    function clearDamagedNotice() {
+      if (!damagedNotice) return;
+      damagedNotice.innerHTML = '';
+      damagedNotice.hidden = true;
+      damagedNotice.classList.remove('visible');
+    }
+
+    function renderDamagedNotice(data) {
+      if (!damagedNotice) return;
+      const entries = Array.isArray(data?.damaged_lines)
+        ? data.damaged_lines.filter(entry => entry && Number(entry.damaged) > 0)
+        : [];
+      if (entries.length === 0) {
+        clearDamagedNotice();
+        return;
+      }
+      damagedNotice.innerHTML = '';
+
+      const totalDamaged = entries.reduce((sum, entry) => sum + Math.max(0, Number(entry.damaged) || 0), 0);
+      const totalValid = entries.reduce((sum, entry) => sum + Math.max(0, Number(entry.valid) || 0), 0);
+      const tailOnly = entries.every(entry => entry.truncated_tail === true && (Number(entry.interior) || 0) === 0);
+
+      const eligibleEntries = entries.filter(entry => isSetAsideEligiblePath(entry.file));
+      const eligiblePaths = [...new Set(eligibleEntries.map(entry => entry.file))];
+      const eligibleDamaged = eligibleEntries.reduce((sum, entry) => sum + Math.max(0, Number(entry.damaged) || 0), 0);
+
+      const head = document.createElement('div');
+      head.className = 'tr-damaged-head';
+      head.textContent = window.JournalI18n.render(
+        'journal.window.transcripts.damaged.headline',
+        transcriptCount('damaged', totalDamaged)
+      );
+      damagedNotice.appendChild(head);
+
+      const body = document.createElement('p');
+      body.className = 'tr-damaged-body';
+      if (totalValid > 0) {
+        body.textContent = window.JournalI18n.render(
+          tailOnly ? 'journal.window.transcripts.damaged.body.kept.tail' : 'journal.window.transcripts.damaged.body.kept',
+          [...transcriptCount('valid', totalValid), ['damaged_quantity', window.JournalI18n.cardinalQuantity(totalDamaged)]]
+        );
+      } else {
+        body.textContent = window.JournalI18n.render(
+          tailOnly ? 'journal.window.transcripts.damaged.body.none.tail' : 'journal.window.transcripts.damaged.body.none',
+          [['damaged_quantity', window.JournalI18n.cardinalQuantity(totalDamaged)]]
+        );
+      }
+      damagedNotice.appendChild(body);
+
+      if (eligiblePaths.length > 0) {
+        const actions = document.createElement('div');
+        actions.className = 'tr-damaged-actions';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tr-damaged-set-aside';
+        btn.dataset.action = 'set-aside-damaged';
+        const btnCount = eligibleDamaged || totalDamaged;
+        const idleLabel = window.JournalI18n.render(
+          'journal.window.transcripts.damaged.set.aside.action',
+          [['damaged_quantity', window.JournalI18n.cardinalQuantity(btnCount)]]
+        );
+        btn.textContent = idleLabel;
+        btn.addEventListener('click', async () => {
+          const seg = selectedSegment;
+          if (!seg || !window.SolQuestion || typeof window.SolQuestion.ask !== 'function') return;
+          const confirmTitle = window.JournalI18n.render(
+            'journal.window.transcripts.damaged.set.aside.confirm.title',
+            transcriptCount('damaged', btnCount)
+          );
+          const confirmBody = window.JournalI18n.render(
+            'journal.window.transcripts.damaged.set.aside.confirm.body',
+            [['damaged_quantity', window.JournalI18n.cardinalQuantity(btnCount)]]
+          );
+          const confirmAction = window.JournalI18n.render(
+            'journal.window.transcripts.damaged.set.aside.confirm.action'
+          );
+          const approved = await window.SolQuestion.ask({
+            message: `${confirmTitle}\n\n${confirmBody}`,
+            action: confirmAction,
+            signal: ctx.signal,
+            opener: btn
+          });
+          if (!approved || ctx.disposed) return;
+          if (!selectedSegment || selectedSegment.key !== seg.key || selectedSegment.stream !== seg.stream) return;
+
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+          btn.textContent = window.JournalI18n.render('journal.window.transcripts.damaged.set.aside.busy');
+          damagedNotice.querySelectorAll('.tr-damaged-error').forEach(el => el.remove());
+
+          try {
+            const response = await fetch('/app/health/api/integrity/set-aside-lines', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paths: eligiblePaths }),
+              signal: ctx.signal
+            });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+            const preferredTab = activeTab;
+            const reloaded = await dayFetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`);
+            if (!reloaded.ok) {
+              throw new Error(`HTTP ${reloaded.status}`);
+            }
+            const freshData = await reloaded.json();
+            if (ctx.disposed || !selectedSegment || selectedSegment.key !== seg.key || selectedSegment.stream !== seg.stream) {
+              return;
+            }
+            rerenderSegmentAfterAnalysis(freshData, preferredTab);
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            if (ctx.disposed) return;
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+            btn.textContent = idleLabel;
+            const errEl = document.createElement('p');
+            errEl.className = 'tr-damaged-error';
+            errEl.setAttribute('role', 'alert');
+            errEl.textContent = window.JournalI18n.render('journal.window.transcripts.damaged.set.aside.failed');
+            actions.insertAdjacentElement('afterend', errEl);
+          }
+        });
+        actions.appendChild(btn);
+        damagedNotice.appendChild(actions);
+      }
+
+      const details = document.createElement('details');
+      details.className = 'tr-damaged-details';
+      const summary = document.createElement('summary');
+      summary.textContent = window.JournalI18n.render('journal.window.transcripts.damaged.details.trigger');
+      details.appendChild(summary);
+      const list = document.createElement('ul');
+      list.className = 'tr-damaged-list';
+      for (const entry of entries) {
+        const item = document.createElement('li');
+        const entryTailOnly = entry.truncated_tail === true && (Number(entry.interior) || 0) === 0;
+        const entryDamaged = Math.max(0, Number(entry.damaged) || 0);
+        const entryValid = Math.max(0, Number(entry.valid) || 0);
+        item.textContent = window.JournalI18n.render(
+          entryTailOnly ? 'journal.window.transcripts.damaged.details.row.tail' : 'journal.window.transcripts.damaged.details.row',
+          [
+            ['file', String(entry.file || '')],
+            ...transcriptCount('damaged', entryDamaged),
+            ...transcriptCount('valid', entryValid)
+          ]
+        );
+        list.appendChild(item);
+      }
+      details.appendChild(list);
+      damagedNotice.appendChild(details);
+
+      damagedNotice.hidden = false;
+      damagedNotice.classList.add('visible');
     }
 
     function warningTimestampLabel(ts) {
@@ -1909,7 +2180,7 @@
       });
     }
 
-    function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed', think = null, segment = null) {
+    function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed', think = null, segment = null, reason = '') {
       const el = document.createElement('div');
       el.className = 'tr-seg ' + (
         type === 'screen' || type === 'desktop_activity'
@@ -1926,6 +2197,12 @@
         el.classList.add('tr-seg-pending');
       } else if (state === 'analyzing') {
         el.classList.add('tr-seg-analyzing');
+      } else if (state === 'failed' || state === 'failed_final') {
+        el.classList.add('tr-seg-failed');
+      } else if (state === 'empty') {
+        el.classList.add('tr-seg-empty');
+      } else if (state === 'purged') {
+        el.classList.add('tr-seg-purged');
       } else if (think === 'awaiting') {
         el.classList.add('tr-seg-awaiting');
       }
@@ -1950,7 +2227,10 @@
       const typePart = omitType ? '' : ', ' + typeDisplay;
       const labelPart = humanizedStreams.length ? ', ' + humanizedStreams.join(', ') : '';
       const rawSuffix = sortedStreams.length ? ' (' + sortedStreams.join(', ') + ')' : '';
-      const stateSuffix = state === 'pending' ? ' · ' + window.JournalI18n.render('journal.window.transcripts.analysis.state.pending') : state === 'analyzing' ? ' · ' + window.JournalI18n.render('journal.window.transcripts.analysis.state.analyzing') : (think === 'awaiting' ? ' · ' + AWAITING_THINKING_LABEL : '');
+      const stateLabel = state !== 'analyzed'
+        ? modalityStateLabel(type, state, reason)
+        : (think === 'awaiting' ? AWAITING_THINKING_LABEL : '');
+      const stateSuffix = stateLabel ? ' · ' + stateLabel : '';
       const isZeroLengthMoment = startMin === endMin && type === 'image';
       el.title = isZeroLengthMoment
         ? hhmm(startMin) + ' (' + typeDisplay + labelPart + stateSuffix + ')' + rawSuffix
@@ -2246,19 +2526,19 @@
         const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
         const isShotOnly = seg.item?.kind === 'screen_text' || isScreenshotsStream(seg.stream);
         const isActivityOnly = seg.types.includes('desktop_activity') && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !hasImage;
-        const dataState = seg.data_state || {};
-        const hasPendingAdvertised = (seg.types || []).some(
-          type => dataState[type] && dataState[type] !== 'analyzed'
-        );
-        const hasAnalyzingAdvertised = (seg.types || []).some(
-          type => dataState[type] === 'analyzing'
-        );
+        const timelineState = segmentTimelineState(seg);
         pill.classList.add('tr-zoom-pill-' + pillKind(seg));
-        if (hasAnalyzingAdvertised) {
+        if (timelineState.kind === 'analyzing') {
           pill.classList.add('tr-zoom-pill-analyzing');
-        } else if (hasPendingAdvertised) {
+        } else if (timelineState.kind === 'failed') {
+          pill.classList.add('tr-zoom-pill-failed');
+        } else if (timelineState.kind === 'pending') {
           pill.classList.add('tr-zoom-pill-pending');
-        } else if (seg.think === 'awaiting') {
+        } else if (timelineState.kind === 'empty') {
+          pill.classList.add('tr-zoom-pill-empty');
+        } else if (timelineState.kind === 'purged') {
+          pill.classList.add('tr-zoom-pill-purged');
+        } else if (timelineState.kind === 'awaiting') {
           pill.classList.add('tr-zoom-pill-awaiting');
         }
         const isMoment = isShotOnly || isPhotoOnly;
@@ -2285,7 +2565,7 @@
         const typeDesc = isShotOnly ? screenshotStreamKind : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : (hasMarkdown || isWritten) ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photo' : isActivityOnly ? 'desktop activity' : 'screen';
         const typeLabel = hasAudio && hasScreen && !isShotOnly
           ? window.JournalI18n.render('journal.window.transcripts.kind.audio.and.screen') : segmentTypeLabel(typeDesc);
-        const segmentStatusLabel = hasAnalyzingAdvertised ? window.JournalI18n.render('journal.window.transcripts.analysis.state.analyzing') : hasPendingAdvertised ? window.JournalI18n.render('journal.window.transcripts.analysis.state.pending') : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
+        const segmentStatusLabel = timelineState.label;
         const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
         const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
         const itemLabel = importItemLabel(seg);
@@ -2509,6 +2789,7 @@
       frameCapture.clear();
       tabsContainer.classList.remove('visible');
       tabsContainer.innerHTML = '';
+      clearDamagedNotice();
       warningNotice.classList.remove('visible');
       panel.innerHTML = window.SurfaceState.loading({ text: window.JournalI18n.render('journal.window.transcripts.text.loading.segment'), busy: false });
       panel.classList.add('loading');
@@ -2838,13 +3119,100 @@
       return `<button type="button" class="tr-analyze-action" data-modality="${escapeHtml(modality)}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
     }
 
+    function renderTrashSegmentButton() {
+      const label = window.JournalI18n.render('journal.window.transcripts.state.action.move.to.trash');
+      return `<button type="button" class="tr-trash-segment-action">${escapeHtml(label)}</button>`;
+    }
+
     function renderFailedDataState(modality) {
-      return `<div class="surface-state surface-state--error" role="alert">`
+      const heading = modality === 'audio'
+        ? window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.audio')
+        : modality === 'screen'
+          ? window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.screen')
+          : dataStateCopy(modality, 'failed');
+      return `<div class="surface-state surface-state--error" role="alert" data-state="failed">`
         + `<div class="surface-state-icon" aria-hidden="true">${emptyIconForModality(modality)}</div>`
-        + `<h2 class="surface-state-heading">${escapeHtml(dataStateCopy(modality, 'failed'))}</h2>`
+        + `<h2 class="surface-state-heading">${escapeHtml(heading)}</h2>`
         + `<p class="surface-state-desc">${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.analysis.errored.for.this.segment')}</p>`
         + `<div class="surface-state-action">${renderAnalyzeButton(modality, BTN_LABEL_FAILED)}</div>`
         + `</div>`;
+    }
+
+    function renderFailedFinalDataState(modality, data) {
+      const reason = modalityReasonCode(data, modality);
+      const isCorrupt = reason === 'corrupt_input';
+      const heading = isCorrupt
+        ? window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.final')
+        : window.JournalI18n.render('journal.window.transcripts.analysis.state.failed.other');
+      let descKey;
+      if (isCorrupt) {
+        descKey = modality === 'audio'
+          ? 'journal.window.transcripts.state.failed.final.audio.desc'
+          : modality === 'screen'
+            ? 'journal.window.transcripts.state.failed.final.screen.desc'
+            : 'journal.window.transcripts.state.failed.final.other.desc';
+      } else if (reason === 'no_audio_stream') {
+        descKey = 'journal.window.transcripts.state.failed.final.no.audio.stream.desc';
+      } else {
+        descKey = 'journal.window.transcripts.state.failed.final.exhausted.desc';
+      }
+      const backupLabel = window.JournalI18n.render('journal.window.transcripts.state.action.open.backup');
+      return `<div class="surface-state surface-state--error" role="alert" data-state="failed_final">`
+        + `<div class="surface-state-icon" aria-hidden="true">${emptyIconForModality(modality)}</div>`
+        + `<h2 class="surface-state-heading">${escapeHtml(heading)}</h2>`
+        + `<p class="surface-state-desc">${window.JournalI18n.renderHtml(descKey)}</p>`
+        + `<div class="surface-state-action tr-state-actions">`
+        + renderTrashSegmentButton()
+        + `<a class="tr-state-link" href="/app/health/#backup">${escapeHtml(backupLabel)}</a>`
+        + `</div>`
+        + `</div>`;
+    }
+
+    function renderEmptyDataState(modality, data) {
+      const icon = emptyIconForModality(modality);
+      const reason = modalityReasonCode(data, modality);
+      if (modality === 'audio' && reason === 'no_decodable_audio') {
+        return window.SurfaceState.empty({
+          icon,
+          heading: window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.no.audio'),
+          desc: window.JournalI18n.render('journal.window.transcripts.state.empty.no.audio.desc'),
+          action: renderTrashSegmentButton()
+        });
+      }
+      if (modality === 'screen' && reason === 'no_decodable_frames') {
+        return window.SurfaceState.empty({
+          icon,
+          heading: window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.no.frames'),
+          desc: window.JournalI18n.render('journal.window.transcripts.state.empty.no.frames.desc'),
+          action: renderTrashSegmentButton()
+        });
+      }
+      if (modality === 'audio') {
+        return window.SurfaceState.empty({
+          icon,
+          heading: window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.no.speech'),
+          desc: window.JournalI18n.render('journal.window.transcripts.state.empty.no.speech.desc')
+        });
+      }
+      if (modality === 'screen') {
+        return window.SurfaceState.empty({
+          icon,
+          heading: window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.screen'),
+          desc: window.JournalI18n.render('journal.window.transcripts.state.empty.screen.desc')
+        });
+      }
+      if (modality === 'image') {
+        return window.SurfaceState.empty({
+          icon,
+          heading: window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.image'),
+          desc: window.JournalI18n.render('journal.window.transcripts.state.empty.image.desc')
+        });
+      }
+      return window.SurfaceState.empty({
+        icon,
+        heading: window.JournalI18n.render('journal.window.transcripts.analysis.state.empty.other'),
+        desc: window.JournalI18n.render('journal.window.transcripts.state.empty.other.desc')
+      });
     }
 
     // A missing original a trash item holds: the reason says so, and the way to
@@ -2856,6 +3224,10 @@
 
     function mediaInTrash(data, modality) {
       return data?.media_removal?.[modality + '_in_trash'] === true;
+    }
+
+    function mediaMissingUnrecorded(data, modality) {
+      return data?.media_removal?.[modality + '_missing_unrecorded'] === true;
     }
 
     function mediaTrashLink() {
@@ -2887,7 +3259,13 @@
           + `<span class="surface-state-still" data-role="still-working" aria-hidden="true">${window.JournalI18n.renderHtml('journal.window.transcripts.visible.text.still.working')}</span>`
           + `</div>`;
       }
-      if (state === 'failed' || state === 'failed_final') {
+      if (state === 'empty') {
+        return renderEmptyDataState(modality, data);
+      }
+      if (state === 'failed_final') {
+        return renderFailedFinalDataState(modality, data);
+      }
+      if (state === 'failed') {
         return renderFailedDataState(modality);
       }
       if (state === 'purged') {
@@ -2956,6 +3334,7 @@
         tabsContainer.classList.remove('visible');
         stopAnalyzePoller();
         renderLocationOnlyDetail(data);
+        renderDamagedNotice(data);
         renderWarningNotice(data);
         return;
       }
@@ -2970,6 +3349,7 @@
       buildTabBar(data);
       const nextTab = requestedTabId && tabExists(requestedTabId) ? requestedTabId : 'transcript';
       activateTab(nextTab);
+      renderDamagedNotice(data);
       renderWarningNotice(data);
     }
 
@@ -4310,8 +4690,13 @@
 
       const audioPurged = data.media_purged?.audio && !data.audio_file && showAudio;
       const screenPurged = data.media_purged?.screen && showScreen && chunks.some(c => c.type === 'screen');
-      const purgeNotice = (modality) => `<div class="tr-purge-notice" role="presentation">${escapeHtml(data.media_removal[modality])}`
-        + (mediaInTrash(data, modality) ? ` · ${mediaTrashLink()}` : '') + '</div>';
+      const purgeNotice = (modality) => {
+        const unrecorded = mediaMissingUnrecorded(data, modality);
+        const cls = unrecorded ? 'tr-purge-notice tr-purge-notice--unrecorded' : 'tr-purge-notice';
+        const attr = unrecorded ? ' data-missing-unrecorded="true"' : '';
+        return `<div class="${cls}" role="presentation"${attr}>${escapeHtml(data.media_removal[modality])}`
+          + (mediaInTrash(data, modality) ? ` · ${mediaTrashLink()}` : '') + '</div>';
+      };
       if (audioPurged) html += purgeNotice('audio');
       if (screenPurged) html += purgeNotice('screen');
 
@@ -5380,6 +5765,31 @@
         String(now.getDate()).padStart(2, '0');
     }
 
+    function resolveRangeModalityState(modality, rg, segments) {
+      const rgStart = parseTime(rg.start);
+      const rgEnd = parseTime(rg.end);
+      const streamSet = Array.isArray(rg.streams) && rg.streams.length ? new Set(rg.streams) : null;
+      const matched = (segments || []).filter(seg => {
+        if (!(seg.types || []).includes(modality)) return false;
+        if (streamSet && !streamSet.has(seg.stream)) return false;
+        const sStart = parseTime(seg.start);
+        const sEnd = parseTime(seg.end);
+        return sStart < rgEnd && sEnd > rgStart || (sStart === sEnd && sStart >= rgStart && sStart <= rgEnd);
+      });
+      if (!matched.length) return { state: rg.state || 'analyzed', reason: '' };
+      const pick = (target) => matched.find(seg => seg.data_state?.[modality] === target);
+      for (const candidate of ['analyzing', 'failed_final', 'failed', 'pending']) {
+        const hit = pick(candidate);
+        if (hit) return { state: candidate, reason: modalityReasonCode(hit, modality) };
+      }
+      if (pick('analyzed')) return { state: 'analyzed', reason: '' };
+      for (const candidate of ['empty', 'purged']) {
+        const hit = pick(candidate);
+        if (hit) return { state: candidate, reason: modalityReasonCode(hit, modality) };
+      }
+      return { state: rg.state || 'analyzed', reason: '' };
+    }
+
     // The day rail's blocks: audio and screen as the journal merged them, then
     // each import, written message, page visit, desktop activity and photo.
     // Each block says what it is, so the day switch can draw what it leaves
@@ -5388,10 +5798,12 @@
       segmentsLane.innerHTML = '';
       const kindOf = (el, kind) => { el.dataset.showKind = kind; };
       (ranges.audio || []).forEach(rg => {
-        kindOf(addSegmentIndicator('audio', parseTime(rg.start), parseTime(rg.end), 0, rg.streams, rg.state || 'analyzed', rg.think), 'transcripts');
+        const resolved = resolveRangeModalityState('audio', rg, segments);
+        kindOf(addSegmentIndicator('audio', parseTime(rg.start), parseTime(rg.end), 0, rg.streams, resolved.state, rg.think, null, resolved.reason), 'transcripts');
       });
       (ranges.screen || []).forEach(rg => {
-        kindOf(addSegmentIndicator('screen', parseTime(rg.start), parseTime(rg.end), 1, rg.streams, rg.state || 'analyzed', rg.think), 'other');
+        const resolved = resolveRangeModalityState('screen', rg, segments);
+        kindOf(addSegmentIndicator('screen', parseTime(rg.start), parseTime(rg.end), 1, rg.streams, resolved.state, rg.think, null, resolved.reason), 'other');
       });
       [...markdownOnlySegments(segments), ...writtenSegments(segments)].forEach(seg => {
         kindOf(addSegmentIndicator('markdown', parseTime(seg.start), parseTime(seg.end), 0, [seg.stream], 'analyzed', seg.think, seg), showKind(seg));
@@ -6221,6 +6633,12 @@
     ctx.onDispose(stopAnalyzePoller);
 
     panel.addEventListener('click', (event) => {
+      const trashButton = event.target.closest('.tr-trash-segment-action');
+      if (trashButton && panel.contains(trashButton)) {
+        event.preventDefault();
+        if (selectedSegment) showDeleteSegmentModal([selectedSegment]);
+        return;
+      }
       const button = event.target.closest('.tr-analyze-action');
       if (!button || !panel.contains(button)) return;
       event.preventDefault();
@@ -7308,6 +7726,7 @@
       rangeText.textContent = '';
       tabsContainer.innerHTML = '';
       tabsContainer.classList.remove('visible');
+      clearDamagedNotice();
       warningNotice.classList.remove('visible');
       refreshUnselectedLocation(window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('clock'),

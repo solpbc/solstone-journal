@@ -1,0 +1,26 @@
+{
+  "description": "Transcripts view. damaged body none.",
+  "context": "Journal window. Transcripts view. damaged body none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "93a98c63bbc7b2ee6c83a6a0c085a512b49425505a78a90650b40faa4e3569ee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "damaged_quantity",
+    "type": "cardinal"
+  }
+}

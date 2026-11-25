@@ -1,0 +1,30 @@
+{
+  "description": "Settings view. storage originals zero byte note.",
+  "context": "Journal window. Settings view. storage originals zero byte note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "47079f3fb0c06081224f2a22e7e3845b0e40fc8e2c49f7e10c6148eaceed2ab3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

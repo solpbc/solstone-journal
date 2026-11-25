@@ -1974,6 +1974,122 @@ ${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyClock = tidyClock; this.tidySta
 
   await entityDeleteCases(workspace);
   await facetDetachSetCases(workspace);
+  {
+    // Possible duplicates: honest provenance labels per basis and merge confirm aka copy.
+    const doc = { activeElement: null, registry: new Map() };
+    doc.createElement = (tag) => new PickNode(doc, tag);
+    doc.createTextNode = (text) => {
+      const node = new PickNode(doc, '#text');
+      node.textContent = text;
+      return node;
+    };
+    const dupPanel = new PickNode(doc, 'div');
+    dupPanel.id = 'journal-dups-panel';
+    doc.registry.set('journal-dups-panel', dupPanel);
+    doc.getElementById = (id) => doc.registry.get(id) || null;
+    const faceCalls = [];
+    const mergeCalls = [];
+    const context = {
+      console,
+      Promise,
+      Map,
+      Set,
+      Uint8Array,
+      document: doc,
+      ctx: { disposed: false },
+      FACES_MERGE_BASIS: 'meeting-face',
+      ENT_COPY: { ENT_TRUST_ACTION_FAILED: 'failed' },
+      journalFolder: 'duplicates',
+      facetRoster: [
+        { name: 'montague', title: 'Montague Tech' },
+        { name: 'work', title: 'Work' },
+      ],
+      groupedCount: (n) => String(n),
+      renderJournalEntities: () => {},
+      loadJournalEntities: async () => {},
+      selectJournalFolder: () => {},
+      facesMergeReason: (item) => {
+        faceCalls.push(item.pair);
+        const span = new PickNode(doc, 'span');
+        span.className = 'journal-dup-reason';
+        span.dataset.mergeBasis = 'meeting-face';
+        span.textContent = 'meeting photos suggest these may be the same person.';
+        return span;
+      },
+      apiJson: async (url, opts) => {
+        const body = opts && opts.body ? JSON.parse(opts.body) : null;
+        mergeCalls.push({ url, body });
+        return {
+          voiceprints_added: 1,
+          voiceprints_target_total: 2,
+          notes_on_source: 0,
+          speaker_labels: 3,
+          activity_records: 4,
+        };
+      },
+      window: {
+        createViewReady: () => () => {},
+        logError: () => {},
+        SurfaceState: { loading: () => '' },
+        crypto: { getRandomValues: (bytes) => bytes.fill(1) },
+        sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      },
+    };
+    runWithJournalCatalog(
+      `${workspace.slice(workspace.indexOf('function entityCountArgs('), workspace.indexOf('function fillLastMentionedDate('))}
+${workspace.slice(tidyStart, tidyEnd)}\nthis.tidyState = tidyState; this.renderDupsPanel = renderDupsPanel; this.renderMergeConfirm = renderMergeConfirm;`,
+      context,
+      { filename: 'entities-dups.js' },
+    );
+    const items = [
+      { pair: ['a1', 'a2'], names: ['Alice A', 'Alice B'], bases: ['same-email'], facets: ['work'] },
+      { pair: ['b1', 'b2'], names: ['Bob Smith', 'Bob Wilson'], bases: ['shared-alias'], facets: ['work'] },
+      { pair: ['c1', 'c2'], names: ['Cara M', 'Cara Miller'], bases: ['name-variant'], facets: ['montague'] },
+      { pair: ['d1', 'd2'], names: ['Dan P', 'Dan Porter'], bases: ['name-variant'], facets: ['montague', 'work'] },
+      { pair: ['e1', 'e2'], names: ['Eve X', 'Eve Y'], bases: ['meeting-face'], facets: ['work'] },
+    ];
+    context.tidyState.data = { duplicates: { count: items.length, members: items, items } };
+    context.tidyState.dupsPageData = context.tidyState.data;
+    context.renderDupsPanel();
+
+    const reasons = dupPanel.descendants().filter((n) => n.className === 'journal-dup-reason');
+    check(reasons.length === 5, 'each duplicate pair renders its provenance reason');
+    check(reasons[0].dataset.mergeBasis === 'same-email' && reasons[0].textContent === context.window.JournalI18n.render('journal.window.entities.merge.evidence.same.email'), 'same-email provenance rendered');
+    check(reasons[1].dataset.mergeBasis === 'shared-alias' && reasons[1].textContent === context.window.JournalI18n.render('journal.window.entities.merge.evidence.shared.alias'), 'shared-alias provenance rendered');
+    check(reasons[2].dataset.mergeBasis === 'name-variant' && reasons[2].textContent === context.window.JournalI18n.render('journal.window.entities.merge.evidence.name.variant'), 'single-facet name-variant uses plain similar name without implying shared facet membership');
+    check(reasons[3].dataset.mergeBasis === 'name-variant' && reasons[3].textContent === context.window.JournalI18n.render('journal.window.entities.merge.evidence.name.variant'), 'multi-facet name-variant uses plain similar name');
+    check(faceCalls.length === 1 && reasons[4].dataset.mergeBasis === 'meeting-face', 'meeting-face preserves facesMergeReason');
+
+    const confirmBox = context.renderMergeConfirm({
+      kept: [
+        { pair: ['b1', 'b2'], names: ['Bob Smith', 'Bob Wilson'] },
+        { pair: ['s1', 's2'], names: ['Sam Lee', 'Sam Lee'] },
+      ],
+      leaving: [],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const keptItems = confirmBox.descendants().filter((n) => n.tagName === 'LI');
+    check(keptItems.length === 2, 'confirm dialog lists both pairs');
+    check(
+      keptItems[0].textContent.includes(
+        context.window.JournalI18n.render('journal.window.entities.merge.preview.direction.keep.aka', [
+          ['source_name', 'Bob Smith'],
+          ['target_name', 'Bob Wilson'],
+        ]),
+      ),
+      'distinct-name merge confirm states keeps source name as another name',
+    );
+    check(
+      keptItems[1].textContent.includes(
+        context.window.JournalI18n.render('journal.window.entities.merge.preview.direction', [
+          ['source_name', 'Sam Lee'],
+          ['target_name', 'Sam Lee'],
+        ]),
+      ) && !keptItems[1].textContent.includes('another name'),
+      'identical-name merge confirm uses plain direction',
+    );
+    check(mergeCalls.length === 2 && mergeCalls.every((c) => c.url === '/app/entities/api/merge'), 'live dry-run preview runs for each kept pair');
+  }
   const entitiesCopy = readCopyTable(path.join(manifestDir, '../solstone-core-entities/src/data/entities_copy.json'));
   await detectedHideCases(workspace, entitiesCopy);
   await selectLandingCases(manifestDir);

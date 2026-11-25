@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state empty screen desc.",
+  "context": "Journal window. Transcripts view. state empty screen desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca7ff768ab379576f5f93499475cbb5126e27785e91b237f9383e4a87dbcdcd0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Search view. banner build action.",
+  "context": "Journal window. Search view. banner build action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60a28841e0c695d30258fea8194ee57bf6ed56e1d4614dfd8c8fbcf011d87a5f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

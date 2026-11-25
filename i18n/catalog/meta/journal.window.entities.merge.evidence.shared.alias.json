@@ -1,0 +1,16 @@
+{
+  "description": "Entities view. merge evidence shared alias.",
+  "context": "Journal window. Entities view. merge evidence shared alias.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2dc2f6d96e75d57a0623af1cedaa0220c0b59716c912984a4eb5d456ae08f89c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

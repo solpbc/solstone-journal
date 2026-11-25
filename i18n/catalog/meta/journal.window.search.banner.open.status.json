@@ -1,0 +1,16 @@
+{
+  "description": "Search view. banner open status.",
+  "context": "Journal window. Search view. banner open status.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fed7a000d1bcd86123691225087e6d24967f6c005776fe5cf77e0a6ac38e9d01",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

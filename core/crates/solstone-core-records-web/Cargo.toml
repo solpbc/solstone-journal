@@ -22,10 +22,12 @@ solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-home.workspace = true
 solstone-core-indexer-query.workspace = true
+solstone-core-indexer-todo.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-memory-original.workspace = true
 solstone-core-possible-names.workspace = true
+solstone-core-system-health.workspace = true
 solstone-core-time.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 
@@ -34,6 +36,5 @@ tempfile = "3.24.0"
 solstone-core-convey-shell.workspace = true
 solstone-core-indexer-query = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
-solstone-core-indexer-todo.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

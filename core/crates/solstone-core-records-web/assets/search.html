@@ -1,5 +1,5 @@
 <style>
-.search-app{max-width:1000px;margin:auto;padding:32px 24px;color:var(--ink);background:var(--panel);border-radius:var(--radius);overflow-wrap:anywhere}.search-app *{box-sizing:border-box}.search-app h1{font-size:2rem;margin:0 0 8px}.search-app p{line-height:1.6}.search-app label{display:block;font-weight:600;margin-bottom:6px}.search-app input,.search-app button,.search-app .search-link{font:inherit;min-height:46px;border:1px solid var(--hairline-2);border-radius:8px;padding:10px 14px}.search-app input{background:var(--paper);color:inherit;min-width:0;max-width:100%}.search-query-row{display:flex;gap:10px}.search-query-row input{flex:1}.search-app button{cursor:pointer;background:var(--paper);color:inherit}.search-app button[type=submit]{background:var(--orange);color:var(--ink-on-brand);font-weight:600}.search-app :focus-visible{outline:2px solid var(--focus);outline-offset:3px}.search-app a{color:var(--orange-text-aa)}.search-app summary{cursor:pointer;padding:12px 0}.search-dates{display:flex;gap:16px;flex-wrap:wrap}.search-dates>div{flex:1;min-width:150px}.search-dates input{width:100%}.search-status{padding:16px 0;color:var(--ink-soft)}.search-day{margin:24px 0}.search-day h2{font-size:1.2rem}.search-result{padding:18px;background:var(--paper);border:1px solid var(--hairline);border-radius:10px;margin:12px 0}.search-meta{color:var(--ink-soft);font-size:.9rem;display:flex;flex-wrap:wrap;gap:8px}.search-excerpt{margin:12px 0}.search-source{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:60vh;overflow:auto;background:var(--cream);padding:16px;border-radius:8px}.search-source[hidden]{display:none}.search-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.search-paging{display:flex;gap:16px;flex-wrap:wrap;margin:28px 0}.search-error{color:var(--danger)}.search-app mark{background:var(--warn-wash);color:inherit}.search-app details{margin:8px 0}@media(max-width:600px){.search-app{padding:24px 16px}.search-query-row{flex-wrap:wrap}.search-query-row input{flex-basis:100%}.search-query-row button{width:100%}}
+.search-app{max-width:1000px;margin:auto;padding:32px 24px;color:var(--ink);background:var(--panel);border-radius:var(--radius);overflow-wrap:anywhere}.search-app *{box-sizing:border-box}.search-app h1{font-size:2rem;margin:0 0 8px}.search-app p{line-height:1.6}.search-app label{display:block;font-weight:600;margin-bottom:6px}.search-app input,.search-app button,.search-app .search-link{font:inherit;min-height:46px;border:1px solid var(--hairline-2);border-radius:8px;padding:10px 14px}.search-app input{background:var(--paper);color:inherit;min-width:0;max-width:100%}.search-query-row{display:flex;gap:10px}.search-query-row input{flex:1}.search-app button{cursor:pointer;background:var(--paper);color:inherit}.search-app button[type=submit]{background:var(--orange);color:var(--ink-on-brand);font-weight:600}.search-app :focus-visible{outline:2px solid var(--focus);outline-offset:3px}.search-app a{color:var(--orange-text-aa)}.search-app summary{cursor:pointer;padding:12px 0}.search-dates{display:flex;gap:16px;flex-wrap:wrap}.search-dates>div{flex:1;min-width:150px}.search-dates input{width:100%}.search-status{padding:16px 0;color:var(--ink-soft)}.search-day{margin:24px 0}.search-day h2{font-size:1.2rem}.search-result{padding:18px;background:var(--paper);border:1px solid var(--hairline);border-radius:10px;margin:12px 0}.search-meta{color:var(--ink-soft);font-size:.9rem;display:flex;flex-wrap:wrap;gap:8px}.search-excerpt{margin:12px 0}.search-source{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:60vh;overflow:auto;background:var(--cream);padding:16px;border-radius:8px}.search-source[hidden]{display:none}.search-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.search-paging{display:flex;gap:16px;flex-wrap:wrap;margin:28px 0}.search-error{color:var(--danger)}.search-index-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 4px;padding:12px 16px;border:1px solid var(--hairline-2);border-left:3px solid var(--warn);border-radius:10px;background:var(--warn-wash);color:var(--ink)}.search-index-banner[hidden]{display:none}.search-index-banner[data-state=behind]{border-left-color:var(--hairline-2);background:var(--cream)}.search-index-banner[data-state=failing],.search-index-banner[data-state=unreadable]{border-left-color:var(--danger);background:var(--danger-wash)}.search-index-banner-text{margin:0;flex:1 1 260px;line-height:1.5}.search-index-banner-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.search-index-banner-error{margin:4px 0 0;flex-basis:100%;font-size:.9rem;color:var(--danger)}.search-index-banner .search-banner-primary{background:var(--orange);color:var(--ink-on-brand);border-color:var(--orange);font-weight:600}.search-index-banner a{color:var(--orange-text-aa);text-decoration:underline;text-underline-offset:2px}.search-app mark{background:var(--warn-wash);color:inherit}.search-app details{margin:8px 0}@media(max-width:600px){.search-app{padding:24px 16px}.search-query-row{flex-wrap:wrap}.search-query-row input{flex-basis:100%}.search-query-row button{width:100%}}
 </style>
 <!-- view-contract -->
 <section class="search-app" id="journal-search">
@@ -10,6 +10,7 @@
 <div class="search-query-row"><input id="journal-search-query" name="q" type="search" required placeholder="{{journal.window.search.query.placeholder}}" autocomplete="off"><button type="submit">{{journal.window.search.query.submit}}</button></div>
 <details id="search-date-options"><summary>{{journal.window.search.date.range}}</summary><div class="search-dates"><div><label for="search-from">{{journal.window.search.date.from}}</label><input id="search-from" name="from" type="date"></div><div><label for="search-to">{{journal.window.search.date.through}}</label><input id="search-to" name="to" type="date"></div></div></details>
 </form>
+<div class="search-index-banner" role="status" aria-live="polite" hidden></div>
 <div class="search-status" role="status" aria-live="polite">{{journal.window.search.status.initial}}</div>
 <div class="search-results"></div>
 <nav class="search-paging" aria-label="{{journal.window.search.paging.accessible.name}}"></nav>
@@ -231,7 +232,7 @@
   const root=document.getElementById('journal-search');
   const form=root.querySelector('form');
   const query=root.querySelector('[name=q]');const from=root.querySelector('[name=from]');const to=root.querySelector('[name=to]');
-  const status=root.querySelector('.search-status');const results=root.querySelector('.search-results');const paging=root.querySelector('.search-paging');
+  const status=root.querySelector('.search-status');const banner=root.querySelector('.search-index-banner');const results=root.querySelector('.search-results');const paging=root.querySelector('.search-paging');
   const dateOptions=root.querySelector('#search-date-options');
   const initialStatus=status.textContent;
   // Search's own entries all keep the path it opened on; only the query moves.
@@ -241,9 +242,11 @@
   let shown=stateOf(window.location.search);
   let shownId=entryId();
   let epoch=0;let running=null;let report=(state)=>ctx.ready(state);
+  let statusAbort=null;let statusPollTimer=0;let currentIndexStatus=null;let pendingRerunAfterBuild=false;let bannerActionBusy=false;
   // Drawing is for this mount while the address is still search's. A move to
   // another view has written its address before this view is taken down.
   const live=(mine)=>mine===epoch&&!ctx.disposed&&window.location.pathname===path;
+  const viewActive=()=>!ctx.disposed&&window.location.pathname===path;
 
   function fill(state){
    query.value=state.q;from.value=state.from;to.value=state.to;
@@ -256,6 +259,135 @@
   let progressTimeout=0;let progressInterval=0;
   function stopProgress(){if(progressTimeout){ctx.clearTimeout(progressTimeout);progressTimeout=0;}if(progressInterval){ctx.clearInterval(progressInterval);progressInterval=0;}}
   function abortRunning(){if(running)running.abort();}
+  function stopStatusPoll(){if(statusPollTimer){ctx.clearInterval(statusPollTimer);statusPollTimer=0;}}
+  function abortStatusRead(){if(statusAbort){statusAbort.abort();statusAbort=null;}}
+  function fmtCount(n){return Number(n).toLocaleString(window.JournalI18n.formatLocale);}
+
+  function renderIndexBanner(info,{errorMessage=''}={}){
+   if(!banner)return;
+   if(!info||info.state==='ready'){
+    banner.hidden=true;banner.removeAttribute('data-state');banner.replaceChildren();return;
+   }
+   const i18n=window.JournalI18n;
+   banner.replaceChildren();
+   banner.dataset.state=info.state;
+   const textEl=node('p','search-index-banner-text');
+   const actions=node('div','search-index-banner-actions');
+   if(info.state==='absent'){
+    const waiting=Math.max(0,Number(info.pending_changes)||0);
+    textEl.textContent=waiting>0
+     ?i18n.render('journal.window.search.banner.absent.waiting',[['waiting_quantity',i18n.cardinalQuantity(waiting)],['waiting',fmtCount(waiting)]])
+     :i18n.render('journal.window.search.banner.absent');
+    const buildBtn=node('button','search-banner-primary',i18n.render('journal.window.search.banner.build.action'));
+    buildBtn.type='button';buildBtn.dataset.action='build-index';buildBtn.disabled=bannerActionBusy;
+    buildBtn.addEventListener('click',()=>{void triggerSearchIndexUpdate('build');});
+    actions.append(buildBtn);
+   }else if(info.state==='rebuilding'){
+    const indexed=Math.max(0,Number(info.indexed)||0);
+    const discovered=Math.max(0,Number(info.discovered)||0);
+    const waiting=Math.max(0,Number(info.pending_changes)||0);
+    if(discovered>0&&indexed>0){
+     textEl.textContent=i18n.render('journal.window.search.banner.rebuilding.progress',[['indexed',fmtCount(indexed)],['discovered',fmtCount(discovered)]]);
+    }else if(waiting>0){
+     textEl.textContent=i18n.render('journal.window.search.banner.rebuilding.waiting',[['waiting_quantity',i18n.cardinalQuantity(waiting)],['waiting',fmtCount(waiting)]]);
+    }else{
+     textEl.textContent=i18n.render('journal.window.search.banner.rebuilding');
+    }
+   }else if(info.state==='behind'){
+    const changes=Math.max(0,Number(info.pending_changes)||0);
+    textEl.textContent=changes>0
+     ?i18n.render('journal.window.search.banner.behind.changes',[['changes_quantity',i18n.cardinalQuantity(changes)],['changes',fmtCount(changes)]])
+     :i18n.render('journal.window.search.banner.behind');
+    const updateBtn=node('button','',bannerActionBusy?i18n.render('journal.window.search.banner.update.busy'):i18n.render('journal.window.search.banner.update.action'));
+    updateBtn.type='button';updateBtn.dataset.action='update-index';updateBtn.disabled=bannerActionBusy;
+    updateBtn.addEventListener('click',()=>{void triggerSearchIndexUpdate('update');});
+    actions.append(updateBtn);
+   }else if(info.state==='failing'||info.state==='unreadable'){
+    textEl.textContent=i18n.render(info.state==='unreadable'?'journal.window.search.banner.unreadable':'journal.window.search.banner.failing');
+    const statusLink=node('a','search-link',i18n.render('journal.window.search.banner.open.status'));
+    statusLink.href='/app/health/#integrity';
+    actions.append(statusLink);
+   }else{
+    banner.hidden=true;banner.removeAttribute('data-state');return;
+   }
+   banner.append(textEl);
+   if(actions.childNodes.length)banner.append(actions);
+   if(errorMessage){
+    const errEl=node('p','search-index-banner-error',errorMessage);
+    errEl.setAttribute('role','alert');
+    banner.append(errEl);
+   }
+   banner.hidden=false;
+  }
+
+  function startStatusPoll(){
+   if(statusPollTimer||ctx.disposed)return;
+   statusPollTimer=ctx.setInterval(()=>{void fetchIndexStatus({fromPoll:true});},3000);
+  }
+
+  async function fetchIndexStatus({fromPoll=false}={}){
+   if(!viewActive()||typeof window.apiJson!=='function')return;
+   abortStatusRead();
+   const controller=window.SolStore.createAbort();
+   statusAbort=controller;
+   try{
+    const data=await window.apiJson('/app/search/api/status',{signal:controller.signal});
+    if(statusAbort===controller)statusAbort=null;
+    if(!viewActive()||!data||typeof data.state!=='string')return;
+    currentIndexStatus=data;
+    if(data.state==='ready'){
+     stopStatusPoll();
+     bannerActionBusy=false;
+     renderIndexBanner(data);
+     if(pendingRerunAfterBuild){
+      pendingRerunAfterBuild=false;
+      if(shown.q.trim())own(shown,'replace',{focus:false});
+     }
+    }else if(data.state==='rebuilding'){
+     renderIndexBanner(data);
+     startStatusPoll();
+    }else{
+     if(fromPoll)stopStatusPoll();
+     renderIndexBanner(data);
+    }
+   }catch(_){
+    if(statusAbort===controller)statusAbort=null;
+   }
+  }
+
+  async function triggerSearchIndexUpdate(mode){
+   if(bannerActionBusy||!viewActive()||typeof window.apiJson!=='function')return;
+   bannerActionBusy=true;
+   if(mode==='build'){
+    pendingRerunAfterBuild=Boolean(shown.q.trim());
+    currentIndexStatus={...(currentIndexStatus||{}),state:'rebuilding'};
+    renderIndexBanner(currentIndexStatus);
+   }else{
+    renderIndexBanner(currentIndexStatus||{state:'behind',pending_changes:0});
+   }
+   try{
+    await window.apiJson('/app/health/api/search/update',{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:'{}',
+     signal:ctx.signal
+    });
+    if(!viewActive())return;
+    bannerActionBusy=false;
+    if(mode==='update')pendingRerunAfterBuild=Boolean(shown.q.trim());
+    startStatusPoll();
+    void fetchIndexStatus({fromPoll:true});
+   }catch(err){
+    if(!viewActive()||(err&&err.name==='AbortError'))return;
+    bannerActionBusy=false;
+    pendingRerunAfterBuild=false;
+    const fallback=mode==='build'
+     ?{...(currentIndexStatus||{}),state:'absent'}
+     :(currentIndexStatus||{state:'behind',pending_changes:0});
+    currentIndexStatus=fallback;
+    renderIndexBanner(fallback,{errorMessage:window.JournalI18n.render('journal.window.search.banner.update.failed')});
+   }
+  }
 
   // A redraw takes out what it replaces. Focus inside it goes to <main> first,
   // then to the first day heading the redraw puts in, never to the page.
@@ -332,6 +464,23 @@
     report(data.total?'content':'empty');
    }catch(error){
     if(!live(mine)||(error&&error.name==='AbortError'))return;
+    if(error&&error.reasonCode==='index_absent'){
+     status.textContent='';
+     pendingRerunAfterBuild=Boolean(state.q.trim());
+     const absentInfo=currentIndexStatus&&currentIndexStatus.state==='rebuilding'
+      ?currentIndexStatus
+      :{...(currentIndexStatus||{}),state:'absent'};
+     currentIndexStatus=absentInfo;
+     renderIndexBanner(absentInfo);
+     if(!statusAbort&&absentInfo.state==='absent'&&absentInfo.pending_changes===undefined)void fetchIndexStatus();
+     settle();report('error');return;
+    }
+    if(error&&error.reasonCode==='index_unreadable'){
+     status.textContent='';
+     currentIndexStatus={state:'unreadable'};
+     renderIndexBanner(currentIndexStatus);
+     settle();report('error');return;
+    }
     status.classList.add('search-error');
     const i18n=window.JournalI18n;
     const reasonId=Object.hasOwn(SEARCH_FAILURE_REASONS,error?.reasonCode)?SEARCH_FAILURE_REASONS[error.reasonCode]:null;
@@ -433,10 +582,11 @@
    );
   });
   query.addEventListener('input',abortRunning);from.addEventListener('input',abortRunning);to.addEventListener('input',abortRunning);
-  ctx.onDispose(()=>{abortRunning();running=null;epoch+=1;});
+  ctx.onDispose(()=>{abortRunning();running=null;abortStatusRead();stopStatusPoll();epoch+=1;});
 
   fill(shown);
   load(shown,{restore:true});
+  void fetchIndexStatus();
   return {dispose(){}};
  }
 

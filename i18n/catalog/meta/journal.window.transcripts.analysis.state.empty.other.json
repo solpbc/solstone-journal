@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. analysis state empty other.",
+  "context": "Journal window. Transcripts view. analysis state empty other.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afd9525bef36e2cd15baac1bf88743d5902d7c0453addfc36661e2935d9724c3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

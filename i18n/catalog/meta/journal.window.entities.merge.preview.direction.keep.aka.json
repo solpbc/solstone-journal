@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. merge preview direction keep aka.",
+  "context": "Journal window. Entities view. merge preview direction keep aka.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "source_name",
+      "type": "string"
+    },
+    {
+      "name": "target_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9c38a43fd8ae40acb9972083c93058de6f7e5685f4af81f3fcd6d48ccfe2ce78",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

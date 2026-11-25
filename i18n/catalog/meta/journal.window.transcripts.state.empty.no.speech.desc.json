@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state empty no speech desc.",
+  "context": "Journal window. Transcripts view. state empty no speech desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1b457e8045081502166ba3ba31e1a43a55e45ef9e9b978ec3603fbbc87b72ed7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. analysis state failed screen.",
+  "context": "Journal window. Transcripts view. analysis state failed screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e83cb1ee8c6c09b03928b885c8ab852efc953c6c87b08e4d2c7a7add716a9dff",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

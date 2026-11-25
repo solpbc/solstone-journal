@@ -951,4 +951,103 @@ module.exports = async function searchContractCases(env) {
     await settle();
     assert.strictEqual(p.searches().length, 1, 'search reads nothing for another view\'s entry');
   });
+
+  await test('absent index status shows calm build banner, posts update, polls until ready, and reruns queued query', async () => {
+    const p = page('/app/search/?q=alpha');
+    await p.mount();
+    const statusCall = p.calls.find((c) => c.url === '/app/search/api/status');
+    assert.ok(statusCall, 'queries /app/search/api/status non-blockingly on mount');
+    statusCall.answer({ state: 'absent', pending_changes: 166, indexed: 0, discovered: 166, retained: 0, retained_prune_guarded: false, edges_failed: false });
+    p.searches()[0].fail(Object.assign(new Error('absent'), { reasonCode: 'index_absent' }));
+    await settle();
+
+    const banner = p.q('.search-index-banner');
+    assert.strictEqual(banner.hidden, false);
+    assert.strictEqual(banner.dataset.state, 'absent');
+    assert.strictEqual(p.q('.search-status').classList.contains('search-error'), false, 'index_absent does not render red looping error');
+    assert.strictEqual(p.q('.search-status').querySelector('button'), null, 'index_absent has no looping try again button');
+    assert.ok(banner.textContent.includes('166'));
+
+    const buildBtn = banner.querySelector('button[data-action="build-index"]');
+    assert.ok(buildBtn, 'absent banner offers build search index button');
+    p.doc.dispatch(buildBtn, { type: 'click', button: 0 });
+    await settle();
+    assert.strictEqual(banner.dataset.state, 'rebuilding', 'flips calmly to rebuilding immediately');
+    const updateCall = p.calls.find((c) => c.url === '/app/health/api/search/update');
+    assert.ok(updateCall && updateCall.opts.method === 'POST', 'calls POST /app/health/api/search/update');
+    updateCall.answer({ status: 'queued' });
+    await settle();
+
+    // Poll reports progress, then ready -> banner hides and queued query re-runs.
+    const statusCalls1 = p.calls.filter((c) => c.url === '/app/search/api/status');
+    statusCalls1.at(-1).answer({ state: 'rebuilding', pending_changes: 80, indexed: 86, discovered: 166, retained: 0, retained_prune_guarded: false, edges_failed: false });
+    await settle();
+    assert.ok(banner.textContent.includes('86') && banner.textContent.includes('166'));
+
+    p.clock.advance(3000);
+    await settle();
+    const statusCalls2 = p.calls.filter((c) => c.url === '/app/search/api/status');
+    statusCalls2.at(-1).answer({ state: 'ready', pending_changes: 0, indexed: 166, discovered: 166, retained: 0, retained_prune_guarded: false, edges_failed: false });
+    await settle();
+    assert.strictEqual(banner.hidden, true, 'banner clears once ready');
+    assert.strictEqual(p.searches().length, 2, 're-runs queued query once index becomes ready');
+    p.searches()[1].answer(ALPHA);
+    await settle();
+    assert.strictEqual(p.q('.search-results').querySelectorAll('section').length, 2);
+  });
+
+  await test('behind status (with and without pending_changes) shows quiet update banner and rebuilding stops polling on dispose', async () => {
+    const p = page('/app/search/');
+    const timersBefore = p.clock.live();
+    await p.mount();
+    const statusCall = p.calls.find((c) => c.url === '/app/search/api/status');
+    statusCall.answer({ state: 'behind', pending_changes: 3, indexed: 100, discovered: 103, retained: 0, retained_prune_guarded: false, edges_failed: false });
+    await settle();
+    const banner = p.q('.search-index-banner');
+    assert.strictEqual(banner.hidden, false);
+    assert.strictEqual(banner.dataset.state, 'behind');
+    assert.ok(banner.textContent.includes('3'));
+    const updateBtn = banner.querySelector('button[data-action="update-index"]');
+    assert.ok(updateBtn);
+    p.doc.dispatch(updateBtn, { type: 'click', button: 0 });
+    await settle();
+    const updateCall = p.calls.find((c) => c.url === '/app/health/api/search/update');
+    assert.ok(updateCall && updateCall.opts.method === 'POST');
+    updateCall.answer({ status: 'queued' });
+    await settle();
+
+    // Behind with pending_changes === 0 (e.g. retained rows) still shows quiet behind banner.
+    p.calls.filter((c) => c.url === '/app/search/api/status').at(-1).answer({
+      state: 'behind', pending_changes: 0, indexed: 100, discovered: 100, retained: 5, retained_prune_guarded: false, edges_failed: false,
+    });
+    await settle();
+    assert.strictEqual(banner.hidden, false);
+    assert.strictEqual(banner.dataset.state, 'behind');
+
+    // Dispose clears any active poll timer and in-flight status read.
+    p.leave();
+    p.replaceView();
+    assert.strictEqual(p.clock.live(), timersBefore);
+    const after = p.view.ctx.held();
+    assert.strictEqual(after.timeouts + after.intervals + after.reads + after.listeners, 0);
+  });
+
+  await test('failing status and index_unreadable show calm status link without looping retry', async () => {
+    const p = page('/app/search/?q=alpha');
+    await p.mount();
+    p.calls.find((c) => c.url === '/app/search/api/status').answer({
+      state: 'failing', pending_changes: 0, indexed: 10, discovered: 10, retained: 0, retained_prune_guarded: false, edges_failed: false,
+    });
+    await settle();
+    const banner = p.q('.search-index-banner');
+    assert.strictEqual(banner.hidden, false);
+    assert.strictEqual(banner.dataset.state, 'failing');
+    assert.ok(banner.querySelector('a[href="/app/health/#integrity"]'), 'failing banner links to /app/health/#integrity');
+
+    p.searches()[0].fail(Object.assign(new Error('corrupt'), { reasonCode: 'index_unreadable' }));
+    await settle();
+    assert.strictEqual(banner.dataset.state, 'unreadable');
+    assert.ok(banner.querySelector('a[href="/app/health/#integrity"]'), 'unreadable banner links to /app/health/#integrity');
+    assert.strictEqual(p.q('.search-status').querySelector('button'), null, 'no looping retry on unreadable index');
+  });
 };

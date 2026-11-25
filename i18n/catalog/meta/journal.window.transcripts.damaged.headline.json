@@ -1,0 +1,30 @@
+{
+  "description": "Transcripts view. damaged headline.",
+  "context": "Journal window. Transcripts view. damaged headline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "damaged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "dae9bf5f4ce7ac6211ad293ea1940a78b29f4be8b9ac3e52570ce7c6f98415b6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "damaged_quantity",
+    "type": "cardinal"
+  }
+}

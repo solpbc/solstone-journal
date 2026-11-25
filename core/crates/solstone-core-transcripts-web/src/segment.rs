@@ -1755,6 +1755,8 @@ pub(crate) struct FileDamage {
     #[serde(rename = "type")]
     kind: String,
     file: String,
+    /// How many non-blank valid JSON lines remain readable in the file.
+    valid: usize,
     /// How many lines can't be read.
     damaged: usize,
     /// Whether the last line was cut short at the end of the file.
@@ -1765,7 +1767,7 @@ pub(crate) struct FileDamage {
 
 fn read_entries(path: &Path) -> Result<ReadEntries, std::io::Error> {
     let bytes = fs::read(path)?;
-    let (_, damaged) = solstone_core_journal_io::inspect_jsonl_bytes(&bytes);
+    let (valid, damaged) = solstone_core_journal_io::inspect_jsonl_bytes(&bytes);
     let rows = bytes
         .split(|byte| *byte == b'\n')
         .filter_map(|line| serde_json::from_slice::<Value>(line.trim_ascii()).ok())
@@ -1781,6 +1783,7 @@ fn read_entries(path: &Path) -> Result<ReadEntries, std::io::Error> {
         FileDamage {
             kind: String::new(),
             file: String::new(),
+            valid,
             damaged: damaged.len(),
             truncated_tail,
             interior: damaged.len() - usize::from(truncated_tail),
@@ -2896,6 +2899,7 @@ mod tests {
             json!([{
                 "type": "audio",
                 "file": "chronicle/20260101/120000_60/audio.jsonl",
+                "valid": 3,
                 "damaged": 2,
                 "truncated_tail": true,
                 "interior": 1,
@@ -3160,8 +3164,9 @@ mod tests {
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
             value["media_removal"]["audio"],
-            "this segment's original audio is no longer in your journal"
+            "this segment's original audio is missing with no deletion record."
         );
+        assert_eq!(value["media_removal"]["audio_missing_unrecorded"], true);
     }
 
     #[test]
@@ -3200,6 +3205,11 @@ mod tests {
             value["media_removal"]["audio"],
             "this segment's original audio is no longer in your journal"
         );
+        assert!(
+            value["media_removal"]
+                .get("audio_missing_unrecorded")
+                .is_none()
+        );
     }
 
     #[test]
@@ -3233,8 +3243,9 @@ mod tests {
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
             value["media_removal"]["audio"],
-            "this segment's original audio is no longer in your journal"
+            "this segment's original audio is missing with no deletion record."
         );
+        assert_eq!(value["media_removal"]["audio_missing_unrecorded"], true);
     }
 
     #[test]
@@ -3271,8 +3282,9 @@ mod tests {
         assert_eq!(value["media_purged"]["audio"], true);
         assert_eq!(
             value["media_removal"]["audio"],
-            "this segment's original audio is no longer in your journal"
+            "this segment's original audio is missing with no deletion record."
         );
+        assert_eq!(value["media_removal"]["audio_missing_unrecorded"], true);
     }
 
     #[test]
@@ -3378,8 +3390,9 @@ mod tests {
         );
         assert_eq!(
             value["media_removal"]["screen"],
-            "this segment's original screen media is no longer in your journal"
+            "this segment's original screen media is missing with no deletion record."
         );
+        assert_eq!(value["media_removal"]["screen_missing_unrecorded"], true);
     }
 
     #[test]

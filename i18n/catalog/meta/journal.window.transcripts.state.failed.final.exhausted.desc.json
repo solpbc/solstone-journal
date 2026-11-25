@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state failed final exhausted desc.",
+  "context": "Journal window. Transcripts view. state failed final exhausted desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "996e7f9fca726ada139b0d8e621f27d508362300a9677397f16c081392437501",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

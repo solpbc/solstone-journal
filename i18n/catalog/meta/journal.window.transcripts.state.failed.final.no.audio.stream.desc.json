@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state failed final no audio stream desc.",
+  "context": "Journal window. Transcripts view. state failed final no audio stream desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d19fe38e5ceb44caa685aa1c6a95aaaf19286f9b3bbe1b7e8bd5c4015f0032c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "description": "Transcripts view. damaged body kept.",
+  "context": "Journal window. Transcripts view. damaged body kept.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "valid_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "valid",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d10193fedddcf2c9ff8140380cae9dc25ae50e142ef812310bd02d8e83965aa9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "valid_quantity",
+    "type": "cardinal"
+  }
+}

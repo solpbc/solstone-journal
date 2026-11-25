@@ -1,0 +1,30 @@
+{
+  "description": "Transcripts view. damaged set aside confirm title.",
+  "context": "Journal window. Transcripts view. damaged set aside confirm title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "damaged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f4b6e12b50f57282e19a84ab3e1b1791e5454b68e49aae3f8f1c10cb674a07e2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "damaged_quantity",
+    "type": "cardinal"
+  }
+}

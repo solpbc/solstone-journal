@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state failed final audio desc.",
+  "context": "Journal window. Transcripts view. state failed final audio desc.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2de6e75d1263244560d10e6e469cf706d998b6360e1d0ff049a24739e4213a58",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

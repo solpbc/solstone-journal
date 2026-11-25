@@ -1,0 +1,30 @@
+{
+  "description": "Search view. banner rebuilding waiting.",
+  "context": "Journal window. Search view. banner rebuilding waiting.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "waiting_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "waiting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5c4f58cf2dbc0808003c6f72ef49365f1a21e8b85f0b33c01e67daff2ae8299f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "waiting_quantity",
+    "type": "cardinal"
+  }
+}

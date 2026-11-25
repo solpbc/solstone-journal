@@ -1,0 +1,16 @@
+{
+  "description": "Search view. banner update failed.",
+  "context": "Journal window. Search view. banner update failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f47b65871a50cec17a7b8f9bffde7d22911a9d0bb0d16df9e134ede288360cce",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Search view. banner rebuilding progress.",
+  "context": "Journal window. Search view. banner rebuilding progress.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "indexed",
+      "type": "string"
+    },
+    {
+      "name": "discovered",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d70ecf5cfd5927e34a456b6345435924514b1c0d16c653126e41ec7d9bf379c8",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

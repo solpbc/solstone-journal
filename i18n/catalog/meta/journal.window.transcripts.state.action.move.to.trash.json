@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. state action move to trash.",
+  "context": "Journal window. Transcripts view. state action move to trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c05abe131154e2598c4bb5e98f9ea7f111b95a104e27d8a05bf2c961f0b2bee4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

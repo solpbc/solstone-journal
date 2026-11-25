@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. damaged set aside confirm action.",
+  "context": "Journal window. Transcripts view. damaged set aside confirm action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1fed1c35288fcae0cfc0ea764f8d2936e9f90eb606cb93623c48db4380f99723",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

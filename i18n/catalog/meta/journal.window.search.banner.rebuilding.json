@@ -1,0 +1,16 @@
+{
+  "description": "Search view. banner rebuilding.",
+  "context": "Journal window. Search view. banner rebuilding.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc2c330b0c463f6756fe15618815af4bbd4e5605999ee2f5fc0a9c8d166f0768",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

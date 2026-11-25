@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. media removal missing unrecorded audio.",
+  "context": "Journal window. Transcripts view. media removal missing unrecorded audio.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8e6194549a1ebdefbf6d0802c15f48a6ef44fbcc5bbbf5f4cc115bb5abb63b2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

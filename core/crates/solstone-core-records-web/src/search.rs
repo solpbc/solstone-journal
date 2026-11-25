@@ -36,6 +36,7 @@ const WORKSPACE: &str = include_str!("../assets/search.html");
 
 pub fn router(journal_root: PathBuf) -> Router {
     let search_root = journal_root.clone();
+    let status_root = journal_root.clone();
     let agents_root = journal_root.clone();
     let entry_root = journal_root.clone();
     Router::new()
@@ -55,6 +56,12 @@ pub fn router(journal_root: PathBuf) -> Router {
                 },
             )
             .layer(solstone_core_convey_http::coalesce::layer()),
+        )
+        .route(
+            "/app/search/api/status",
+            get(move |locale: Option<Extension<ResponseLocale>>| {
+                status_api(status_root.clone(), response_locale(locale))
+            }),
         )
         .route(
             "/app/search/api/agents",
@@ -117,6 +124,65 @@ async fn search_api(
             text(locale, "journal.window.search.response.index.read.detail"),
         ),
     }
+}
+
+async fn status_api(journal_root: PathBuf, locale: &'static str) -> Response {
+    match tokio::task::spawn_blocking(move || status_response_in(journal_root, locale)).await {
+        Ok(response) => response,
+        Err(_) => file_read_failed(
+            locale,
+            text(locale, "journal.window.search.response.index.read.detail"),
+        ),
+    }
+}
+
+fn rebuild_working(journal: &std::path::Path) -> bool {
+    solstone_core_indexer_todo::listed_attempts(journal, solstone_core_indexer_todo::Token::Rebuild)
+        .is_ok_and(|attempts| attempts.is_some_and(|attempts| attempts < 3))
+}
+
+fn status_response_in(journal_root: PathBuf, locale: &str) -> Response {
+    let access = open_owner_index(&journal_root, OwnerBoundary);
+    let db_absent = matches!(access, Err(IndexAccessError::Absent { .. }));
+    let db_unreadable = matches!(access, Err(IndexAccessError::Unreadable { .. }));
+    drop(access);
+
+    let observations =
+        solstone_core_system_health::read_indexing_observations(&journal_root, Timestamp::now());
+    let health = solstone_core_system_health::evaluate_index_health_recent_in(
+        &journal_root,
+        &observations,
+        locale,
+    );
+    let rebuild_active = rebuild_working(&journal_root);
+    let build_active =
+        solstone_core_indexer_query::full_pass_working(&journal_root) || rebuild_active;
+    let state = if health.state == solstone_core_system_health::IndexHealthState::Failing
+        || db_unreadable
+    {
+        "failing"
+    } else if db_absent {
+        if build_active { "rebuilding" } else { "absent" }
+    } else if health.state == solstone_core_system_health::IndexHealthState::Building
+        || rebuild_active
+    {
+        "rebuilding"
+    } else if health.state == solstone_core_system_health::IndexHealthState::Behind {
+        "behind"
+    } else {
+        "ready"
+    };
+
+    axum::Json(json!({
+        "state": state,
+        "pending_changes": health.pending,
+        "indexed": health.indexed,
+        "discovered": health.discovered,
+        "retained": health.retained,
+        "retained_prune_guarded": health.retained_prune_guarded,
+        "edges_failed": health.edges_failed,
+    }))
+    .into_response()
 }
 
 #[cfg(test)]
@@ -2400,5 +2466,77 @@ mod facet_reader_tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn search_status_distinguishes_absent_rebuilding_ready_behind_and_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day1 = root.join("chronicle/20261004/talents");
+        std::fs::create_dir_all(&day1).unwrap();
+        std::fs::write(day1.join("flow.md"), "# Flow\n\nharbor planning notes\n").unwrap();
+
+        // 1. DB absent with waiting entries and no queued build -> "absent"
+        let absent = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(absent["state"], "absent");
+        assert!(absent["pending_changes"].as_u64().unwrap() >= 1);
+        assert_eq!(absent["indexed"], 0);
+        assert_eq!(absent["retained_prune_guarded"], false);
+        assert_eq!(absent["edges_failed"], false);
+
+        // 2. DB absent with @scan-full queued -> "rebuilding"
+        solstone_core_indexer_todo::enqueue_token_now(
+            root,
+            solstone_core_indexer_todo::Token::ScanFull,
+        )
+        .unwrap();
+        let rebuilding_scan = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(rebuilding_scan["state"], "rebuilding");
+
+        // Clear @scan-full and verify @rebuild alone also reports "rebuilding"
+        std::fs::remove_dir_all(root.join("indexer/todo")).unwrap();
+        solstone_core_indexer_todo::enqueue_token_now(
+            root,
+            solstone_core_indexer_todo::Token::Rebuild,
+        )
+        .unwrap();
+        let rebuilding_token = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(rebuilding_token["state"], "rebuilding");
+        std::fs::remove_dir_all(root.join("indexer/todo")).unwrap();
+
+        // 3. Full index scan -> "ready"
+        solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+        let ready = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(ready["state"], "ready");
+        assert_eq!(ready["pending_changes"], 0);
+        assert!(ready["indexed"].as_u64().unwrap() >= 1);
+
+        // 4. New unindexed file on disk -> "behind" with pending_changes > 0
+        let day2 = root.join("chronicle/20261005/talents");
+        std::fs::create_dir_all(&day2).unwrap();
+        std::fs::write(day2.join("plan.md"), "# Plan\n\ndockyard follow up\n").unwrap();
+        let behind_pending = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(behind_pending["state"], "behind");
+        assert!(behind_pending["pending_changes"].as_u64().unwrap() >= 1);
+
+        // 5. Index 3 days, remove 2 days and run a light scan so mass-disappearance guard
+        // retains their rows -> "behind" with pending_changes == 0, retained > 0, guarded == true
+        let day3 = root.join("chronicle/20261006/talents");
+        std::fs::create_dir_all(&day3).unwrap();
+        std::fs::write(day3.join("notes.md"), "# Notes\n\nshipyard log\n").unwrap();
+        solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+        std::fs::remove_dir_all(root.join("chronicle/20261005")).unwrap();
+        std::fs::remove_dir_all(root.join("chronicle/20261006")).unwrap();
+        solstone_core_indexer_store::scan::scan_journal(root, false).unwrap();
+        let behind_retained = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(behind_retained["state"], "behind");
+        assert_eq!(behind_retained["pending_changes"], 0);
+        assert!(behind_retained["retained"].as_u64().unwrap() >= 2);
+        assert_eq!(behind_retained["retained_prune_guarded"], true);
+
+        // 6. Corrupt SQLite file -> "failing"
+        std::fs::write(root.join("indexer/journal.sqlite"), b"not a sqlite file").unwrap();
+        let failing = body_to_json(status_api(root.to_path_buf(), ENGLISH).await).await;
+        assert_eq!(failing["state"], "failing");
     }
 }

@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. media removal missing unrecorded screen.",
+  "context": "Journal window. Transcripts view. media removal missing unrecorded screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ea479349eb91e4c01b8721b2426a99ad6e40191048b3018fb2a33984a050853",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

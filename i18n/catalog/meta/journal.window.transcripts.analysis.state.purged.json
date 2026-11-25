@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. analysis state purged.",
+  "context": "Journal window. Transcripts view. analysis state purged.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ba450fb5cf27b03b6007508767fba7239ee4c8e4e9c1bf9266187c170278db62",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

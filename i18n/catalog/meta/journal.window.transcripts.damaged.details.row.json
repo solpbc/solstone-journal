@@ -1,0 +1,43 @@
+{
+  "description": "Transcripts view. damaged details row.",
+  "context": "Journal window. Transcripts view. damaged details row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "file",
+      "type": "string"
+    },
+    {
+      "name": "valid_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "valid",
+      "type": "string"
+    },
+    {
+      "name": "damaged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "574a5129a896a4ab0390ada7f47142df5ed59ba737efbde9c56a33c3f456c2df",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "damaged_quantity",
+    "type": "cardinal"
+  }
+}

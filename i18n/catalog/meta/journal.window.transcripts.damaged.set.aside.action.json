@@ -1,0 +1,26 @@
+{
+  "description": "Transcripts view. damaged set aside action.",
+  "context": "Journal window. Transcripts view. damaged set aside action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "damaged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0a94d64620acb9777b464f52c74a07a2b770b11b7808519433e927ddce70d5ca",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "damaged_quantity",
+    "type": "cardinal"
+  }
+}

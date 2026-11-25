@@ -1,0 +1,39 @@
+{
+  "description": "Settings view. storage originals summary.",
+  "context": "Journal window. Settings view. storage originals summary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "raw",
+      "type": "string"
+    },
+    {
+      "name": "purged_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "purged",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "bb5e2b73b2de78208a17ea5647faa5a379fc8932d0e47bd484bd50a3c6ccffda",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}
