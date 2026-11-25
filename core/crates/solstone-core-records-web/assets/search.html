@@ -325,6 +325,13 @@
    statusPollTimer=ctx.setInterval(()=>{void fetchIndexStatus({fromPoll:true});},3000);
   }
 
+  function clearPendingSearchForBuild(){
+   if(running){abortRunning();running=null;}
+   stopProgress();root.removeAttribute('aria-busy');
+   status.classList.remove('search-error');
+   if(shown.q.trim()){pendingRerunAfterBuild=true;status.textContent='';}
+  }
+
   async function fetchIndexStatus({fromPoll=false}={}){
    if(!viewActive()||typeof window.apiJson!=='function')return;
    abortStatusRead();
@@ -344,10 +351,12 @@
       if(shown.q.trim())own(shown,'replace',{focus:false});
      }
     }else if(data.state==='rebuilding'){
+     if(running&&shown.q.trim()){clearPendingSearchForBuild();report('content');}
      renderIndexBanner(data);
      startStatusPoll();
     }else{
      if(fromPoll)stopStatusPoll();
+     if(data.state==='absent'&&running&&shown.q.trim()){clearPendingSearchForBuild();report('content');}
      renderIndexBanner(data);
     }
    }catch(_){
@@ -359,7 +368,7 @@
    if(bannerActionBusy||!viewActive()||typeof window.apiJson!=='function')return;
    bannerActionBusy=true;
    if(mode==='build'){
-    pendingRerunAfterBuild=Boolean(shown.q.trim());
+    clearPendingSearchForBuild();
     currentIndexStatus={...(currentIndexStatus||{}),state:'rebuilding'};
     renderIndexBanner(currentIndexStatus);
    }else{
@@ -442,6 +451,9 @@
    results.replaceChildren();paging.replaceChildren();status.classList.remove('search-error');
    if(!state.q.trim()){status.textContent=initialStatus;settle();report('content');return;}
    if(state.from&&state.to&&state.from>state.to){status.textContent=window.JournalI18n.render('journal.window.search.date.invalid');status.classList.add('search-error');settle();report('error');return;}
+   if(currentIndexStatus&&(currentIndexStatus.state==='absent'||currentIndexStatus.state==='rebuilding')){
+    pendingRerunAfterBuild=true;status.textContent='';renderIndexBanner(currentIndexStatus);settle();report('content');return;
+   }
    const p=new URLSearchParams({q:state.q.trim(),limit:String(state.limit),offset:String(state.offset),owner_view:'true'});
    if(state.from)p.set('day_from',state.from.replaceAll('-',''));if(state.to)p.set('day_to',state.to.replaceAll('-',''));
    const url='/app/search/api/search?'+p;

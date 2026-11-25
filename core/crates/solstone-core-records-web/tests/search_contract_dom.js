@@ -964,6 +964,7 @@ module.exports = async function searchContractCases(env) {
     const banner = p.q('.search-index-banner');
     assert.strictEqual(banner.hidden, false);
     assert.strictEqual(banner.dataset.state, 'absent');
+    assert.strictEqual(p.q('.search-status').textContent, '', 'absent status clears searching indicator immediately instead of waiting on 503 retries');
     assert.strictEqual(p.q('.search-status').classList.contains('search-error'), false, 'index_absent does not render red looping error');
     assert.strictEqual(p.q('.search-status').querySelector('button'), null, 'index_absent has no looping try again button');
     assert.ok(banner.textContent.includes('166'));
@@ -1049,5 +1050,25 @@ module.exports = async function searchContractCases(env) {
     assert.strictEqual(banner.dataset.state, 'unreadable');
     assert.ok(banner.querySelector('a[href="/app/health/#integrity"]'), 'unreadable banner links to /app/health/#integrity');
     assert.strictEqual(p.q('.search-status').querySelector('button'), null, 'no looping retry on unreadable index');
+  });
+
+  await test('absent status clears searching indicator immediately even while initial search is stuck in 503 retry', async () => {
+    const p = page('/app/search/?q=backup');
+    await p.mount();
+    assert.strictEqual(p.q('.search-status').textContent, 'searching your journal…');
+    p.calls.find((c) => c.url === '/app/search/api/status').answer({
+      state: 'absent', pending_changes: 166, indexed: 0, discovered: 166, retained: 0, retained_prune_guarded: false, edges_failed: false,
+    });
+    await settle();
+    assert.strictEqual(p.searches()[0].aborted, true, 'aborts in-flight search once status confirms index absent');
+    assert.strictEqual(p.q('.search-status').textContent, '', 'does not leave searching indicator under absent banner');
+    assert.strictEqual(p.q('.search-app').getAttribute('aria-busy'), null);
+
+    // Submitting a new query while absent queues it without firing a doomed 503 request.
+    p.q('input[name="q"]').value = 'receipt';
+    p.doc.dispatch(p.q('form'), { type: 'submit' });
+    await settle();
+    assert.strictEqual(p.searches().length, 1, 'does not fire another doomed search while index is absent');
+    assert.strictEqual(p.q('.search-status').textContent, '');
   });
 };
