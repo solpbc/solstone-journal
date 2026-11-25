@@ -20,16 +20,21 @@ Read it before touching any workspace, shell chrome, or shared client helper.
 
 ### Shell chrome
 
-The canonical static shell has dedicated rail, dock, and status instrument
-slots. `shell_boot.js` renders the rail, dock, and status instrument from the
-app table in the shell's script bundle and the served `app_names` on
-`/api/shell`. The rail's top group is home, then the pins on that response,
-then more (`/app/more/`). The bottom group is `rail_group` `management` by
-`rail_rank`. `/app/more/` lists every served view except more. Pins are
-`convey.pinned_views` in `config/journal.json`, and `pinned` is inserted on
+The canonical static shell has dedicated `#app-rail` and `#app-dock` slots.
+`shell_boot.js` renders the grouped rail and four-slot dock from the app table
+in the shell's script bundle and the served `app_names` on `/api/shell`. The
+rail groups `home` and pinned `keeps` views under `your journal`, pinned
+`shape` views and `more` (`/app/more/`) under `shaping`, and pinned `runs`
+views plus `rail_group` `management` (`sources`, `import`, `agents`, `network`,
+`settings` by `rail_rank`) under `running`. `/app/more/` lists every served
+view except more. Pins (`convey.pinned_views`, defaulting to `transcripts`,
+`entities`, `activities`, `curation`) and seen one-time pin offers
+(`convey.pin_offers_seen`) live in `config/journal.json` and are inserted on
 each `/api/shell` request the same way `clock` is. `PUT /api/shell/pins`
-returns `{"pinned":[...]}`. Facet selection belongs to the workspace that
-owns it.
+returns `{"pinned":[...]}`, `PUT /api/shell/pin-offers` returns
+`{"pin_offers_seen":[...]}`, and `GET /api/shell/badges` returns coalesced
+counts for `home`, `curation`, and `import`. Facet selection belongs to the
+workspace that owns it.
 
 ### HTTP API conventions
 

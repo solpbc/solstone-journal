@@ -69,20 +69,25 @@ serving path.
 
 ## Shell boot sequence
 
-1. Static shell parses with `#app-rail`, `#app-dock`, and `#status-instrument`
-   slots. An inline script in its `<head>` starts, beside the download of the
-   shell's stylesheet and boot script, `GET /api/shell`, the stream labels, and from the entry
-   table (below) the view's fragment, its scripts and styles, and its first
-   reads.
+1. Static shell parses with `#app-rail` and `#app-dock` slots (and `#status-live-region`
+   for status announcements). An inline script in its `<head>` starts, beside the
+   download of the shell's stylesheet and boot script, `GET /api/shell`, the stream
+   labels, and from the entry table (below) the view's fragment, its scripts and
+   styles, and its first reads.
 2. `shell_boot.js` reads `/api/shell` through `apiJson` with `scope: 'shell'`,
    which takes the answer the head started (below). It
    joins `app_names` with the app table the bundle carries
    (`window.SOL_SHELL_REGISTRY`, generated from the registry at build time) and
    hands the rest of the shell one object with `apps`, `settings`, `version`,
-   `clock` and `pinned`. `shell_boot.js` calls `renderAppRail`, `renderAppDock`, and
-   `renderStatusInstrument`. The rail's top group is home, the resolved pins,
-   and more. The dock is home, the first two pins, and more. Status sits in
-   the desktop rail or mobile dock, with a tooltip and a link to Health details.
+   `clock`, `pinned`, and `pin_offers_seen`. `shell_boot.js` calls `renderAppRail`
+   and `renderAppDock`. The desktop rail groups `home` and pinned `keeps` views
+   under `your journal`, pinned `shape` views and `more` under `shaping`, and
+   pinned `runs` views plus fixed management views (`sources`, `import`, `agents`,
+   `network`, `settings`) under `running`. The mobile dock holds four slots:
+   `home`, the first two pins, and `more`. Live count badges (`GET /api/shell/badges`
+   + `window.solShellChrome.setBadge`) sit on `home`, `suggestions`, and `import`,
+   while the live status mark is published via `window.solShellStatus` for Home's
+   `status` link to `/app/health/` (`/app/status/` redirects permanently).
    The same status node survives navigation rebuilds. Health mounts the shared
    status details section after its workspace loads. `/app/more/` is the page
    that lists every other view.
@@ -246,7 +251,10 @@ The shell's per-request part, `no-store`, read on every page:
   the shell's cached files when none of them changed.
 - `clock` is the journal's zone, its label, and the journal's day key `today`
   (for clients with no zone table of their own, like the `solstone` CLI).
-- `pinned` is the resolved `convey.pinned_views` list.
+- `pinned` is the resolved `convey.pinned_views` list (defaulting to
+  `transcripts`, `entities`, `activities`, and `curation`).
+- `pin_offers_seen` is the `convey.pin_offers_seen` list of views whose
+  one-time pin offer has already been accepted or dismissed.
 
 The app definitions ship with the code, in `shell.js`, as
 `window.SOL_SHELL_REGISTRY`:

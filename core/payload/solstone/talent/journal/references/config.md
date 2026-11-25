@@ -40,9 +40,9 @@ This configuration helps meeting extraction identify the owner as a participant,
 
 ## Convey configuration
 
-Pins live on the journal, in `config/journal.json`, under `convey.pinned_views`: an ordered list of view names. The side rail shows home, then those pins, then more. When the key is absent, the rail uses search, entities, and thinking. An empty list stays empty.
+Pins live on the journal, in `config/journal.json`, under `convey.pinned_views`: an ordered list of view names. The desktop side rail groups `home` and pinned `keeps` views under `your journal`, pinned `shape` views and `more` under `shaping`, and pinned `runs` views plus fixed management views (`sources`, `import`, `agents`, `network`, `settings`) under `running`. When `convey.pinned_views` is absent, the rail defaults to `transcripts`, `entities`, `activities`, and `curation`. An empty list stays empty.
 
-`PUT /api/shell/pins` is the writer. It changes only `pinned_views` and leaves every other `convey` key in place. `GET /api/shell` reports the resolved list as `pinned` on each request.
+`PUT /api/shell/pins` writes `convey.pinned_views`, and `PUT /api/shell/pin-offers` records one-time pin offers the owner has already accepted or dismissed under `convey.pin_offers_seen`; each leaves every other `convey` key in place. `GET /api/shell` reports both `pinned` and `pin_offers_seen` on each request.
 
 Workspace-local facet selection is not stored in journal config.
 
