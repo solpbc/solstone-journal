@@ -867,6 +867,7 @@ mod tests {
             "today",
             "now",
             "health_glance",
+            "integrity",
             "backup",
             "capture_health",
             "attention",

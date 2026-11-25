@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search body edges failed.",
+  "context": "Journal window. Status view. integrity finding search body edges failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43bd501cfd0908bfee123b779729b1cefaf5ed409ac5815bd2fc3bceb81714ee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

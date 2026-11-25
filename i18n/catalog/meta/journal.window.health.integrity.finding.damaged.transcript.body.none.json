@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding damaged transcript body none.",
+  "context": "Journal window. Status view. integrity finding damaged transcript body none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "569260f0aea08e3d9c9ac8661122ca192d1bd5b4f887c4348e4dd76fd2018e08",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

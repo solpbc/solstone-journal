@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue search prune guarded.",
+  "context": "Journal window. Home view. integrity issue search prune guarded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e025c38f5a4937425ece2fdc04a92336783845ffd66256667c23b08763da24d6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

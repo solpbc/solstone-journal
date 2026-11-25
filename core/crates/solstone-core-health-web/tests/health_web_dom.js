@@ -2306,6 +2306,386 @@ test('a tap after a level pick and before the late blur leaves focus on the page
   assert.strictEqual(env.clock.pending(), 0);
 });
 
+function createIntegrityEnvironment() {
+  const source = loadHealthSource();
+  const doc = new Document();
+  const section = doc.createElement('section');
+  section.id = 'integrity';
+  const badge = doc.createElement('span'); badge.id = 'integrityBadge';
+  const actions = doc.createElement('div'); actions.id = 'integrityActions';
+  const headline = doc.createElement('p'); headline.id = 'integrityHeadline';
+  const meta = doc.createElement('p'); meta.id = 'integrityMeta';
+  const checksumLine = doc.createElement('p'); checksumLine.id = 'integrityChecksumLine';
+  const scopeNote = doc.createElement('p'); scopeNote.id = 'integrityScopeNote';
+  const actionStatus = doc.createElement('p'); actionStatus.id = 'integrityActionStatus';
+  const findings = doc.createElement('div'); findings.id = 'integrityFindings';
+  const older = doc.createElement('div'); older.id = 'integrityOlderMissing';
+  const coverage = doc.createElement('details'); coverage.id = 'integrityCoverage';
+  section.append(badge, actions, headline, meta, checksumLine, scopeNote, actionStatus, findings, older, coverage);
+  doc.body.appendChild(section);
+
+  const posts = [];
+  const confirms = [];
+  let confirmAnswer = true;
+  let nextResponse = { status: 200, ok: true, body: { status: 'ok', integrity: { state: 'ok', checked_at_ms: 1778760000000, days_checked: 1, days_total: 1, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [] } } };
+  let summaryUpdates = 0;
+
+  const context = vm.createContext({
+    document: doc,
+    window: {
+      JournalFormat: {
+        day: (d) => `day-${d}`,
+        timestamp: (iso) => `ts-${iso}`,
+      },
+      SolQuestion: {
+        async ask(opts) {
+          confirms.push(opts);
+          return confirmAnswer;
+        },
+      },
+    },
+    state: { backupConfigured: false, integrity: null, journalDisk: null, integrityBusy: false },
+    fetch: async (url, init = {}) => {
+      posts.push({ url, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : null });
+      const r = nextResponse;
+      return {
+        status: r.status,
+        ok: r.ok,
+        json: async () => r.body,
+      };
+    },
+    updateStatusSummary: () => { summaryUpdates += 1; },
+    logHealthError: () => {},
+    console,
+    encodeURIComponent,
+    Date,
+    Math,
+    Number,
+    String,
+    Array,
+    Object,
+    Set,
+  });
+  loadHealthCatalog(context);
+  vm.runInContext(
+    sourceBlock(source, '// ========== JOURNAL INTEGRITY ==========', '// ========== END JOURNAL INTEGRITY =========='),
+    context,
+  );
+  return {
+    doc,
+    context,
+    section,
+    badge,
+    actions,
+    headline,
+    meta,
+    checksumLine,
+    scopeNote,
+    actionStatus,
+    findings,
+    older,
+    coverage,
+    posts,
+    confirms,
+    setConfirm: (val) => { confirmAnswer = val; },
+    setNextResponse: (resp) => { nextResponse = resp; },
+    summaryUpdates: () => summaryUpdates,
+  };
+}
+
+test('integrity card renders all 7 verdict states and synthesizes live low disk even when not_checked_yet', () => {
+  const env = createIntegrityEnvironment();
+  const render = (receipt, disk = null) => {
+    env.context.r = receipt;
+    env.context.d = disk;
+    vm.runInContext('renderIntegrityCard(r, d);', env.context);
+  };
+
+  // 1. ok routine (checksums null)
+  render({ state: 'ok', checked_at_ms: 1778760000000, days_checked: 10, days_total: 10, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [], checksums: null });
+  assert.strictEqual(env.section.dataset.verdict, 'ok');
+  assert.strictEqual(env.badge.dataset.tone, 'ok');
+  assert.strictEqual(env.scopeNote.hidden, false);
+  assert.strictEqual(env.checksumLine.hidden, true);
+
+  // 2. ok deep checksums full
+  render({ state: 'ok', checked_at_ms: 1778760000000, days_checked: 10, days_total: 10, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [], checksums: { verified_at_ms: 1778760000000, checksums_verified: 5, checksums_total_kept: 5, checksums_unavailable_older: 0, mismatches: 0, incomplete: false } });
+  assert.strictEqual(env.section.dataset.verdict, 'ok');
+  assert.strictEqual(env.checksumLine.hidden, false);
+  assert.strictEqual(env.scopeNote.hidden, true);
+
+  // 2b. ok checksums with 0 kept originals keeps routine headline (never claims "all kept originals match")
+  render({ state: 'ok', checked_at_ms: 1778760000000, days_checked: 10, days_total: 10, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [], checksums: { verified_at_ms: 1778760000000, checksums_verified: 0, checksums_total_kept: 0, checksums_unavailable_older: 0, mismatches: 0, incomplete: false } });
+  assert.strictEqual(env.headline.textContent, env.context.window.JournalI18n.render('journal.window.health.integrity.headline.ok.routine'));
+  assert.strictEqual(env.checksumLine.hidden, false);
+
+  // 3. ok deep checksums partial
+  render({ state: 'ok', checked_at_ms: 1778760000000, days_checked: 10, days_total: 10, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [], checksums: { verified_at_ms: 1778760000000, checksums_verified: 5, checksums_total_kept: 8, checksums_unavailable_older: 3, mismatches: 0, incomplete: false } });
+  assert.strictEqual(env.section.dataset.verdict, 'ok');
+  assert.strictEqual(env.headline.textContent, env.context.window.JournalI18n.render('journal.window.health.integrity.headline.ok.checksums.partial'));
+
+  // 4. incomplete (never green; offers finish-check + check-from-start actions)
+  render({ state: 'incomplete', checked_at_ms: 1778760000000, days_checked: 4, days_total: 10, days_unreadable: 2, incomplete: true, findings: [], older_missing_originals: [] });
+  assert.strictEqual(env.section.dataset.verdict, 'incomplete');
+  assert.strictEqual(env.badge.dataset.tone, 'warn');
+  assert.ok(env.actions.querySelector('[data-integrity-action="finish-check"]'));
+  assert.ok(env.actions.querySelector('[data-integrity-action="check-from-start"]'));
+  assert.strictEqual(env.scopeNote.hidden, false);
+
+  // 5. not_checked_yet (calm neutral hollow ring, never green)
+  render({ state: 'not_checked_yet', checked_at_ms: null, days_checked: 0, days_total: 0, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [] });
+  assert.strictEqual(env.section.dataset.verdict, 'not_checked_yet');
+  assert.strictEqual(env.badge.dataset.tone, 'neutral');
+  assert.ok(env.badge.querySelector('.integrity-badge-ring'));
+
+  // 5b. not_checked_yet + live journal_disk.low promotes to needs_attention with /app/settings/#storage
+  render(
+    { state: 'not_checked_yet', checked_at_ms: null, days_checked: 0, days_total: 0, days_unreadable: 0, incomplete: false, findings: [], older_missing_originals: [] },
+    { free_bytes: 5000000000, total_bytes: 100000000000, floor_bytes: 20000000000, percent_used: 95, low: true },
+  );
+  assert.strictEqual(env.section.dataset.verdict, 'needs_attention');
+  assert.strictEqual(env.badge.dataset.tone, 'danger');
+  assert.ok(env.findings.querySelector('[data-finding-kind="low_disk_space"] a[href="/app/settings/#storage"]'));
+
+  // 6. unavailable (amber, never green)
+  render({ state: 'unavailable', unavailable: true, checked_at_ms: null, findings: [] });
+  assert.strictEqual(env.section.dataset.verdict, 'unavailable');
+  assert.strictEqual(env.badge.dataset.tone, 'warn');
+  assert.strictEqual(env.coverage.hidden, true);
+
+  // 7. maintenance (0 Tier 1, 1 Tier 2 undeclared facet)
+  render({ state: 'maintenance', checked_at_ms: 1778760000000, days_checked: 5, days_total: 5, days_unreadable: 0, incomplete: false, findings: [{ tier: 2, kind: 'undeclared_facet', facet: 'garden', path: 'facets/garden' }], older_missing_originals: [] });
+  assert.strictEqual(env.section.dataset.verdict, 'maintenance');
+  assert.strictEqual(env.badge.dataset.tone, 'warn');
+});
+
+test('integrity findings wire recovery actions, confirm dialogs, non-chronicle import safety, backup gating, and older_missing_originals', async () => {
+  const env = createIntegrityEnvironment();
+  env.context.state.backupConfigured = true;
+  env.context.r = {
+    state: 'needs_attention',
+    checked_at_ms: 1778760000000,
+    days_checked: 4,
+    days_total: 10,
+    days_unreadable: 0,
+    incomplete: true,
+    findings: [
+      { tier: 1, kind: 'damaged_transcript_jsonl', path: 'chronicle/20261120/import.chatgpt/090000_60/conversation_transcript.jsonl', day: '20261120', stream: 'import.chatgpt', segment: '090000_60', valid_lines: 3, damaged_lines: 1, truncated_tail: true, interior_damaged: 0 },
+      { tier: 1, kind: 'missing_original', path: 'chronicle/20261120/default/100000_60', day: '20261120', stream: 'default', segment: '100000_60', files: ['audio.ogg'] },
+      { tier: 1, kind: 'zero_byte_original', path: 'chronicle/20261120/default/110000_60/audio.ogg', day: '20261120', stream: 'default', segment: '110000_60', file: 'audio.ogg' },
+      { tier: 1, kind: 'checksum_mismatch', path: 'imports/imp1/originals/file.m4a', file: 'file.m4a' },
+      { tier: 1, kind: 'quarantined_ingest', path: 'chronicle/20261120/observer/failed/bad.flac', day: '20261120', file: 'bad.flac' },
+      { tier: 1, kind: 'damaged_core_record', path: 'entities/retired.json' },
+      { tier: 1, kind: 'operational_heal_recurrence', heal_count: 3, logs: ['health/a.jsonl'] },
+      { tier: 1, kind: 'search_index_issue', search_reason: 'retained_prune_guarded' },
+      { tier: 1, kind: 'search_index_issue', search_reason: 'edges_failed' },
+      { tier: 1, kind: 'search_index_issue', search_reason: 'newer_generation' },
+      { tier: 1, kind: 'search_index_issue', search_reason: 'repeated_rebuild' },
+      { tier: 1, kind: 'search_index_issue', search_reason: 'check_overdue' },
+      { tier: 2, kind: 'undeclared_facet', facet: 'garden', path: 'facets/garden' },
+    ],
+    older_missing_originals: [
+      { path: 'chronicle/20260701/default/080000_60', day: '20260701', stream: 'default', segment: '080000_60', files: ['audio.ogg'] },
+    ],
+  };
+  vm.runInContext('renderIntegrityCard(r, null);', env.context);
+
+  assert.strictEqual(env.section.dataset.verdict, 'needs_attention');
+  assert.ok(!env.section.querySelector('a[href*="/app/entities"]'), 'no Entities duplicate link inside Status integrity');
+  assert.ok(env.findings.querySelector('[data-finding-kind="missing_original"] a[href="/app/health/#backup"]'), 'backup link shown when configured');
+
+  // Non-chronicle import checksum_mismatch shows /app/import/ link and NO trash-original button.
+  const importMismatch = env.findings.querySelector('[data-finding-kind="checksum_mismatch"]');
+  assert.ok(importMismatch.querySelector('a[href="/app/import/"]'));
+  assert.strictEqual(importMismatch.querySelector('[data-integrity-action="trash-original"]'), null);
+
+  // newer_generation and repeated_rebuild search findings have NO rebuild button; check_overdue uses search-update.
+  const searchRows = env.findings.querySelectorAll('[data-finding-kind="search_index_issue"]');
+  assert.strictEqual(searchRows.length, 5);
+  assert.ok(searchRows[0].querySelector('[data-integrity-action="search-clear-removed"]'));
+  assert.ok(searchRows[1].querySelector('[data-integrity-action="search-update"]'));
+  assert.strictEqual(searchRows[2].querySelector('button'), null);
+  assert.strictEqual(searchRows[3].querySelector('button'), null);
+  assert.ok(searchRows[4].querySelector('[data-integrity-action="search-update"]'));
+
+  // Set-aside button fires SolQuestion confirm and POSTs to set-aside-lines.
+  const setAsideBtn = env.findings.querySelector('[data-integrity-action="set-aside-lines"]');
+  assert.ok(setAsideBtn, 'conversation_transcript.jsonl is set-aside eligible');
+  setAsideBtn.dispatchEvent(domEvent('click'));
+  await new Promise(r => setTimeout(r, 10));
+  assert.strictEqual(env.confirms.length, 1);
+  assert.strictEqual(env.posts[0].url, '/app/health/api/integrity/set-aside-lines');
+  assert.deepStrictEqual(env.posts[0].body, { paths: ['chronicle/20261120/import.chatgpt/090000_60/conversation_transcript.jsonl'] });
+  assert.strictEqual(env.summaryUpdates(), 1);
+});
+
+test('selectGlanceSentence folds urgent, incomplete, and unavailable integrity states', () => {
+  const source = loadHealthSource();
+  const context = vm.createContext({
+    window: { JournalI18n: null },
+    brainSnapshot: null,
+    connectError: false,
+    STALE_MS: 30000,
+    GLANCE_DEVICES_ACTION: { href: '#registeredClientsCard', label: 'view devices' },
+    selectDeviceVerdict: () => null,
+    heldWorkVerdict: () => null,
+    serviceName: (s) => s,
+    relativeTime: (ms) => `${ms}ms`,
+    ageAgo: () => 'now',
+    Array,
+    Set,
+    Map,
+    Number,
+    String,
+  });
+  loadHealthCatalog(context);
+  vm.runInContext(sourceBlock(source, 'function selectIntegrityGlance(', 'function formatGlanceSentence('), context);
+
+  const base = () => ({
+    agents: new Map(),
+    imports: new Map(),
+    crashed: new Map(),
+    clients: new Map(),
+    services: new Map([['convey', {}]]),
+    connected: true,
+    health: {},
+    backupView: { tone: 'neutral', text: '' },
+    searchIndex: null,
+    storagePrivacy: null,
+    integrity: null,
+    journalDisk: null,
+  });
+
+  context.s = { ...base(), integrity: { state: 'ok', findings: [] } };
+  assert.strictEqual(vm.runInContext('selectGlanceSentence(s, 1000).key', context), 'HEALTH_GLANCE_OK');
+
+  context.s = { ...base(), integrity: { state: 'incomplete', incomplete: true, findings: [] } };
+  assert.strictEqual(vm.runInContext('selectGlanceSentence(s, 1000).key', context), 'HEALTH_GLANCE_INTEGRITY_INCOMPLETE');
+
+  context.s = { ...base(), integrity: { state: 'unavailable', unavailable: true, findings: [] } };
+  assert.strictEqual(vm.runInContext('selectGlanceSentence(s, 1000).key', context), 'HEALTH_GLANCE_INTEGRITY_UNAVAILABLE');
+
+  context.s = { ...base(), integrity: { state: 'not_checked_yet', findings: [] }, journalDisk: { low: true } };
+  assert.strictEqual(vm.runInContext('selectGlanceSentence(s, 1000).key', context), 'HEALTH_GLANCE_INTEGRITY_ATTENTION');
+});
+
+test('media backlog error renders honest message instead of silent 0', async () => {
+  const doc = new Document();
+  const brain = doc.createElement('section');
+  brain.id = 'brain';
+  doc.body.appendChild(brain);
+  const context = vm.createContext({
+    document: doc,
+    window: {
+      apiJson: async () => { throw new Error('network down'); },
+    },
+    fetch: async () => { throw new Error('network down'); },
+    Number,
+    String,
+  });
+  loadHealthCatalog(context);
+  vm.runInContext(sourceBlock(loadHealthSource(), 'function renderMediaBacklog(', 'function renderWorkProgress('), context);
+  await vm.runInContext('loadMediaBacklog()', context);
+  const line = doc.getElementById('mediaBacklogLine');
+  assert.ok(line, 'error line is rendered');
+  assert.strictEqual(line.dataset.state, 'error');
+  assert.strictEqual(line.textContent, context.window.JournalI18n.render('journal.window.health.backlog.media.error'));
+});
+
+test('processing holds hide try again for unretryable corrupt_input and no_audio_stream reasons', () => {
+  const source = loadHealthSource();
+  const doc = new Document();
+  const section = doc.createElement('section'); section.id = 'processingHolds';
+  const notice = doc.createElement('p'); notice.setAttribute('data-held-work-notice', '');
+  const list = doc.createElement('details'); list.setAttribute('data-held-work-list', '');
+  const rows = doc.createElement('div'); rows.setAttribute('data-held-work-rows', '');
+  const pages = doc.createElement('nav'); pages.setAttribute('data-held-work-pages', '');
+  const prev = doc.createElement('button'); prev.setAttribute('data-held-previous', '');
+  const span = doc.createElement('span');
+  const next = doc.createElement('button'); next.setAttribute('data-held-next', '');
+  pages.append(prev, span, next);
+  list.append(rows, pages);
+  const support = doc.createElement('p'); support.setAttribute('data-held-work-support', '');
+  section.append(notice, list, support);
+  doc.body.appendChild(section);
+
+  const context = vm.createContext({
+    document: doc,
+    window: { location: { hash: '' } },
+    state: {
+      work: {
+        inventory: {
+          as_of_ms: Date.now(),
+          holds: [
+            { retry_unit: 'u1', day: '20261120', stream: 'default', segment: '100000_60', reason: 'corrupt_input', count: 1 },
+            { retry_unit: 'u2', day: null, stream: 'default', segment: '103000_60', reason: 'no_audio_stream', count: 1 },
+            { retry_unit: 'u3', day: '20261120', stream: 'default', segment: '110000_60', reason: 'analysis_failed', count: 1 },
+          ],
+        },
+        retry_records: [],
+      },
+      legacyHolds: [],
+      heldWorkSnapshot: null,
+      heldWorkCurrent: true,
+    },
+    talentName: () => '',
+    scheduleName: (s) => s,
+    loadHealthState: async () => {},
+    requestAnimationFrame: (fn) => fn(),
+    fetch: async () => ({ ok: true, json: async () => ({}) }),
+    Date,
+    JSON,
+    Array,
+    Set,
+    Map,
+    Number,
+    String,
+    Math,
+    encodeURIComponent,
+  });
+  loadHealthCatalog(context);
+  vm.runInContext(sourceBlock(source, 'function queuedWorkHolds(', 'function selectIntegrityGlance('), context);
+  vm.runInContext('renderHeldWork();', context);
+
+  const rowEls = rows.children;
+  assert.strictEqual(rowEls.length, 3);
+  const corruptRow = rowEls.find(r => r.dataset.key === 'unit:u1');
+  const noAudioRow = rowEls.find(r => r.dataset.key === 'unit:u2');
+  const retryableRow = rowEls.find(r => r.dataset.key === 'unit:u3');
+  assert.strictEqual(corruptRow.querySelector('button').hidden, true, 'try again hidden for corrupt_input');
+  assert.strictEqual(corruptRow.querySelector('[data-hold-guidance]').hidden, false);
+  assert.ok(corruptRow.querySelector('[data-hold-guidance] a[href="/app/transcripts/20261120"]'), 'links to transcripts day');
+  assert.strictEqual(noAudioRow.querySelector('button').hidden, true, 'try again hidden for no_audio_stream');
+  assert.strictEqual(noAudioRow.querySelector('[data-hold-guidance]').hidden, false);
+  assert.strictEqual(noAudioRow.querySelector('[data-hold-guidance] a'), null, 'no dead link when day absent');
+  assert.strictEqual(retryableRow.querySelector('button').hidden, false, 'try again visible for retryable hold');
+  assert.strictEqual(retryableRow.querySelector('[data-hold-guidance]').hidden, true);
+});
+
+test('backlog search note surfaces retained_prune_guarded and edges_failed with link to #integrity', () => {
+  const { doc, context } = createEnvironment();
+  const note = doc.createElement('p');
+  note.setAttribute('class', 'backlog-search-note');
+  note.hidden = true;
+  doc.getElementById('backlogVerdict').appendChild(note);
+
+  context.payload = { verdict: 'caught up' };
+  context.searchIndex = {
+    state: 'ok',
+    text: '',
+    index: { retained_prune_guarded: true, gone_days: 5, indexed_days: 12, edges_failed: true },
+  };
+  vm.runInContext('renderBacklogState(payload, searchIndex);', context);
+  assert.strictEqual(note.hidden, false);
+  assert.ok(note.querySelector('a[href="#integrity"]'));
+});
+
+test('importer card renders open-import link instead of dead retry-import POST', () => {
+  const source = loadHealthSource();
+  assert.ok(!source.includes('/app/health/api/retry-import'), 'dead retry-import endpoint is no longer called by health.js');
+  assert.ok(source.includes('data-action", "open-import"') || source.includes("setAttribute('data-action', 'open-import')"), 'failed import card renders open-import link');
+});
+
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
   console.log('DOM CASES: ' + cases + ' passed');

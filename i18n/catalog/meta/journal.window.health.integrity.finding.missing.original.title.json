@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding missing original title.",
+  "context": "Journal window. Status view. integrity finding missing original title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a38d668f70ef3ab9da006b564d339f21a643f6ebdc1fd49414b9b23dcb68988e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding trash original action.",
+  "context": "Journal window. Status view. integrity finding trash original action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a753775a1127321812b1fec28a91ba1595fc3dee7b57ae8da124347f3a0ec1f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

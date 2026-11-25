@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search title newer generation.",
+  "context": "Journal window. Status view. integrity finding search title newer generation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "96094cba826e1992588bf8b6de0bec989c016a468890e73ccd09cd6e90124972",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

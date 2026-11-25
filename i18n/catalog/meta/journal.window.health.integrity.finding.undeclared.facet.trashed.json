@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity finding undeclared facet trashed.",
+  "context": "Journal window. Status view. integrity finding undeclared facet trashed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "dedf8fbc1f9c945159ba9235b07bbfe0d0a68c338132e9245ebbc0aa320f9d04",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search action update.",
+  "context": "Journal window. Status view. integrity finding search action update.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c4d98455e48114af409207b531b018e1e6d96e3237380431066d58670b3162b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

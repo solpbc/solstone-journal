@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity coverage trigger.",
+  "context": "Journal window. Status view. integrity coverage trigger.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dafe3fe681f0e9e64c81fd3f71e629876e9114e1cb2efc0584ddd3cb8163085f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

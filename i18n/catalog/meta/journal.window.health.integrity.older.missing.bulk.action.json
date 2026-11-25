@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity older missing bulk action.",
+  "context": "Journal window. Status view. integrity older missing bulk action.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "942e8a67cc82bab180ba359cf123384e8f412035806718f74a4853a8614f9c2e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -258,4 +258,92 @@ mod tests {
         assert_eq!(issues, 0);
         assert!(uncertain);
     }
+
+    #[tokio::test]
+    async fn shell_badges_reflects_incomplete_and_urgent_integrity_receipts() {
+        let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        fs::create_dir_all(dir.path().join("config")).expect("config dir");
+        fs::create_dir_all(dir.path().join("health")).expect("health dir");
+        let now = jiff::Timestamp::now();
+        fs::write(
+            dir.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({"setup":{"completed_at": now.as_second()}})).unwrap(),
+        )
+        .expect("journal config");
+        solstone_core_brain::begin_refresh(dir.path(), now, None, None, false, None)
+            .expect("initial none brain record");
+
+        // Incomplete integrity check -> uncertain amber badge with 0 issues.
+        fs::write(
+            dir.path().join("health/integrity.json"),
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "state": "incomplete",
+                "scope_kind": "routine",
+                "checked_at_ms": now.as_millisecond(),
+                "duration_ms": 10,
+                "days_checked": 3,
+                "days_total": 10,
+                "days_unreadable": 0,
+                "segments_checked": 5,
+                "incomplete": true,
+                "unavailable": false,
+                "urgent_count": 0,
+                "maintenance_count": 0,
+                "full_coverage_complete": false,
+                "findings": []
+            }))
+            .unwrap(),
+        )
+        .expect("write incomplete receipt");
+
+        let app = crate::router(dir.path().to_path_buf());
+        let mut req = Request::get("/api/shell/badges")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(AccessBasis::Localhost);
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
+        assert_eq!(body["home"]["issues"], 0);
+        assert_eq!(body["home"]["severity"], "amber");
+
+        // Urgent integrity finding -> red issue count on home badge.
+        fs::write(
+            dir.path().join("health/integrity.json"),
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "state": "needs_attention",
+                "scope_kind": "routine",
+                "checked_at_ms": now.as_millisecond(),
+                "duration_ms": 10,
+                "days_checked": 10,
+                "days_total": 10,
+                "days_unreadable": 0,
+                "segments_checked": 5,
+                "incomplete": false,
+                "unavailable": false,
+                "urgent_count": 1,
+                "maintenance_count": 0,
+                "full_coverage_complete": true,
+                "findings": [{
+                    "tier": 1,
+                    "kind": "missing_original",
+                    "day": "20261120"
+                }]
+            }))
+            .unwrap(),
+        )
+        .expect("write urgent receipt");
+
+        let mut req = Request::get("/api/shell/badges")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(AccessBasis::Localhost);
+        let resp = app.oneshot(req).await.unwrap();
+        let body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
+        assert_eq!(body["home"]["issues"], 1);
+        assert_eq!(body["home"]["severity"], "red");
+    }
 }

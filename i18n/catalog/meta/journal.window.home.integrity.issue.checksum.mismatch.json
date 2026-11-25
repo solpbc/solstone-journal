@@ -1,0 +1,30 @@
+{
+  "description": "Home view. integrity issue checksum mismatch.",
+  "context": "Journal window. Home view. integrity issue checksum mismatch.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f2ddbe983039d299a5eeb725c219e138fe6ff154fb3eee06743b2c65f69c914a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity link open backup.",
+  "context": "Journal window. Status view. integrity link open backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c4a52960bc734d1caf26e4b0a6610616a4cc3003fdb8cacf9fd5316743058af",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

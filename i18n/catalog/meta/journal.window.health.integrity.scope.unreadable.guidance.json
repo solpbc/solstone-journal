@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity scope unreadable guidance.",
+  "context": "Journal window. Status view. integrity scope unreadable guidance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6772207dfe8d015aa4f1ea6bd2a542f6aceaed904a14febe39712aa6e5ebf55",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

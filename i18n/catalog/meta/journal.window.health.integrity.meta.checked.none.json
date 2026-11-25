@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity meta checked none.",
+  "context": "Journal window. Status view. integrity meta checked none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4113047f919f9124277de8d45b1d655cf28d9ebd9fff0bdd1ef61a43646b6d0d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

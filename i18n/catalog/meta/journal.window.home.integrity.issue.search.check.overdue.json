@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue search check overdue.",
+  "context": "Journal window. Home view. integrity issue search check overdue.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fa6986fd66b71a7ad01960150149b5430b75d610a8ee52172e25b307f3e87046",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

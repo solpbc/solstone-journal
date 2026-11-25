@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding quarantined ingest trash.",
+  "context": "Journal window. Status view. integrity finding quarantined ingest trash.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f4ed655e4491cf8dc7fee4b3cfc8df0f74c621684be35c981f4a3e4d0f9406b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

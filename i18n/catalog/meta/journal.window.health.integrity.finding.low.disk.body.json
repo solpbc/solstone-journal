@@ -1,0 +1,25 @@
+{
+  "description": "Status view. integrity finding low disk body.",
+  "context": "Journal window. Status view. integrity finding low disk body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "used",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d35f19c90c22fdf4aa51b6a57faee6af5b0df01037036038c73c521edc2862ac",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

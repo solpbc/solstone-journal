@@ -1,0 +1,16 @@
+{
+  "description": "Status view. backlog search edges failed.",
+  "context": "Journal window. Status view. backlog search edges failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "eaf3d90265e29f123c8e8944f02af3382ef6c9929f3f3e5f0f7ae6c0591a08ee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

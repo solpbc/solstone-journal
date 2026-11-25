@@ -1593,6 +1593,8 @@ fn is_owner_transcript_jsonl(name: &str) -> bool {
     }
     name == "audio.jsonl"
         || name == "screen.jsonl"
+        || name == "conversation_transcript.jsonl"
+        || name == "imported_audio.jsonl"
         || name.starts_with("browser_")
         || name.ends_with("_desktop_activity.jsonl")
         || (name.starts_with('p') && name.len() > 7 && name.as_bytes()[1].is_ascii_digit())
@@ -1916,5 +1918,56 @@ mod tests {
             f.kind == "checksum_mismatch"
                 && f.path.as_deref() == Some("chronicle/20261120/110000_60/audio.ogg")
         }));
+    }
+
+    #[test]
+    fn imported_transcript_jsonl_allowlist_scans_conversation_and_imported_audio_only() {
+        assert!(is_owner_transcript_jsonl("conversation_transcript.jsonl"));
+        assert!(is_owner_transcript_jsonl("imported_audio.jsonl"));
+        assert!(!is_owner_transcript_jsonl("events.jsonl"));
+        assert!(!is_owner_transcript_jsonl("photo_01.jsonl"));
+
+        let dir = tempfile::tempdir().unwrap();
+        seed_basic_journal(dir.path());
+        let seg = dir
+            .path()
+            .join("chronicle/20261120/import.chatgpt/090000_60");
+        fs::create_dir_all(&seg).unwrap();
+        fs::write(
+            seg.join("conversation_transcript.jsonl"),
+            "{\"text\":\"ok\"}\n{broken\n",
+        )
+        .unwrap();
+        fs::write(
+            seg.join("imported_audio.jsonl"),
+            "{\"text\":\"ok\"}\n{truncated\n",
+        )
+        .unwrap();
+        fs::write(seg.join("events.jsonl"), "{broken\n").unwrap();
+        fs::write(seg.join("photo_01.jsonl"), "{broken\n").unwrap();
+
+        let receipt = run_integrity_scan(
+            dir.path(),
+            IntegrityScanOptions {
+                scope: IntegrityScopeKind::Full,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let damaged_paths: Vec<&str> = receipt
+            .findings
+            .iter()
+            .filter(|f| f.kind == "damaged_transcript_jsonl")
+            .filter_map(|f| f.path.as_deref())
+            .collect();
+        assert!(damaged_paths.contains(
+            &"chronicle/20261120/import.chatgpt/090000_60/conversation_transcript.jsonl"
+        ));
+        assert!(
+            damaged_paths
+                .contains(&"chronicle/20261120/import.chatgpt/090000_60/imported_audio.jsonl")
+        );
+        assert!(!damaged_paths.iter().any(|p| p.ends_with("/events.jsonl")));
+        assert!(!damaged_paths.iter().any(|p| p.ends_with("/photo_01.jsonl")));
     }
 }

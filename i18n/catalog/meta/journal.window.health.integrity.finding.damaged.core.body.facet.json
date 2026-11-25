@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding damaged core body facet.",
+  "context": "Journal window. Status view. integrity finding damaged core body facet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04bc6cf4d91c009efe64cb3457c3cf9d4fc830319c8ba36d65ce19d2652a8144",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

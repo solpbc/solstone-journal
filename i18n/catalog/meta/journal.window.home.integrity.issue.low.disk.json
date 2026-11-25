@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue low disk.",
+  "context": "Journal window. Home view. integrity issue low disk.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c07d88937d3e31011ae80f1d4b103b0ad1a8faaf3f43790d8cdd0263e0bf4f90",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

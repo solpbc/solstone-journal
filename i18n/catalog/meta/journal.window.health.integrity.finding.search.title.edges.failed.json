@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search title edges failed.",
+  "context": "Journal window. Status view. integrity finding search title edges failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "402ee42d3e4163287089d44bdc276998f4c5204eaee7cc18ebd22e7f2c1e69fe",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity finding quarantined ingest confirm body.",
+  "context": "Journal window. Status view. integrity finding quarantined ingest confirm body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a9821e4088a885d023cae39930bd55783309700665b382a74bb04678668cd400",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity scope not checked.",
+  "context": "Journal window. Status view. integrity scope not checked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fb1106772cb90afc504a9199f963edc14b0e02174e36318ec75773dc44accdf0",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

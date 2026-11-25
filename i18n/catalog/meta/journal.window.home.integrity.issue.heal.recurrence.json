@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue heal recurrence.",
+  "context": "Journal window. Home view. integrity issue heal recurrence.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "015ee7c9348abd26e39d3602f8e15610aec39455214ae4c4d491f8c9c28dbb2d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

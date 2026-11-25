@@ -1,0 +1,30 @@
+{
+  "description": "Settings view. removal history group quarantined ingest count.",
+  "context": "Journal window. Settings view. removal history group quarantined ingest count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "f95e606617b26e6f357094b12b7a342a0d9c9ec2f22d186fc962f47ca0328205",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

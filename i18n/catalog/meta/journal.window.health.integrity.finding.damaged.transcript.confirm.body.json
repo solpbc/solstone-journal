@@ -1,0 +1,26 @@
+{
+  "description": "Status view. integrity finding damaged transcript confirm body.",
+  "context": "Journal window. Status view. integrity finding damaged transcript confirm body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fdba372e33ff616ed9cf7e387d4e3d4023f6e69a1e17c3325767d456d1160ae1",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

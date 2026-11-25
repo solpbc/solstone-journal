@@ -597,5 +597,5 @@ async fn degraded_report_inputs_stay_200_but_internal_failures_are_safe_500s() {
     let (status, _, bytes) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body_json(&bytes)["reason_code"], "health_report_failed");
-    assert_eq!(body_json(&bytes)["detail"], "health report unavailable");
+    assert_eq!(body_json(&bytes)["detail"], "status report unavailable");
 }

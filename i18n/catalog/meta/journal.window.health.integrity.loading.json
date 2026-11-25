@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity loading.",
+  "context": "Journal window. Status view. integrity loading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c5e6194aadf5a26e741a009e1d9e3be82a3a585a204ae033a42fb57ede8fd2f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

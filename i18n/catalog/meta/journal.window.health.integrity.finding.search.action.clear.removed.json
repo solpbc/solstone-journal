@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search action clear removed.",
+  "context": "Journal window. Status view. integrity finding search action clear removed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9cc64fc64ed60e5a062b71b25e55a2a18c7fcfaf77d5dc0a706fed57a1ea94e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

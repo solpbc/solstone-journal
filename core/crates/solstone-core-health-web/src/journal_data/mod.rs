@@ -162,8 +162,8 @@ fn error_response_in(error: HealthError, locale: &str) -> Response {
             log::warn!("native health journal-data report failed: {context}");
             error_envelope(
                 "health_report_failed",
-                text(locale, "journal.window.health.report.failed"),
-                text(locale, "journal.window.health.report.unavailable"),
+                text(locale, "journal.window.status.report.failed"),
+                text(locale, "journal.window.status.report.unavailable"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response()

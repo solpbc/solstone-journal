@@ -1,0 +1,34 @@
+{
+  "description": "Status view. backlog search prune guarded.",
+  "context": "Journal window. Status view. backlog search prune guarded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "gone",
+      "type": "string"
+    },
+    {
+      "name": "indexed",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4b8cda386f13c7b55776f5d998b5967d56c9a7dfb3cc0082495f09d364cf3550",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use crate::formatting::{cardinal_quantity, render_count};
 use crate::model::{BacklogSource, BacklogValidity};
 use crate::needs_you::format_degraded_capture_line_in;
-use solstone_core_system_health::NotYet;
+use solstone_core_system_health::{IntegrityReceipt, IntegrityState, NotYet};
 use solstone_core_window_catalog::{ENGLISH, Value as CatalogValue, render, strings, text};
 
 const UNAVAILABLE_HEADLINE_ID: &str = "journal.window.home.health.unavailable.headline";
@@ -89,6 +89,31 @@ pub fn build_health_glance_with_index_in(
     search_index_issue: Option<&Value>,
     locale: &str,
 ) -> Value {
+    build_health_glance_with_integrity_in(
+        capture,
+        last_observe,
+        backlog,
+        brain,
+        now,
+        transcription_issue,
+        search_index_issue,
+        None,
+        locale,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_health_glance_with_integrity_in(
+    capture: &Value,
+    last_observe: Option<&str>,
+    backlog: &BacklogSource,
+    brain: &Value,
+    now: Timestamp,
+    transcription_issue: Option<&Value>,
+    search_index_issue: Option<&Value>,
+    integrity: Option<&IntegrityReceipt>,
+    locale: &str,
+) -> Value {
     let mut glance = derive_glance(
         capture,
         last_observe,
@@ -97,6 +122,7 @@ pub fn build_health_glance_with_index_in(
         now,
         transcription_issue,
         search_index_issue,
+        integrity,
         locale,
     );
     let not_yet = match backlog.validity {
@@ -116,7 +142,223 @@ pub fn build_health_glance_with_index_in(
         }
         glance["note"] = json!({"text": not_yet.text_in(locale), "href": not_yet.href()});
     }
+    // Before any integrity check has run (and disk is not low), never show green ok;
+    // the calm hollow-ring note sits in Home's integrity slot without clobbering `g.note`.
+    if let Some(receipt) = integrity
+        && is_integrity_not_checked_calm(receipt)
+        && glance["verdict"] == "ok"
+    {
+        glance["verdict"] = json!("calm");
+        glance["severity"] = json!("neutral");
+        glance["headline"] = json!(text(locale, NOT_YET_ACTIVE_HEADLINE_ID));
+    }
     glance
+}
+
+fn effective_integrity_disk_low(receipt: &IntegrityReceipt) -> bool {
+    receipt.journal_disk.as_ref().is_some_and(|disk| disk.low)
+}
+
+fn is_integrity_not_checked_calm(receipt: &IntegrityReceipt) -> bool {
+    !receipt.unavailable
+        && receipt.state != IntegrityState::Unavailable
+        && (receipt.state == IntegrityState::NotCheckedYet || receipt.checked_at_ms.is_none())
+        && !effective_integrity_disk_low(receipt)
+        && !receipt.findings.iter().any(|finding| finding.tier == 1)
+}
+
+fn is_integrity_uncertain(receipt: &IntegrityReceipt) -> bool {
+    receipt.unavailable
+        || receipt.state == IntegrityState::Unavailable
+        || receipt.state == IntegrityState::Incomplete
+        || receipt.incomplete
+        || receipt.days_unreadable > 0
+}
+
+pub fn integrity_slot_from_receipt(receipt: &IntegrityReceipt, locale: &str) -> Value {
+    if receipt.unavailable || receipt.state == IntegrityState::Unavailable {
+        return json!({
+            "state": "unavailable",
+            "tone": "warn",
+            "text": text(locale, "journal.window.home.integrity.unavailable"),
+            "href": "/app/health/#integrity",
+        });
+    }
+    if receipt.incomplete
+        || receipt.days_unreadable > 0
+        || receipt.state == IntegrityState::Incomplete
+    {
+        let line = if receipt.days_unreadable > 0 && receipt.days_checked >= receipt.days_total {
+            render_count(
+                locale,
+                "journal.window.home.integrity.incomplete.unreadable",
+                receipt.days_unreadable as i64,
+            )
+        } else {
+            let checked = receipt.days_checked.to_string();
+            let total = receipt.days_total.to_string();
+            render(
+                locale,
+                "journal.window.home.integrity.incomplete.days",
+                &[
+                    ("checked", CatalogValue::String(&checked)),
+                    ("total", CatalogValue::String(&total)),
+                    ("quantity", cardinal_quantity(receipt.days_total as i64)),
+                ],
+            )
+        };
+        return json!({
+            "state": "incomplete",
+            "tone": "warn",
+            "text": line,
+            "href": "/app/health/#integrity",
+        });
+    }
+    if is_integrity_not_checked_calm(receipt) {
+        return json!({
+            "state": "not_checked_yet",
+            "tone": "calm",
+            "text": text(locale, "journal.window.home.integrity.not.checked.yet"),
+            "href": "/app/health/#integrity",
+        });
+    }
+    let state = if effective_integrity_disk_low(receipt)
+        || receipt.findings.iter().any(|finding| finding.tier == 1)
+    {
+        "needs_attention"
+    } else if receipt.findings.iter().any(|finding| finding.tier == 2)
+        || receipt.state == IntegrityState::Maintenance
+    {
+        "maintenance"
+    } else {
+        "ok"
+    };
+    json!({
+        "state": state,
+        "tone": "none",
+        "text": Value::Null,
+        "href": Value::Null,
+    })
+}
+
+fn integrity_issues_from_receipt(
+    receipt: &IntegrityReceipt,
+    has_existing_search_issue: bool,
+    locale: &str,
+) -> Vec<Value> {
+    let mut damaged_transcript = 0i64;
+    let mut missing_original = 0i64;
+    let mut zero_byte = 0i64;
+    let mut checksum_mismatch = 0i64;
+    let mut quarantined_ingest = 0i64;
+    let mut damaged_core = 0i64;
+    let mut heal_recurrence = false;
+    let mut low_disk = effective_integrity_disk_low(receipt);
+    let mut best_search_reason: Option<(&str, u8)> = None;
+
+    for finding in &receipt.findings {
+        if finding.tier != 1 {
+            continue;
+        }
+        match finding.kind.as_str() {
+            "damaged_transcript_jsonl" => damaged_transcript += 1,
+            "missing_original" => missing_original += 1,
+            "zero_byte_original" => zero_byte += 1,
+            "checksum_mismatch" => checksum_mismatch += 1,
+            "quarantined_ingest" => quarantined_ingest += 1,
+            "damaged_core_record" => damaged_core += 1,
+            "operational_heal_recurrence" => heal_recurrence = true,
+            "low_disk_space" => low_disk = true,
+            "search_index_issue" if !has_existing_search_issue => {
+                let reason = finding.search_reason.as_deref().unwrap_or("failing");
+                let rank = match reason {
+                    "newer_generation" => 5,
+                    "repeated_rebuild" => 3,
+                    "retained_prune_guarded" | "check_overdue" => 2,
+                    "edges_failed" => 1,
+                    _ => 4,
+                };
+                if best_search_reason.is_none_or(|(_, existing)| rank > existing) {
+                    best_search_reason = Some((reason, rank));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut issues = Vec::new();
+    if damaged_core > 0 {
+        issues.push(json!({
+            "text": render_count(locale, "journal.window.home.integrity.issue.damaged.core", damaged_core),
+            "severity": "red",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if missing_original > 0 {
+        issues.push(json!({
+            "text": render_count(locale, "journal.window.home.integrity.issue.missing.original", missing_original),
+            "severity": "red",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if zero_byte > 0 {
+        issues.push(json!({
+            "text": render_count(locale, "journal.window.home.integrity.issue.zero.byte", zero_byte),
+            "severity": "red",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if checksum_mismatch > 0 {
+        issues.push(json!({
+            "text": render_count(locale, "journal.window.home.integrity.issue.checksum.mismatch", checksum_mismatch),
+            "severity": "red",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if damaged_transcript > 0 {
+        issues.push(json!({
+            "text": render_count(locale, "journal.window.home.integrity.issue.damaged.transcript", damaged_transcript),
+            "severity": "amber",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if quarantined_ingest > 0 {
+        issues.push(json!({
+            "text": render_count(locale, "journal.window.home.integrity.issue.quarantined.ingest", quarantined_ingest),
+            "severity": "amber",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if heal_recurrence {
+        issues.push(json!({
+            "text": text(locale, "journal.window.home.integrity.issue.heal.recurrence"),
+            "severity": "amber",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    if low_disk {
+        issues.push(json!({
+            "text": text(locale, "journal.window.home.integrity.issue.low.disk"),
+            "severity": "amber",
+            "href": "/app/settings/#storage",
+        }));
+    }
+    if let Some((reason, _)) = best_search_reason {
+        let key = match reason {
+            "retained_prune_guarded" => "journal.window.home.integrity.issue.search.prune.guarded",
+            "edges_failed" => "journal.window.home.integrity.issue.search.edges.failed",
+            "newer_generation" => "journal.window.home.integrity.issue.search.newer.generation",
+            "repeated_rebuild" => "journal.window.home.integrity.issue.search.repeated.rebuild",
+            "check_overdue" => "journal.window.home.integrity.issue.search.check.overdue",
+            _ => "journal.window.home.integrity.issue.search",
+        };
+        issues.push(json!({
+            "text": text(locale, key),
+            "severity": "amber",
+            "href": "/app/health/#integrity",
+        }));
+    }
+    issues
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -128,6 +370,7 @@ fn derive_glance(
     now: Timestamp,
     transcription_issue: Option<&Value>,
     search_index_issue: Option<&Value>,
+    integrity: Option<&IntegrityReceipt>,
     locale: &str,
 ) -> Value {
     let mut issues = backlog_issues(backlog, now, locale);
@@ -142,6 +385,13 @@ fn derive_glance(
     if let Some(issue) = search_index_issue {
         issues.push(issue.clone());
     }
+    if let Some(receipt) = integrity {
+        issues.extend(integrity_issues_from_receipt(
+            receipt,
+            search_index_issue.is_some(),
+            locale,
+        ));
+    }
     if !issues.is_empty() {
         let severity = if issues.iter().any(|issue| issue["severity"] == "red") {
             "red"
@@ -155,6 +405,9 @@ fn derive_glance(
             count as i64,
         );
         return json!({"verdict":"attention","severity":severity,"headline":headline,"last_observation":null,"cta":null,"issues":issues});
+    }
+    if integrity.is_some_and(is_integrity_uncertain) {
+        return unavailable_json(locale);
     }
     let disposition = capture_disposition(capture);
     if matches!(disposition, CaptureDisposition::Unavailable) {
@@ -511,7 +764,8 @@ pub fn status_badge_summary_at(context: &crate::HomeContext) -> StatusBadgeSumma
         });
     let index_issue = search_index_issue(context);
     let backlog = crate::readers::load_backlog_source(context);
-    let glance = build_health_glance_with_index_in(
+    let integrity = solstone_core_system_health::read_integrity_receipt(context.journal_root());
+    let glance = build_health_glance_with_integrity_in(
         &capture_health,
         last_observe.as_deref(),
         &backlog,
@@ -519,6 +773,7 @@ pub fn status_badge_summary_at(context: &crate::HomeContext) -> StatusBadgeSumma
         context.now_utc,
         transcription_issue.as_ref(),
         index_issue.as_ref(),
+        Some(&integrity),
         context.locale(),
     );
     let issues_arr = glance.get("issues").and_then(Value::as_array);
@@ -1371,5 +1626,215 @@ mod tests {
         let with_failing_index = status_badge_summary_at(&day0_ctx);
         assert_eq!(with_failing_index.issues, 1);
         assert_eq!(with_failing_index.severity, Some("amber"));
+    }
+
+    fn receipt_with_state(state: IntegrityState) -> IntegrityReceipt {
+        IntegrityReceipt {
+            schema_version: solstone_core_system_health::INTEGRITY_RECEIPT_SCHEMA_VERSION,
+            state,
+            scope_kind: solstone_core_system_health::IntegrityScopeKind::Routine,
+            checked_at_ms: if state == IntegrityState::NotCheckedYet {
+                None
+            } else {
+                Some(1_778_760_000_000)
+            },
+            duration_ms: 42,
+            days_checked: 10,
+            days_total: 10,
+            days_unreadable: 0,
+            segments_checked: 20,
+            incomplete: state == IntegrityState::Incomplete,
+            unavailable: state == IntegrityState::Unavailable,
+            urgent_count: 0,
+            maintenance_count: 0,
+            rolling_cursor_day: None,
+            full_coverage_complete: state == IntegrityState::Ok,
+            journal_disk: None,
+            findings: Vec::new(),
+            older_missing_originals: Vec::new(),
+            checksums: None,
+        }
+    }
+
+    fn active_capture() -> Value {
+        json!({
+            "status": "active",
+            "clients": [client("phone", "active", "active")],
+            "unassessed": [],
+            "registry": "registry_complete",
+        })
+    }
+
+    #[test]
+    fn integrity_states_project_honestly_into_home_glance_slot_and_dedupe_search() {
+        let active = active_capture();
+        let backlog = fresh_backlog();
+
+        // 1. Clean ok & Tier 2 maintenance stay quiet on Home.
+        let ok = receipt_with_state(IntegrityState::Ok);
+        let ok_g = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            Some(&ok),
+            ENGLISH,
+        );
+        assert_eq!(ok_g["verdict"], "ok");
+        assert!(ok_g["issues"].as_array().unwrap().is_empty());
+        assert_eq!(integrity_slot_from_receipt(&ok, ENGLISH)["tone"], "none");
+
+        let mut maint = receipt_with_state(IntegrityState::Maintenance);
+        maint.maintenance_count = 1;
+        maint.findings.push(
+            serde_json::from_value(json!({
+                "tier": 2,
+                "kind": "undeclared_facet",
+                "facet": "garden",
+                "path": "facets/garden"
+            }))
+            .unwrap(),
+        );
+        let maint_g = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            Some(&maint),
+            ENGLISH,
+        );
+        assert_eq!(maint_g["verdict"], "ok");
+        assert!(maint_g["issues"].as_array().unwrap().is_empty());
+        assert_eq!(integrity_slot_from_receipt(&maint, ENGLISH)["tone"], "none");
+
+        // 2. not_checked_yet (!disk_low): calm slot, never green, 0 issues.
+        let not_checked = receipt_with_state(IntegrityState::NotCheckedYet);
+        let nc_g = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            Some(&not_checked),
+            ENGLISH,
+        );
+        assert_eq!(nc_g["verdict"], "calm");
+        assert_eq!(nc_g["severity"], "neutral");
+        assert!(nc_g["issues"].as_array().unwrap().is_empty());
+        let nc_slot = integrity_slot_from_receipt(&not_checked, ENGLISH);
+        assert_eq!(nc_slot["state"], "not_checked_yet");
+        assert_eq!(nc_slot["tone"], "calm");
+        assert_eq!(nc_slot["href"], "/app/health/#integrity");
+
+        // 3. not_checked_yet + live disk_low promotes to needs_attention with /app/settings/#storage.
+        let mut nc_disk = receipt_with_state(IntegrityState::NotCheckedYet);
+        nc_disk.journal_disk = Some(solstone_core_system_health::JournalDiskStatus {
+            free_bytes: 5_000_000_000,
+            total_bytes: 100_000_000_000,
+            floor_bytes: 20_000_000_000,
+            percent_used: 95,
+            low: true,
+        });
+        let disk_g = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            Some(&nc_disk),
+            ENGLISH,
+        );
+        assert_eq!(disk_g["verdict"], "attention");
+        assert_eq!(disk_g["issues"].as_array().unwrap().len(), 1);
+        assert_eq!(disk_g["issues"][0]["href"], "/app/settings/#storage");
+
+        // 4. incomplete & unavailable block green ok and yield uncertain amber slot.
+        let mut incomplete = receipt_with_state(IntegrityState::Incomplete);
+        incomplete.days_checked = 4;
+        incomplete.days_total = 12;
+        let inc_g = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            Some(&incomplete),
+            ENGLISH,
+        );
+        assert_eq!(inc_g["verdict"], "unavailable");
+        assert_eq!(inc_g["severity"], "amber");
+        assert!(inc_g["issues"].as_array().unwrap().is_empty());
+        let inc_slot = integrity_slot_from_receipt(&incomplete, ENGLISH);
+        assert_eq!(inc_slot["state"], "incomplete");
+        assert_eq!(inc_slot["tone"], "warn");
+
+        let unavail = receipt_with_state(IntegrityState::Unavailable);
+        let un_g = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            Some(&unavail),
+            ENGLISH,
+        );
+        assert_eq!(un_g["verdict"], "unavailable");
+        assert_eq!(
+            integrity_slot_from_receipt(&unavail, ENGLISH)["tone"],
+            "warn"
+        );
+
+        // 5. Urgent search_index_issue deduplicates against P4's existing search_index_issue.
+        let mut attn = receipt_with_state(IntegrityState::NeedsAttention);
+        attn.urgent_count = 2;
+        attn.findings.push(
+            serde_json::from_value(json!({
+                "tier": 1,
+                "kind": "search_index_issue",
+                "search_reason": "unreadable"
+            }))
+            .unwrap(),
+        );
+        attn.findings.push(
+            serde_json::from_value(json!({
+                "tier": 1,
+                "kind": "missing_original",
+                "day": "20261120"
+            }))
+            .unwrap(),
+        );
+        let existing_search = json!({"text": "search failed", "severity": "amber", "href": "/app/health/#backlogVerdict"});
+        let deduped = build_health_glance_with_integrity_in(
+            &active,
+            Some("1 minute ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            Some(&existing_search),
+            Some(&attn),
+            ENGLISH,
+        );
+        assert_eq!(deduped["verdict"], "attention");
+        assert_eq!(deduped["severity"], "red");
+        assert_eq!(
+            deduped["issues"].as_array().unwrap().len(),
+            2,
+            "search failure is counted once alongside missing_original"
+        );
     }
 }

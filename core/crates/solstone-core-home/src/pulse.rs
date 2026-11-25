@@ -13,7 +13,9 @@ use solstone_core_facets::{ConnectionsHorizon, read_connections_horizon};
 use crate::HomeContext;
 use crate::connections::build_connections_card_in;
 use crate::formatting::{format_gap_links_in, format_processing_summary_in, relative_time_ago};
-use crate::health_glance::{build_health_glance_with_index_in, search_index_issue};
+use crate::health_glance::{
+    build_health_glance_with_integrity_in, integrity_slot_from_receipt, search_index_issue,
+};
 use crate::needs_you::{classify_needs_you, classify_owner_voice_needs_in, needs_dedup_key};
 use crate::readers::{
     briefing_freshness, briefing_lateness_state, collect_activities,
@@ -287,7 +289,9 @@ fn build_pulse_context(
         });
     let index_issue = search_index_issue(context);
     let backlog = load_backlog_source(context);
-    let health_glance = build_health_glance_with_index_in(
+    let integrity_receipt =
+        solstone_core_system_health::read_integrity_receipt(context.journal_root());
+    let health_glance = build_health_glance_with_integrity_in(
         &capture_health,
         last_observe_relative.as_deref(),
         &backlog,
@@ -295,8 +299,10 @@ fn build_pulse_context(
         context.now_utc,
         transcription_issue.as_ref(),
         index_issue.as_ref(),
+        Some(&integrity_receipt),
         context.locale(),
     );
+    let integrity = integrity_slot_from_receipt(&integrity_receipt, context.locale());
     let yesterday_processing =
         summarize_yesterday_processing(context, journal_age_days).map(|mut summary| {
             if account.is_some() {
@@ -309,6 +315,7 @@ fn build_pulse_context(
     fields.insert("briefing_analysis_day".to_owned(), yesterday.clone().into());
     fields.insert("now".to_owned(), Value::Null);
     fields.insert("health_glance".to_owned(), health_glance);
+    fields.insert("integrity".to_owned(), integrity);
     fields.insert("capture_health".to_owned(), capture_health);
     fields.insert("attention".to_owned(), attention);
     fields.insert("segment_count".to_owned(), segment_count.into());
@@ -381,7 +388,7 @@ fn build_pulse_context(
             Value::Null
         },
     );
-    debug_assert_eq!(fields.len(), 34);
+    debug_assert_eq!(fields.len(), 35);
     PulseContext {
         fields,
         now: account_context.now_local(),
@@ -1021,7 +1028,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 33);
+        assert_eq!(payload.as_object().unwrap().len(), 34);
         assert_eq!(
             payload
                 .as_object()
@@ -1034,6 +1041,7 @@ mod tests {
                 "briefing_analysis_day",
                 "now",
                 "health_glance",
+                "integrity",
                 "capture_health",
                 "attention",
                 "segment_count",
@@ -1257,8 +1265,10 @@ mod tests {
         assert_payload_fields(
             &payload,
             &reference["pulse"],
-            &["now", "latest_weekly_reflection"],
+            &["now", "latest_weekly_reflection", "integrity"],
         );
+        assert_eq!(payload["integrity"]["state"], "not_checked_yet");
+        assert_eq!(payload["integrity"]["tone"], "calm");
         assert_eq!(payload["home_state"], "welcome");
         assert_eq!(payload["latest_weekly_reflection"]["state"], "first");
         assert_eq!(
@@ -1329,8 +1339,11 @@ mod tests {
                 "segment_count",
                 "facet_data",
                 "latest_weekly_reflection",
+                "integrity",
             ],
         );
+        assert_eq!(payload["integrity"]["state"], "not_checked_yet");
+        assert_eq!(payload["integrity"]["tone"], "calm");
         let mut expected_briefing = reference["briefing"].clone();
         if let Some(sections) = expected_briefing
             .pointer_mut("/sections")
@@ -2030,6 +2043,7 @@ mod tests {
         // journal holds suggestions, body data, location, or speaker voiceprints.
         pulse.insert("possible_duplicates_count".to_owned(), json!(0));
         pulse.insert("pin_candidates".to_owned(), json!([]));
+        pulse.insert("integrity".to_owned(), json!({}));
         if let Some(processing) = pulse
             .get_mut("yesterday_processing")
             .and_then(Value::as_object_mut)

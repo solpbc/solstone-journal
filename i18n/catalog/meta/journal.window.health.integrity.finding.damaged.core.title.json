@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding damaged core title.",
+  "context": "Journal window. Status view. integrity finding damaged core title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "048acaca549ec55a7a801eda0b944cb28bade5075d88965dfe9ed2f538f66a67",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

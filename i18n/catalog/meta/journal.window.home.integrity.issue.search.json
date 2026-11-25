@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue search.",
+  "context": "Journal window. Home view. integrity issue search.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "878094756591e4228634cb74574ce759fdb47da35603575b3e995590f9227724",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

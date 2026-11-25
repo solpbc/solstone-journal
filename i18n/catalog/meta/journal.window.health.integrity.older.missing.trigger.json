@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity older missing trigger.",
+  "context": "Journal window. Status view. integrity older missing trigger.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed31c7c2002835ac150a8a6d14a62fcdaa010865b1a91f1d59c7ac75e15d6e85",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

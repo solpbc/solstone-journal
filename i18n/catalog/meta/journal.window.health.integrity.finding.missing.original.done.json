@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding missing original done.",
+  "context": "Journal window. Status view. integrity finding missing original done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "78032b95a6a4845ebeecad9cc5799b1dde01d9defc3d9336d65d326d397e5f57",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

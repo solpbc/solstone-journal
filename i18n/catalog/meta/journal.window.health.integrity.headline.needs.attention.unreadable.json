@@ -1,0 +1,39 @@
+{
+  "description": "Status view. integrity headline needs attention unreadable.",
+  "context": "Journal window. Status view. integrity headline needs attention unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "unreadable_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "2ed662fc939c8d9c8f8800dc42308540c5283254886595b8d55dd3713568847c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

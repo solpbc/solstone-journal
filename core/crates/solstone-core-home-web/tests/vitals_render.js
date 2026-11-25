@@ -363,6 +363,51 @@ async function issueReadCases() {
   assert.deepStrictEqual({ ...lastDelta }, { issues: 2, severity: 'amber', uncertain: false });
   receiveSupervisorStatus({ event: 'status', queues: {}, held: [], crashed: [] });
 
+  // Integrity slot rendering: calm not_checked_yet, warn incomplete/unavailable, hidden when quiet.
+  window.solShellStatus = { statusMarksBase: '/static/sol-status/', stem: 'mark' };
+  const notCheckedHtml = renderVitalsHtml({
+    ...ordinary,
+    health_glance: { verdict: 'calm', severity: 'neutral', headline: 'adding', issues: [] },
+    integrity: { state: 'not_checked_yet', tone: 'calm', text: 'no integrity check has run yet.', href: '/app/health/#integrity' },
+  });
+  assert(notCheckedHtml.includes('data-home-integrity-slot data-integrity-state="not_checked_yet"'), notCheckedHtml);
+  assert(notCheckedHtml.includes('pulse-integrity-slot--calm'), notCheckedHtml);
+  assert(notCheckedHtml.includes('href="/app/health/#integrity"'), notCheckedHtml);
+  assert(notCheckedHtml.includes('src="/static/sol-status/mark.svg"'), 'calm integrity leaves shell mark intact');
+
+  // Incomplete/unavailable blocks green and renders amber slot, without inventing a nonexistent mark SVG.
+  const incompleteHtml = renderVitalsHtml({
+    ...ordinary,
+    health_glance: { verdict: 'unavailable', severity: 'amber', headline: 'unclear', issues: [] },
+    integrity: { state: 'incomplete', tone: 'warn', text: 'integrity check stopped at 4 of 10 days.', href: '/app/health/#integrity' },
+  });
+  assert(incompleteHtml.includes('pulse-integrity-slot--warn'), incompleteHtml);
+  assert(incompleteHtml.includes('data-integrity-state="incomplete"'), incompleteHtml);
+  assert(incompleteHtml.includes('src="/static/sol-status/mark.svg"'), 'incomplete with 0 urgent faults preserves shipped stem');
+
+  // Urgent attention faults escalate calmer shell stems (mark, mark-paused, mark-connecting) to mark-attention.svg,
+  // while preserving mark-offline / mark-error transport outage stems.
+  const urgentPulse = {
+    ...ordinary,
+    health_glance: {
+      verdict: 'attention',
+      severity: 'red',
+      headline: '1 thing needs your attention',
+      issues: [{ text: '1 original file is missing.', severity: 'red', href: '/app/health/#integrity' }],
+    },
+    integrity: { state: 'needs_attention', tone: 'none', text: null, href: null },
+  };
+  for (const calmStem of ['mark', 'mark-paused', 'mark-connecting', 'mark-connecting-animated']) {
+    window.solShellStatus = { statusMarksBase: '/static/sol-status/', stem: calmStem };
+    const html = renderVitalsHtml(urgentPulse);
+    assert(html.includes('src="/static/sol-status/mark-attention.svg"'), `escalates ${calmStem} to mark-attention`);
+  }
+  for (const severeStem of ['mark-offline', 'mark-error']) {
+    window.solShellStatus = { statusMarksBase: '/static/sol-status/', stem: severeStem };
+    const html = renderVitalsHtml(urgentPulse);
+    assert(html.includes(`src="/static/sol-status/${severeStem}.svg"`), `preserves ${severeStem}`);
+  }
+
   console.log('vitals render and issue-read contracts passed');
 }
 issueReadCases().catch(error=>{console.error(error);process.exitCode=1;});

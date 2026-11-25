@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity action checking.",
+  "context": "Journal window. Status view. integrity action checking.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83b64f0c6dd04c120aa94a05a8730e94e84e78ae40e51a28cebcd4943e53b278",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

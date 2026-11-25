@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search body prune guarded.",
+  "context": "Journal window. Status view. integrity finding search body prune guarded.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75e79ef743d13d317568d0d381c6a9bee219557204d435497c0a1ca08ab3fb15",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

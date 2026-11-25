@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity badge incomplete.",
+  "context": "Journal window. Status view. integrity badge incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7b9de7774dd66db9d04a368eb56c35834ca55fc1b1506e16d88f097cef295fc9",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity badge maintenance.",
+  "context": "Journal window. Status view. integrity badge maintenance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "35cce9631d105bcc350f0cbd16a694b1eb837e42383b58f7de427ed56209c45e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

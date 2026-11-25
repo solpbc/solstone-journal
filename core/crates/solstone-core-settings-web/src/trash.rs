@@ -271,11 +271,12 @@ fn view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
             },
             _,
         ) => return originals_view(journal_root, item, day, stream, segment),
-        (Unit::QuarantinedIngest { day, segment, .. }, _) => {
-            // Mapped to "other" until a dedicated localized Trash label is added for
-            // Unit::QuarantinedIngest ("quarantined_ingest").
-            ("other", day.clone(), None, segment.clone())
-        }
+        (
+            Unit::QuarantinedIngest {
+                day, segment, file, ..
+            },
+            _,
+        ) => return quarantined_ingest_view(journal_root, item, day, segment, file),
         _ => ("other", String::new(), None, String::new()),
     };
     let mut shown = json!({
@@ -294,6 +295,28 @@ fn view(journal_root: &Path, item: &Item, listed: &[Item]) -> Value {
         shown["import"] = import;
     }
     shown
+}
+
+fn quarantined_ingest_view(
+    journal_root: &Path,
+    item: &Item,
+    day: &str,
+    segment: &str,
+    file: &str,
+) -> Value {
+    json!({
+        "id": item.id,
+        "kind": "quarantined_ingest",
+        "day": day,
+        "stream": Value::Null,
+        "segment": segment,
+        "file": file,
+        "trashed_at": item.trashed_at,
+        "erase_at": item.erase_at,
+        "bytes": item.bytes,
+        "surface": item.surface,
+        "replaces": replaces(journal_root, item),
+    })
 }
 
 /// The import a segment needs to come back, and where it stands: `live` in
@@ -1355,5 +1378,46 @@ mod tests {
             assert_eq!(status.is_success(), ok, "{days}");
         }
         assert_eq!(solstone_core_trash::erase_after_days(root.path()), 30);
+    }
+
+    #[tokio::test]
+    async fn quarantined_ingest_lists_with_dedicated_kind_and_filename_and_recovers() {
+        let root = journal();
+        let failed_rel = "chronicle/20261110/observer/failed/093000_120/1700000000/audio.flac";
+        let failed_full = root.path().join(failed_rel);
+        fs::create_dir_all(failed_full.parent().unwrap()).unwrap();
+        fs::write(&failed_full, b"quarantined-audio").unwrap();
+
+        let item = solstone_core_retention::quarantined_ingest_trash::QuarantinedIngest::trash(
+            root.path(),
+            failed_rel,
+            Action::QuarantinedIngestDiscard,
+            Surface::Web { page: Page::Health },
+        )
+        .unwrap();
+
+        let (status, listed) = call(root.path(), Method::GET, "/app/settings/api/trash", "").await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        let row = listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == item.id)
+            .expect("quarantined_ingest row listed");
+        assert_eq!(row["kind"], "quarantined_ingest");
+        assert_eq!(row["day"], "20261110");
+        assert_eq!(row["segment"], "093000_120");
+        assert_eq!(row["file"], "audio.flac");
+
+        let (status, recovered) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/recover",
+            &json!({"ids": [item.id]}).to_string(),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(recovered["done"], json!([item.id]));
+        assert!(failed_full.is_file());
     }
 }

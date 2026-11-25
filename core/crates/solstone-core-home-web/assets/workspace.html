@@ -419,6 +419,56 @@ a.pulse-device-chip--failing {
   color: var(--ink-faint);
 }
 
+.pulse-integrity-slot {
+  display: flex;
+  align-items: center;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.85rem;
+}
+
+.pulse-integrity-slot[hidden] {
+  display: none;
+}
+
+.pulse-integrity-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  text-decoration: none;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.pulse-integrity-link:hover {
+  text-decoration: underline;
+}
+
+.pulse-integrity-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.pulse-integrity-ring {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-faint);
+  flex-shrink: 0;
+  position: relative;
+  top: 1px;
+}
+
+.pulse-integrity-slot--warn .pulse-integrity-link {
+  color: var(--warn-ink);
+  font-weight: 500;
+}
+
+.pulse-integrity-slot--warn .pulse-integrity-ring {
+  border-color: var(--warn);
+}
+
 /* The written account: a day switch over yesterday and today. */
 .pulse-account {
   padding: 1.25rem 1.5rem;

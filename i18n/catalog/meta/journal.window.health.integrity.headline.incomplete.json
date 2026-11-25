@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity headline incomplete.",
+  "context": "Journal window. Status view. integrity headline incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "147e96e1426c9fa0263f232669cd2746c43af7b601012bff63913b057b9ad647",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

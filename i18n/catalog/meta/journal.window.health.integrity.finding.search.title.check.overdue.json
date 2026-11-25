@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search title check overdue.",
+  "context": "Journal window. Status view. integrity finding search title check overdue.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "197af5f47d06a763ca9f5331d82c1bd99147dfd2477ba1e87efab4fed853c441",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

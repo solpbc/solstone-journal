@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity scope checksums none.",
+  "context": "Journal window. Status view. integrity scope checksums none.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8132948d3fe96b629570b168e3dbe60622e7a6fe1b1368aee40743bafb943945",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

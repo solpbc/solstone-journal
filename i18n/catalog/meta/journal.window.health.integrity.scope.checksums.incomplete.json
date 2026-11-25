@@ -1,0 +1,38 @@
+{
+  "description": "Status view. integrity scope checksums incomplete.",
+  "context": "Journal window. Status view. integrity scope checksums incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "verified",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "12ef14005e174109370efc15f9c8754168639adbe0ffd3aa81fca5f542aeb60f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

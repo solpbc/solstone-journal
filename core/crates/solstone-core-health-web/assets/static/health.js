@@ -40,6 +40,9 @@
     HEALTH_GLANCE_SERVICE_ATTENTION: 'journal.window.health.glance.service.attention',
     HEALTH_GLANCE_SERVICES_ATTENTION: 'journal.window.health.glance.services.attention',
     HEALTH_GLANCE_SERVICES_UNREACHABLE: 'journal.window.health.glance.glance.services.the.journal.s.services.couldn.t',
+    HEALTH_GLANCE_INTEGRITY_ATTENTION: 'journal.window.health.glance.integrity.attention',
+    HEALTH_GLANCE_INTEGRITY_INCOMPLETE: 'journal.window.health.glance.integrity.incomplete',
+    HEALTH_GLANCE_INTEGRITY_UNAVAILABLE: 'journal.window.health.glance.integrity.unavailable',
     HEALTH_DEVICES_COUNT_MANY: 'journal.window.health.glance.devices.count.many',
   };
   // Worst signal wins, and green is earned: a verdict may not read "everything's
@@ -91,7 +94,11 @@
   const state = {
     loadedAt: Date.now(),
     queuedWorkAuthoritySeen: false,
+    backupConfigured: false,
     backupView: { tone: 'unavailable', text: window.JournalI18n.render('journal.window.health.text.checking.backup.status') },
+    integrity: null,
+    journalDisk: null,
+    integrityBusy: false,
     heldWorkSnapshot: null,
     heldWorkCurrent: false,
     supervisorSeen: false,
@@ -263,14 +270,27 @@
     }
     // A read started on a removed workspace cannot repaint its replacement.
     if (!section.isConnected) return;
+    state.backupConfigured = Boolean(snapshot && snapshot.enabled === true);
     state.backupView = window.BackupStatus.renderSummary(section.querySelector('[data-backup-summary]'), snapshot);
     window.BackupStatus.renderFacts(section.querySelector('[data-backup-facts]'), snapshot);
+    if (typeof renderIntegrityCard === 'function' && state.integrity !== null) {
+      renderIntegrityCard(state.integrity, state.journalDisk);
+    }
     updateStatusSummary();
   }
 
   function focusBackupDetails() {
     if (window.location.hash === '#backup' && backupSection?.isConnected) {
       backupSection.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  function focusIntegrityCard() {
+    if (window.location.hash !== '#integrity') return;
+    const section = document.getElementById('integrity');
+    if (section?.isConnected) {
+      section.scrollIntoView({ block: 'start' });
+      section.focus?.({ preventScroll: true });
     }
   }
 
@@ -756,6 +776,40 @@
       }
     }
 
+    const searchNote = document.querySelector('#backlogVerdict .backlog-search-note');
+    if (searchNote) {
+      const idx = searchIndex?.index;
+      const notes = [];
+      if (idx && idx.retained_prune_guarded === true) {
+        const gone = Number(idx.gone_days);
+        const indexed = Number(idx.indexed_days);
+        if (Number.isFinite(gone) && gone > 0 && Number.isFinite(indexed) && indexed > 0) {
+          notes.push(window.JournalI18n.render('journal.window.health.backlog.search.prune.guarded', [
+            ['gone', String(gone)],
+            ['indexed', String(indexed)],
+            ['quantity', window.JournalI18n.cardinalQuantity(indexed)],
+          ]));
+        } else {
+          notes.push(window.JournalI18n.render('journal.window.health.backlog.search.prune.guarded.generic'));
+        }
+      }
+      if (idx && idx.edges_failed === true) {
+        notes.push(window.JournalI18n.render('journal.window.health.backlog.search.edges.failed'));
+      }
+      if (notes.length > 0) {
+        searchNote.replaceChildren();
+        searchNote.appendChild(document.createTextNode(notes.join(' ') + ' '));
+        const link = document.createElement('a');
+        link.href = '#integrity';
+        link.textContent = `${window.JournalI18n.render('journal.window.health.backlog.search.review.integrity')} →`;
+        searchNote.appendChild(link);
+        searchNote.hidden = false;
+      } else {
+        searchNote.hidden = true;
+        searchNote.replaceChildren();
+      }
+    }
+
     clearHealthStateError();
 
     if (host) host.hidden = true;
@@ -782,15 +836,27 @@
     updateStatusSummary();
   }
 
-  function renderMediaBacklog(notSensed) {
+  function renderMediaBacklog(notSensed, failed = false) {
     const card = document.getElementById('brain');
     const existing = document.getElementById('mediaBacklogLine');
-    const count = Number(notSensed);
     if (!card) return;
+    if (failed) {
+      const el = existing || document.createElement('p');
+      el.id = 'mediaBacklogLine';
+      el.className = 'brain-health-pending';
+      el.dataset.state = 'error';
+      el.textContent = window.JournalI18n.render('journal.window.health.backlog.media.error');
+      if (!existing) {
+        card.appendChild(el);
+      }
+      return;
+    }
+    const count = Number(notSensed);
     if (Number.isFinite(count) && count > 0) {
       const el = existing || document.createElement('p');
       el.id = 'mediaBacklogLine';
       el.className = 'brain-health-pending';
+      delete el.dataset.state;
       el.textContent = renderCount('journal.window.health.backlog.media.segments', count);
       if (!existing) {
         card.appendChild(el);
@@ -810,9 +876,9 @@
         if (!response.ok) throw new Error('summary fetch failed');
         payload = await response.json();
       }
-      renderMediaBacklog(payload?.segment_backlog?.not_sensed);
+      renderMediaBacklog(payload?.segment_backlog?.not_sensed, false);
     } catch {
-      renderMediaBacklog(0);
+      renderMediaBacklog(0, true);
     }
   }
 
@@ -928,10 +994,16 @@
       renderStoragePrivacy(payload.storage_privacy);
       renderWorkProgress(payload.work);
       state.searchIndex = payload.search_index || null;
+      state.integrity = payload.integrity ?? null;
+      state.journalDisk = payload.journal_disk ?? null;
+      renderIntegrityCard(payload.integrity, payload.journal_disk);
       renderBacklogState(payload.backlog, payload.search_index);
       renderAgentErrorsState(payload.agent_errors);
       reportHealthReady('content');
     } catch (error) {
+      if (!state.integrity) {
+        renderIntegrityCard(null, null);
+      }
       renderHealthStateError(error);
       reportHealthReady('error');
     } finally {
@@ -967,6 +1039,1107 @@
       } finally { button.disabled = false; }
     };
   }
+
+  // ========== JOURNAL INTEGRITY ==========
+  function isIntegritySetAsideEligible(rel) {
+    if (typeof rel !== 'string' || !rel || rel.startsWith('/') || rel.includes('\\') || rel.includes('\0')) {
+      return false;
+    }
+    const parts = rel.split('/');
+    if (parts.length !== 4 && parts.length !== 5) return false;
+    if (parts.some(part => !part || part === '.' || part === '..')) return false;
+    if (parts[0] !== 'chronicle' || !/^\d{8}$/.test(parts[1])) return false;
+    if (parts[2] === 'observer' || parts[2] === 'health') return false;
+    const leaf = parts[parts.length - 1];
+    if (!leaf.endsWith('.jsonl')) return false;
+    return leaf === 'audio.jsonl'
+      || leaf === 'screen.jsonl'
+      || leaf === 'conversation_transcript.jsonl'
+      || leaf === 'imported_audio.jsonl'
+      || leaf.startsWith('browser_')
+      || leaf.endsWith('_desktop_activity.jsonl')
+      || (leaf.startsWith('p') && leaf.length > 7 && /^\d/.test(leaf.slice(1)));
+  }
+
+  function normalizeIntegrityState(rawReceipt, rawJournalDisk) {
+    const receipt = rawReceipt && typeof rawReceipt === 'object' ? rawReceipt : null;
+    const disk = (rawJournalDisk && typeof rawJournalDisk === 'object' ? rawJournalDisk : null)
+      || (receipt?.journal_disk && typeof receipt.journal_disk === 'object' ? receipt.journal_disk : null);
+    if (!receipt || receipt.state === 'unavailable' || receipt.unavailable === true) {
+      const unavailableFindings = [];
+      if (disk && disk.low === true) {
+        unavailableFindings.push({
+          tier: 1,
+          kind: 'low_disk_space',
+          free_bytes: disk.free_bytes,
+          total_bytes: disk.total_bytes,
+          floor_bytes: disk.floor_bytes,
+          percent_used: disk.percent_used,
+        });
+      }
+      return {
+        receipt,
+        disk,
+        effectiveState: unavailableFindings.length > 0 ? 'needs_attention' : 'unavailable',
+        receiptUnavailable: true,
+        findings: unavailableFindings,
+        urgentCount: unavailableFindings.length,
+        maintenanceCount: 0,
+        olderMissing: [],
+        daysChecked: 0,
+        daysTotal: 0,
+        daysUnreadable: 0,
+        incomplete: false,
+        checksums: null,
+        checkedAtMs: null,
+      };
+    }
+
+    const findings = Array.isArray(receipt.findings)
+      ? receipt.findings.filter(f => f && typeof f === 'object')
+      : [];
+    if (disk && disk.low === true && !findings.some(f => f.kind === 'low_disk_space')) {
+      findings.unshift({
+        tier: 1,
+        kind: 'low_disk_space',
+        free_bytes: disk.free_bytes,
+        total_bytes: disk.total_bytes,
+        floor_bytes: disk.floor_bytes,
+        percent_used: disk.percent_used,
+      });
+    }
+    const olderMissing = Array.isArray(receipt.older_missing_originals)
+      ? receipt.older_missing_originals.filter(item => item && typeof item === 'object')
+      : [];
+    const urgentCount = findings.filter(f => f.tier === 1).length;
+    const maintenanceCount = findings.filter(f => f.tier === 2).length;
+    const daysChecked = Math.max(0, Number(receipt.days_checked) || 0);
+    const daysTotal = Math.max(0, Number(receipt.days_total) || 0);
+    const daysUnreadable = Math.max(0, Number(receipt.days_unreadable) || 0);
+    const incomplete = receipt.incomplete === true || daysUnreadable > 0;
+    const checkedAtMs = Number.isFinite(Number(receipt.checked_at_ms)) ? Number(receipt.checked_at_ms) : null;
+
+    let effectiveState;
+    if (urgentCount > 0) {
+      effectiveState = 'needs_attention';
+    } else if (receipt.state === 'not_checked_yet' || checkedAtMs === null) {
+      effectiveState = 'not_checked_yet';
+    } else if (receipt.state === 'incomplete' || incomplete) {
+      effectiveState = 'incomplete';
+    } else if (maintenanceCount > 0 || receipt.state === 'maintenance') {
+      effectiveState = 'maintenance';
+    } else {
+      effectiveState = 'ok';
+    }
+
+    return {
+      receipt,
+      disk,
+      effectiveState,
+      receiptUnavailable: false,
+      findings,
+      urgentCount,
+      maintenanceCount,
+      olderMissing,
+      daysChecked,
+      daysTotal,
+      daysUnreadable,
+      incomplete,
+      checksums: receipt.checksums && typeof receipt.checksums === 'object' ? receipt.checksums : null,
+      checkedAtMs,
+    };
+  }
+
+  function formatIntegrityDay(day) {
+    if (typeof day !== 'string' || !/^\d{8}$/.test(day)) return '';
+    if (window.JournalFormat && typeof window.JournalFormat.day === 'function') {
+      return window.JournalFormat.day(day).toLowerCase();
+    }
+    return day;
+  }
+
+  function formatIntegrityTimestamp(ms) {
+    if (!Number.isFinite(ms)) return '';
+    const date = new Date(ms);
+    if (Number.isNaN(date.getTime())) return '';
+    if (window.JournalFormat && typeof window.JournalFormat.timestamp === 'function') {
+      return window.JournalFormat.timestamp(date.toISOString());
+    }
+    return date.toLocaleString();
+  }
+
+  function formatIntegrityBytes(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value < 0) return '';
+    if (value < 1000) return `${Math.round(value)} B`;
+    if (value < 1e6) return `${(value / 1e3).toFixed(1)} KB`;
+    if (value < 1e9) return `${(value / 1e6).toFixed(1)} MB`;
+    return `${(value / 1e9).toFixed(1)} GB`;
+  }
+
+  function integritySegmentHref(day, stream, segment) {
+    if (typeof day !== 'string' || !/^\d{8}$/.test(day)) return null;
+    const base = `/app/transcripts/${encodeURIComponent(day)}`;
+    if (typeof stream === 'string' && stream && typeof segment === 'string' && segment) {
+      return `${base}?stream=${encodeURIComponent(stream)}#${encodeURIComponent(segment)}`;
+    }
+    return base;
+  }
+
+  function setIntegrityStatus(message, isError = false) {
+    const el = document.getElementById('integrityActionStatus');
+    if (!el) return;
+    if (!message) {
+      el.hidden = true;
+      el.textContent = '';
+      delete el.dataset.tone;
+      return;
+    }
+    el.textContent = message;
+    el.dataset.tone = isError ? 'error' : 'info';
+    el.hidden = false;
+  }
+
+  async function askIntegrityConfirm({ title, body, action, opener }) {
+    if (!window.SolQuestion || typeof window.SolQuestion.ask !== 'function') {
+      return false;
+    }
+    const approved = await window.SolQuestion.ask({
+      message: `${title}\n\n${body}`,
+      action,
+      opener,
+    });
+    return Boolean(approved);
+  }
+
+  async function postIntegrityJson(url, body, triggerBtn, busyLabel, doneMessage, errorKey) {
+    if (state.integrityBusy) return;
+    state.integrityBusy = true;
+    const idleLabel = triggerBtn ? triggerBtn.textContent : '';
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.setAttribute('aria-busy', 'true');
+      if (busyLabel) triggerBtn.textContent = busyLabel;
+    }
+    setIntegrityStatus('');
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || payload?.message || `HTTP ${response.status}`);
+      }
+      if (payload && payload.integrity && typeof payload.integrity === 'object') {
+        state.integrity = payload.integrity;
+        if (payload.integrity.journal_disk) {
+          state.journalDisk = payload.integrity.journal_disk;
+        }
+        renderIntegrityCard(state.integrity, state.journalDisk);
+        if (typeof updateStatusSummary === 'function') updateStatusSummary();
+      }
+      if (doneMessage) setIntegrityStatus(doneMessage, false);
+    } catch (error) {
+      if (typeof logHealthError === 'function') logHealthError(error, `integrity action ${url}`);
+      setIntegrityStatus(window.JournalI18n.render(errorKey || 'journal.window.health.integrity.action.failed'), true);
+      if (triggerBtn && triggerBtn.isConnected) {
+        triggerBtn.disabled = false;
+        triggerBtn.removeAttribute('aria-busy');
+        triggerBtn.textContent = idleLabel;
+      }
+    } finally {
+      state.integrityBusy = false;
+    }
+  }
+
+  async function postIntegritySearchAction(url, triggerBtn) {
+    if (state.integrityBusy) return;
+    state.integrityBusy = true;
+    const idleLabel = triggerBtn ? triggerBtn.textContent : '';
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.setAttribute('aria-busy', 'true');
+      triggerBtn.textContent = window.JournalI18n.render('journal.window.health.integrity.action.working');
+    }
+    setIntegrityStatus('');
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: '{}',
+      });
+      if (response.status === 409) {
+        setIntegrityStatus(window.JournalI18n.render('journal.window.health.integrity.finding.search.running'), false);
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      setIntegrityStatus(window.JournalI18n.render('journal.window.health.integrity.finding.search.queued'), false);
+    } catch (error) {
+      if (typeof logHealthError === 'function') logHealthError(error, `integrity search action ${url}`);
+      setIntegrityStatus(window.JournalI18n.render('journal.window.health.integrity.action.failed'), true);
+    } finally {
+      state.integrityBusy = false;
+      if (triggerBtn && triggerBtn.isConnected) {
+        triggerBtn.disabled = false;
+        triggerBtn.removeAttribute('aria-busy');
+        triggerBtn.textContent = idleLabel;
+      }
+    }
+  }
+
+  function makeIntegrityLink(href, label) {
+    const link = document.createElement('a');
+    link.className = 'integrity-link';
+    link.href = href;
+    link.textContent = label;
+    return link;
+  }
+
+  function makeIntegrityButton(label, variant, actionName, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = variant ? `integrity-btn integrity-btn--${variant}` : 'integrity-btn';
+    if (actionName) btn.dataset.integrityAction = actionName;
+    btn.textContent = label;
+    btn.addEventListener('click', () => onClick(btn));
+    return btn;
+  }
+
+  function appendIntegrityDetails(card, lines) {
+    const filtered = (Array.isArray(lines) ? lines : []).filter(Boolean);
+    if (!filtered.length) return;
+    const details = document.createElement('details');
+    details.className = 'integrity-finding-details';
+    const summary = document.createElement('summary');
+    summary.textContent = window.JournalI18n.render('journal.window.health.integrity.details.trigger');
+    details.appendChild(summary);
+    if (filtered.length === 1) {
+      const code = document.createElement('code');
+      code.textContent = filtered[0];
+      details.appendChild(code);
+    } else {
+      const ul = document.createElement('ul');
+      for (const entry of filtered) {
+        const li = document.createElement('li');
+        li.textContent = entry;
+        ul.appendChild(li);
+      }
+      details.appendChild(ul);
+    }
+    card.appendChild(details);
+  }
+
+  function renderIntegrityFindingRow(finding) {
+    const row = document.createElement('article');
+    row.className = 'integrity-finding';
+    row.dataset.findingKind = String(finding.kind || 'unknown');
+    if (finding.tier === 2) {
+      row.classList.add('integrity-finding--maintenance');
+    } else if (['damaged_core_record', 'missing_original', 'zero_byte_original', 'checksum_mismatch'].includes(finding.kind)) {
+      row.classList.add('integrity-finding--danger');
+    }
+
+    const head = document.createElement('div');
+    head.className = 'integrity-finding-head';
+    const titleEl = document.createElement('span');
+    head.appendChild(titleEl);
+    const bodyEl = document.createElement('p');
+    bodyEl.className = 'integrity-finding-body';
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'integrity-finding-actions';
+    const detailLines = [];
+
+    const dayLabel = formatIntegrityDay(finding.day);
+    const segHref = integritySegmentHref(finding.day, finding.stream, finding.segment);
+    const contextParts = [];
+    if (dayLabel) contextParts.push(dayLabel);
+    if (finding.file) contextParts.push(finding.file);
+    else if (Array.isArray(finding.files) && finding.files.length > 0) contextParts.push(finding.files.join(', '));
+    if (contextParts.length > 0) {
+      const ctxEl = document.createElement('span');
+      ctxEl.className = 'integrity-finding-context';
+      ctxEl.textContent = contextParts.join(' · ');
+      head.appendChild(ctxEl);
+    }
+
+    switch (finding.kind) {
+      case 'damaged_transcript_jsonl': {
+        const damaged = Math.max(1, Number(finding.damaged_lines) || 1);
+        const valid = Math.max(0, Number(finding.valid_lines) || 0);
+        const tailOnly = finding.truncated_tail === true && (Number(finding.interior_damaged) || 0) === 0;
+        titleEl.textContent = renderCount('journal.window.health.integrity.finding.damaged.transcript.title', damaged);
+        if (valid > 0) {
+          bodyEl.textContent = window.JournalI18n.render(
+            tailOnly
+              ? 'journal.window.health.integrity.finding.damaged.transcript.body.kept.tail'
+              : 'journal.window.health.integrity.finding.damaged.transcript.body.kept',
+            [['valid', String(valid)], ['valid_quantity', window.JournalI18n.cardinalQuantity(valid)]]
+          );
+        } else {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.transcript.body.none');
+        }
+        if (isIntegritySetAsideEligible(finding.path)) {
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.damaged.transcript.action', [
+              ['quantity', window.JournalI18n.cardinalQuantity(damaged)],
+            ]),
+            'primary',
+            'set-aside-lines',
+            async (btn) => {
+              const ok = await askIntegrityConfirm({
+                title: renderCount('journal.window.health.integrity.finding.damaged.transcript.confirm.title', damaged),
+                body: window.JournalI18n.render('journal.window.health.integrity.finding.damaged.transcript.confirm.body', [
+                  ['quantity', window.JournalI18n.cardinalQuantity(damaged)],
+                ]),
+                action: window.JournalI18n.render('journal.window.health.integrity.finding.damaged.transcript.confirm.action'),
+                opener: btn,
+              });
+              if (!ok) return;
+              await postIntegrityJson(
+                '/app/health/api/integrity/set-aside-lines',
+                { paths: [finding.path] },
+                btn,
+                window.JournalI18n.render('journal.window.health.integrity.action.working'),
+                window.JournalI18n.render('journal.window.health.integrity.finding.damaged.transcript.done', [
+                  ['quantity', window.JournalI18n.cardinalQuantity(damaged)],
+                ]),
+              );
+            },
+          ));
+        }
+        if (segHref && dayLabel) {
+          actionsEl.appendChild(makeIntegrityLink(
+            segHref,
+            window.JournalI18n.render('journal.window.health.integrity.link.open.day', [['day', dayLabel]]),
+          ));
+        }
+        if (finding.path) {
+          detailLines.push(window.JournalI18n.render('journal.window.health.integrity.finding.damaged.transcript.detail', [
+            ['path', String(finding.path)],
+            ['damaged', String(damaged)],
+            ['valid', String(valid)],
+          ]));
+        }
+        break;
+      }
+
+      case 'missing_original': {
+        titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.title');
+        bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.body');
+        if (state.backupConfigured) {
+          actionsEl.appendChild(makeIntegrityLink(
+            '/app/health/#backup',
+            window.JournalI18n.render('journal.window.health.integrity.link.open.backup'),
+          ));
+        }
+        if (segHref && dayLabel) {
+          actionsEl.appendChild(makeIntegrityLink(
+            segHref,
+            window.JournalI18n.render('journal.window.health.integrity.link.open.day', [['day', dayLabel]]),
+          ));
+        }
+        if (finding.day && finding.segment) {
+          const segPayload = {
+            day: finding.day,
+            stream: finding.stream || undefined,
+            segment: finding.segment,
+            file: finding.file || (Array.isArray(finding.files) && finding.files.length === 1 ? finding.files[0] : undefined),
+          };
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.action'),
+            '',
+            'record-missing',
+            async (btn) => {
+              const ok = await askIntegrityConfirm({
+                title: window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.confirm.title'),
+                body: window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.confirm.body'),
+                action: window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.confirm.action'),
+                opener: btn,
+              });
+              if (!ok) return;
+              await postIntegrityJson(
+                '/app/health/api/integrity/record-missing',
+                { segments: [segPayload] },
+                btn,
+                window.JournalI18n.render('journal.window.health.integrity.action.working'),
+                window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.done'),
+              );
+            },
+          ));
+        }
+        if (finding.path) detailLines.push(finding.path);
+        break;
+      }
+
+      case 'zero_byte_original':
+      case 'checksum_mismatch': {
+        const isZeroByte = finding.kind === 'zero_byte_original';
+        const hasSegmentTarget = Boolean(finding.day && finding.segment && finding.file);
+        titleEl.textContent = window.JournalI18n.render(
+          isZeroByte
+            ? 'journal.window.health.integrity.finding.zero.byte.title'
+            : 'journal.window.health.integrity.finding.checksum.mismatch.title',
+        );
+        bodyEl.textContent = window.JournalI18n.render(
+          isZeroByte
+            ? 'journal.window.health.integrity.finding.zero.byte.body'
+            : hasSegmentTarget
+              ? 'journal.window.health.integrity.finding.checksum.mismatch.body.segment'
+              : 'journal.window.health.integrity.finding.checksum.mismatch.body.import',
+        );
+        if (state.backupConfigured) {
+          actionsEl.appendChild(makeIntegrityLink(
+            '/app/health/#backup',
+            window.JournalI18n.render('journal.window.health.integrity.link.open.backup'),
+          ));
+        }
+        if (hasSegmentTarget) {
+          if (segHref && dayLabel) {
+            actionsEl.appendChild(makeIntegrityLink(
+              segHref,
+              window.JournalI18n.render('journal.window.health.integrity.link.open.day', [['day', dayLabel]]),
+            ));
+          }
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.action'),
+            'danger',
+            'trash-original',
+            async (btn) => {
+              const ok = await askIntegrityConfirm({
+                title: window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.confirm.title'),
+                body: window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.confirm.body', [
+                  ['file', String(finding.file)],
+                ]),
+                action: window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.confirm.action'),
+                opener: btn,
+              });
+              if (!ok) return;
+              await postIntegrityJson(
+                '/app/health/api/integrity/trash-original',
+                {
+                  day: finding.day,
+                  stream: finding.stream || undefined,
+                  segment: finding.segment,
+                  file: finding.file,
+                },
+                btn,
+                window.JournalI18n.render('journal.window.health.integrity.action.working'),
+                window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.done'),
+              );
+            },
+          ));
+        } else {
+          actionsEl.appendChild(makeIntegrityLink(
+            '/app/import/',
+            window.JournalI18n.render('journal.window.health.integrity.link.open.import'),
+          ));
+        }
+        if (finding.path) detailLines.push(finding.path);
+        break;
+      }
+
+      case 'quarantined_ingest': {
+        titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.title');
+        bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.body');
+        if (finding.path) {
+          const dl = makeIntegrityLink(
+            `/app/health/api/integrity/observer-failed/download?path=${encodeURIComponent(finding.path)}`,
+            window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.download'),
+          );
+          dl.setAttribute('download', '');
+          actionsEl.appendChild(dl);
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.trash'),
+            'danger',
+            'trash-quarantined-ingest',
+            async (btn) => {
+              const label = finding.file || finding.path;
+              const ok = await askIntegrityConfirm({
+                title: window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.confirm.title'),
+                body: window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.confirm.body', [
+                  ['file', String(label)],
+                ]),
+                action: window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.confirm.action'),
+                opener: btn,
+              });
+              if (!ok) return;
+              await postIntegrityJson(
+                '/app/health/api/integrity/observer-failed/trash',
+                { path: finding.path },
+                btn,
+                window.JournalI18n.render('journal.window.health.integrity.action.working'),
+                window.JournalI18n.render('journal.window.health.integrity.finding.quarantined.ingest.done'),
+              );
+            },
+          ));
+          detailLines.push(finding.path);
+        }
+        break;
+      }
+
+      case 'damaged_core_record': {
+        const rel = String(finding.path || '');
+        titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.core.title');
+        if (rel === 'config/journal.json') {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.core.body.config');
+        } else if (rel === 'entities/retired.json') {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.core.body.entities.retired');
+        } else if (rel === 'facets/retired.json') {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.core.body.facets.retired');
+        } else if (rel.startsWith('facets/') && rel.endsWith('/facet.json')) {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.core.body.facet');
+          actionsEl.appendChild(makeIntegrityLink(
+            '/app/settings/#facets',
+            window.JournalI18n.render('journal.window.health.integrity.link.open.facets'),
+          ));
+        } else {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.damaged.core.body.other');
+        }
+        if (state.backupConfigured) {
+          actionsEl.appendChild(makeIntegrityLink(
+            '/app/health/#backup',
+            window.JournalI18n.render('journal.window.health.integrity.link.open.backup'),
+          ));
+        }
+        if (rel) detailLines.push(rel);
+        break;
+      }
+
+      case 'operational_heal_recurrence': {
+        titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.heal.recurrence.title');
+        bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.heal.recurrence.body');
+        if (Array.isArray(finding.logs)) {
+          finding.logs.forEach(entry => { if (typeof entry === 'string' && entry) detailLines.push(entry); });
+        } else if (finding.path) {
+          detailLines.push(finding.path);
+        }
+        break;
+      }
+
+      case 'low_disk_space': {
+        titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.low.disk.title');
+        const free = formatIntegrityBytes(finding.free_bytes);
+        const used = Number.isFinite(Number(finding.percent_used)) ? String(finding.percent_used) : '';
+        if (free && used) {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.low.disk.body', [
+            ['free', free],
+            ['used', used],
+          ]);
+        } else {
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.low.disk.body.short');
+        }
+        actionsEl.appendChild(makeIntegrityLink(
+          '/app/settings/#storage',
+          window.JournalI18n.render('journal.window.health.integrity.link.open.storage'),
+        ));
+        break;
+      }
+
+      case 'search_index_issue': {
+        const reason = String(finding.search_reason || '');
+        if (reason === 'retained_prune_guarded') {
+          titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.title.prune.guarded');
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.body.prune.guarded');
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.search.action.clear.removed'),
+            'primary',
+            'search-clear-removed',
+            (btn) => postIntegritySearchAction('/app/health/api/search/clear-removed', btn),
+          ));
+        } else if (reason === 'edges_failed') {
+          titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.title.edges.failed');
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.body.edges.failed');
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.search.action.update'),
+            'primary',
+            'search-update',
+            (btn) => postIntegritySearchAction('/app/health/api/search/update', btn),
+          ));
+        } else if (reason === 'newer_generation') {
+          titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.title.newer.generation');
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.body.newer.generation');
+        } else if (reason === 'repeated_rebuild') {
+          titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.title.repeated.rebuild');
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.body.repeated.rebuild');
+        } else if (reason === 'check_overdue') {
+          titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.title.check.overdue');
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.body.check.overdue');
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.search.action.update'),
+            'primary',
+            'search-update',
+            (btn) => postIntegritySearchAction('/app/health/api/search/update', btn),
+          ));
+        } else {
+          titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.title.rebuild');
+          bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.search.body.rebuild');
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.search.action.rebuild'),
+            'primary',
+            'search-rebuild',
+            (btn) => postIntegritySearchAction('/app/health/api/search/rebuild', btn),
+          ));
+        }
+        break;
+      }
+
+      case 'undeclared_facet': {
+        const facet = String(finding.facet || '');
+        titleEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.title');
+        bodyEl.textContent = window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.body', [
+          ['facet', facet],
+        ]);
+        if (facet) {
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.action.add'),
+            'primary',
+            'facet-add',
+            (btn) => postIntegrityJson(
+              '/app/health/api/integrity/facets/add',
+              { facet },
+              btn,
+              window.JournalI18n.render('journal.window.health.integrity.action.working'),
+              window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.added', [['facet', facet]]),
+            ),
+          ));
+          actionsEl.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.action.trash'),
+            'danger',
+            'facet-discard',
+            async (btn) => {
+              const ok = await askIntegrityConfirm({
+                title: window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.confirm.title', [['facet', facet]]),
+                body: window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.confirm.body', [['facet', facet]]),
+                action: window.JournalI18n.render('journal.window.health.integrity.finding.trash.original.confirm.action'),
+                opener: btn,
+              });
+              if (!ok) return;
+              await postIntegrityJson(
+                '/app/health/api/integrity/facets/discard',
+                { facet },
+                btn,
+                window.JournalI18n.render('journal.window.health.integrity.action.working'),
+                window.JournalI18n.render('journal.window.health.integrity.finding.undeclared.facet.trashed', [['facet', facet]]),
+              );
+            },
+          ));
+        }
+        if (finding.path) detailLines.push(finding.path);
+        break;
+      }
+
+      default: {
+        titleEl.textContent = String(finding.kind || '');
+        bodyEl.textContent = '';
+        if (finding.path) detailLines.push(finding.path);
+        break;
+      }
+    }
+
+    row.appendChild(head);
+    if (bodyEl.textContent) row.appendChild(bodyEl);
+    if (actionsEl.children.length > 0) row.appendChild(actionsEl);
+    appendIntegrityDetails(row, detailLines);
+    return row;
+  }
+
+  function renderIntegrityOlderMissing(olderList) {
+    const host = document.getElementById('integrityOlderMissing');
+    if (!host) return;
+    host.replaceChildren();
+    if (!Array.isArray(olderList) || olderList.length === 0) {
+      host.hidden = true;
+      return;
+    }
+    const count = olderList.length;
+    const summaryText = document.createElement('p');
+    summaryText.className = 'integrity-older-summary-text';
+    summaryText.textContent = renderCount('journal.window.health.integrity.older.missing.summary', count);
+    host.appendChild(summaryText);
+
+    const details = document.createElement('details');
+    details.className = 'integrity-older-details';
+    const summary = document.createElement('summary');
+    summary.textContent = window.JournalI18n.render('journal.window.health.integrity.older.missing.trigger');
+    details.appendChild(summary);
+
+    const controls = document.createElement('div');
+    controls.className = 'integrity-older-controls';
+    controls.appendChild(makeIntegrityButton(
+      window.JournalI18n.render('journal.window.health.integrity.older.missing.bulk.action'),
+      '',
+      'record-all-older-missing',
+      async (btn) => {
+        const ok = await askIntegrityConfirm({
+          title: renderCount('journal.window.health.integrity.older.missing.bulk.confirm.title', count),
+          body: window.JournalI18n.render(
+            count === 1
+              ? 'journal.window.health.integrity.older.missing.one.confirm.body'
+              : 'journal.window.health.integrity.older.missing.bulk.confirm.body',
+          ),
+          action: window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.confirm.action'),
+          opener: btn,
+        });
+        if (!ok) return;
+        await postIntegrityJson(
+          '/app/health/api/integrity/record-missing',
+          { older_missing_originals: true },
+          btn,
+          window.JournalI18n.render('journal.window.health.integrity.action.working'),
+          window.JournalI18n.render('journal.window.health.integrity.older.missing.bulk.done'),
+        );
+      },
+    ));
+    details.appendChild(controls);
+
+    const list = document.createElement('ul');
+    list.className = 'integrity-older-list';
+    for (const entry of olderList) {
+      const li = document.createElement('li');
+      li.className = 'integrity-older-row';
+      const dayLabel = formatIntegrityDay(entry.day) || String(entry.day || '');
+      const files = Array.isArray(entry.files) && entry.files.length ? entry.files.join(', ') : '';
+      const meta = document.createElement('span');
+      meta.className = 'integrity-older-row-meta';
+      meta.textContent = [dayLabel, files || entry.segment].filter(Boolean).join(' · ');
+      li.appendChild(meta);
+
+      const rowActions = document.createElement('span');
+      rowActions.className = 'integrity-older-row-actions';
+      const href = integritySegmentHref(entry.day, entry.stream, entry.segment);
+      if (href && dayLabel) {
+        rowActions.appendChild(makeIntegrityLink(
+          href,
+          window.JournalI18n.render('journal.window.health.integrity.link.open.day', [['day', dayLabel]]),
+        ));
+      }
+      rowActions.appendChild(makeIntegrityButton(
+        window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.action'),
+        '',
+        'record-older-missing-one',
+        async (btn) => {
+          const ok = await askIntegrityConfirm({
+            title: window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.confirm.title'),
+            body: window.JournalI18n.render('journal.window.health.integrity.older.missing.one.confirm.body'),
+            action: window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.confirm.action'),
+            opener: btn,
+          });
+          if (!ok) return;
+          await postIntegrityJson(
+            '/app/health/api/integrity/record-missing',
+            {
+              segments: [{
+                day: entry.day,
+                stream: entry.stream || undefined,
+                segment: entry.segment,
+              }],
+            },
+            btn,
+            window.JournalI18n.render('journal.window.health.integrity.action.working'),
+            window.JournalI18n.render('journal.window.health.integrity.finding.missing.original.done'),
+          );
+        },
+      ));
+      li.appendChild(rowActions);
+      list.appendChild(li);
+    }
+    details.appendChild(list);
+    host.appendChild(details);
+    host.hidden = false;
+  }
+
+  function renderIntegrityCard(rawReceipt, rawJournalDisk) {
+    const section = document.getElementById('integrity');
+    if (!section) return;
+    const norm = normalizeIntegrityState(rawReceipt, rawJournalDisk);
+    section.dataset.verdict = norm.effectiveState;
+
+    const badge = document.getElementById('integrityBadge');
+    const actions = document.getElementById('integrityActions');
+    const headline = document.getElementById('integrityHeadline');
+    const meta = document.getElementById('integrityMeta');
+    const checksumLine = document.getElementById('integrityChecksumLine');
+    const scopeNote = document.getElementById('integrityScopeNote');
+    const findingsHost = document.getElementById('integrityFindings');
+    const coverage = document.getElementById('integrityCoverage');
+
+    if (badge) {
+      badge.replaceChildren();
+      const badgeMap = {
+        ok: { tone: 'ok', key: 'journal.window.health.integrity.badge.ok' },
+        not_checked_yet: { tone: 'neutral', key: 'journal.window.health.integrity.badge.not.checked', ring: true },
+        incomplete: { tone: 'warn', key: 'journal.window.health.integrity.badge.incomplete' },
+        unavailable: { tone: 'warn', key: 'journal.window.health.integrity.badge.unavailable' },
+        needs_attention: { tone: 'danger', key: 'journal.window.health.integrity.badge.needs.attention' },
+        maintenance: { tone: 'warn', key: 'journal.window.health.integrity.badge.maintenance' },
+      };
+      const spec = badgeMap[norm.effectiveState] || badgeMap.unavailable;
+      badge.dataset.tone = spec.tone;
+      if (spec.ring) {
+        const ring = document.createElement('span');
+        ring.className = 'integrity-badge-ring';
+        ring.setAttribute('aria-hidden', 'true');
+        badge.appendChild(ring);
+      }
+      badge.appendChild(document.createTextNode(window.JournalI18n.render(spec.key)));
+      badge.hidden = false;
+    }
+
+    if (actions) {
+      actions.replaceChildren();
+      const runCheck = (mode, btn) => postIntegrityJson(
+        '/app/health/api/integrity/check',
+        { mode },
+        btn,
+        window.JournalI18n.render('journal.window.health.integrity.action.checking'),
+        '',
+        'journal.window.health.integrity.check.failed',
+      );
+      const runVerify = (btn) => postIntegrityJson(
+        '/app/health/api/integrity/verify-originals',
+        {},
+        btn,
+        window.JournalI18n.render('journal.window.health.integrity.action.verifying.originals'),
+        '',
+        'journal.window.health.integrity.verify.failed',
+      );
+
+      if (norm.effectiveState === 'incomplete') {
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.finish.check'),
+          'primary',
+          'finish-check',
+          (btn) => runCheck('continue', btn),
+        ));
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.check.from.start'),
+          '',
+          'check-from-start',
+          (btn) => runCheck('full', btn),
+        ));
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.verify.originals'),
+          '',
+          'verify-originals',
+          runVerify,
+        ));
+      } else if (norm.effectiveState === 'unavailable') {
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.run.check.now'),
+          'primary',
+          'check-now',
+          (btn) => runCheck('routine', btn),
+        ));
+      } else if (norm.effectiveState === 'not_checked_yet') {
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.check.now'),
+          'primary',
+          'check-now',
+          (btn) => runCheck('routine', btn),
+        ));
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.verify.originals'),
+          '',
+          'verify-originals',
+          runVerify,
+        ));
+      } else {
+        if (norm.incomplete) {
+          actions.appendChild(makeIntegrityButton(
+            window.JournalI18n.render('journal.window.health.integrity.action.finish.check'),
+            'primary',
+            'finish-check',
+            (btn) => runCheck('continue', btn),
+          ));
+        }
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.check.now'),
+          norm.incomplete ? '' : 'primary',
+          'check-now',
+          (btn) => runCheck('routine', btn),
+        ));
+        actions.appendChild(makeIntegrityButton(
+          window.JournalI18n.render('journal.window.health.integrity.action.verify.originals'),
+          '',
+          'verify-originals',
+          runVerify,
+        ));
+      }
+    }
+
+    const whenText = formatIntegrityTimestamp(norm.checkedAtMs);
+    const cs = norm.checksums;
+    const csWhen = cs ? formatIntegrityTimestamp(Number(cs.verified_at_ms)) : '';
+    const csVerified = cs ? Math.max(0, Number(cs.checksums_verified) || 0) : 0;
+    const csTotalKept = cs ? Math.max(0, Number(cs.checksums_total_kept) || 0) : 0;
+    const csOlder = cs ? Math.max(0, Number(cs.checksums_unavailable_older) || 0) : 0;
+    const csMismatches = cs ? Math.max(0, Number(cs.mismatches) || 0) : 0;
+    const csPartial = Boolean(cs && (csOlder > 0 || cs.incomplete === true || csMismatches > 0 || csVerified < csTotalKept));
+
+    if (headline) {
+      if (norm.effectiveState === 'ok') {
+        headline.textContent = window.JournalI18n.render(
+          (!cs || csTotalKept === 0 || csVerified === 0)
+            ? 'journal.window.health.integrity.headline.ok.routine'
+            : csPartial
+              ? 'journal.window.health.integrity.headline.ok.checksums.partial'
+              : 'journal.window.health.integrity.headline.ok.checksums.full',
+        );
+      } else if (norm.effectiveState === 'incomplete') {
+        headline.textContent = window.JournalI18n.render('journal.window.health.integrity.headline.incomplete');
+      } else if (norm.effectiveState === 'not_checked_yet') {
+        headline.textContent = window.JournalI18n.render('journal.window.health.integrity.headline.not.checked');
+      } else if (norm.effectiveState === 'unavailable') {
+        headline.textContent = window.JournalI18n.render('journal.window.health.integrity.headline.unavailable');
+      } else if (norm.effectiveState === 'maintenance') {
+        headline.textContent = renderCount('journal.window.health.integrity.headline.maintenance', norm.maintenanceCount);
+      } else if (norm.incomplete && norm.daysTotal > 0 && norm.daysChecked < norm.daysTotal) {
+        headline.textContent = window.JournalI18n.render('journal.window.health.integrity.headline.needs.attention.incomplete', [
+          ['count', String(norm.urgentCount)],
+          ['quantity', window.JournalI18n.cardinalQuantity(norm.urgentCount)],
+          ['checked', String(norm.daysChecked)],
+          ['total', String(norm.daysTotal)],
+          ['total_quantity', window.JournalI18n.cardinalQuantity(norm.daysTotal)],
+        ]);
+      } else if (norm.daysUnreadable > 0) {
+        headline.textContent = window.JournalI18n.render('journal.window.health.integrity.headline.needs.attention.unreadable', [
+          ['count', String(norm.urgentCount)],
+          ['quantity', window.JournalI18n.cardinalQuantity(norm.urgentCount)],
+          ['unreadable', String(norm.daysUnreadable)],
+          ['unreadable_quantity', window.JournalI18n.cardinalQuantity(norm.daysUnreadable)],
+        ]);
+      } else {
+        headline.textContent = renderCount('journal.window.health.integrity.headline.needs.attention', norm.urgentCount);
+      }
+    }
+
+    if (meta) {
+      let metaText = '';
+      if (norm.effectiveState === 'incomplete') {
+        const remaining = Math.max(0, norm.daysTotal - norm.daysChecked);
+        if (norm.daysUnreadable > 0 && remaining > 0) {
+          metaText = window.JournalI18n.render('journal.window.health.integrity.meta.incomplete.both', [
+            ['checked', String(norm.daysChecked)],
+            ['total', String(norm.daysTotal)],
+            ['total_quantity', window.JournalI18n.cardinalQuantity(norm.daysTotal)],
+            ['unreadable', String(norm.daysUnreadable)],
+            ['quantity', window.JournalI18n.cardinalQuantity(norm.daysUnreadable)],
+          ]);
+        } else if (norm.daysUnreadable > 0) {
+          metaText = window.JournalI18n.render('journal.window.health.integrity.meta.incomplete.unreadable', [
+            ['checked', String(norm.daysChecked)],
+            ['total', String(norm.daysTotal)],
+            ['total_quantity', window.JournalI18n.cardinalQuantity(norm.daysTotal)],
+            ['unreadable', String(norm.daysUnreadable)],
+            ['quantity', window.JournalI18n.cardinalQuantity(norm.daysUnreadable)],
+          ]);
+        } else {
+          metaText = window.JournalI18n.render('journal.window.health.integrity.meta.incomplete.budget', [
+            ['checked', String(norm.daysChecked)],
+            ['total', String(norm.daysTotal)],
+            ['total_quantity', window.JournalI18n.cardinalQuantity(norm.daysTotal)],
+            ['remaining', String(remaining)],
+            ['quantity', window.JournalI18n.cardinalQuantity(remaining)],
+          ]);
+        }
+      } else if (norm.checkedAtMs !== null) {
+        if (norm.daysTotal === 0) {
+          metaText = window.JournalI18n.render('journal.window.health.integrity.meta.checked.none', [['when', whenText]]);
+        } else {
+          metaText = window.JournalI18n.render('journal.window.health.integrity.meta.checked.days', [
+            ['checked', String(norm.daysChecked)],
+            ['total', String(norm.daysTotal)],
+            ['quantity', window.JournalI18n.cardinalQuantity(norm.daysTotal)],
+            ['when', whenText],
+          ]);
+        }
+      } else if (norm.effectiveState === 'needs_attention' && norm.disk?.low === true) {
+        metaText = window.JournalI18n.render('journal.window.health.integrity.meta.disk.live');
+      }
+      meta.textContent = metaText;
+      meta.hidden = !metaText;
+    }
+
+    if (checksumLine) {
+      let csText = '';
+      if (cs) {
+        const verified = csVerified;
+        const total = csTotalKept;
+        const older = csOlder;
+        const mismatches = csMismatches;
+        if (cs.incomplete === true) {
+          csText = window.JournalI18n.render('journal.window.health.integrity.scope.checksums.incomplete', [
+            ['verified', String(verified)],
+            ['total', String(total)],
+            ['total_quantity', window.JournalI18n.cardinalQuantity(total)],
+            ['when', csWhen],
+          ]);
+        } else if (older > 0) {
+          csText = window.JournalI18n.render('journal.window.health.integrity.scope.checksums.partial', [
+            ['verified', String(verified)],
+            ['total', String(total)],
+            ['total_quantity', window.JournalI18n.cardinalQuantity(total)],
+            ['older', String(older)],
+            ['quantity', window.JournalI18n.cardinalQuantity(older)],
+            ['when', csWhen],
+          ]);
+        } else if (total === 0) {
+          csText = window.JournalI18n.render('journal.window.health.integrity.scope.checksums.none', [
+            ['when', csWhen],
+          ]);
+        } else if (mismatches > 0 || verified < total) {
+          csText = window.JournalI18n.render('journal.window.health.integrity.scope.checksums.mismatches', [
+            ['verified', String(verified)],
+            ['total', String(total)],
+            ['total_quantity', window.JournalI18n.cardinalQuantity(total)],
+            ['when', csWhen],
+          ]);
+        } else {
+          csText = window.JournalI18n.render('journal.window.health.integrity.scope.checksums.full', [
+            ['verified', String(verified)],
+            ['quantity', window.JournalI18n.cardinalQuantity(verified)],
+            ['when', csWhen],
+          ]);
+        }
+      }
+      checksumLine.textContent = csText;
+      checksumLine.hidden = !csText;
+    }
+
+    if (scopeNote) {
+      let noteText = '';
+      if (norm.effectiveState === 'ok' && !cs) {
+        noteText = window.JournalI18n.render('journal.window.health.integrity.scope.routine');
+      } else if (norm.effectiveState === 'not_checked_yet') {
+        noteText = window.JournalI18n.render('journal.window.health.integrity.scope.not.checked');
+      } else if (norm.effectiveState === 'unavailable' || norm.receiptUnavailable) {
+        noteText = window.JournalI18n.render('journal.window.health.integrity.scope.unavailable');
+      } else if (norm.daysUnreadable > 0) {
+        noteText = window.JournalI18n.render('journal.window.health.integrity.scope.unreadable.guidance');
+      }
+      scopeNote.textContent = noteText;
+      scopeNote.hidden = !noteText;
+    }
+
+    if (findingsHost) {
+      findingsHost.replaceChildren();
+      for (const finding of norm.findings) {
+        findingsHost.appendChild(renderIntegrityFindingRow(finding));
+      }
+      findingsHost.hidden = norm.findings.length === 0;
+    }
+
+    renderIntegrityOlderMissing(norm.olderMissing);
+
+    if (coverage) {
+      coverage.hidden = norm.effectiveState === 'unavailable';
+    }
+  }
+  // ========== END JOURNAL INTEGRITY ==========
 
   let timeoutFired = false;
   let programmaticScroll = false;
@@ -1407,10 +2580,14 @@
         const retry = document.createElement('button');
         retry.type = 'button';
         retry.textContent = window.JournalI18n.render('journal.window.health.visible.text.try.again');
+        const guidance = document.createElement('p');
+        guidance.className = 'held-work-guidance';
+        guidance.dataset.holdGuidance = '';
+        guidance.hidden = true;
         const feedback = document.createElement('p');
         feedback.dataset.retryFeedback = '';
         feedback.setAttribute('role', 'status');
-        row.append(line, retry, feedback, details);
+        row.append(line, retry, guidance, feedback, details);
         rows.appendChild(row);
       }
       const names = { daily: window.JournalI18n.render('journal.window.health.status.daily.processing'), activity: window.JournalI18n.render('journal.window.health.status.activity.processing'),
@@ -1433,21 +2610,46 @@
       row.querySelector('p').textContent = line;
       row.querySelector('pre').textContent = JSON.stringify(hold.evidence, null, 2);
       const retry = row.querySelector('button');
-      retry.onclick = async () => {
-        const feedback = row.querySelector('[data-retry-feedback]');
-        retry.disabled = true;
-        feedback.textContent = window.JournalI18n.render('journal.window.health.visible.text.checking.this.work');
-        try {
-          const endpoint = hold.unit || !hold.day ? '/app/health/api/retry-work' : '/app/health/api/reprocess';
-          const body = hold.unit ? { unit: hold.unit } : hold.day ? { day: hold.day, flavor: 'process-now' } : { safety: true };
-          const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-          const result = await response.json();
-          feedback.textContent = result.message || (response.ok ? window.JournalI18n.render('journal.window.health.visible.text.your.request.is.saved') : window.JournalI18n.render('journal.window.health.visible.text.this.work.could.not.be.retried'));
-          await loadHealthState();
-        } catch {
-          feedback.textContent = window.JournalI18n.render('journal.window.health.visible.text.the.retry.could.not.be.saved');
-        } finally { retry.disabled = false; }
-      };
+      const guidance = row.querySelector('[data-hold-guidance]');
+      const unretryable = hold.reason === 'corrupt_input' || hold.reason === 'no_audio_stream';
+      if (unretryable) {
+        retry.hidden = true;
+        retry.onclick = null;
+        if (guidance) {
+          guidance.replaceChildren();
+          guidance.appendChild(document.createTextNode(
+            window.JournalI18n.render('journal.window.health.work.hold.unretryable.note'),
+          ));
+          if (typeof hold.day === 'string' && /^\d{8}$/.test(hold.day)) {
+            const link = document.createElement('a');
+            link.href = `/app/transcripts/${encodeURIComponent(hold.day)}`;
+            link.textContent = `${window.JournalI18n.render('journal.window.health.work.hold.open.transcripts')} →`;
+            guidance.appendChild(link);
+          }
+          guidance.hidden = false;
+        }
+      } else {
+        retry.hidden = false;
+        if (guidance) {
+          guidance.hidden = true;
+          guidance.replaceChildren();
+        }
+        retry.onclick = async () => {
+          const feedback = row.querySelector('[data-retry-feedback]');
+          retry.disabled = true;
+          feedback.textContent = window.JournalI18n.render('journal.window.health.visible.text.checking.this.work');
+          try {
+            const endpoint = hold.unit || !hold.day ? '/app/health/api/retry-work' : '/app/health/api/reprocess';
+            const body = hold.unit ? { unit: hold.unit } : hold.day ? { day: hold.day, flavor: 'process-now' } : { safety: true };
+            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const result = await response.json();
+            feedback.textContent = result.message || (response.ok ? window.JournalI18n.render('journal.window.health.visible.text.your.request.is.saved') : window.JournalI18n.render('journal.window.health.visible.text.this.work.could.not.be.retried'));
+            await loadHealthState();
+          } catch {
+            feedback.textContent = window.JournalI18n.render('journal.window.health.visible.text.the.retry.could.not.be.saved');
+          } finally { retry.disabled = false; }
+        };
+      }
     }
     section.querySelector('[data-held-work-support]').hidden = holds.length === 0;
     if (!section.hidden && !heldWorkDeepLinkScrolled && window.location.hash === '#processingHolds') {
@@ -1456,6 +2658,33 @@
       if (list) list.open = true;
       requestAnimationFrame(() => section.scrollIntoView({ block: 'start' }));
     }
+  }
+
+  function selectIntegrityGlance(currentState) {
+    const receipt = currentState?.integrity;
+    const disk = currentState?.journalDisk || receipt?.journal_disk || null;
+    if (!receipt && !(disk && disk.low === true)) return null;
+    const findings = Array.isArray(receipt?.findings)
+      ? receipt.findings.filter(f => f && typeof f === 'object')
+      : [];
+    let urgent = findings.filter(f => f.tier === 1).length;
+    if (disk && disk.low === true && !findings.some(f => f.kind === 'low_disk_space')) {
+      urgent += 1;
+    }
+    const action = {
+      href: '#integrity',
+      label: window.JournalI18n.render('journal.window.health.glance.integrity.action'),
+    };
+    if (urgent > 0) {
+      return { key: 'HEALTH_GLANCE_INTEGRITY_ATTENTION', vars: { count: urgent }, action };
+    }
+    if (receipt?.state === 'unavailable' || receipt?.unavailable === true) {
+      return { key: 'HEALTH_GLANCE_INTEGRITY_UNAVAILABLE', vars: {}, action };
+    }
+    if (receipt?.state === 'incomplete' || receipt?.incomplete === true || Number(receipt?.days_unreadable || 0) > 0) {
+      return { key: 'HEALTH_GLANCE_INTEGRITY_INCOMPLETE', vars: {}, action };
+    }
+    return null;
   }
 
 	  function selectGlanceSentence(state, now) {
@@ -1526,6 +2755,9 @@
       };
     }
 
+    const integrityVerdict = selectIntegrityGlance(state);
+    if (integrityVerdict?.key === 'HEALTH_GLANCE_INTEGRITY_ATTENTION') return integrityVerdict;
+
     const backupVerdict = state.backupView.tone !== 'neutral'
       ? { key: 'HEALTH_GLANCE_BACKUP', vars: { headline: state.backupView.text },
         action: { href: '#backup', label: window.JournalI18n.render('journal.window.health.label.view.backup.details') } } : null;
@@ -1533,6 +2765,7 @@
 
     if (deviceVerdict) return deviceVerdict;
     if (workVerdict) return workVerdict;
+    if (integrityVerdict) return integrityVerdict;
     if (backupVerdict) {
       return { key: 'HEALTH_GLANCE_BACKUP', vars: { headline: state.backupView.text },
         action: { href: '#backup', label: window.JournalI18n.render('journal.window.health.label.view.backup.details') } };
@@ -1587,6 +2820,9 @@
     'HEALTH_GLANCE_DEVICES_UNAVAILABLE',
     'HEALTH_GLANCE_WORK_HELD',
     'HEALTH_GLANCE_WORK_UNAVAILABLE',
+    'HEALTH_GLANCE_INTEGRITY_ATTENTION',
+    'HEALTH_GLANCE_INTEGRITY_INCOMPLETE',
+    'HEALTH_GLANCE_INTEGRITY_UNAVAILABLE',
   ]);
 
   // Anything the verdict calls out has to be somewhere the owner can go.
@@ -2202,38 +3438,6 @@
 	      updateErrorSummary();
 	    }
 	  });
-
-  elements.importerGrid.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-action="retry"]');
-    if (!btn) return;
-    const importId = btn.dataset.importId;
-    if (!importId) return;
-    const card = btn.closest('[data-key]');
-    const errorEl = card?.querySelector('.activity-card-error');
-    btn.disabled = true;
-    btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retrying');
-    window.apiJson('/app/health/api/retry-import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ import_id: importId })
-    })
-      .then(() => {
-        btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retry.sent');
-        btn.style.color = 'var(--ink-faint)';
-        if (errorEl) {
-          errorEl.textContent = '';
-        }
-      })
-      .catch((err) => {
-        window.logError(err, { context: 'health: retry-import failed' });
-        btn.disabled = false;
-        btn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retry');
-        btn.style.color = '';
-        if (errorEl) {
-          errorEl.textContent = err.serverMessage || window.JournalI18n.render('journal.window.health.visible.text.retry.failed');
-        }
-      });
-  });
 
   // Client-side elapsed time updater
   let elapsedTimer = null;
@@ -3277,11 +4481,11 @@
         card.appendChild(errorEl);
         const retryWrap = document.createElement('div');
         retryWrap.style.marginTop = '0.3em';
-        const retryBtn = document.createElement('button');
-        retryBtn.setAttribute('data-action', 'retry');
-        retryBtn.className = 'import-retry-btn';
-        retryBtn.textContent = window.JournalI18n.render('journal.window.health.visible.text.retry');
-        retryWrap.appendChild(retryBtn);
+        const openLink = document.createElement('a');
+        openLink.setAttribute('data-action', 'open-import');
+        openLink.className = 'import-retry-btn';
+        openLink.textContent = window.JournalI18n.render('journal.window.health.importer.open.import');
+        retryWrap.appendChild(openLink);
         card.appendChild(retryWrap);
         const progressWrap = document.createElement('div');
         progressWrap.className = 'activity-card-progress';
@@ -3312,7 +4516,10 @@
         card.children[3].textContent = truncate(imp.error, 40);
         card.children[3].style.display = '';
         card.children[4].style.display = '';
-        card.children[4].querySelector('button').setAttribute('data-import-id', imp.import_id);
+        const openLink = card.children[4].querySelector('a');
+        if (openLink) {
+          openLink.href = imp.import_id ? `/app/import/${encodeURIComponent(imp.import_id)}` : '/app/import/';
+        }
       } else {
         card.children[3].textContent = '';
         card.children[3].style.display = 'none';
@@ -4134,9 +5341,13 @@
     requestAnimationFrame(() => loadSpeechSetup());
     requestAnimationFrame(() => loadLocalPrograms());
     window.addEventListener('hashchange', focusBackupDetails);
+    if (typeof focusIntegrityCard === 'function') {
+      window.addEventListener('hashchange', focusIntegrityCard);
+    }
     const initialReady = Promise.all([healthInfoReady, registeredClientsReady, loadHealthState()]);
     initialReady.then(() => {
       document.dispatchEvent(new CustomEvent('health:initial-ready'));
+      if (typeof focusIntegrityCard === 'function') requestAnimationFrame(focusIntegrityCard);
     });
     Promise.all([initialReady, backupReady]).then(() => requestAnimationFrame(focusBackupDetails));
 	    focusRecentErrors();

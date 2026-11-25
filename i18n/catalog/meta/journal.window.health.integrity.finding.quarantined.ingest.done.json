@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding quarantined ingest done.",
+  "context": "Journal window. Status view. integrity finding quarantined ingest done.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ddc99cc7a0bd9afea5b46287341bb807dd0246050e91723de402d729849dcfa",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding damaged core body config.",
+  "context": "Journal window. Status view. integrity finding damaged core body config.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea88c368f79c5b67868ff37cf1e26537219165421ca112fc0146360780558c92",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

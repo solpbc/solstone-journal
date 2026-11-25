@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search queued.",
+  "context": "Journal window. Status view. integrity finding search queued.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52af417f84a49258a087d08312d4368b80baca869c52d679340f42a1164fc01e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

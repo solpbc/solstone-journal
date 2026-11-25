@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity link open facets.",
+  "context": "Journal window. Status view. integrity link open facets.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f22d21544707ad5d547b23544cf08047e3baac8278b17644272e3c60599f248",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

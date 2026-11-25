@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search running.",
+  "context": "Journal window. Status view. integrity finding search running.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6ddca749227d9b670a69a8890bdc6988a3acdcc59fdf08908f06a62b866c90d4",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

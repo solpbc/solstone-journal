@@ -1,0 +1,30 @@
+{
+  "description": "Status view. integrity finding damaged transcript body kept tail.",
+  "context": "Journal window. Status view. integrity finding damaged transcript body kept tail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "valid_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "valid",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fb2894bb632b37d8cf4c431f821d52bc63f222b5c3afb89ef3ef87f708e62c20",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "valid_quantity",
+    "type": "cardinal"
+  }
+}

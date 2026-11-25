@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity badge not checked.",
+  "context": "Journal window. Status view. integrity badge not checked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3367d86ed387b087860142ea3a50b0bae7ea9c10a46f5e01519581983cfdf06f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding checksum mismatch body segment.",
+  "context": "Journal window. Status view. integrity finding checksum mismatch body segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2db01ba805372add5117043cdee37bbce86b33bdf64b2bacc93b6fd55e4b35ee",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

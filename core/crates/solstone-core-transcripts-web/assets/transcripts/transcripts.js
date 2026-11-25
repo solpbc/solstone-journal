@@ -776,6 +776,8 @@
       if (!leaf.endsWith('.jsonl')) return false;
       return leaf === 'audio.jsonl'
         || leaf === 'screen.jsonl'
+        || leaf === 'conversation_transcript.jsonl'
+        || leaf === 'imported_audio.jsonl'
         || leaf.startsWith('browser_')
         || leaf.endsWith('_desktop_activity.jsonl')
         || (leaf.startsWith('p') && leaf.length > 7 && /^\d/.test(leaf.slice(1)));

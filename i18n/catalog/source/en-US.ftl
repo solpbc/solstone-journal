@@ -23359,3 +23359,463 @@ journal.window.home.shape.duplicates.count = { $quantity ->
 journal.window.home.shape.voice.teach = teach your voice
 
 journal.window.home.shape.voice.candidate = check if this voice is yours
+
+journal.window.status.report.failed = status report failed
+
+journal.window.status.report.unavailable = status report unavailable
+
+journal.window.health.backlog.media.error = couldn't check waiting media right now.
+
+journal.window.health.importer.open.import = open import
+
+journal.window.health.work.hold.unretryable.note = this file couldn't be read as usable media, so retrying won't fix it.
+
+journal.window.health.work.hold.open.transcripts = open in transcripts
+
+journal.window.health.backlog.search.prune.guarded = { $quantity ->
+        [one] { $gone } of { $indexed } indexed day isn't in your journal right now, and search is still holding its entries.
+       *[other] { $gone } of { $indexed } indexed days aren't in your journal right now, and search is still holding their entries.
+    }
+
+journal.window.health.backlog.search.prune.guarded.generic = search still holds entries for days that aren't in your journal right now.
+
+journal.window.health.backlog.search.edges.failed = connections updates for search couldn't finish after repeated tries.
+
+journal.window.health.backlog.search.review.integrity = review in journal integrity
+
+journal.window.health.glance.integrity.attention = { $quantity ->
+        [one] 1 journal integrity issue needs attention.
+       *[other] { $count } journal integrity issues need attention.
+    }
+
+journal.window.health.glance.integrity.incomplete = the latest journal integrity check didn't finish.
+
+journal.window.health.glance.integrity.unavailable = couldn't read the latest journal integrity check.
+
+journal.window.health.glance.integrity.action = review integrity
+
+journal.window.health.integrity.heading = journal integrity
+
+journal.window.health.integrity.loading = checking journal integrity…
+
+journal.window.health.integrity.badge.ok = ok
+
+journal.window.health.integrity.badge.not.checked = not checked yet
+
+journal.window.health.integrity.badge.incomplete = incomplete
+
+journal.window.health.integrity.badge.unavailable = unavailable
+
+journal.window.health.integrity.badge.needs.attention = needs attention
+
+journal.window.health.integrity.badge.maintenance = maintenance
+
+journal.window.health.integrity.action.check.now = check now
+
+journal.window.health.integrity.action.run.check.now = run check now
+
+journal.window.health.integrity.action.finish.check = finish check
+
+journal.window.health.integrity.action.check.from.start = check from start
+
+journal.window.health.integrity.action.checking = checking…
+
+journal.window.health.integrity.action.verify.originals = verify original files
+
+journal.window.health.integrity.action.verifying.originals = verifying original files…
+
+journal.window.health.integrity.action.working = working…
+
+journal.window.health.integrity.action.failed = couldn't finish that action right now. try again.
+
+journal.window.health.integrity.check.failed = couldn't run the integrity check right now. try again.
+
+journal.window.health.integrity.verify.failed = couldn't verify original files right now. try again.
+
+journal.window.health.integrity.headline.ok.routine = your journal's records look intact.
+
+journal.window.health.integrity.headline.ok.checksums.full = your journal's records look intact, and verified originals matched.
+
+journal.window.health.integrity.headline.ok.checksums.partial = your journal's records look intact, and verified originals matched.
+
+journal.window.health.integrity.headline.incomplete = integrity check didn't finish.
+
+journal.window.health.integrity.headline.not.checked = no integrity check has run yet.
+
+journal.window.health.integrity.headline.unavailable = couldn't read the latest integrity check.
+
+journal.window.health.integrity.headline.needs.attention = { $quantity ->
+        [one] 1 integrity issue needs your attention.
+       *[other] { $count } integrity issues need your attention.
+    }
+
+journal.window.health.integrity.headline.needs.attention.incomplete = { $quantity ->
+        [one] 1 integrity issue found so far. { $total_quantity ->
+        [one] check stopped at { $checked } of { $total } day.
+       *[other] check stopped at { $checked } of { $total } days.
+    }
+       *[other] { $count } integrity issues found so far. { $total_quantity ->
+        [one] check stopped at { $checked } of { $total } day.
+       *[other] check stopped at { $checked } of { $total } days.
+    }
+    }
+
+journal.window.health.integrity.headline.needs.attention.unreadable = { $quantity ->
+        [one] 1 integrity issue found, and { $unreadable_quantity ->
+        [one] 1 day couldn't be read.
+       *[other] { $unreadable } days couldn't be read.
+    }
+       *[other] { $count } integrity issues found, and { $unreadable_quantity ->
+        [one] 1 day couldn't be read.
+       *[other] { $unreadable } days couldn't be read.
+    }
+    }
+
+journal.window.health.integrity.headline.maintenance = { $quantity ->
+        [one] 1 maintenance item to review.
+       *[other] { $count } maintenance items to review.
+    }
+
+journal.window.health.integrity.meta.checked.days = { $quantity ->
+        [one] checked { $checked } of { $total } day · { $when }.
+       *[other] checked { $checked } of { $total } days · { $when }.
+    }
+
+journal.window.health.integrity.meta.checked.none = no recorded days to check yet · { $when }.
+
+journal.window.health.integrity.meta.disk.live = live disk check reported low space; no integrity check result is available yet.
+
+journal.window.health.integrity.meta.incomplete.budget = { $total_quantity ->
+        [one] checked { $checked } of { $total } day before reaching its time limit. { $quantity ->
+        [one] { $remaining } day hasn't been checked yet.
+       *[other] { $remaining } days haven't been checked yet.
+    }
+       *[other] checked { $checked } of { $total } days before reaching its time limit. { $quantity ->
+        [one] { $remaining } day hasn't been checked yet.
+       *[other] { $remaining } days haven't been checked yet.
+    }
+    }
+
+journal.window.health.integrity.meta.incomplete.unreadable = { $total_quantity ->
+        [one] checked { $checked } of { $total } day. { $quantity ->
+        [one] { $unreadable } day couldn't be read because of a disk or permission error.
+       *[other] { $unreadable } days couldn't be read because of a disk or permission error.
+    }
+       *[other] checked { $checked } of { $total } days. { $quantity ->
+        [one] { $unreadable } day couldn't be read because of a disk or permission error.
+       *[other] { $unreadable } days couldn't be read because of a disk or permission error.
+    }
+    }
+
+journal.window.health.integrity.meta.incomplete.both = { $total_quantity ->
+        [one] checked { $checked } of { $total } day before stopping, and { $quantity ->
+        [one] { $unreadable } day couldn't be read because of a disk or permission error.
+       *[other] { $unreadable } days couldn't be read because of a disk or permission error.
+    }
+       *[other] checked { $checked } of { $total } days before stopping, and { $quantity ->
+        [one] { $unreadable } day couldn't be read because of a disk or permission error.
+       *[other] { $unreadable } days couldn't be read because of a disk or permission error.
+    }
+    }
+
+journal.window.health.integrity.scope.routine = this check reads record structure, references, and whether expected original files are present and non-empty. it does not re-check original file contents.
+
+journal.window.health.integrity.scope.checksums.full = { $quantity ->
+        [one] verified saved checksum on 1 kept original · { $when }.
+       *[other] verified saved checksums on { $verified } kept originals · { $when }.
+    }
+
+journal.window.health.integrity.scope.checksums.mismatches = { $total_quantity ->
+        [one] { $verified } of { $total } kept original matched its saved checksum · { $when }.
+       *[other] { $verified } of { $total } kept originals matched their saved checksums · { $when }.
+    }
+
+journal.window.health.integrity.scope.checksums.none = no kept originals to verify · { $when }.
+
+journal.window.health.integrity.scope.checksums.partial = { $total_quantity ->
+        [one] verified { $verified } of { $total } kept original · { $when }. { $quantity ->
+        [one] { $older } older file has no saved checksum and wasn't verified.
+       *[other] { $older } older files have no saved checksums and weren't verified.
+    }
+       *[other] verified { $verified } of { $total } kept originals · { $when }. { $quantity ->
+        [one] { $older } older file has no saved checksum and wasn't verified.
+       *[other] { $older } older files have no saved checksums and weren't verified.
+    }
+    }
+
+journal.window.health.integrity.scope.checksums.incomplete = { $total_quantity ->
+        [one] verified { $verified } of { $total } kept original reached before stopping · { $when }. couldn't finish checking every kept original in one pass.
+       *[other] verified { $verified } of { $total } kept originals reached before stopping · { $when }. couldn't finish checking every kept original in one pass.
+    }
+
+journal.window.health.integrity.scope.not.checked = your journal checks its records once a day on its own, or you can run one now.
+
+journal.window.health.integrity.scope.unavailable = the saved check record couldn't be opened, so your journal can't confirm whether its records are intact right now.
+
+journal.window.health.integrity.scope.unreadable.guidance = check folder permissions where your journal lives, then run the check again.
+
+journal.window.health.integrity.coverage.trigger = what this check covers
+
+journal.window.health.integrity.coverage.body = checks settings, retired entity and facet records, facet definitions, saved transcript and log files line by line, search index status, set-aside incoming files, disk space, and whether expected original files are present and non-empty. run "verify original files" to check saved checksums on disk.
+
+journal.window.health.integrity.details.trigger = details
+
+journal.window.health.integrity.link.open.day = open { $day }
+
+journal.window.health.integrity.link.open.backup = open backup status
+
+journal.window.health.integrity.link.open.storage = open storage settings
+
+journal.window.health.integrity.link.open.facets = open facets settings
+
+journal.window.health.integrity.link.open.import = open import
+
+journal.window.health.integrity.finding.damaged.transcript.title = { $quantity ->
+        [one] 1 damaged line in a saved transcript or log file
+       *[other] { $count } damaged lines in a saved transcript or log file
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.body.kept = { $valid_quantity ->
+        [one] 1 readable line is still intact.
+       *[other] { $valid } readable lines are still intact.
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.body.kept.tail = { $valid_quantity ->
+        [one] damaged at the end of the file. 1 readable line is still intact.
+       *[other] damaged at the end of the file. { $valid } readable lines are still intact.
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.body.none = no readable lines were found in this file.
+
+journal.window.health.integrity.finding.damaged.transcript.action = { $quantity ->
+        [one] set aside damaged line
+       *[other] set aside damaged lines
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.confirm.title = { $quantity ->
+        [one] set aside 1 damaged line?
+       *[other] set aside { $count } damaged lines?
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.confirm.body = { $quantity ->
+        [one] your journal will move the damaged line into a side file in the same folder and keep every valid line. nothing is deleted.
+       *[other] your journal will move the damaged lines into a side file in the same folder and keep every valid line. nothing is deleted.
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.confirm.action = set aside
+
+journal.window.health.integrity.finding.damaged.transcript.done = { $quantity ->
+        [one] damaged line moved to a side file.
+       *[other] damaged lines moved to a side file.
+    }
+
+journal.window.health.integrity.finding.damaged.transcript.detail = { $path } · { $damaged } damaged · { $valid } valid
+
+journal.window.health.integrity.finding.missing.original.title = original file missing with no deletion record
+
+journal.window.health.integrity.finding.missing.original.body = this segment's original file isn't on disk and no removal was recorded. any saved transcript or segment text stays intact.
+
+journal.window.health.integrity.finding.missing.original.action = record as missing
+
+journal.window.health.integrity.finding.missing.original.confirm.title = record this original as missing?
+
+journal.window.health.integrity.finding.missing.original.confirm.body = this clears the alert for this segment and records that the original file is missing on disk. any saved transcript or segment text stays intact, and storage still counts it as missing with no deletion record.
+
+journal.window.health.integrity.finding.missing.original.confirm.action = record as missing
+
+journal.window.health.integrity.finding.missing.original.done = recorded original as missing.
+
+journal.window.health.integrity.older.missing.summary = { $quantity ->
+        [one] 1 older segment is missing its original file from before deletion records were kept.
+       *[other] { $count } older segments are missing original files from before deletion records were kept.
+    }
+
+journal.window.health.integrity.older.missing.trigger = review older list
+
+journal.window.health.integrity.older.missing.bulk.action = record all as missing
+
+journal.window.health.integrity.older.missing.bulk.confirm.title = { $quantity ->
+        [one] record 1 older original as missing?
+       *[other] record all { $count } older originals as missing?
+    }
+
+journal.window.health.integrity.older.missing.bulk.confirm.body = this records these older missing originals so they no longer appear in this list. any saved transcripts or segment text stay intact, and storage still counts them as missing with no deletion record.
+
+journal.window.health.integrity.older.missing.one.confirm.body = this records this older missing original so it no longer appears in this list. any saved transcript or segment text stays intact, and storage still counts it as missing with no deletion record.
+
+journal.window.health.integrity.older.missing.bulk.done = recorded older missing originals.
+
+journal.window.health.integrity.finding.zero.byte.title = empty original media file
+
+journal.window.health.integrity.finding.zero.byte.body = this original file is 0 bytes on disk and can't be opened or played. moving it to the trash leaves the rest of the segment intact.
+
+journal.window.health.integrity.finding.checksum.mismatch.title = original file changed on disk
+
+journal.window.health.integrity.finding.checksum.mismatch.body.segment = this original file no longer matches the checksum saved when it arrived. restore a copy from backup if you have one, or move the changed file to the trash while keeping any saved transcript or segment text intact.
+
+journal.window.health.integrity.finding.checksum.mismatch.body.import = this preserved import file no longer matches the checksum saved when it arrived. restore a copy from backup or re-import the source file.
+
+journal.window.health.integrity.finding.trash.original.action = move original file to the trash
+
+journal.window.health.integrity.finding.trash.original.confirm.title = move original file to the trash?
+
+journal.window.health.integrity.finding.trash.original.confirm.body = this moves { $file } to the trash, where you can recover it until its erase date. the rest of the segment stays intact.
+
+journal.window.health.integrity.finding.trash.original.confirm.action = move to the trash
+
+journal.window.health.integrity.finding.trash.original.done = moved original file to the trash.
+
+journal.window.health.integrity.finding.quarantined.ingest.title = incoming file set aside
+
+journal.window.health.integrity.finding.quarantined.ingest.body = your journal set this incoming file aside because it couldn't be placed automatically. download a copy to inspect it, or move it to the trash.
+
+journal.window.health.integrity.finding.quarantined.ingest.download = download copy
+
+journal.window.health.integrity.finding.quarantined.ingest.trash = move to the trash
+
+journal.window.health.integrity.finding.quarantined.ingest.confirm.title = move set-aside file to the trash?
+
+journal.window.health.integrity.finding.quarantined.ingest.confirm.body = this moves { $file } to the trash, where you can recover it until its erase date.
+
+journal.window.health.integrity.finding.quarantined.ingest.done = moved set-aside file to the trash.
+
+journal.window.health.integrity.finding.damaged.core.title = journal record file couldn't be read
+
+journal.window.health.integrity.finding.damaged.core.body.config = your main journal settings file couldn't be read cleanly. restore it from a backup if you have one.
+
+journal.window.health.integrity.finding.damaged.core.body.entities.retired = the record of merged and deleted entities couldn't be read cleanly. restore it from a backup if you have one.
+
+journal.window.health.integrity.finding.damaged.core.body.facets.retired = the record of merged and renamed facets couldn't be read cleanly. restore it from a backup if you have one.
+
+journal.window.health.integrity.finding.damaged.core.body.facet = a facet definition file couldn't be read cleanly. restore it from a backup or review facets in settings.
+
+journal.window.health.integrity.finding.damaged.core.body.other = a journal record couldn't be read cleanly. restore it from a backup if you have one.
+
+journal.window.health.integrity.finding.heal.recurrence.title = your journal has had to repair itself more than once this week
+
+journal.window.health.integrity.finding.heal.recurrence.body = repeated repairs can mean the drive where your journal lives is failing or another program is syncing the same folder. check your drive health and make sure your journal folder isn't inside a cloud-sync folder.
+
+journal.window.health.integrity.finding.low.disk.title = space is running low where your journal lives
+
+journal.window.health.integrity.finding.low.disk.body = { $free } free ({ $used }% full). new recordings and search updates can stall if the drive fills up.
+
+journal.window.health.integrity.finding.low.disk.body.short = new recordings and search updates can stall if the drive fills up.
+
+journal.window.health.integrity.finding.search.title.prune.guarded = search still holds entries for removed days
+
+journal.window.health.integrity.finding.search.body.prune.guarded = many days disappeared at once, so search kept their entries in case a drive wasn't connected. clear them once you're sure those days were intentionally removed.
+
+journal.window.health.integrity.finding.search.action.clear.removed = clear removed search entries
+
+journal.window.health.integrity.finding.search.title.edges.failed = connections updates for search couldn't finish
+
+journal.window.health.integrity.finding.search.body.edges.failed = full-text search still works, but connections updates failed repeatedly.
+
+journal.window.health.integrity.finding.search.action.update = update search now
+
+journal.window.health.integrity.finding.search.title.newer.generation = search index was written by a newer version of the journal
+
+journal.window.health.integrity.finding.search.body.newer.generation = update your journal so search can keep updating this index.
+
+journal.window.health.integrity.finding.search.title.repeated.rebuild = search has had to rebuild itself more than once this week
+
+journal.window.health.integrity.finding.search.body.repeated.rebuild = repeated rebuilds can mean the drive where your journal lives is failing or another program is syncing the same folder. check your drive health and make sure your journal folder isn't inside a cloud-sync folder.
+
+journal.window.health.integrity.finding.search.title.check.overdue = the daily search check hasn't finished recently
+
+journal.window.health.integrity.finding.search.body.check.overdue = run a search update so recent changes and removals stay current.
+
+journal.window.health.integrity.finding.search.title.rebuild = search couldn't finish updating
+
+journal.window.health.integrity.finding.search.body.rebuild = some journal entries may be missing from search until the index is rebuilt.
+
+journal.window.health.integrity.finding.search.action.rebuild = rebuild search
+
+journal.window.health.integrity.finding.search.queued = search work queued in the background.
+
+journal.window.health.integrity.finding.search.running = a search update is already running.
+
+journal.window.health.integrity.finding.undeclared.facet.title = facet folder isn't listed in settings
+
+journal.window.health.integrity.finding.undeclared.facet.body = the folder "{ $facet }" exists in your journal's facets directory but isn't listed in settings.
+
+journal.window.health.integrity.finding.undeclared.facet.action.add = add to settings
+
+journal.window.health.integrity.finding.undeclared.facet.action.trash = move to the trash
+
+journal.window.health.integrity.finding.undeclared.facet.confirm.title = move facet folder "{ $facet }" to the trash?
+
+journal.window.health.integrity.finding.undeclared.facet.confirm.body = this moves the "{ $facet }" folder to the trash, where you can recover it until its erase date.
+
+journal.window.health.integrity.finding.undeclared.facet.added = added "{ $facet }" to settings.
+
+journal.window.health.integrity.finding.undeclared.facet.trashed = moved "{ $facet }" to the trash.
+
+journal.window.settings.trash.kind.label.quarantined.ingest = set-aside incoming file
+
+journal.window.settings.removal.kind.quarantined.ingest = set-aside incoming file
+
+journal.window.settings.removal.history.group.quarantined.ingest.count = { $quantity ->
+        [one] { $count } set-aside incoming file
+       *[other] { $count } set-aside incoming files
+    }
+
+journal.window.home.integrity.not.checked.yet = no integrity check has run yet.
+
+journal.window.home.integrity.incomplete.days = { $quantity ->
+        [one] integrity check stopped at { $checked } of { $total } day.
+       *[other] integrity check stopped at { $checked } of { $total } days.
+    }
+
+journal.window.home.integrity.incomplete.unreadable = { $quantity ->
+        [one] 1 day couldn't be read during the integrity check.
+       *[other] { $count } days couldn't be read during the integrity check.
+    }
+
+journal.window.home.integrity.unavailable = couldn't read the latest integrity check.
+
+journal.window.home.integrity.issue.damaged.transcript = { $quantity ->
+        [one] 1 saved transcript or log file has damaged lines.
+       *[other] { $count } saved transcript or log files have damaged lines.
+    }
+
+journal.window.home.integrity.issue.missing.original = { $quantity ->
+        [one] 1 segment is missing an original file with no deletion record.
+       *[other] { $count } segments are missing original files with no deletion record.
+    }
+
+journal.window.home.integrity.issue.zero.byte = { $quantity ->
+        [one] 1 original file is empty on disk.
+       *[other] { $count } original files are empty on disk.
+    }
+
+journal.window.home.integrity.issue.checksum.mismatch = { $quantity ->
+        [one] 1 original file changed on disk.
+       *[other] { $count } original files changed on disk.
+    }
+
+journal.window.home.integrity.issue.quarantined.ingest = { $quantity ->
+        [one] 1 incoming file was set aside.
+       *[other] { $count } incoming files were set aside.
+    }
+
+journal.window.home.integrity.issue.damaged.core = { $quantity ->
+        [one] 1 journal record file couldn't be read.
+       *[other] { $count } journal record files couldn't be read.
+    }
+
+journal.window.home.integrity.issue.heal.recurrence = your journal has had to repair itself more than once this week.
+
+journal.window.home.integrity.issue.low.disk = space is running low where your journal lives.
+
+journal.window.home.integrity.issue.search = search couldn't finish updating.
+
+journal.window.home.integrity.issue.search.prune.guarded = search still holds entries for removed days.
+
+journal.window.home.integrity.issue.search.edges.failed = connections updates for search couldn't finish.
+
+journal.window.home.integrity.issue.search.newer.generation = search needs a newer version of the journal to update.
+
+journal.window.home.integrity.issue.search.repeated.rebuild = search has had to rebuild itself more than once this week.
+
+journal.window.home.integrity.issue.search.check.overdue = the daily search check hasn't finished recently.

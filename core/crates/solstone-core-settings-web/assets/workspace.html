@@ -10442,6 +10442,7 @@ const REMOVAL_KIND_LABEL = {
   facet_file: 'journal.window.settings.removal.kind.facet.file.files.from.a.facet.merge',
   speakers: 'journal.window.settings.removal.kind.speakers.what.your.journal.keeps.about.voices',
   backup: 'journal.window.settings.removal.kind.backup.backup.copies',
+  quarantined_ingest: 'journal.window.settings.removal.kind.quarantined.ingest',
   unknown: 'journal.window.settings.removal.kind.fallback.label.something.else',
 };
 const REMOVAL_KIND_COUNT = {
@@ -10457,6 +10458,7 @@ const REMOVAL_KIND_COUNT = {
   facet_file: 'journal.window.settings.removal.history.group.facet.file.count',
   speakers: 'journal.window.settings.removal.history.group.speakers.count',
   backup: 'journal.window.settings.removal.history.group.backup.count',
+  quarantined_ingest: 'journal.window.settings.removal.history.group.quarantined.ingest.count',
   unknown: 'journal.window.settings.removal.history.group.unknown.count',
 };
 const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'detected_entities']);
@@ -10505,6 +10507,7 @@ const REMOVAL_ACTION_MESSAGE = {
   backup_off: 'journal.window.settings.removal.history.action.backup.off',
   finish_stopped: 'journal.window.settings.removal.history.action.finish.stopped',
   stretch_delete: 'journal.window.settings.removal.history.action.segment.delete',
+  quarantined_ingest_discard: 'journal.window.settings.removal.history.action.segment.delete',
   backup_erase: 'journal.window.settings.removal.history.action.backup.erase',
   backup_erase_shared: 'journal.window.settings.removal.history.action.backup.erase.shared',
   backup_erase_stays: 'journal.window.settings.removal.history.action.backup.erase.stays',
@@ -10589,6 +10592,7 @@ function removalQualifiers(unit) {
     case 'import': return [removalSourceName(unit.source), removalImportedDay(unit.id)].filter(Boolean);
     case 'workout': return [unit.day && removalDay(unit.day), removalSourceName(unit.source)].filter(Boolean);
     case 'backup': return [REMOVAL_BACKUP[unit.storage]].filter(Boolean);
+    case 'quarantined_ingest': return [unit.file, unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
     default: return REMOVAL_NAMELESS.has(unit.kind) ? [REMOVAL_COPY.nameNotKept] : [];
   }
 }
@@ -10934,6 +10938,7 @@ const TRASH_KIND_LABEL = {
   facet_file: window.JournalI18n.render('journal.window.settings.trash.kind.label.facet.file.files.a.facet.merge.left.out'), facet_file_unfinished: window.JournalI18n.render('journal.window.settings.trash.kind.label.facet.file.unfinished.files.from.a.facet.merge.that'),
   // Originals released from a segment, by what was released.
   originals: window.JournalI18n.render('journal.window.settings.trash.kind.label.originals.original.media'), originals_audio: window.JournalI18n.render('journal.window.settings.trash.kind.label.originals.audio.original.audio'), originals_screen: window.JournalI18n.render('journal.window.settings.trash.kind.label.originals.screen.original.screen.media'),
+  quarantined_ingest: window.JournalI18n.render('journal.window.settings.trash.kind.label.quarantined.ingest'),
   stretch: window.JournalI18n.render('journal.window.settings.trash.kind.label.stretch.stretch.of.time'),
 };
 const TRASH_MESSAGE_KINDS = new Set(['segment', 'memory', 'import', 'workout', 'entity', 'facet', 'stretch']);
@@ -11043,6 +11048,9 @@ function trashRowBody(item, stoppedState) {
     case 'stretch':
       qualifiers = [stretchBounds(item.from, item.to)];
       break;
+    case 'quarantined_ingest':
+      qualifiers = [item.file, item.day && removalDay(item.day), removalSegmentTime(item.segment)];
+      break;
     default:
       qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
   }
@@ -11071,7 +11079,7 @@ function trashRowBody(item, stoppedState) {
     const kinds = order.filter(kind => (item.kinds || []).includes(kind)).map(kind => TRASH_COPY.stretchKinds[kind]);
     if (kinds.length) extra.push(kinds.join(', '));
   }
-  const size = item.kind === 'segment' || item.kind === 'originals' || isImport || item.kind === 'speakers' ? trashSize(item.bytes) : '';
+  const size = item.kind === 'segment' || item.kind === 'originals' || item.kind === 'quarantined_ingest' || isImport || item.kind === 'speakers' ? trashSize(item.bytes) : '';
   if (size) extra.push(size);
   if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
   body.append(when);

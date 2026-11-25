@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity scope unavailable.",
+  "context": "Journal window. Status view. integrity scope unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f95401a8dc37efd0f91fa446d4c91425f0dd9ea4408dd49d2bfe25cd7f28e8c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

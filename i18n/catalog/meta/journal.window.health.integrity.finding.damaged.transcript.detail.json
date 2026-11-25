@@ -1,0 +1,29 @@
+{
+  "description": "Status view. integrity finding damaged transcript detail.",
+  "context": "Journal window. Status view. integrity finding damaged transcript detail.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "damaged",
+      "type": "string"
+    },
+    {
+      "name": "valid",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "714033613b7da4abd962f13cfe24abed508ef8dc8c842e629741e02dfad33d05",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

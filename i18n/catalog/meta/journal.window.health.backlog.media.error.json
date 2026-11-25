@@ -1,0 +1,16 @@
+{
+  "description": "Status view. backlog media error.",
+  "context": "Journal window. Status view. backlog media error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2348a32e6c549fb8893deec655b5f58ff2ae5bbed31b6aeac506b6b49f72ec0a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Status view. integrity headline maintenance.",
+  "context": "Journal window. Status view. integrity headline maintenance.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "b9e64ff883b4b39e376f061dec29a2693b2ab1aa17fda245cc5d5573b2018f7f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

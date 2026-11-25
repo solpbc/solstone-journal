@@ -1,0 +1,34 @@
+{
+  "description": "Status view. integrity scope checksums full.",
+  "context": "Journal window. Status view. integrity scope checksums full.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "verified",
+      "type": "string"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "526862265a2baa857393af42e943b1035cb78a92e01860392c4dd06d024b6865",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

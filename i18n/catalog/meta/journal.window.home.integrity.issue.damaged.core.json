@@ -1,0 +1,30 @@
+{
+  "description": "Home view. integrity issue damaged core.",
+  "context": "Journal window. Home view. integrity issue damaged core.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c83c93c858d841c51a48f806125727fd8180ebb4ac7ce69557f582c031ba3ac7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

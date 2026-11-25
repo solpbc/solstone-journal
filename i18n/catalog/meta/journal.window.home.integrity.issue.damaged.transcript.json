@@ -1,0 +1,30 @@
+{
+  "description": "Home view. integrity issue damaged transcript.",
+  "context": "Journal window. Home view. integrity issue damaged transcript.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1c38803a3c58a214e3132642710ac98cb6946f42f6c877da874c6708e77a0c3d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

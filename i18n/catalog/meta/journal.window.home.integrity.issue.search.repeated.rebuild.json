@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue search repeated rebuild.",
+  "context": "Journal window. Home view. integrity issue search repeated rebuild.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "378525aac75b259bf00e598f4d05d901cfb4a9713fa379f7954375d1a4723068",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

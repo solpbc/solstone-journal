@@ -1,0 +1,16 @@
+{
+  "description": "Status view. glance integrity incomplete.",
+  "context": "Journal window. Status view. glance integrity incomplete.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dfae7b93b5c85f30be4b21409d4e8f10c3819266eab96ff9925023ec9d34d5dd",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

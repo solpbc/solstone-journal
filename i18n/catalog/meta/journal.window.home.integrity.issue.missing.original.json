@@ -1,0 +1,30 @@
+{
+  "description": "Home view. integrity issue missing original.",
+  "context": "Journal window. Home view. integrity issue missing original.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "447f2a643bfdfce3f4e13c56bbac9644070cb00763750a7c75c176048edb3463",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

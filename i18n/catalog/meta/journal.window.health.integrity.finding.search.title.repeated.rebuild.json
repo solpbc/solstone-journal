@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search title repeated rebuild.",
+  "context": "Journal window. Status view. integrity finding search title repeated rebuild.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5a738a935d56ff8270ce8fbd5bebb0032e0963ea80c49c16a0e8cb27e3e6f828",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Home view. integrity incomplete unreadable.",
+  "context": "Journal window. Home view. integrity incomplete unreadable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "370be4edcb89eedeb9e95adb8d4fc35a03ea9e6bb1c109c26a99ee7169f19215",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

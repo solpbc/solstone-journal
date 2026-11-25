@@ -216,6 +216,8 @@ fn is_owner_transcript_leaf(name: &str) -> bool {
     }
     name == "audio.jsonl"
         || name == "screen.jsonl"
+        || name == "conversation_transcript.jsonl"
+        || name == "imported_audio.jsonl"
         || name.starts_with("browser_")
         || name.ends_with("_desktop_activity.jsonl")
         || (name.starts_with('p') && name.len() > 7 && name.as_bytes()[1].is_ascii_digit())
@@ -1539,5 +1541,53 @@ mod tests {
         let todo = solstone_core_indexer_todo::inspect(root.path()).unwrap();
         assert!(todo.keys.iter().any(|k| k == "@scan-full"));
         assert!(todo.keys.iter().any(|k| k == "@rebuild"));
+    }
+
+    #[tokio::test]
+    async fn set_aside_lines_accepts_imported_transcript_leaves_and_rejects_other_jsonls() {
+        let root = crate::test_support::root();
+        let seg = root
+            .path()
+            .join("chronicle/20261120/import.chatgpt/090000_60");
+        fs::create_dir_all(&seg).unwrap();
+        fs::write(
+            seg.join("conversation_transcript.jsonl"),
+            "{\"text\":\"keep\"}\n{bad\n",
+        )
+        .unwrap();
+        fs::write(
+            seg.join("imported_audio.jsonl"),
+            "{\"text\":\"keep2\"}\n{bad2\n",
+        )
+        .unwrap();
+        fs::write(seg.join("events.jsonl"), "{bad\n").unwrap();
+        fs::write(seg.join("photo_01.jsonl"), "{bad\n").unwrap();
+
+        let conv_rel = "chronicle/20261120/import.chatgpt/090000_60/conversation_transcript.jsonl";
+        let audio_rel = "chronicle/20261120/import.chatgpt/090000_60/imported_audio.jsonl";
+
+        let (status, ok) = post_json(
+            crate::routes(root.path().to_path_buf()),
+            "/app/health/api/integrity/set-aside-lines",
+            json!({"paths": [conv_rel, audio_rel]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{ok}");
+        assert_eq!(ok["results"].as_array().unwrap().len(), 2);
+        assert_eq!(ok["results"][0]["quarantined_lines"], 1);
+        assert_eq!(ok["results"][1]["quarantined_lines"], 1);
+
+        for rejected in [
+            "chronicle/20261120/import.chatgpt/090000_60/events.jsonl",
+            "chronicle/20261120/import.chatgpt/090000_60/photo_01.jsonl",
+        ] {
+            let (status, body) = post_json(
+                crate::routes(root.path().to_path_buf()),
+                "/app/health/api/integrity/set-aside-lines",
+                json!({"path": rejected}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{rejected}: {body}");
+        }
     }
 }

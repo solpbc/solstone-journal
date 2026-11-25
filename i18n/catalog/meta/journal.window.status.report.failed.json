@@ -1,0 +1,16 @@
+{
+  "description": "Status view. report failed.",
+  "context": "Journal window. Status view. report failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8ee55a2ed226ff77f0d8e33e997258c8eec851b3c7cb3dd0779968869f4ea501",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

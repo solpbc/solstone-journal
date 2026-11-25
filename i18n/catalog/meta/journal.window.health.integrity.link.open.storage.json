@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity link open storage.",
+  "context": "Journal window. Status view. integrity link open storage.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9c1180c3b015f641ef3f947a244f9edcfe3b8349110bee55ea573bcc017df89",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

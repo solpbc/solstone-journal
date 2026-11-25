@@ -1,0 +1,30 @@
+{
+  "description": "Home view. integrity issue quarantined ingest.",
+  "context": "Journal window. Home view. integrity issue quarantined ingest.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "15e554a5dbb800bc03186e85364d9998dee9a3248a68aa52780f947ee18ff1d3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity heading.",
+  "context": "Journal window. Status view. integrity heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "515b3f9b1c13151d65c0f70783e9337900d15f61cf87b80d1ef87122f923d40e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

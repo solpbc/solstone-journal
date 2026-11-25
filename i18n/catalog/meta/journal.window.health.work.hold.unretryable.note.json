@@ -1,0 +1,16 @@
+{
+  "description": "Status view. work hold unretryable note.",
+  "context": "Journal window. Status view. work hold unretryable note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "85d4628f5a876b2466bb7a130110a760c7442a17e5dc1584015d6af7863330d7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

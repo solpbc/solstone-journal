@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity action run check now.",
+  "context": "Journal window. Status view. integrity action run check now.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a0b97d64c4d025411cef1f1d370c6c0ed822c5fb641118d63f53580fc61fa3e2",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

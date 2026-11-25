@@ -1,0 +1,16 @@
+{
+  "description": "Status view. backlog search prune guarded generic.",
+  "context": "Journal window. Status view. backlog search prune guarded generic.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a1b1ac2bbc5c017a29b97b46e1517eb6f4dfca0e5873d36ef6e13025d3a83efb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

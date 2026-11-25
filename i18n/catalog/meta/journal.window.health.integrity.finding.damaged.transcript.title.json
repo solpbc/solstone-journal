@@ -1,0 +1,30 @@
+{
+  "description": "Status view. integrity finding damaged transcript title.",
+  "context": "Journal window. Status view. integrity finding damaged transcript title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "df4c80917f51c3db4a49be345180e2c920c389228d94371ae69b23bb0866891c",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

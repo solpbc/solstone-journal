@@ -1,0 +1,16 @@
+{
+  "description": "Status view. report unavailable.",
+  "context": "Journal window. Status view. report unavailable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e0c848da078e12048b4cdb3a0d958fae407956ac7995504be01b5ec0d0db57ae",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

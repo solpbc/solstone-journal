@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding damaged core body entities retired.",
+  "context": "Journal window. Status view. integrity finding damaged core body entities retired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "49a5a1505a450de238dcd1e1ca369633453f11f47fa8521f7eab27e96b7520e6",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

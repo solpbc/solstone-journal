@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity headline ok checksums partial.",
+  "context": "Journal window. Status view. integrity headline ok checksums partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3797521bd715dbe514362933a70632985981dbccecbcf3c0df2294ceb1629751",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

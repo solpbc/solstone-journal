@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding missing original body.",
+  "context": "Journal window. Status view. integrity finding missing original body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "691b5e12255c731b942310d7beac6172bcb1d1c8c6f07defc42172d7e11ac888",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

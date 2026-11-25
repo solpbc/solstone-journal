@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding quarantined ingest confirm title.",
+  "context": "Journal window. Status view. integrity finding quarantined ingest confirm title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fc63a26fc4e74b6c2c8f6d97e7b64792463c78568d280d998e11f1ebe707ee44",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -340,14 +340,26 @@
       return SERVICE_NAMES[internal] || String(internal || '').replace(/[_:-]+/g, ' ');
     }
 
-    function statusMarkSpec() {
+    function statusMarkSpec(reconciledGlance) {
       const shellStatus = isPlainObject(window.solShellStatus) ? window.solShellStatus : null;
       const base = typeof shellStatus?.statusMarksBase === 'string' && shellStatus.statusMarksBase
         ? shellStatus.statusMarksBase
         : '/static/sol-status/';
-      const stem = typeof shellStatus?.stem === 'string' && /^[a-z0-9-]+$/i.test(shellStatus.stem)
+      let stem = typeof shellStatus?.stem === 'string' && /^[a-z0-9-]+$/i.test(shellStatus.stem)
         ? shellStatus.stem
         : 'mark-connecting';
+      const glance = reconciledGlance || (lastPulse ? homeHealthGlance(lastPulse).glance : null);
+      const hasUrgentAttention = Boolean(
+        glance && glance.verdict === 'attention' && Array.isArray(glance.issues) && glance.issues.length > 0
+      );
+      if (hasUrgentAttention && (
+        stem === 'mark'
+        || stem === 'mark-paused'
+        || stem === 'mark-connecting'
+        || stem === 'mark-connecting-animated'
+      )) {
+        stem = 'mark-attention';
+      }
       return { src: base + stem + '.svg' };
     }
 
@@ -922,6 +934,26 @@
       return '<li class="pulse-waiting-row' + severity + '">' + ring + '<span>' + esc(row.text) + reason + '</span></li>';
     }
 
+    function renderIntegritySlotHtml(pulse) {
+      const integrity = isPlainObject(pulse?.integrity) ? pulse.integrity : null;
+      const text = typeof integrity?.text === 'string' ? integrity.text.trim() : '';
+      if (!integrity || !text || integrity.tone === 'none') {
+        return '<div class="pulse-integrity-slot" data-home-integrity-slot hidden></div>';
+      }
+      const href = typeof integrity.href === 'string' && integrity.href.startsWith('/') && !integrity.href.startsWith('//')
+        ? integrity.href
+        : '/app/health/#integrity';
+      const stateAttr = typeof integrity.state === 'string' ? integrity.state : '';
+      const toneClass = integrity.tone === 'warn'
+        ? ' pulse-integrity-slot--warn'
+        : ' pulse-integrity-slot--calm';
+      return '<div class="pulse-integrity-slot' + toneClass + '" data-home-integrity-slot data-integrity-state="' + esc(stateAttr) + '">'
+        + '<a class="pulse-integrity-link" href="' + esc(href) + '">'
+        + '<span class="pulse-integrity-ring" aria-hidden="true"></span>'
+        + '<span>' + esc(text) + ' →</span>'
+        + '</a></div>';
+    }
+
     function renderVitalsHtml(pulse) {
       const { glance: g, notes } = homeHealthGlance(pulse);
       const severity = g.severity || 'amber'; // 'neutral' is truthy; do not fold it into this fallback
@@ -933,7 +965,7 @@
         };
       });
       const hasCaptureHealth = isPlainObject(pulse?.capture_health);
-      const { src: markSrc } = statusMarkSpec();
+      const { src: markSrc } = statusMarkSpec(g);
       let html = '<div class="pulse-status" id="pulse-vitals" data-home-surface="vitals" role="status" aria-live="polite">'
         + '<div class="pulse-vitals">'
         + '<div class="pulse-vitals-item"><span class="pulse-vitals-dot ' + esc(severity) + `" aria-hidden="true"></span>`
@@ -969,7 +1001,7 @@
           + '<span>' + esc(note.text) + ' →</span></a>';
       }
       html += '</div>';
-      html += '<div class="pulse-integrity-slot" data-home-integrity-slot hidden></div>';
+      html += renderIntegritySlotHtml(pulse);
       html += renderImportReviewRowHtml();
       if (faultRows.length) {
         html += '<ul class="pulse-waiting" aria-labelledby="pulse-status-headline">'

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding checksum mismatch title.",
+  "context": "Journal window. Status view. integrity finding checksum mismatch title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c4e429a6d3cb54a2af4670899fbf0e70ba95cc993fa6f1b824120a748da8187",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

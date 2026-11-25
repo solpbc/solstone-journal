@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity older missing one confirm body.",
+  "context": "Journal window. Status view. integrity older missing one confirm body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "905b20cb6c87b5705f2e9b02fd55055c2c3e2810599fc4cfd033f20e1b45b79f",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

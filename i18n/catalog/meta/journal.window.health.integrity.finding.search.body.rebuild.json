@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search body rebuild.",
+  "context": "Journal window. Status view. integrity finding search body rebuild.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1db7f061385d9f917048c16807ecaf89b96db8ef3458c951c855a6b94a3ce680",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

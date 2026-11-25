@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity verify failed.",
+  "context": "Journal window. Status view. integrity verify failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "038d9c0be7a2833a83417dc3435757ddb54fc4136de345958b243f34f0d6c2e3",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

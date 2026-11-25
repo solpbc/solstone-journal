@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity finding trash original confirm body.",
+  "context": "Journal window. Status view. integrity finding trash original confirm body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "file",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "453d29975dc25855e1f0bf90f73b87c834f1dde36d00b256fec5628caed8fd59",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

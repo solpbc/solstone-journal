@@ -1,0 +1,16 @@
+{
+  "description": "Settings view. removal kind quarantined ingest.",
+  "context": "Journal window. Settings view. removal kind quarantined ingest.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4b496556732bdb0ca546aec94ca328d27b3ed4f4ecf6edf7cf6f3221ba9ad68",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

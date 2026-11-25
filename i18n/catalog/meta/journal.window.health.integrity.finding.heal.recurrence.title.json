@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding heal recurrence title.",
+  "context": "Journal window. Status view. integrity finding heal recurrence title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2246b71f9ecb2f39074513e21b81a3470ed18688881e57b3f318b819869450af",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

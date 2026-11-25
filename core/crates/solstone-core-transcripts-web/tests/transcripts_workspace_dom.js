@@ -4765,8 +4765,13 @@ test('torn JSONL banner preserves valid turns, gates set-aside to allowlisted le
   assert.ok(post, 'posts to /app/health/api/integrity/set-aside-lines');
   assert.deepStrictEqual(
     post.body,
-    { paths: ['chronicle/20200115/room/114500_300/audio.jsonl'] },
-    'only backend-allowlisted transcript leaves are sent'
+    {
+      paths: [
+        'chronicle/20200115/room/114500_300/audio.jsonl',
+        'chronicle/20200115/room/114500_300/conversation_transcript.jsonl',
+      ],
+    },
+    'allowlisted transcript leaves including conversation_transcript.jsonl are sent'
   );
 
   // Reloading fresh clears the banner when damaged_lines is empty.
@@ -4780,14 +4785,36 @@ test('torn JSONL banner preserves valid turns, gates set-aside to allowlisted le
   assert.strictEqual(banner.classList.contains('visible'), false);
 });
 
+test('torn JSONL banner sends imported_audio.jsonl and excludes non-allowlisted leaves', async () => {
+  const env = await createEnvironment('https://journal.example/app/transcripts/20200115', 'analyzed', false);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    chunks: [{ type: 'audio', time: '11:45:01', timestamp: 1, text: 'imported audio turn' }],
+    damaged_lines: [
+      { type: 'audio', file: 'chronicle/20200115/room/114500_300/imported_audio.jsonl', valid: 2, damaged: 1, truncated_tail: false, interior: 1 },
+      { type: 'audio', file: 'chronicle/20200115/room/114500_300/events.jsonl', valid: 1, damaged: 1, truncated_tail: false, interior: 1 },
+    ],
+  });
+  const banner = env.doc.getElementById('trDamagedNotice');
+  const setAsideBtn = banner.querySelector('button[data-action="set-aside-damaged"]');
+  assert.ok(setAsideBtn, 'imported_audio.jsonl exposes set-aside action');
+  setAsideBtn.dispatchEvent({ type: 'click' });
+  await new Promise(r => setTimeout(r, 10));
+  const post = env.posts.find(p => p.url === '/app/health/api/integrity/set-aside-lines');
+  assert.deepStrictEqual(
+    post.body,
+    { paths: ['chronicle/20200115/room/114500_300/imported_audio.jsonl'] },
+    'only allowlisted imported_audio.jsonl is sent; events.jsonl is excluded'
+  );
+});
+
 test('torn JSONL banner hides set-aside button when every damaged leaf is outside the backend allowlist', async () => {
   const env = await createEnvironment('https://journal.example/app/transcripts/20200115', 'analyzed', false);
   getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
   await env.releasePendingSegmentGets('analyzed', {
     chunks: [{ type: 'transcript', time: '11:45:01', timestamp: 1, text: 'imported turn' }],
     damaged_lines: [
-      { type: 'transcript', file: 'chronicle/20200115/room/114500_300/conversation_transcript.jsonl', valid: 4, damaged: 1, truncated_tail: true, interior: 0 },
-      { type: 'audio', file: 'chronicle/20200115/room/114500_300/imported_audio.jsonl', valid: 2, damaged: 1, truncated_tail: false, interior: 1 },
+      { type: 'audio', file: 'chronicle/20200115/room/114500_300/events.jsonl', valid: 4, damaged: 1, truncated_tail: true, interior: 0 },
       { type: 'image', file: 'chronicle/20200115/room/114500_300/photo_01.jsonl', valid: 1, damaged: 1, truncated_tail: false, interior: 1 },
       { type: 'audio', file: 'chronicle/20200115/room/114500_300/mic_audio.jsonl', valid: 1, damaged: 1, truncated_tail: false, interior: 1 },
     ],
@@ -4796,7 +4823,7 @@ test('torn JSONL banner hides set-aside button when every damaged leaf is outsid
   const banner = env.doc.getElementById('trDamagedNotice');
   assert.strictEqual(banner.hidden, false);
   assert.strictEqual(banner.querySelector('button[data-action="set-aside-damaged"]'), null, 'no dead HTTP 400 button for unsupported leaves');
-  assert.strictEqual(banner.querySelectorAll('.tr-damaged-list li').length, 4);
+  assert.strictEqual(banner.querySelectorAll('.tr-damaged-list li').length, 3);
 });
 
 test('timeline pills, day rail, and detail view render honest modality-aware processing_reason_code states without pending or looping retry', async () => {

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity coverage body.",
+  "context": "Journal window. Status view. integrity coverage body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "37cbbd4a34ac647a92c5e5b4ac3973562ff213530940ecefda78ab9130c8295e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

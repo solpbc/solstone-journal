@@ -1,0 +1,30 @@
+{
+  "description": "Status view. integrity headline needs attention.",
+  "context": "Journal window. Status view. integrity headline needs attention.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6a3467cd35a7407dd8753f86961d0fc90b288a3a29ee7c0dc0cdcc8521b0b5eb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

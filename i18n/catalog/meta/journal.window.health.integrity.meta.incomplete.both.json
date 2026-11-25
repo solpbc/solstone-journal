@@ -1,0 +1,43 @@
+{
+  "description": "Status view. integrity meta incomplete both.",
+  "context": "Journal window. Status view. integrity meta incomplete both.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "unreadable",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "64aa08631fa23c374ac1496511a1e72a4f6cc0e25e32af09fe7e7e6f2847e19b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

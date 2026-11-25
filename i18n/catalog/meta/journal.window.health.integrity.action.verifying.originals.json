@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity action verifying originals.",
+  "context": "Journal window. Status view. integrity action verifying originals.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c83f2a7c98353023d20e65a5ed2610bf5afdc3ad57ced9d1bcaa9ab366a40e2b",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

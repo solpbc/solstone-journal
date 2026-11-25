@@ -1,0 +1,43 @@
+{
+  "description": "Status view. integrity meta incomplete budget.",
+  "context": "Journal window. Status view. integrity meta incomplete budget.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "remaining",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a1736db86a3d03a7a3311e4ee67c65d143c1a85f6b6124dc136e37856c1001d7",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

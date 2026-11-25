@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding search body check overdue.",
+  "context": "Journal window. Status view. integrity finding search body check overdue.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3aa6b4c64f80b91fd049da25b0e44b7539d95f426fbfe20952a3b95310979ae",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

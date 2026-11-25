@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity scope routine.",
+  "context": "Journal window. Status view. integrity scope routine.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e18945480c286466eeeb24cb9661026864680f0a27b025a0b175d18905af8f66",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

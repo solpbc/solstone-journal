@@ -1,0 +1,47 @@
+{
+  "description": "Status view. integrity scope checksums partial.",
+  "context": "Journal window. Status view. integrity scope checksums partial.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total_quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "verified",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "older",
+      "type": "string"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5772a37297ca4134715cc15265e4299e8dbd8823cb75f839b7139250956b4d3a",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "total_quantity",
+    "type": "cardinal"
+  }
+}

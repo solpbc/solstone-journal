@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity link open day.",
+  "context": "Journal window. Status view. integrity link open day.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0543cb04561097979413a3ae4a6187ec0342c2f1f79336d9210b35fd668e9e3d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

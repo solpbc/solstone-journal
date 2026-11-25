@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding damaged core body facets retired.",
+  "context": "Journal window. Status view. integrity finding damaged core body facets retired.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5fbd635f48747e23a1f4ac9ca02f8fc4bbbd2fe617761e4de05a7c58cb2c8824",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

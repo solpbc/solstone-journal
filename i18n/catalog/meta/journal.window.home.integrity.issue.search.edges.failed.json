@@ -1,0 +1,16 @@
+{
+  "description": "Home view. integrity issue search edges failed.",
+  "context": "Journal window. Home view. integrity issue search edges failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7951318de6dc393c6218413333d28e0e9eb7c9086598a9d2952d2bfeae59cfe5",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

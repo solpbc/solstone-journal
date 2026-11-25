@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity link open import.",
+  "context": "Journal window. Status view. integrity link open import.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5cf61523eaa49563815771265145ff781fa11b025f53bf9e6a11f3c3dc50605",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

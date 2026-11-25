@@ -1457,6 +1457,8 @@ h2.card-title {
 }
 
 .import-retry-btn {
+  display: inline-block;
+  text-decoration: none;
   padding: 0.15em 0.5em;
   font-size: 0.78em;
   border: 1px solid var(--hairline-2);
@@ -1548,6 +1550,321 @@ h2.card-title {
 #processingHolds summary {cursor:pointer;min-height:46px;padding:10px 0}
 #processingHolds pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:0.8rem}
 #processingHolds .held-work-row + .held-work-row {border-top:1px solid var(--hairline)}
+#processingHolds .held-work-guidance {margin:0.35rem 0;font-size:0.86rem;color:var(--ink-soft-paper);display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem 0.75rem}
+#processingHolds .held-work-guidance a {color:var(--orange-text-aa);font-weight:500;text-decoration:none}
+#processingHolds .held-work-guidance a:hover {text-decoration:underline}
+
+.backlog-search-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.86rem;
+  color: var(--warn-ink);
+  line-height: 1.45;
+}
+.backlog-search-note a {
+  color: var(--orange-text-aa);
+  font-weight: 500;
+  text-decoration: none;
+  margin-left: 0.35rem;
+}
+.backlog-search-note a:hover {
+  text-decoration: underline;
+}
+
+.integrity-card {
+  scroll-margin-top: 1rem;
+}
+.integrity-card:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.integrity-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.integrity-title-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+.integrity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  background: var(--cream-bright);
+  color: var(--ink-soft);
+  border: 1px solid var(--hairline-2);
+}
+.integrity-badge[data-tone="ok"] {
+  background: var(--success-wash);
+  color: var(--success-ink);
+  border-color: transparent;
+}
+.integrity-badge[data-tone="warn"] {
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  border-color: transparent;
+}
+.integrity-badge[data-tone="danger"] {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: transparent;
+}
+.integrity-badge-ring {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-faint);
+  flex-shrink: 0;
+}
+.integrity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.integrity-btn {
+  appearance: none;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 500;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--hairline-2);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.integrity-btn:hover:not(:disabled) {
+  background: var(--cream-bright);
+  border-color: var(--orange-ink);
+}
+.integrity-btn:focus-visible,
+.integrity-link:focus-visible,
+.integrity-card summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.integrity-btn--primary {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: var(--ink-on-brand);
+  font-weight: 600;
+}
+.integrity-btn--primary:hover:not(:disabled) {
+  background: var(--orange);
+  border-color: var(--orange-ink);
+  filter: brightness(0.97);
+}
+.integrity-btn--danger {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--hairline-2));
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+.integrity-btn--danger:hover:not(:disabled) {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+.integrity-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.integrity-headline {
+  margin: 0.65rem 0 0.25rem;
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.integrity-meta,
+.integrity-checksum-line,
+.integrity-scope-note {
+  margin: 0.25rem 0;
+  font-size: 0.86rem;
+  color: var(--ink-soft-paper);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.integrity-action-status {
+  margin: 0.55rem 0 0;
+  font-size: 0.86rem;
+  color: var(--ink-soft-paper);
+}
+.integrity-action-status[data-tone="error"] {
+  color: var(--danger);
+}
+.integrity-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+.integrity-finding {
+  padding: 0.8rem 0.95rem;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--warn);
+  background: var(--cream-bright);
+  min-width: 0;
+}
+.integrity-finding--danger {
+  border-left-color: var(--danger);
+}
+.integrity-finding--maintenance {
+  border-left-color: var(--hairline-2);
+}
+.integrity-finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.65rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.integrity-finding-context {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.integrity-finding-body {
+  margin: 0.3rem 0 0;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.integrity-finding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.6rem;
+}
+.integrity-link {
+  color: var(--orange-text-aa);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.integrity-link:hover {
+  text-decoration: underline;
+}
+.integrity-finding-details {
+  margin-top: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.integrity-finding-details summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.integrity-finding-details code,
+.integrity-finding-details ul {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.integrity-finding-details ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+.integrity-older-missing {
+  margin-top: 0.85rem;
+  padding: 0.75rem 0.95rem;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--cream-bright);
+  min-width: 0;
+}
+.integrity-older-summary-text {
+  margin: 0 0 0.45rem;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+.integrity-older-details summary {
+  cursor: pointer;
+  color: var(--orange-text-aa);
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.integrity-older-controls {
+  margin: 0.55rem 0 0.65rem;
+}
+.integrity-older-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.integrity-older-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.84rem;
+  color: var(--ink);
+  min-width: 0;
+}
+.integrity-older-row-meta {
+  overflow-wrap: anywhere;
+}
+.integrity-older-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+}
+.integrity-coverage {
+  margin-top: 0.85rem;
+  font-size: 0.84rem;
+  color: var(--ink-soft-paper);
+}
+.integrity-coverage summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.integrity-coverage p {
+  margin: 0.25rem 0 0;
+  line-height: 1.45;
+}
+@media (max-width: 480px) {
+  .integrity-btn,
+  .integrity-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .integrity-finding-details summary {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
 </style>
 
 <div class="health-dashboard">
@@ -1566,7 +1883,29 @@ h2.card-title {
     <p class="backlog-verdict-line">{{journal.window.health.visible.text.checking.journal.backlog}}</p>
     <p class="backlog-unfinished-line" hidden></p>
     <p class="backlog-search-line" hidden></p>
+    <p class="backlog-search-note" hidden></p>
     <div class="backlog-state-error" data-health-state-error hidden></div>
+  </section>
+
+  <section class="dashboard-card integrity-card" id="integrity" aria-labelledby="integrityTitle" tabindex="-1">
+    <div class="section-header integrity-header">
+      <div class="integrity-title-group">
+        <h2 class="card-title" id="integrityTitle">{{journal.window.health.integrity.heading}}</h2>
+        <span class="integrity-badge" id="integrityBadge" data-tone="neutral" hidden></span>
+      </div>
+      <div class="integrity-actions" id="integrityActions"></div>
+    </div>
+    <p class="integrity-headline" id="integrityHeadline" role="status" aria-live="polite">{{journal.window.health.integrity.loading}}</p>
+    <p class="integrity-meta" id="integrityMeta" hidden></p>
+    <p class="integrity-checksum-line" id="integrityChecksumLine" hidden></p>
+    <p class="integrity-scope-note" id="integrityScopeNote" hidden></p>
+    <p class="integrity-action-status" id="integrityActionStatus" role="status" aria-live="polite" hidden></p>
+    <div class="integrity-findings" id="integrityFindings" hidden></div>
+    <div class="integrity-older-missing" id="integrityOlderMissing" hidden></div>
+    <details class="integrity-coverage" id="integrityCoverage" hidden>
+      <summary>{{journal.window.health.integrity.coverage.trigger}}</summary>
+      <p id="integrityCoverageBody">{{journal.window.health.integrity.coverage.body}}</p>
+    </details>
   </section>
 
   {{STORAGE_PRIVACY}}

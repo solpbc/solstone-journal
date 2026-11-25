@@ -1,0 +1,21 @@
+{
+  "description": "Status view. integrity finding undeclared facet confirm title.",
+  "context": "Journal window. Status view. integrity finding undeclared facet confirm title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "facet",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83d3c27024f4b040e86699952d1467440390579634f24b363f47328f70047d77",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

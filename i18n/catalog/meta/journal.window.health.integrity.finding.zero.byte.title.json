@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding zero byte title.",
+  "context": "Journal window. Status view. integrity finding zero byte title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "01a2cb766930eb179ba6c0055cb5e3ceb91ecc6e85a1dd6b6cff9ea403f7f92e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity headline not checked.",
+  "context": "Journal window. Status view. integrity headline not checked.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "177ec5493110860462009f96d915d5ede2829babed31a1e1799a935b3c47fa50",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

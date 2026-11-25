@@ -94567,6 +94567,13 @@
       ]
     },
     {
+      "id": "journal.window.health.backlog.media.error",
+      "source": "2348a32e6c549fb8893deec655b5f58ff2ae5bbed31b6aeac506b6b49f72ec0a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.health.backlog.media.segments",
       "source": "b292bc3a9b4b47c964755875d031ffb6ebb3c2d2b7148c4c7fe4e8589a613661",
       "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
@@ -94661,6 +94668,34 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.health.backlog.search.edges.failed",
+      "source": "eaf3d90265e29f123c8e8944f02af3382ef6c9929f3f3e5f0f7ae6c0591a08ee",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.backlog.search.prune.guarded",
+      "source": "4b8cda386f13c7b55776f5d998b5967d56c9a7dfb3cc0082495f09d364cf3550",
+      "contract": "8d2de8798d8144aacb8df3a23dbb74885eef8d8c9a95541e23b186a17f22a39a",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.backlog.search.prune.guarded.generic",
+      "source": "a1b1ac2bbc5c017a29b97b46e1517eb6f4dfca0e5873d36ef6e13025d3a83efb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.backlog.search.review.integrity",
+      "source": "25d3d60355bce59246755aea5f6d922f0a013579c8e73c3e7d71dd7b3fb51a6e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.health.backlog.verdict.scoped",
@@ -97063,6 +97098,34 @@
       ]
     },
     {
+      "id": "journal.window.health.glance.integrity.action",
+      "source": "c0eb1b0492e0b05ba94ded53dabaa7cc2561295a90cc1e8d6e4707a702a5f8ab",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.glance.integrity.attention",
+      "source": "069d6a2207937638bac32295d9b8e053fb0e572d5212a089a704e1b95c37186e",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.glance.integrity.incomplete",
+      "source": "dfae7b93b5c85f30be4b21409d4e8f10c3819266eab96ff9925023ec9d34d5dd",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.glance.integrity.unavailable",
+      "source": "17d8bbe1e73714fa2be4951a7c8d21ef5b5466526c31e683287e0f282c7ce0d1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.health.glance.observe.local.your.journal.s.computer.isn.t",
       "source": "4831b1cbccb122afa3782c9f07a044316608ba27bd3c73d054f91222d6155169",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -97612,6 +97675,916 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.health.importer.open.import",
+      "source": "a5cf61523eaa49563815771265145ff781fa11b025f53bf9e6a11f3c3dc50605",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.check.from.start",
+      "source": "2fb57ed63a95b29ded2a8257658f59c102330e00980f744eb3a1bda9cd94f400",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.check.now",
+      "source": "b05a174ef7667abfc07de6ca8da426907b89d7384d84fa603b8d54a79b5661d7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.checking",
+      "source": "83b64f0c6dd04c120aa94a05a8730e94e84e78ae40e51a28cebcd4943e53b278",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.failed",
+      "source": "a2f7f68137a184da7669eb7658117b22f315347f144c0b148ea37781c0651020",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.finish.check",
+      "source": "072f13d525624347f828a431cbd4fa41383708014d94c978c76ecfa9bb2fceae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.run.check.now",
+      "source": "a0b97d64c4d025411cef1f1d370c6c0ed822c5fb641118d63f53580fc61fa3e2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.verify.originals",
+      "source": "51654b562ce51f88fd227f829f612304592bbf2e4d4280e6bd810c2bcebef651",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.verifying.originals",
+      "source": "c83f2a7c98353023d20e65a5ed2610bf5afdc3ad57ced9d1bcaa9ab366a40e2b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.action.working",
+      "source": "b5cdafaa0d35ccef2d92ce4e808b7946c05f268fbc7cb66ce002f13d2f1f8de5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.badge.incomplete",
+      "source": "7b9de7774dd66db9d04a368eb56c35834ca55fc1b1506e16d88f097cef295fc9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.badge.maintenance",
+      "source": "35cce9631d105bcc350f0cbd16a694b1eb837e42383b58f7de427ed56209c45e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.badge.needs.attention",
+      "source": "45cab31c4ee6314bb387731f0a8cec71ce70686b35352a27dab6f2ac88280859",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.badge.not.checked",
+      "source": "3367d86ed387b087860142ea3a50b0bae7ea9c10a46f5e01519581983cfdf06f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.badge.ok",
+      "source": "7215fe69aa21a2b073c5e6c8c18daaa73b91c9d619b7e8fb38d01d84f8d53a3f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.badge.unavailable",
+      "source": "d7d6eca0ae3dc604cbe3adf1139a4860a3314a82068e6f82289272ebbf93af1e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.check.failed",
+      "source": "0af9312074c34a5068daa959b7c62267ad7ef017c68daed67f9bfffd27fe21e6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.coverage.body",
+      "source": "37cbbd4a34ac647a92c5e5b4ac3973562ff213530940ecefda78ab9130c8295e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.coverage.trigger",
+      "source": "dafe3fe681f0e9e64c81fd3f71e629876e9114e1cb2efc0584ddd3cb8163085f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.details.trigger",
+      "source": "f8af685e4ac251a0ea489721de141cc7a58e3da955668f2b343bf45b0a2321f5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.checksum.mismatch.body.import",
+      "source": "01c94b907c50c4eb803df0aff9a128bb684450f3d3b26edb20d0a60c49af9d44",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.checksum.mismatch.body.segment",
+      "source": "2db01ba805372add5117043cdee37bbce86b33bdf64b2bacc93b6fd55e4b35ee",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.checksum.mismatch.title",
+      "source": "5c4e429a6d3cb54a2af4670899fbf0e70ba95cc993fa6f1b824120a748da8187",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.core.body.config",
+      "source": "ea88c368f79c5b67868ff37cf1e26537219165421ca112fc0146360780558c92",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.core.body.entities.retired",
+      "source": "49a5a1505a450de238dcd1e1ca369633453f11f47fa8521f7eab27e96b7520e6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.core.body.facet",
+      "source": "04bc6cf4d91c009efe64cb3457c3cf9d4fc830319c8ba36d65ce19d2652a8144",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.core.body.facets.retired",
+      "source": "5fbd635f48747e23a1f4ac9ca02f8fc4bbbd2fe617761e4de05a7c58cb2c8824",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.core.body.other",
+      "source": "4c02ae78a5a39f0282656a9c3d32cc47d66912f6a755ede2cff2ed3ee5322af3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.core.title",
+      "source": "048acaca549ec55a7a801eda0b944cb28bade5075d88965dfe9ed2f538f66a67",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.action",
+      "source": "0a94d64620acb9777b464f52c74a07a2b770b11b7808519433e927ddce70d5ca",
+      "contract": "b13a7cfe977efb192ccf75fd0753b985200c118e7b9ae49a9c3cf357de42b4c3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.body.kept",
+      "source": "f5c72da8cf7f8dace68d65966ae7628e6862aef7bd031834a810fd9a50fd461f",
+      "contract": "f73c6068e4a6eaafa5eebcf0353e05af9e6307a1cb98fd46a957d3c3017ff48f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.body.kept.tail",
+      "source": "fb2894bb632b37d8cf4c431f821d52bc63f222b5c3afb89ef3ef87f708e62c20",
+      "contract": "f73c6068e4a6eaafa5eebcf0353e05af9e6307a1cb98fd46a957d3c3017ff48f",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.body.none",
+      "source": "569260f0aea08e3d9c9ac8661122ca192d1bd5b4f887c4348e4dd76fd2018e08",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.confirm.action",
+      "source": "1fed1c35288fcae0cfc0ea764f8d2936e9f90eb606cb93623c48db4380f99723",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.confirm.body",
+      "source": "fdba372e33ff616ed9cf7e387d4e3d4023f6e69a1e17c3325767d456d1160ae1",
+      "contract": "b13a7cfe977efb192ccf75fd0753b985200c118e7b9ae49a9c3cf357de42b4c3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.confirm.title",
+      "source": "d4af5e818a1ace305d189ad151b0b32e0006f126111a750c7be6f0d000d09f51",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.detail",
+      "source": "714033613b7da4abd962f13cfe24abed508ef8dc8c842e629741e02dfad33d05",
+      "contract": "edd9cb9cd9b3a651ed7d5eeed00cd817e0dd55c43627a87c66680041b5c8c232",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.done",
+      "source": "3cc100488ac76f86c2e6da12c89ebd22eced6b597721d5daf38881260f11a888",
+      "contract": "b13a7cfe977efb192ccf75fd0753b985200c118e7b9ae49a9c3cf357de42b4c3",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.damaged.transcript.title",
+      "source": "df4c80917f51c3db4a49be345180e2c920c389228d94371ae69b23bb0866891c",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.heal.recurrence.body",
+      "source": "2526247fc5e16eccfcc0a5c072720c773c889aca5b883d7ba549ea04b91bbc65",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.heal.recurrence.title",
+      "source": "2246b71f9ecb2f39074513e21b81a3470ed18688881e57b3f318b819869450af",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.low.disk.body",
+      "source": "d35f19c90c22fdf4aa51b6a57faee6af5b0df01037036038c73c521edc2862ac",
+      "contract": "946a9cbc41ad1113de2aba1de07566f6b6d36cf73689e4556ead38c6b64bb0a1",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.low.disk.body.short",
+      "source": "bf27089a2187a98ebbfd611948d1789160d59dc3904dbe2a3d4bf4e16eec465d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.low.disk.title",
+      "source": "d3fe91091340f237db8a2c7402cb941d91399f67ea3bbe54c2bc95510bbfdcb1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.action",
+      "source": "aa1f72468ad94b9ccbb5a91a7443cac1918e48dfd39c73975195c72a2adf2484",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.body",
+      "source": "691b5e12255c731b942310d7beac6172bcb1d1c8c6f07defc42172d7e11ac888",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.confirm.action",
+      "source": "aa1f72468ad94b9ccbb5a91a7443cac1918e48dfd39c73975195c72a2adf2484",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.confirm.body",
+      "source": "6930f060e6b0e06468edbdf00c722dc87232b677b1f8a8d455833ea8a3636176",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.confirm.title",
+      "source": "0b1f33fbe9d2400e9f33dd06a019f4bb7c15168c958464db9f4f93f83e08565b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.done",
+      "source": "78032b95a6a4845ebeecad9cc5799b1dde01d9defc3d9336d65d326d397e5f57",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.missing.original.title",
+      "source": "a38d668f70ef3ab9da006b564d339f21a643f6ebdc1fd49414b9b23dcb68988e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.body",
+      "source": "0395a29005682f2e83b2273ed6dc792cf6f53ffd26f048ad7660b4253b3ea91d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.confirm.body",
+      "source": "a9821e4088a885d023cae39930bd55783309700665b382a74bb04678668cd400",
+      "contract": "3c2678c8604d7b4478bffdf5c4c1a4574e3dc93f7eadefbeddd80eedf9cbfdeb",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.confirm.title",
+      "source": "fc63a26fc4e74b6c2c8f6d97e7b64792463c78568d280d998e11f1ebe707ee44",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.done",
+      "source": "4ddc99cc7a0bd9afea5b46287341bb807dd0246050e91723de402d729849dcfa",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.download",
+      "source": "522f74a076d62e65872c5d09c4c2288d657c1a0719cf995faf232d346261618a",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.title",
+      "source": "8a81418f36a1c0dc6fc0e31e4f1c83ade92b7321093ba457d42604b97dbad0ad",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.quarantined.ingest.trash",
+      "source": "1f4ed655e4491cf8dc7fee4b3cfc8df0f74c621684be35c981f4a3e4d0f9406b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.action.clear.removed",
+      "source": "a9cc64fc64ed60e5a062b71b25e55a2a18c7fcfaf77d5dc0a706fed57a1ea94e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.action.rebuild",
+      "source": "b07a5b9165b71ddd9594f1a7b3d010a5770544a58227c66f5c3c1f9863c0f461",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.action.update",
+      "source": "5c4d98455e48114af409207b531b018e1e6d96e3237380431066d58670b3162b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.body.check.overdue",
+      "source": "e3aa6b4c64f80b91fd049da25b0e44b7539d95f426fbfe20952a3b95310979ae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.body.edges.failed",
+      "source": "43bd501cfd0908bfee123b779729b1cefaf5ed409ac5815bd2fc3bceb81714ee",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.body.newer.generation",
+      "source": "565e2ffd88da547c574e21477e04fdcefcaae0a107d66cb5f93009340c087a2b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.body.prune.guarded",
+      "source": "75e79ef743d13d317568d0d381c6a9bee219557204d435497c0a1ca08ab3fb15",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.body.rebuild",
+      "source": "1db7f061385d9f917048c16807ecaf89b96db8ef3458c951c855a6b94a3ce680",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.body.repeated.rebuild",
+      "source": "c3b24266147c45c367b3c3eeb6150760e5f130bc5ade5fbbc383c38b001bc951",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.queued",
+      "source": "52af417f84a49258a087d08312d4368b80baca869c52d679340f42a1164fc01e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.running",
+      "source": "6ddca749227d9b670a69a8890bdc6988a3acdcc59fdf08908f06a62b866c90d4",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.title.check.overdue",
+      "source": "197af5f47d06a763ca9f5331d82c1bd99147dfd2477ba1e87efab4fed853c441",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.title.edges.failed",
+      "source": "402ee42d3e4163287089d44bdc276998f4c5204eaee7cc18ebd22e7f2c1e69fe",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.title.newer.generation",
+      "source": "96094cba826e1992588bf8b6de0bec989c016a468890e73ccd09cd6e90124972",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.title.prune.guarded",
+      "source": "796aada552a4b474aba00176ace5c2723ae3ad2e7bfab3adc4b021ca08ed4edb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.title.rebuild",
+      "source": "9a6aed0f883b03f1daae61a7d054d33b8a98c6828c228c4721c4e58dabffd3ce",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.search.title.repeated.rebuild",
+      "source": "5a738a935d56ff8270ce8fbd5bebb0032e0963ea80c49c16a0e8cb27e3e6f828",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.trash.original.action",
+      "source": "5a753775a1127321812b1fec28a91ba1595fc3dee7b57ae8da124347f3a0ec1f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.trash.original.confirm.action",
+      "source": "1f4ed655e4491cf8dc7fee4b3cfc8df0f74c621684be35c981f4a3e4d0f9406b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.trash.original.confirm.body",
+      "source": "453d29975dc25855e1f0bf90f73b87c834f1dde36d00b256fec5628caed8fd59",
+      "contract": "3c2678c8604d7b4478bffdf5c4c1a4574e3dc93f7eadefbeddd80eedf9cbfdeb",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.trash.original.confirm.title",
+      "source": "532b528c6d3107c124785c1fa75e7aa297e554ba987b3ff0c418ac8561a839c1",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.trash.original.done",
+      "source": "66fc8550b3c8e0a38a89fddcc4c573db2ba6c57a4e6f844e89247a2b6aaa70c2",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.action.add",
+      "source": "89f76346ad3a8f0b4c5b23310fe911ac62a864a759b91e1791e1fe2599a539ab",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.action.trash",
+      "source": "1f4ed655e4491cf8dc7fee4b3cfc8df0f74c621684be35c981f4a3e4d0f9406b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.added",
+      "source": "c48279986fc8ebaeafb6fd9e6b6ec3e63bb9ef8947c3ae37d2d3fdddcce997cd",
+      "contract": "b043a772688a736a3c760b75a7b2005ae350df47646799010327b8287db41a58",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.body",
+      "source": "e537d5f4237cde3611d7671935877a87ee0468e961f20789436566969b6b7ba9",
+      "contract": "b043a772688a736a3c760b75a7b2005ae350df47646799010327b8287db41a58",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.confirm.body",
+      "source": "61e0d958510cd42b4fd6512ff055b382cb06657b20796a2d59223719456f2545",
+      "contract": "b043a772688a736a3c760b75a7b2005ae350df47646799010327b8287db41a58",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.confirm.title",
+      "source": "83d3c27024f4b040e86699952d1467440390579634f24b363f47328f70047d77",
+      "contract": "b043a772688a736a3c760b75a7b2005ae350df47646799010327b8287db41a58",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.title",
+      "source": "f598f28e2fa379508e74a31a1e6f74c5744cc18a0da3a2f8e25f016ddc7f533b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.undeclared.facet.trashed",
+      "source": "dedf8fbc1f9c945159ba9235b07bbfe0d0a68c338132e9245ebbc0aa320f9d04",
+      "contract": "b043a772688a736a3c760b75a7b2005ae350df47646799010327b8287db41a58",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.zero.byte.body",
+      "source": "5bedec22cb1d8b1d34c9f4bbf0acd2e3fb4cdba36e6b63d347f9f24c4b7036cb",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.finding.zero.byte.title",
+      "source": "01a2cb766930eb179ba6c0055cb5e3ceb91ecc6e85a1dd6b6cff9ea403f7f92e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.heading",
+      "source": "515b3f9b1c13151d65c0f70783e9337900d15f61cf87b80d1ef87122f923d40e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.incomplete",
+      "source": "147e96e1426c9fa0263f232669cd2746c43af7b601012bff63913b057b9ad647",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.maintenance",
+      "source": "b9e64ff883b4b39e376f061dec29a2693b2ab1aa17fda245cc5d5573b2018f7f",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.needs.attention",
+      "source": "6a3467cd35a7407dd8753f86961d0fc90b288a3a29ee7c0dc0cdcc8521b0b5eb",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.needs.attention.incomplete",
+      "source": "a43768347100002710773b7d88ca7c6f9ad934e2edbd5c89be06b913c34480c7",
+      "contract": "44c164dfa0ee6b2375b949d2093be843f398376a565137838fa603c21eb0fe93",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.needs.attention.unreadable",
+      "source": "2ed662fc939c8d9c8f8800dc42308540c5283254886595b8d55dd3713568847c",
+      "contract": "c51b0650aa9d454995053708237e2753c1ebe34a56b663effc0ae9712e79a5aa",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.not.checked",
+      "source": "177ec5493110860462009f96d915d5ede2829babed31a1e1799a935b3c47fa50",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.ok.checksums.full",
+      "source": "3797521bd715dbe514362933a70632985981dbccecbcf3c0df2294ceb1629751",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.ok.checksums.partial",
+      "source": "3797521bd715dbe514362933a70632985981dbccecbcf3c0df2294ceb1629751",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.ok.routine",
+      "source": "0ec65bb41192efec616bda2527f8b69643e02dd6589c2847d2f9511cd5771835",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.headline.unavailable",
+      "source": "ea57aaab13193eb18f37923db3bbc1e574d3a77d879ebac20286f2f5864420fc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.link.open.backup",
+      "source": "9c4a52960bc734d1caf26e4b0a6610616a4cc3003fdb8cacf9fd5316743058af",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.link.open.day",
+      "source": "0543cb04561097979413a3ae4a6187ec0342c2f1f79336d9210b35fd668e9e3d",
+      "contract": "460f2592217cc7e5103ae548a926bb7f8a950673ca010f6b0c527d2de0f6eef8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.link.open.facets",
+      "source": "1f22d21544707ad5d547b23544cf08047e3baac8278b17644272e3c60599f248",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.link.open.import",
+      "source": "a5cf61523eaa49563815771265145ff781fa11b025f53bf9e6a11f3c3dc50605",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.link.open.storage",
+      "source": "a9c1180c3b015f641ef3f947a244f9edcfe3b8349110bee55ea573bcc017df89",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.loading",
+      "source": "0c5e6194aadf5a26e741a009e1d9e3be82a3a585a204ae033a42fb57ede8fd2f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.meta.checked.days",
+      "source": "f53e15abfea2495b8eeb97a60cfec5eb357a1b57e068a7249b0a7fe6ba7fcc9e",
+      "contract": "3febcdf33bef718578841bc449ed12c0fd141ded28b5a66af2e5d67a769f4994",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.meta.checked.none",
+      "source": "4113047f919f9124277de8d45b1d655cf28d9ebd9fff0bdd1ef61a43646b6d0d",
+      "contract": "80796df66fa051ed19ab1def734b15096646c6195c4778a25e5193c187bf0ff8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.meta.disk.live",
+      "source": "7423cf46d158dbe37a408fd8ea25fda2b372033c14f667b9dedc668d4f70112c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.meta.incomplete.both",
+      "source": "64aa08631fa23c374ac1496511a1e72a4f6cc0e25e32af09fe7e7e6f2847e19b",
+      "contract": "38d88ee6afbde4a77d0659ce59ba2d64004810402c5c753cc5f9c7b579fe93ba",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.meta.incomplete.budget",
+      "source": "a1736db86a3d03a7a3311e4ee67c65d143c1a85f6b6124dc136e37856c1001d7",
+      "contract": "557fb331de55fef2363dbe2201b3ba8e49b6f125f48849f1554a604c7ff506f4",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.meta.incomplete.unreadable",
+      "source": "59a991ccd275bc3ead327f8482c2d87d7b016cb5d6adfa3d9c07989a418b4b97",
+      "contract": "38d88ee6afbde4a77d0659ce59ba2d64004810402c5c753cc5f9c7b579fe93ba",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.bulk.action",
+      "source": "942e8a67cc82bab180ba359cf123384e8f412035806718f74a4853a8614f9c2e",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.bulk.confirm.body",
+      "source": "6febecf1afa3f21a39ad718324df2166b796bad044646942225b689c0997b0f5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.bulk.confirm.title",
+      "source": "a7476b6407dfd9a1a401b8fe09dc44332bc5ba3c4ba50b00ef6f050965724b02",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.bulk.done",
+      "source": "5c8cd95b28ea546a4761a4e1d9331ebb7b6c416f5e8b87eeaab59bd06ce5d571",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.one.confirm.body",
+      "source": "905b20cb6c87b5705f2e9b02fd55055c2c3e2810599fc4cfd033f20e1b45b79f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.summary",
+      "source": "fa25a0df876e05338743439090ca6a7290ddf3c1faa3704ed8d0c1c98a1a02e3",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.older.missing.trigger",
+      "source": "ed31c7c2002835ac150a8a6d14a62fcdaa010865b1a91f1d59c7ac75e15d6e85",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.checksums.full",
+      "source": "526862265a2baa857393af42e943b1035cb78a92e01860392c4dd06d024b6865",
+      "contract": "54cbf356e66d2d0ff885969b0fa8def32eb9afb143e1ecf6797f9f369498afb0",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.checksums.incomplete",
+      "source": "12ef14005e174109370efc15f9c8754168639adbe0ffd3aa81fca5f542aeb60f",
+      "contract": "20b6fb8d955d3f77865546233e4230cae1801337f714792fe381f4e636b25a22",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.checksums.mismatches",
+      "source": "c03a9bdc258d8bb333c9e0c3c2b998d729cb929f643c1cc8dd9271984609d2cb",
+      "contract": "20b6fb8d955d3f77865546233e4230cae1801337f714792fe381f4e636b25a22",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.checksums.none",
+      "source": "8132948d3fe96b629570b168e3dbe60622e7a6fe1b1368aee40743bafb943945",
+      "contract": "80796df66fa051ed19ab1def734b15096646c6195c4778a25e5193c187bf0ff8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.checksums.partial",
+      "source": "5772a37297ca4134715cc15265e4299e8dbd8823cb75f839b7139250956b4d3a",
+      "contract": "75542abbb948173411c8d7bff752daf83fea6ca9bedb7dac1c9d31ebd8983116",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.not.checked",
+      "source": "fb1106772cb90afc504a9199f963edc14b0e02174e36318ec75773dc44accdf0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.routine",
+      "source": "e18945480c286466eeeb24cb9661026864680f0a27b025a0b175d18905af8f66",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.unavailable",
+      "source": "5f95401a8dc37efd0f91fa446d4c91425f0dd9ea4408dd49d2bfe25cd7f28e8c",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.scope.unreadable.guidance",
+      "source": "a6772207dfe8d015aa4f1ea6bd2a542f6aceaed904a14febe39712aa6e5ebf55",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.health.integrity.verify.failed",
+      "source": "038d9c0be7a2833a83417dc3435757ddb54fc4136de345958b243f34f0d6c2e3",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.health.label.review.folder.privacy",
@@ -107548,6 +108521,13 @@
       ]
     },
     {
+      "id": "journal.window.health.work.hold.open.transcripts",
+      "source": "3c8c18e0cabfd79fd7946f0e5757428930748c9c96ca0b9a5b2f1fd4ab4d40c9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.health.work.hold.page",
       "source": "aad97bc41eb060eff96423a7dd03b373987396626758be5d224751ae78196a7a",
       "contract": "15b18c8c5434214e8067101b7b9c08e74638e40c2f6694349632e97518990f3c",
@@ -107770,6 +108750,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.health.work.hold.unretryable.note",
+      "source": "85d4628f5a876b2466bb7a130110a760c7442a17e5dc1584015d6af7863330d7",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.health.work.inspection.complete",
@@ -111201,6 +112188,132 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.home.integrity.incomplete.days",
+      "source": "f5c56e3f7ca78a98a9a0129a3f65e5ddd84424ce57929196a927839342f1ff7f",
+      "contract": "f6f148a0c65cf3681a9fbe8a8e425ea5726a305b4ae8bef8e9e01ea27f895c96",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.incomplete.unreadable",
+      "source": "370be4edcb89eedeb9e95adb8d4fc35a03ea9e6bb1c109c26a99ee7169f19215",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.checksum.mismatch",
+      "source": "f2ddbe983039d299a5eeb725c219e138fe6ff154fb3eee06743b2c65f69c914a",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.damaged.core",
+      "source": "c83c93c858d841c51a48f806125727fd8180ebb4ac7ce69557f582c031ba3ac7",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.damaged.transcript",
+      "source": "1c38803a3c58a214e3132642710ac98cb6946f42f6c877da874c6708e77a0c3d",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.heal.recurrence",
+      "source": "015ee7c9348abd26e39d3602f8e15610aec39455214ae4c4d491f8c9c28dbb2d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.low.disk",
+      "source": "c07d88937d3e31011ae80f1d4b103b0ad1a8faaf3f43790d8cdd0263e0bf4f90",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.missing.original",
+      "source": "447f2a643bfdfce3f4e13c56bbac9644070cb00763750a7c75c176048edb3463",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.quarantined.ingest",
+      "source": "15e554a5dbb800bc03186e85364d9998dee9a3248a68aa52780f947ee18ff1d3",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.search",
+      "source": "878094756591e4228634cb74574ce759fdb47da35603575b3e995590f9227724",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.search.check.overdue",
+      "source": "fa6986fd66b71a7ad01960150149b5430b75d610a8ee52172e25b307f3e87046",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.search.edges.failed",
+      "source": "7951318de6dc393c6218413333d28e0e9eb7c9086598a9d2952d2bfeae59cfe5",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.search.newer.generation",
+      "source": "244adb7c055963cbd79f2bf3b7513dfc0b4972841a9ce4438b606ae731a01180",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.search.prune.guarded",
+      "source": "e025c38f5a4937425ece2fdc04a92336783845ffd66256667c23b08763da24d6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.search.repeated.rebuild",
+      "source": "378525aac75b259bf00e598f4d05d901cfb4a9713fa379f7954375d1a4723068",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.issue.zero.byte",
+      "source": "efde7fcc7cd52e7944563ab67822afe63a32c1502828b48078155d3ff26a37ec",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.not.checked.yet",
+      "source": "177ec5493110860462009f96d915d5ede2829babed31a1e1799a935b3c47fa50",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.home.integrity.unavailable",
+      "source": "ea57aaab13193eb18f37923db3bbc1e574d3a77d879ebac20286f2f5864420fc",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.home.link.label.all.connections",
@@ -197155,6 +198268,13 @@
       ]
     },
     {
+      "id": "journal.window.settings.removal.history.group.quarantined.ingest.count",
+      "source": "f95e606617b26e6f357094b12b7a342a0d9c9ec2f22d186fc962f47ca0328205",
+      "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.settings.removal.history.group.segment.count",
       "source": "3ab896a66daf911c04486a8038efcb220dc5323da8bd3d7db2519ec59f43f0f6",
       "contract": "2af6f19db876cf36cedf0ae79d90ffc9f45ee06246f391e88f7fbb0807a436fe",
@@ -197665,6 +198785,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.settings.removal.kind.quarantined.ingest",
+      "source": "f4b496556732bdb0ca546aec94ca328d27b3ed4f4ecf6edf7cf6f3221ba9ad68",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.settings.removal.kind.segment.segment",
@@ -205437,6 +206564,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.settings.trash.kind.label.quarantined.ingest",
+      "source": "f4b496556732bdb0ca546aec94ca328d27b3ed4f4ecf6edf7cf6f3221ba9ad68",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.settings.trash.kind.label.segment.segment",
@@ -242700,6 +243834,20 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.status.report.failed",
+      "source": "8ee55a2ed226ff77f0d8e33e997258c8eec851b3c7cb3dd0779968869f4ea501",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.status.report.unavailable",
+      "source": "e0c848da078e12048b4cdb3a0d958fae407956ac7995504be01b5ec0d0db57ae",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.stored.body.summary.activities.no.facet",

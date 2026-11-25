@@ -700,4 +700,62 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
       assert.ok(!record.includes(' in backup'), action);
     }
   }
+
+  // A quarantined incoming file renders with its dedicated label, filename, day,
+  // segment time, and size in Trash (using generic confirm/recover copy), and in
+  // Removal History with its qualifiers, plural group count, and action line.
+  {
+    const qi = (id, extra = {}) => ({
+      id,
+      kind: 'quarantined_ingest',
+      day: '20261110',
+      segment: '093000_120',
+      file: '093000_120_conflict_1700000000.flac',
+      erase_at: LATER,
+      bytes: 4096,
+      replaces: false,
+      ...extra,
+    });
+    const row = await rowOf(qi('q1'));
+    assert.strictEqual(
+      row.all('removal-what')[0].textContent,
+      window.JournalI18n.render('journal.window.settings.trash.kind.label.quarantined.ingest'),
+    );
+    assert.deepStrictEqual(quals(row), ['093000_120_conflict_1700000000.flac', '20261110', 'time:093000_120']);
+    assert.ok(row.textContent.includes('4 KB'));
+    assert.strictEqual(
+      api.trashKindMessage('recover', [qi('q1')], 1),
+      window.JournalI18n.render('journal.window.settings.trash.recover.generic.count', [['quantity', window.JournalI18n.cardinalQuantity(1)], ['count', '1']]),
+      'quarantined_ingest uses generic confirm/recover count copy',
+    );
+
+    const historyEntry = historyLine({
+      kind: 'quarantined_ingest',
+      file: '093000_120_conflict_1700000000.flac',
+      day: '20261110',
+      segment: '093000_120',
+    });
+    assert.deepStrictEqual(historyEntry.what, [
+      window.JournalI18n.render('journal.window.settings.removal.kind.quarantined.ingest'),
+    ]);
+    assert.strictEqual(historyEntry.quals[0], '093000_120_conflict_1700000000.flac');
+    assert.strictEqual(historyEntry.quals[1], 'd20261110');
+    assert.strictEqual(historyEntry.quals.length, 3);
+
+    const qiGroup = rows.removalGroupWhat({
+      units: [
+        { unit: { kind: 'quarantined_ingest', day: '20261110', segment: '093000_120', file: 'a.flac' } },
+        { unit: { kind: 'quarantined_ingest', day: '20261110', segment: '094500_120', file: 'b.flac' } },
+      ],
+    });
+    assert.strictEqual(
+      qiGroup.all('removal-what')[0].textContent,
+      window.JournalI18n.render('journal.window.settings.removal.history.group.quarantined.ingest.count', [['quantity', window.JournalI18n.cardinalQuantity(2)], ['count', '2']]),
+    );
+    assert.deepStrictEqual(qiGroup.all('removal-qual').map((n) => n.textContent), ['d20261110']);
+    assert.strictEqual(
+      rows.removalHow({ event: 'removed', action: 'quarantined_ingest_discard', surface: 'web', page: 'health' }),
+      window.JournalI18n.render('journal.window.settings.removal.history.action.segment.delete', [['presentation', 'none-plain']]),
+    );
+  }
 })().catch((error) => { console.error(error); process.exit(1); });

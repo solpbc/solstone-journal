@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding zero byte body.",
+  "context": "Journal window. Status view. integrity finding zero byte body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5bedec22cb1d8b1d34c9f4bbf0acd2e3fb4cdba36e6b63d347f9f24c4b7036cb",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

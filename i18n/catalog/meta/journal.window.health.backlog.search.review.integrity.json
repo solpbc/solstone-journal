@@ -1,0 +1,16 @@
+{
+  "description": "Status view. backlog search review integrity.",
+  "context": "Journal window. Status view. backlog search review integrity.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25d3d60355bce59246755aea5f6d922f0a013579c8e73c3e7d71dd7b3fb51a6e",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

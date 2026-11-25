@@ -1,0 +1,16 @@
+{
+  "description": "Status view. integrity finding low disk body short.",
+  "context": "Journal window. Status view. integrity finding low disk body short.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bf27089a2187a98ebbfd611948d1789160d59dc3904dbe2a3d4bf4e16eec465d",
+  "max_length": 1000,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
