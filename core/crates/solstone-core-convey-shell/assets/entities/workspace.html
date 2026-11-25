@@ -2110,6 +2110,9 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 .journal-row-tick { min-width: 24px; }
 .journal-row-note { order: 2; grid-column: 2 / -1; color: var(--ink-soft); font-size: .85em; white-space: normal; }
 /* Select mode on a facet's cards: a box in each card's corner, and detach. */
+/* The search keeps its place at the right whether or not select shows beside it. */
+#facet-entities-heading .entity-search-input { margin-left: auto; }
+#facet-entities-heading .ent-select-btn { margin-left: .75em; }
 .entity-cards-picking .entity-card { padding-left: 2.4em; }
 .entity-card-tick { position: absolute; top: .6em; left: .6em; display: flex; }
 .entity-card-tick input { width: 1.1rem; height: 1.1rem; margin: 0; }
