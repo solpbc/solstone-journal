@@ -1006,7 +1006,7 @@ journal.cli.grab.error.unsupported.level = మద్దతు లేని అ�
 
 journal.cli.grab.error.unsupported.level.named = మద్దతు లేని అవుట్‌పుట్ స్థాయి: { $level }
 
-journal.cli.grab.error.video.missing = స్క్రీన్ { $screen } కోసం { $segment } లో రా వీడియో దొరకలేదు
+journal.cli.grab.error.video.missing = స్క్రీన్ { $screen } కోసం { $segment } లో ముడి వీడియో దొరకలేదు
 
 journal.cli.grab.error.video.missing.with.reason = { $reason }; మెటాడేటా-మాత్రమే యాక్సెస్ ద్వారా మిగిలి ఉంది: { $command }
 
@@ -1144,7 +1144,7 @@ journal.cli.maintenance.backup.verify.skipped = బ్యాకప్ సరి�
 
 journal.cli.maintenance.description.backup.erase = మీరు ఎంచుకున్నప్పుడు, మీరు తుడిచివేసినదాన్ని మీ బ్యాకప్‌ల నుండి కూడా తీసివేయండి.
 
-journal.cli.maintenance.description.backup.offload = బ్యాకప్ తర్వాత సరిచూసిన రా మీడియాను బయటికి తరలించండి.
+journal.cli.maintenance.description.backup.offload = బ్యాకప్ తర్వాత సరిచూసిన ముడి మీడియాను బయటికి తరలించండి.
 
 journal.cli.maintenance.description.backup.prune = ఎన్‌క్రిప్ట్ చేసిన బ్యాకప్ నిలుపుదల విధానాన్ని అమలు చేయండి.
 
@@ -2038,7 +2038,7 @@ journal.cli.share.provider.child.signal = సిగ్నల్ { $signal }
 
 journal.cli.share.provider.child.status.unknown = స్థితి తెలియదు
 
-journal.cli.share.provider.child.truncated = { $bytes } [ట్రంకేట్ అయింది]
+journal.cli.share.provider.child.truncated = { $bytes } [కత్తిరించిన]
 
 journal.cli.share.provider.child.unavailable = అందుబాటులో లేదు
 
