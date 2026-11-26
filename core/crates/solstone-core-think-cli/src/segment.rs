@@ -3028,6 +3028,11 @@ fn populate_backfill_activity_defaults(
     }
 }
 
+// No caller since train 261126: run from the history walk's daily-only run and
+// from segment repair, it replayed whole streams on older days and rewrote
+// activity files the owner already had. Give it a caller again only once it
+// adds just the activities a day is missing.
+#[allow(dead_code)]
 pub(crate) fn ensure_historical_day_activities(
     context: &ThinkContext,
     log: &mut RunLogWriter,

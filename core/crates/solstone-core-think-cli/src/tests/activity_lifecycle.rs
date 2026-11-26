@@ -684,3 +684,84 @@ fn one_streams_turn_never_holds_up_another_stream() {
     );
     assert_eq!(ids(&context, "work"), ["work_090000_300"]);
 }
+
+/// Every phase process exits cleanly without spawning anything.
+struct PhasesExitCleanly;
+
+impl crate::phase_process::PhaseProcessRunner for PhasesExitCleanly {
+    fn run(
+        &self,
+        _: &'static str,
+        _: Vec<String>,
+        _: &Path,
+        _: &str,
+        _: std::time::Duration,
+    ) -> crate::phase_process::PhaseProcessOutcome {
+        crate::phase_process::PhaseProcessOutcome::Exited(0)
+    }
+}
+
+/// The history walk's daily-only run on an older day leaves the day's activity
+/// files exactly as they were and does no activity work, even when a thought
+/// segment on a stream has no activity yet. Train 261126 found a release
+/// candidate replaying such streams and rewriting activity files the owner
+/// already had.
+#[test]
+fn history_walk_daily_run_on_an_older_day_does_not_rewrite_its_activity_files() {
+    let (_journal, _roots, context, _recorder) = journal();
+    // Two thought segments of active work; the owner's activity covers only
+    // the first, and the stream has never been replayed.
+    write_sense(
+        &context.journal,
+        "default",
+        "090000_300",
+        &work_and_home("work"),
+    );
+    write_sense(
+        &context.journal,
+        "default",
+        "091000_300",
+        &work_and_home("work"),
+    );
+    let file = context
+        .journal
+        .join("facets/work/activities")
+        .join(format!("{DAY}.jsonl"));
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let existing = concat!(
+        "{\"id\":\"work_090000_300\",\"activity\":\"work\",\"facet\":\"work\",",
+        "\"title\":\"Garden planning\",\"description\":\"Planning the garden beds.\",",
+        "\"segments\":[\"090000_300\"]}\n"
+    );
+    fs::write(&file, existing).unwrap();
+    let settle = context.journal.join("awareness/activity_settle");
+
+    // A week later, DAY is an older day for the history walk.
+    let mut later = with_clock(&context, NOW + 7 * 86_400_000);
+    later.phase_runner = Some(Arc::new(PhasesExitCleanly));
+    let mut log = test_log(&later, "daily");
+    let result = crate::daily_lifecycle::run(
+        &later,
+        &mut log,
+        &crate::args::ThinkArgs {
+            day: Some(DAY.to_owned()),
+            daily_only: true,
+            ..crate::args::ThinkArgs::default()
+        },
+        1,
+        Some(std::time::Duration::from_secs(610)),
+        &solstone_core_system::process::ChildLaunchContext::default(),
+    )
+    .unwrap();
+
+    assert_eq!(result.failed, 0, "{:?}", result.failed_names);
+    assert_eq!(fs::read_to_string(&file).unwrap(), existing);
+    assert!(
+        records(&context, "home").is_empty(),
+        "no activity was made for the day"
+    );
+    assert!(
+        !settle.exists(),
+        "the stream's activity state was not replayed"
+    );
+}
