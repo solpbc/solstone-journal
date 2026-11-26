@@ -17,7 +17,7 @@ jiff.workspace = true
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sha2.workspace = true
+sha2 = { workspace = true, features = ["compress"] }
 solstone-core-convey-http.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-facets.workspace = true

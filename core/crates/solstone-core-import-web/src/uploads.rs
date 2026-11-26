@@ -88,72 +88,8 @@ const SHA256_H0: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 
-const SHA256_K: [u32; 64] = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-];
-
 fn compress_block(state: &mut [u32; 8], block: &[u8; 64]) {
-    let mut w = [0_u32; 64];
-    for (index, word_bytes) in block.chunks_exact(4).enumerate() {
-        w[index] = u32::from_be_bytes([word_bytes[0], word_bytes[1], word_bytes[2], word_bytes[3]]);
-    }
-    for index in 16..64 {
-        let s0 =
-            w[index - 15].rotate_right(7) ^ w[index - 15].rotate_right(18) ^ (w[index - 15] >> 3);
-        let s1 =
-            w[index - 2].rotate_right(17) ^ w[index - 2].rotate_right(19) ^ (w[index - 2] >> 10);
-        w[index] = w[index - 16]
-            .wrapping_add(s0)
-            .wrapping_add(w[index - 7])
-            .wrapping_add(s1);
-    }
-
-    let mut a = state[0];
-    let mut b = state[1];
-    let mut c = state[2];
-    let mut d = state[3];
-    let mut e = state[4];
-    let mut f = state[5];
-    let mut g = state[6];
-    let mut h = state[7];
-
-    for index in 0..64 {
-        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-        let ch = (e & f) ^ ((!e) & g);
-        let temp1 = h
-            .wrapping_add(s1)
-            .wrapping_add(ch)
-            .wrapping_add(SHA256_K[index])
-            .wrapping_add(w[index]);
-        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
-        let temp2 = s0.wrapping_add(maj);
-
-        h = g;
-        g = f;
-        f = e;
-        e = d.wrapping_add(temp1);
-        d = c;
-        c = b;
-        b = a;
-        a = temp1.wrapping_add(temp2);
-    }
-
-    state[0] = state[0].wrapping_add(a);
-    state[1] = state[1].wrapping_add(b);
-    state[2] = state[2].wrapping_add(c);
-    state[3] = state[3].wrapping_add(d);
-    state[4] = state[4].wrapping_add(e);
-    state[5] = state[5].wrapping_add(f);
-    state[6] = state[6].wrapping_add(g);
-    state[7] = state[7].wrapping_add(h);
+    sha2::compress256(state, std::slice::from_ref(block.into()));
 }
 
 impl Default for ResumableSha256 {
@@ -2257,6 +2193,24 @@ mod tests {
     }
 
     #[test]
+    fn resumes_a_preexisting_sha256_checkpoint() {
+        // Saved after 65 ASCII 'a' bytes: one compressed block and a one-byte tail.
+        let midstate = "df5bb81ce81e0626fb45a8944fd40f31b25e6816d6d499c1ab90492900635e66";
+        let mut resumed = ResumableSha256::from_persisted(midstate, 64, "61", 65).unwrap();
+        let mut fresh = ResumableSha256::new();
+        fresh.update(&[b'a'; 65]);
+        assert_eq!(
+            fresh.to_persisted(),
+            (midstate.to_owned(), 64, "61".to_owned())
+        );
+        resumed.update(b"b");
+        assert_eq!(
+            resumed.finalize_hex(),
+            "1e12bf1ed9fd5de300d7dff67b9f80cc09145b93c2c4f7514377f1ce0ac47f74"
+        );
+    }
+
+    #[test]
     fn resumable_sha256_matches_sha2_across_all_block_boundaries_and_persistence() {
         for len in [0_usize, 1, 55, 56, 63, 64, 65, 127, 128, 129, 8193, 131_075] {
             let data: Vec<u8> = (0..len).map(|i| ((i * 31 + 7) & 0xff) as u8).collect();
@@ -2559,7 +2513,7 @@ mod tests {
     #[tokio::test]
     async fn restart_recovers_midstate_truncates_uncommitted_tail_and_rejects_bad_whole_sha() {
         let journal = setup_journal();
-        let chunk_0 = vec![0xaa_u8; 4096];
+        let chunk_0 = vec![0xaa_u8; 4097];
         let chunk_1 = vec![0xbb_u8; 2048];
         let mut combined = chunk_0.clone();
         combined.extend_from_slice(&chunk_1);
@@ -2597,6 +2551,23 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
 
+        let meta: UploadMeta = serde_json::from_slice(
+            &fs::read(
+                uploads_root(journal.path())
+                    .join(&upload_id)
+                    .join(META_JSON_FILE),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(meta.next_offset, 4097);
+        assert_eq!(meta.sha256_blocks_bytes, 4096);
+        assert_eq!(meta.sha256_tail_hex, "aa");
+        assert_eq!(
+            meta.sha256_midstate_hex,
+            "66b3a9a4460f5eae400eb7579ad18fdd67e409d846b0f4d825d47a39fef98117"
+        );
+
         // Simulate a SIGKILL after writing 500 bytes of chunk 1 to payload.part
         // before meta.json was updated.
         let part_path = uploads_root(journal.path())
@@ -2606,9 +2577,9 @@ mod tests {
             let mut file = OpenOptions::new().append(true).open(&part_path).unwrap();
             file.write_all(&[0xff_u8; 500]).unwrap();
         }
-        assert_eq!(fs::metadata(&part_path).unwrap().len(), 4596);
+        assert_eq!(fs::metadata(&part_path).unwrap().len(), 4597);
 
-        // Resync via POST /uploads returns open with next_offset = 4096 (no chunk 0 re-send!).
+        // Resync via POST /uploads returns open with next_offset = 4097 (no chunk 0 re-send!).
         let (status, resumed) = send_req(
             journal.path(),
             Request::builder()
@@ -2629,14 +2600,14 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(resumed["upload_id"], upload_id);
-        assert_eq!(resumed["next_offset"], 4096);
+        assert_eq!(resumed["next_offset"], 4097);
 
         // Send chunk 1 -> truncates uncommitted 500B tail, appends chunk 1, commits cleanly!
         let (status, _) = send_req(
             journal.path(),
             Request::builder()
                 .method("PUT")
-                .uri(format!("{UPLOAD_COLLECTION_PATH}/{upload_id}?offset=4096"))
+                .uri(format!("{UPLOAD_COLLECTION_PATH}/{upload_id}?offset=4097"))
                 .header("content-length", chunk_1.len().to_string())
                 .body(Body::from(chunk_1))
                 .unwrap(),
