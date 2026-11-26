@@ -71,9 +71,9 @@ html {
   --status-error: var(--danger);
   --status-inactive: var(--ink-faint);
 
-  /* Layout dimensions. The rail is labeled: 208px with icon and word on wide
-     windows, 92px with the word under the icon below 1100px (see the rail). */
-  --app-rail-width: 208px;
+  /* Layout dimensions. The rail is labeled: 220px with icon and word on wide
+     windows, 112px with the word under the icon below 1100px (see the rail). */
+  --app-rail-width: 220px;
   --app-dock-height: 64px;
   --app-dock-safe-bottom: env(safe-area-inset-bottom, 0px);
   --status-instrument-inset: 20px;
@@ -592,7 +592,7 @@ body.has-managed-dialog .workspace {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--app-rail-width);
-  padding: 12px 8px;
+  padding: 12px 6px;
   background: var(--paper);
   border-right: 1px solid var(--hairline);
   box-shadow: 1px 0 3px rgba(0, 0, 0, 0.04);
@@ -658,6 +658,7 @@ body.has-managed-dialog .workspace {
 .app-chrome-icon {
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -707,7 +708,7 @@ body.has-managed-dialog .workspace {
 }
 
 .app-rail-group-label {
-  padding: 6px 11px 2px;
+  padding: 6px 10px 2px;
   font-size: var(--text-min);
   font-weight: var(--weight-medium);
   color: var(--ink-faint-paper);
@@ -722,7 +723,7 @@ body.has-managed-dialog .workspace {
   justify-content: center;
   min-width: 20px;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 5px;
   border-radius: 999px;
   font-size: var(--text-min);
   font-weight: var(--weight-medium);
@@ -760,15 +761,20 @@ body.has-managed-dialog .workspace {
    the word sits under the icon; at 700px and below the dock takes over. */
 #app-rail {
   align-items: stretch;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-2) transparent;
   gap: 6px;
 }
 
 #app-rail .app-rail-link {
   width: 100%;
+  height: auto;
+  min-height: var(--status-instrument-size);
   justify-content: flex-start;
-  gap: 12px;
-  padding: 0 11px;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
 }
 
 #app-rail .app-chrome-label {
@@ -778,11 +784,13 @@ body.has-managed-dialog .workspace {
   width: auto;
   height: auto;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
   clip: auto;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
+  hyphens: auto;
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.35;
 }
 
 #app-rail .app-chrome-badge {
@@ -791,16 +799,16 @@ body.has-managed-dialog .workspace {
 
 #app-rail .journal-about-link {
   justify-content: flex-start;
-  padding: 0 11px;
+  padding: 0 10px;
 }
 
 @media (min-width: 701px) and (max-width: 1100px) {
   :root {
-    --app-rail-width: 92px;
+    --app-rail-width: 112px;
   }
 
   #app-rail {
-    padding: 10px 6px;
+    padding: 10px 4px;
   }
 
   .app-rail-group-label {
@@ -825,11 +833,12 @@ body.has-managed-dialog .workspace {
     flex-direction: column;
     justify-content: center;
     gap: 4px;
-    padding: 6px 2px;
+    padding: 6px 4px;
   }
 
   #app-rail .app-chrome-label {
     flex: 0 0 auto;
+    width: 100%;
     max-width: 100%;
     font-size: var(--text-min);
     text-align: center;
@@ -838,7 +847,8 @@ body.has-managed-dialog .workspace {
   #app-rail .app-chrome-badge {
     position: absolute;
     top: 3px;
-    right: max(4px, calc(50% - 26px));
+    left: calc(50% + 4px);
+    right: auto;
     margin-left: 0;
     min-width: 18px;
     height: 18px;
@@ -909,7 +919,8 @@ body.has-managed-dialog .workspace {
   #app-dock .app-chrome-badge {
     position: absolute;
     top: 2px;
-    right: max(4px, calc(50% - 26px));
+    left: calc(50% + 4px);
+    right: auto;
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
@@ -927,7 +938,7 @@ body.has-managed-dialog .workspace {
     max-width: 100%;
     text-overflow: ellipsis;
     font-size: var(--text-min);
-    line-height: 1.2;
+    line-height: 1.35;
   }
 
   .workspace {
