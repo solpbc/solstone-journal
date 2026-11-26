@@ -43,6 +43,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - each stretch's screen description now more often puts an article, documentation page or PDF you're reading in a browser in the reading category, and keeps search results, front pages, shopping and listings in browsing.
 - when a connected agent lists activities, filtering by person or activity type now runs directly on your activity list instead of falling back to search, keeping durations, facets and participant details intact, and person or entity filters can now be narrowed by how they took part (such as attended, heard, corresponded or mentioned). connected agents can also ask your journal to group matching activities by month, day, facet, activity type or person for exact counts and summed durations in a single call, or ask for shorter activity entries (without people, place or calendar details) when scanning many activities. filtering by kind of material or place stays in search and transcript lists rather than the activity list.
 - connected agents also receive updated instructions for filtering activities by person, role or activity type, grouping activities for counts and totals, requesting shorter activity entries, and reading underlying sources before quoting.
+- exporting a journal now skips recompressing larger PNG images that are already compressed, so exports with many screenshots finish faster without changing what is included.
 
 ### Fixed
 

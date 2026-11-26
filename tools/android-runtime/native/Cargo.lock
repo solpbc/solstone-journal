@@ -6537,6 +6537,7 @@ dependencies = [
 name = "solstone-core-journal-archive"
 version = "2.0.91"
 dependencies = [
+ "flate2",
  "nix 0.30.1",
  "solstone-core-cli-copy",
  "solstone-core-journal",

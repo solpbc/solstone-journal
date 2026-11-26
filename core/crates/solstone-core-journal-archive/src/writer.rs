@@ -3,8 +3,10 @@
 
 use std::error::Error;
 use std::fmt;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 
+use flate2::Compression;
+use flate2::write::DeflateEncoder;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, System, ZipWriter};
 
@@ -14,6 +16,12 @@ use crate::{ArchiveError, ArchiveMemberName, ArchiveSource};
 
 const EXPORT_MANIFEST: &str = "_export.json";
 const COPY_BUFFER_SIZE: usize = 64 * 1024;
+const PNG_IHDR_SIGNATURE: &[u8; 16] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR";
+const PNG_STORE_MIN_BYTES: u64 = 64 * 1024;
+const PNG_SAMPLE_WINDOW: usize = 8 * 1024;
+const PNG_SAMPLE_TOTAL_BYTES: u64 = (PNG_SAMPLE_WINDOW * 3) as u64;
+const PNG_STORE_SAVINGS_NUMERATOR: u64 = 98;
+const PNG_STORE_SAVINGS_DENOMINATOR: u64 = 100;
 
 /// Failure while writing a portable archive's successful source format.
 #[derive(Debug)]
@@ -133,6 +141,7 @@ pub(crate) fn write_archive<W: Write + Seek>(
             .open_file(entry)
             .map_err(|source| source_error(Some(member), source))?;
         let expected_size = opened.inventoried_size();
+        let compression = choose_member_compression(&mut opened, expected_size, member)?;
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_set_boundary(if test_first_entry {
             crate::encode::TestBoundary::SourceStart
@@ -143,8 +152,11 @@ pub(crate) fn write_archive<W: Write + Seek>(
         {
             test_first_entry = false;
         }
-        zip.start_file(member.as_str(), file_options(manifest.timestamp))
-            .map_err(|source| zip_error(Some(member), source))?;
+        zip.start_file(
+            member.as_str(),
+            file_options(manifest.timestamp, compression),
+        )
+        .map_err(|source| zip_error(Some(member), source))?;
         copy_inventoried(&mut opened, zip, expected_size, member)?;
         opened
             .finish()
@@ -161,8 +173,11 @@ pub(crate) fn write_archive<W: Write + Seek>(
     let manifest_member = ArchiveMemberName::new(EXPORT_MANIFEST.to_owned());
     #[cfg(all(unix, any(test, feature = "test-hooks")))]
     crate::encode::test_set_boundary(crate::encode::TestBoundary::ManifestStart);
-    zip.start_file(manifest_member.as_str(), file_options(manifest.timestamp))
-        .map_err(|source| zip_error(Some(&manifest_member), source))?;
+    zip.start_file(
+        manifest_member.as_str(),
+        file_options(manifest.timestamp, CompressionMethod::Deflated),
+    )
+    .map_err(|source| zip_error(Some(&manifest_member), source))?;
     #[cfg(all(unix, any(test, feature = "test-hooks")))]
     crate::encode::test_set_boundary(crate::encode::TestBoundary::ManifestPayload);
     zip.write_all(&manifest.json)
@@ -177,13 +192,83 @@ fn directory_options(timestamp: DateTime) -> SimpleFileOptions {
         .unix_permissions(0o700)
 }
 
-fn file_options(timestamp: DateTime) -> SimpleFileOptions {
+fn file_options(timestamp: DateTime, compression: CompressionMethod) -> SimpleFileOptions {
     SimpleFileOptions::default()
         .system(System::Unix)
-        .compression_method(CompressionMethod::Deflated)
+        .compression_method(compression)
         .last_modified_time(timestamp)
         .large_file(true)
         .unix_permissions(0o600)
+}
+
+struct CountingWriter(usize);
+
+impl Write for CountingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Select ZIP compression for one inventoried member.
+///
+/// Recognized PNG files (`>= 64 KiB`, valid PNG + 13-byte IHDR header) are
+/// sampled across three 8 KiB windows with fast Deflate; when fast Deflate
+/// saves less than 2%, storing trades away redundant CPU work as an estimated
+/// CPU/size heuristic (a 24 KiB sample cannot bound full-member size growth).
+/// Every other file — including small PNGs, compressible PNGs, non-PNG files,
+/// and unreadable/mutated probes — falls back to Deflate. The reader is always
+/// rewound to offset 0 before streaming the full payload.
+fn choose_member_compression<R: Read + Seek>(
+    reader: &mut R,
+    expected_size: u64,
+    member: &ArchiveMemberName,
+) -> Result<CompressionMethod, ArchiveEncodingError> {
+    if expected_size < PNG_STORE_MIN_BYTES {
+        return Ok(CompressionMethod::Deflated);
+    }
+
+    let method =
+        probe_png_compression(reader, expected_size).unwrap_or(CompressionMethod::Deflated);
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|source| read_error(member, source))?;
+    Ok(method)
+}
+
+fn probe_png_compression<R: Read + Seek>(
+    reader: &mut R,
+    expected_size: u64,
+) -> std::io::Result<CompressionMethod> {
+    let mut buf = [0_u8; PNG_SAMPLE_WINDOW];
+    reader.read_exact(&mut buf[..PNG_IHDR_SIGNATURE.len()])?;
+    if &buf[..PNG_IHDR_SIGNATURE.len()] != PNG_IHDR_SIGNATURE {
+        return Ok(CompressionMethod::Deflated);
+    }
+    reader.read_exact(&mut buf[PNG_IHDR_SIGNATURE.len()..])?;
+
+    let mut encoder = DeflateEncoder::new(CountingWriter(0), Compression::fast());
+    encoder.write_all(&buf)?;
+
+    let window = PNG_SAMPLE_WINDOW as u64;
+    for offset in [(expected_size - window) / 2, expected_size - window] {
+        reader.seek(SeekFrom::Start(offset))?;
+        reader.read_exact(&mut buf)?;
+        encoder.write_all(&buf)?;
+    }
+
+    let coded = encoder.finish()?.0 as u64;
+    if coded.saturating_mul(PNG_STORE_SAVINGS_DENOMINATOR)
+        >= PNG_SAMPLE_TOTAL_BYTES * PNG_STORE_SAVINGS_NUMERATOR
+    {
+        Ok(CompressionMethod::Stored)
+    } else {
+        Ok(CompressionMethod::Deflated)
+    }
 }
 
 fn copy_inventoried<R: Read, W: Write>(
@@ -689,6 +774,211 @@ mod tests {
         let mut actual = Vec::new();
         member.read_to_end(&mut actual).expect("read large member");
         assert_eq!(actual, expected);
+    }
+
+    fn pseudo_random(len: usize, mut state: u64) -> Vec<u8> {
+        let mut out = vec![0_u8; len];
+        for byte in &mut out {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *byte = (state >> 56) as u8;
+        }
+        out
+    }
+
+    fn png_with_body(body: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(PNG_IHDR_SIGNATURE.len() + 17 + body.len());
+        out.extend_from_slice(PNG_IHDR_SIGNATURE);
+        // 13-byte IHDR payload + 4-byte placeholder CRC.
+        out.extend_from_slice(&[0_u8; 17]);
+        out.extend_from_slice(body);
+        out
+    }
+
+    #[test]
+    fn stores_incompressible_png_at_or_above_64_kib_and_deflates_everything_else() {
+        let temporary = TempDir::new("png-compression");
+        let root = temporary.journal();
+
+        let incompressible_png = png_with_body(&pseudo_random(96 * 1024, 0x9e37_79b9_7f4a_7c15));
+        let exact_threshold_png = png_with_body(&pseudo_random(
+            (PNG_STORE_MIN_BYTES as usize) - PNG_IHDR_SIGNATURE.len() - 17,
+            0x243f_6a88_85a3_08d3,
+        ));
+        assert_eq!(exact_threshold_png.len() as u64, PNG_STORE_MIN_BYTES);
+
+        let small_png = png_with_body(&pseudo_random(
+            (PNG_STORE_MIN_BYTES as usize) - PNG_IHDR_SIGNATURE.len() - 18,
+            0x1319_8a2e_0370_7344,
+        ));
+        assert_eq!(small_png.len() as u64, PNG_STORE_MIN_BYTES - 1);
+
+        // A valid PNG header with uncompressed/repetitive payload is compressible and must stay Deflated.
+        let compressible_png = png_with_body(&vec![0x42_u8; 96 * 1024]);
+        let mislabeled_png_as_dat = png_with_body(&pseudo_random(80 * 1024, 0xa409_3822_299f_31d0));
+        let mislabeled_text_as_png = b"journal line repeated for testing\n".repeat(2500);
+        let non_png_binary = pseudo_random(80 * 1024, 0x082e_fa98_ec4e_6c89);
+        let credentials = br#"{"token":"owner-secret"}"#.to_vec();
+        let chronicle_text = br#"{"kind":"note","body":"hello"}"#.to_vec();
+
+        write(&root, "chronicle/20261126/screen.png", &incompressible_png);
+        write(
+            &root,
+            "chronicle/20261126/exact64k.png",
+            &exact_threshold_png,
+        );
+        write(&root, "chronicle/20261126/small.png", &small_png);
+        write(&root, "chronicle/20261126/flat.png", &compressible_png);
+        write(&root, "chronicle/20261126/note.jsonl", &chronicle_text);
+        write(&root, "imports/m1/image.dat", &mislabeled_png_as_dat);
+        write(&root, "imports/m1/text.png", &mislabeled_text_as_png);
+        write(&root, "imports/m1/opaque.bin", &non_png_binary);
+        write(&root, "config/credentials.json", &credentials);
+
+        let source = ArchiveSource::open(&root).expect("open source");
+        let bytes = archive_bytes(&source);
+
+        assert!(has_zip64_extra(
+            &bytes,
+            b"chronicle/20261126/screen.png",
+            b"PK\x03\x04"
+        ));
+        assert!(has_zip64_extra(
+            &bytes,
+            b"chronicle/20261126/screen.png",
+            b"PK\x01\x02"
+        ));
+
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
+        let expectations: [(&str, CompressionMethod, &[u8]); 9] = [
+            (
+                "chronicle/20261126/screen.png",
+                CompressionMethod::Stored,
+                &incompressible_png,
+            ),
+            (
+                "chronicle/20261126/exact64k.png",
+                CompressionMethod::Stored,
+                &exact_threshold_png,
+            ),
+            (
+                "chronicle/20261126/small.png",
+                CompressionMethod::Deflated,
+                &small_png,
+            ),
+            (
+                "chronicle/20261126/flat.png",
+                CompressionMethod::Deflated,
+                &compressible_png,
+            ),
+            (
+                "chronicle/20261126/note.jsonl",
+                CompressionMethod::Deflated,
+                &chronicle_text,
+            ),
+            (
+                "imports/m1/image.dat",
+                CompressionMethod::Stored,
+                &mislabeled_png_as_dat,
+            ),
+            (
+                "imports/m1/text.png",
+                CompressionMethod::Deflated,
+                &mislabeled_text_as_png,
+            ),
+            (
+                "imports/m1/opaque.bin",
+                CompressionMethod::Deflated,
+                &non_png_binary,
+            ),
+            (
+                "config/credentials.json",
+                CompressionMethod::Deflated,
+                &credentials,
+            ),
+        ];
+
+        for (name, expected_method, expected_bytes) in expectations {
+            let mut member = archive.by_name(name).expect("member present");
+            assert_eq!(
+                member.compression(),
+                expected_method,
+                "unexpected compression method for {name}"
+            );
+            assert_eq!(member.unix_mode(), Some(0o100600));
+            let mut actual = Vec::new();
+            member.read_to_end(&mut actual).expect("read member");
+            assert_eq!(actual, expected_bytes, "corrupt round-trip for {name}");
+        }
+
+        // Day window still filters membership and stores incompressible PNGs inside the window.
+        let window = DayWindow {
+            from: Some("20261126".to_owned()),
+            to: Some("20261126".to_owned()),
+        };
+        let mut sliced_writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let manifest = manifest_for(&source, "0.9.0", "2026-11-26T00:00:00Z");
+        write_archive(&mut sliced_writer, &source, &manifest, Some(&window))
+            .expect("write sliced archive");
+        let sliced_bytes = sliced_writer.finish().expect("finish sliced").into_inner();
+        let mut sliced = ZipArchive::new(Cursor::new(sliced_bytes)).expect("open sliced");
+        assert!(sliced.by_name("imports/m1/image.dat").is_err());
+        let mut sliced_png = sliced
+            .by_name("chronicle/20261126/screen.png")
+            .expect("sliced png present");
+        assert_eq!(sliced_png.compression(), CompressionMethod::Stored);
+        let mut actual_sliced = Vec::new();
+        sliced_png
+            .read_to_end(&mut actual_sliced)
+            .expect("read sliced png");
+        assert_eq!(actual_sliced, incompressible_png);
+    }
+
+    #[test]
+    fn png_probe_falls_back_to_deflated_and_rewinds_on_short_input_or_seek_failure() {
+        let member = ArchiveMemberName::new("chronicle/20261126/shrunk.png".to_owned());
+        // Short buffer pretending to be >= 64 KiB triggers probe EOF, falls back to Deflated,
+        // and rewinds cleanly to offset 0.
+        let short_png = png_with_body(b"short");
+        let mut cursor = Cursor::new(short_png);
+        let method = choose_member_compression(&mut cursor, 96 * 1024, &member)
+            .expect("short probe falls back cleanly");
+        assert_eq!(method, CompressionMethod::Deflated);
+        assert_eq!(cursor.position(), 0);
+
+        // Rewind seek failure must surface as SourceIo rather than leaving a non-zero offset.
+        let mut failing_seek = FailingRewindReader {
+            inner: Cursor::new(png_with_body(&vec![0_u8; 80 * 1024])),
+        };
+        let error = choose_member_compression(&mut failing_seek, 80 * 1024, &member)
+            .expect_err("failed rewind must abort");
+        assert!(matches!(
+            error,
+            ArchiveEncodingError::Source {
+                member: Some(actual),
+                source: ArchiveError::SourceIo { .. },
+            } if actual == member
+        ));
+    }
+
+    struct FailingRewindReader {
+        inner: Cursor<Vec<u8>>,
+    }
+
+    impl Read for FailingRewindReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.inner.read(buf)
+        }
+    }
+
+    impl Seek for FailingRewindReader {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            if matches!(pos, SeekFrom::Start(0)) {
+                return Err(io::Error::other("injected rewind failure"));
+            }
+            self.inner.seek(pos)
+        }
     }
 
     struct RecordingReader {

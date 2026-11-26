@@ -1901,3 +1901,90 @@ fn portable_export_and_merge_preserve_colliding_owner_names() {
         }
     }
 }
+
+#[test]
+fn merge_journal_archive_restores_stored_and_deflated_png_members() {
+    use solstone_core_journal_archive::{ArchiveSource, EncodeArchiveRequest, encode_archive};
+
+    let tree = TempTree::new();
+    let source_dir = tree.path.join("source");
+    let target_dir = tree.path.join("target");
+    let archive_path = tree.path.join("export.zip");
+    fs::create_dir_all(source_dir.join("chronicle/20260401/120000_60")).unwrap();
+    fs::create_dir_all(&target_dir).unwrap();
+
+    let mut stored_png = Vec::with_capacity(96 * 1024 + 33);
+    stored_png.extend_from_slice(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR");
+    stored_png.extend_from_slice(&[0_u8; 17]);
+    let mut state = 0x517c_c1b7_2722_0a95_u64;
+    for _ in 0..(96 * 1024) {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        stored_png.push((state >> 56) as u8);
+    }
+
+    let mut deflated_png = Vec::with_capacity(96 * 1024 + 33);
+    deflated_png.extend_from_slice(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR");
+    deflated_png.extend_from_slice(&[0_u8; 17]);
+    deflated_png.extend(std::iter::repeat_n(0x33_u8, 96 * 1024));
+
+    let note = b"{\"kind\":\"note\",\"text\":\"portable\"}\n";
+    fs::write(
+        source_dir.join("chronicle/20260401/120000_60/screen.png"),
+        &stored_png,
+    )
+    .unwrap();
+    fs::write(
+        source_dir.join("chronicle/20260401/120000_60/flat.png"),
+        &deflated_png,
+    )
+    .unwrap();
+    fs::write(
+        source_dir.join("chronicle/20260401/120000_60/note.jsonl"),
+        note,
+    )
+    .unwrap();
+
+    let source = ArchiveSource::open(&source_dir).unwrap();
+    encode_archive(
+        &EncodeArchiveRequest {
+            source: &source,
+            solstone_version: "2.0.0",
+            exported_at: "2026-04-01T00:00:00Z",
+            day_window: None,
+        },
+        &mut File::create(&archive_path).unwrap(),
+    )
+    .unwrap();
+
+    let mut zip = zip::ZipArchive::new(File::open(&archive_path).unwrap()).unwrap();
+    assert_eq!(
+        zip.by_name("chronicle/20260401/120000_60/screen.png")
+            .unwrap()
+            .compression(),
+        zip::CompressionMethod::Stored
+    );
+    assert_eq!(
+        zip.by_name("chronicle/20260401/120000_60/flat.png")
+            .unwrap()
+            .compression(),
+        zip::CompressionMethod::Deflated
+    );
+    drop(zip);
+
+    let merged = merge_journal_archive(&archive_path, &target_dir, &options(&tree), None).unwrap();
+    assert!(merged.merge_summary.segments_copied >= 1, "{merged:?}");
+    assert_eq!(
+        fs::read(target_dir.join("chronicle/20260401/120000_60/screen.png")).unwrap(),
+        stored_png
+    );
+    assert_eq!(
+        fs::read(target_dir.join("chronicle/20260401/120000_60/flat.png")).unwrap(),
+        deflated_png
+    );
+    assert_eq!(
+        fs::read(target_dir.join("chronicle/20260401/120000_60/note.jsonl")).unwrap(),
+        note
+    );
+}
