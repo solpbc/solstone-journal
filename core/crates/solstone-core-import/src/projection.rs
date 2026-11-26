@@ -412,7 +412,7 @@ pub fn project_import_result_with_clock(
     import_id: &str,
     now_sec: f64,
 ) -> ImportProjection {
-    project(journal_root, import_id, now_sec, true)
+    project(journal_root, import_id, now_sec, true, true)
 }
 
 /// The projection of the records as written, without asking whether a running attempt's
@@ -422,7 +422,7 @@ pub(crate) fn project_recorded_import(journal_root: &Path, import_id: &str) -> I
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64();
-    project(journal_root, import_id, now_sec, false)
+    project(journal_root, import_id, now_sec, false, false)
 }
 
 fn project(
@@ -430,6 +430,7 @@ fn project(
     import_id: &str,
     now_sec: f64,
     ask_holder: bool,
+    allow_reread: bool,
 ) -> ImportProjection {
     let import_dir = journal_root.join("imports").join(import_id);
     let (metadata, raw_metadata, metadata_corrupted) =
@@ -652,6 +653,29 @@ fn project(
         };
         (att, holder)
     });
+    if allow_reread
+        && ask_holder
+        && let Some((att, AttemptHolder::Released)) = attempt_and_holder
+        && att.state == AttemptState::Running
+    {
+        // Producers always write the terminal attempt state in `import.json`
+        // before releasing the attempt lock. If a concurrent read observed
+        // `Running` just before completion and lock release, re-read once to
+        // project the terminal state rather than an interrupted/unconfirmed one.
+        let still_same_running = matches!(
+            read_provenance(journal_root, import_id),
+            Ok(Some(ref refreshed))
+                if matches!(
+                    read_attempt_facts(refreshed),
+                    AttemptRead::Present(ref facts)
+                        if facts.state == AttemptState::Running
+                            && facts.generation == att.generation
+                )
+        );
+        if !still_same_running {
+            return project(journal_root, import_id, now_sec, ask_holder, false);
+        }
+    }
     let (status, error, error_stage) = derive_status_and_errors(
         metadata.as_ref(),
         publication.as_ref(),
@@ -1083,6 +1107,13 @@ fn derive_status_and_errors(
         }
         match att.state {
             AttemptState::Running => {
+                if holder == AttemptHolder::Held {
+                    // Its producer still holds the attempt lock, so it is running:
+                    // including across the window between writing `imported.json`
+                    // and recording completion in `import.json`, and while a retry
+                    // runs over a prior generation's `imported.json`.
+                    return (ProjectionStatus::Running, None, None);
+                }
                 if let Some(pub_rec) = publication {
                     if pub_rec.status == PublicationStatus::Failure {
                         return (
@@ -1100,9 +1131,7 @@ fn derive_status_and_errors(
                     }
                 }
                 match holder {
-                    // Its producer still holds it, so it is running, however long a slow
-                    // document takes.
-                    AttemptHolder::Held => return (ProjectionStatus::Running, None, None),
+                    AttemptHolder::Held => unreachable!("handled above"),
                     // Its producer is gone (a restart, a crash) without recording an end.
                     AttemptHolder::Released => {
                         return (
@@ -2377,5 +2406,122 @@ mod tests {
             assert_eq!(staged51.rows[i].source_id, format!("ent-{i}"));
             assert_eq!(staged51.rows[i].source_name, format!("Qxjvplmzt-{i}"));
         }
+    }
+
+    #[test]
+    fn running_attempt_with_held_lock_stays_running_across_finalization_window() {
+        use crate::metadata::{admit_running_attempt, record_completed_attempt, release_attempt};
+
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_100001";
+
+        let facts = admit_running_attempt(journal, import_id, 1_000, None).unwrap();
+        let import_dir = journal.join("imports").join(import_id);
+        let publication = serde_json::json!({
+            "schema": "solstone.import.publication.v1",
+            "status": "success",
+            "segments": [],
+            "indexing": { "published": [], "declined": [], "errored": [] },
+            "day_markers": []
+        });
+        fs::write(
+            import_dir.join("imported.json"),
+            serde_json::to_vec_pretty(&publication).unwrap(),
+        )
+        .unwrap();
+
+        // Producer still holds the attempt lock after publishing `imported.json`
+        // and before recording completion in `import.json`.
+        let during_finalization = project_import_result(journal, import_id);
+        assert_eq!(during_finalization.status, ProjectionStatus::Running);
+        assert_eq!(during_finalization.error, None);
+        assert_eq!(during_finalization.error_stage, None);
+
+        // Exited-process settle (`project_recorded_import`, ask_holder=false)
+        // still sees the unfinalized record as unconfirmed/finalization.
+        let recorded_only = project_recorded_import(journal, import_id);
+        assert_eq!(recorded_only.status, ProjectionStatus::Unconfirmed);
+        assert_eq!(recorded_only.error_stage.as_deref(), Some("finalization"));
+
+        // Completing the attempt and releasing the lock transitions cleanly to Success.
+        record_completed_attempt(
+            journal,
+            import_id,
+            facts.generation,
+            2_000,
+            Some(1_000),
+            None,
+        )
+        .unwrap();
+        let after_complete = project_import_result(journal, import_id);
+        assert_eq!(after_complete.status, ProjectionStatus::Success);
+        assert_eq!(after_complete.error, None);
+        assert_eq!(after_complete.error_stage, None);
+        release_attempt(journal, import_id);
+    }
+
+    #[test]
+    fn running_attempt_with_released_lock_and_success_publication_is_unconfirmed_finalization() {
+        use crate::metadata::{admit_running_attempt, release_attempt};
+
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_100002";
+
+        let _facts = admit_running_attempt(journal, import_id, 1_000, None).unwrap();
+        let import_dir = journal.join("imports").join(import_id);
+        let publication = serde_json::json!({
+            "schema": "solstone.import.publication.v1",
+            "status": "success",
+            "segments": [],
+            "indexing": { "published": [], "declined": [], "errored": [] },
+            "day_markers": []
+        });
+        fs::write(
+            import_dir.join("imported.json"),
+            serde_json::to_vec_pretty(&publication).unwrap(),
+        )
+        .unwrap();
+        // Simulate producer crash after writing `imported.json` without recording completion.
+        release_attempt(journal, import_id);
+
+        let crashed = project_import_result(journal, import_id);
+        assert_eq!(crashed.status, ProjectionStatus::Unconfirmed);
+        assert_eq!(crashed.error_stage.as_deref(), Some("finalization"));
+    }
+
+    #[test]
+    fn running_retry_with_held_lock_over_prior_failed_publication_stays_running() {
+        use crate::metadata::{admit_running_attempt, release_attempt};
+
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_100003";
+
+        let _facts = admit_running_attempt(journal, import_id, 1_000, None).unwrap();
+        let import_dir = journal.join("imports").join(import_id);
+        let prior_failure = serde_json::json!({
+            "schema": "solstone.import.publication.v1",
+            "status": "failure",
+            "segments": [],
+            "indexing": { "published": [], "declined": [], "errored": [] },
+            "day_markers": []
+        });
+        fs::write(
+            import_dir.join("imported.json"),
+            serde_json::to_vec_pretty(&prior_failure).unwrap(),
+        )
+        .unwrap();
+
+        let retrying = project_import_result(journal, import_id);
+        assert_eq!(retrying.status, ProjectionStatus::Running);
+        assert_eq!(retrying.error, None);
+        assert_eq!(retrying.error_stage, None);
+
+        release_attempt(journal, import_id);
+        let after_crash = project_import_result(journal, import_id);
+        assert_eq!(after_crash.status, ProjectionStatus::Failed);
+        assert_eq!(after_crash.error_stage.as_deref(), Some("publication"));
     }
 }

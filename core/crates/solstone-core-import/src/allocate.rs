@@ -6,6 +6,7 @@
 //! The id is bookkeeping. Chronicle placement keeps the source timestamp the
 //! caller already resolved. A probe may cross midnight only in that id.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -14,7 +15,8 @@ use jiff::SignedDuration;
 use jiff::civil::DateTime;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
-    DirEntryKind, contained_path, create_directory_with_mode, list_dir_entries, path_lexists,
+    AtomicWriteOptions, DirEntryKind, ExclusiveStagedDir, StagedDirOptions, StagedWriteError,
+    atomic_replace, contained_path, create_directory_with_mode, list_dir_entries, path_lexists,
 };
 
 use crate::ImportError;
@@ -43,64 +45,161 @@ pub struct BoundImport {
     pub source_timestamp: Timestamp,
 }
 
+/// A private staging directory inside `imports/` that can receive staged source
+/// files once and then publish atomically into a free `imports/{id}` slot with
+/// its complete `import.json` already present.
+pub struct StagedImportAllocation {
+    staging: ExclusiveStagedDir,
+}
+
+impl StagedImportAllocation {
+    /// Path to the private staging directory prior to publication.
+    #[must_use]
+    pub fn stage_dir(&self) -> &Path {
+        self.staging.path()
+    }
+
+    /// Probe free `imports/{id}` slots starting at `source_timestamp`, build
+    /// and write `import.json` inside the staging directory for each candidate,
+    /// and atomically publish without replacing any existing occupant.
+    ///
+    /// Takes `&mut self` so that if `build_metadata` or publication fails, the
+    /// staging directory remains accessible to the caller for rollback before
+    /// `self` drops and removes the staging directory.
+    pub fn publish(
+        &mut self,
+        journal_root: &Path,
+        source_timestamp: &Timestamp,
+        mut build_metadata: impl FnMut(&Timestamp) -> Result<Map<String, Value>, ImportError>,
+    ) -> Result<(AllocatedImport, Map<String, Value>), ImportError> {
+        for offset in 0..IMPORT_ID_PROBE_LIMIT {
+            let candidate = shift_timestamp(source_timestamp, offset)?;
+            // Stat the lexical path first. `contained_path` resolves through a
+            // symlink, and a dangling link is an occupant, not a free id.
+            let lexical = journal_root.join("imports").join(candidate.as_str());
+            match fs::symlink_metadata(&lexical) {
+                Ok(_) => continue,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(ImportError::PathResolution {
+                        path: lexical,
+                        message: error.to_string(),
+                    });
+                }
+            }
+            let candidate_path = contained_import_dir(journal_root, candidate.as_str())?;
+            let metadata = build_metadata(&candidate)?;
+            let bytes = serde_json::to_vec_pretty(&metadata).map_err(|error| {
+                ImportError::MetadataWriteFailed {
+                    path: candidate_path.join("import.json"),
+                    message: error.to_string(),
+                }
+            })?;
+            atomic_replace(
+                self.staging.path().join("import.json"),
+                &bytes,
+                AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(|error| ImportError::MetadataWriteFailed {
+                path: candidate_path.join("import.json"),
+                message: error.to_string(),
+            })?;
+            match self.staging.publish_exclusive(&candidate_path) {
+                Ok(()) => {
+                    return Ok((
+                        AllocatedImport {
+                            import_id: candidate,
+                            source_timestamp: source_timestamp.clone(),
+                        },
+                        metadata,
+                    ));
+                }
+                Err(StagedWriteError::Io { source, .. })
+                    if source.kind() == io::ErrorKind::AlreadyExists =>
+                {
+                    // Lost the race, or a symlink appeared. Do not reuse it.
+                    fs::symlink_metadata(&candidate_path).map_err(|error| {
+                        ImportError::PathResolution {
+                            path: candidate_path,
+                            message: error.to_string(),
+                        }
+                    })?;
+                }
+                Err(StagedWriteError::Io { source, .. }) => {
+                    return Err(ImportError::PathResolution {
+                        path: candidate_path,
+                        message: source.to_string(),
+                    });
+                }
+                Err(StagedWriteError::Populate { source, .. }) => {
+                    return Err(ImportError::MetadataWriteFailed {
+                        path: candidate_path.join("import.json"),
+                        message: source.to_string(),
+                    });
+                }
+            }
+        }
+        Err(ImportError::ImportIdExhausted {
+            attempts: IMPORT_ID_PROBE_LIMIT,
+        })
+    }
+}
+
+/// Prepare a private staging directory under `imports/` for atomic publication
+/// via [`StagedImportAllocation::publish`].
+pub fn begin_staged_import(journal_root: &Path) -> Result<StagedImportAllocation, ImportError> {
+    ensure_imports_directory(journal_root)?;
+    let imports =
+        contained_path(journal_root, "imports").map_err(|error| ImportError::PathResolution {
+            path: journal_root.join("imports"),
+            message: error.to_string(),
+        })?;
+    let staging = ExclusiveStagedDir::create_in(
+        &imports,
+        OsStr::new("import"),
+        StagedDirOptions {
+            directory_mode: Some(DIRECTORY_MODE),
+        },
+    )
+    .map_err(|error| ImportError::PathResolution {
+        path: imports,
+        message: error.to_string(),
+    })?;
+    Ok(StagedImportAllocation { staging })
+}
+
 /// Claim a fresh `imports/{id}` directory for `source_timestamp`.
 ///
-/// Occupied, symlinked, and non-directory candidates are left in place. An
-/// unreadable candidate or an unwritable `imports/` parent fails the allocation.
+/// The directory is published atomically with an initial `import.json` so
+/// concurrent readers immediately observe a valid pending record rather than an
+/// empty directory. Occupied, symlinked, and non-directory candidates are left
+/// in place. An unreadable candidate or an unwritable `imports/` parent fails
+/// the allocation.
 pub fn allocate_import_id(
     journal_root: &Path,
     source_timestamp: &Timestamp,
 ) -> Result<AllocatedImport, ImportError> {
-    ensure_imports_directory(journal_root)?;
-    for offset in 0..IMPORT_ID_PROBE_LIMIT {
-        let candidate = shift_timestamp(source_timestamp, offset)?;
-        // Stat the lexical path first. `contained_path` resolves through a
-        // symlink, and a dangling link is an occupant, not a free id.
-        let lexical = journal_root.join("imports").join(candidate.as_str());
-        match fs::symlink_metadata(&lexical) {
-            Ok(_) => continue,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(ImportError::PathResolution {
-                    path: lexical,
-                    message: error.to_string(),
-                });
-            }
-        }
-        let candidate_path = contained_import_dir(journal_root, candidate.as_str())?;
-        match fs::create_dir(&candidate_path) {
-            Ok(()) => {
-                create_directory_with_mode(&candidate_path, DIRECTORY_MODE).map_err(|error| {
-                    ImportError::PathResolution {
-                        path: candidate_path,
-                        message: error.to_string(),
-                    }
-                })?;
-                return Ok(AllocatedImport {
-                    import_id: candidate,
-                    source_timestamp: source_timestamp.clone(),
-                });
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                // Lost the race, or a symlink appeared. Do not reuse it.
-                fs::symlink_metadata(&candidate_path).map_err(|error| {
-                    ImportError::PathResolution {
-                        path: candidate_path,
-                        message: error.to_string(),
-                    }
-                })?;
-            }
-            Err(error) => {
-                return Err(ImportError::PathResolution {
-                    path: candidate_path,
-                    message: error.to_string(),
-                });
-            }
-        }
-    }
-    Err(ImportError::ImportIdExhausted {
-        attempts: IMPORT_ID_PROBE_LIMIT,
+    allocate_import_dir(journal_root, source_timestamp, |candidate| {
+        let mut metadata = Map::new();
+        metadata.insert("import_id".to_owned(), json!(candidate.as_str()));
+        metadata.insert(
+            "source_timestamp".to_owned(),
+            json!(source_timestamp.as_str()),
+        );
+        metadata
     })
+}
+
+fn allocate_import_dir(
+    journal_root: &Path,
+    source_timestamp: &Timestamp,
+    mut build_metadata: impl FnMut(&Timestamp) -> Map<String, Value>,
+) -> Result<AllocatedImport, ImportError> {
+    let mut staged = begin_staged_import(journal_root)?;
+    let (allocated, _) = staged.publish(journal_root, source_timestamp, |candidate| {
+        Ok(build_metadata(candidate))
+    })?;
+    Ok(allocated)
 }
 
 /// Bind a new or existing record for `requested`.
@@ -152,8 +251,9 @@ pub fn bind_import_record_where(
             source_timestamp,
         });
     }
-    let allocated = allocate_import_id(journal_root, requested)?;
-    persist_identity(journal_root, &allocated, source_hash.as_ref())?;
+    let allocated = allocate_import_dir(journal_root, requested, |candidate| {
+        identity_metadata(candidate, requested, source_hash.as_ref())
+    })?;
     Ok(BoundImport {
         import_id: allocated.import_id,
         source_timestamp: allocated.source_timestamp,
@@ -438,21 +538,35 @@ fn source_timestamp_of(
     }
 }
 
+fn identity_metadata(
+    import_id: &Timestamp,
+    source_timestamp: &Timestamp,
+    source_hash: Option<&SourceHash>,
+) -> Map<String, Value> {
+    let mut metadata = Map::new();
+    crate::originals::record_new_import(&mut metadata);
+    metadata.insert("import_id".to_owned(), json!(import_id.as_str()));
+    metadata.insert(
+        "source_timestamp".to_owned(),
+        json!(source_timestamp.as_str()),
+    );
+    if let Some(source_hash) = source_hash {
+        metadata.insert("source_hash".to_owned(), json!(source_hash.as_str()));
+    }
+    metadata
+}
+
+#[cfg(test)]
 fn persist_identity(
     journal_root: &Path,
     allocated: &AllocatedImport,
     source_hash: Option<&SourceHash>,
 ) -> Result<(), ImportError> {
-    let mut metadata = Map::new();
-    crate::originals::record_new_import(&mut metadata);
-    metadata.insert("import_id".to_owned(), json!(allocated.import_id.as_str()));
-    metadata.insert(
-        "source_timestamp".to_owned(),
-        json!(allocated.source_timestamp.as_str()),
+    let metadata = identity_metadata(
+        &allocated.import_id,
+        &allocated.source_timestamp,
+        source_hash,
     );
-    if let Some(source_hash) = source_hash {
-        metadata.insert("source_hash".to_owned(), json!(source_hash.as_str()));
-    }
     write_import_metadata(journal_root, allocated.import_id.as_str(), &metadata).map(|_| ())
 }
 
@@ -537,9 +651,9 @@ fn shift_timestamp(source: &Timestamp, offset_seconds: u32) -> Result<Timestamp,
 mod tests {
     use super::*;
     use std::fs;
-    #[cfg(all(unix, feature = "full-tests"))]
+    #[cfg(feature = "full-tests")]
     use std::sync::{Arc, Barrier};
-    #[cfg(all(unix, feature = "full-tests"))]
+    #[cfg(feature = "full-tests")]
     use std::thread;
 
     fn stamp(raw: &str) -> Timestamp {
@@ -823,7 +937,40 @@ mod tests {
         assert!(!root.path().join("imports/20260617_000001").exists());
     }
 
-    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn allocated_and_bound_imports_immediately_project_pending_never_unavailable() {
+        let root = journal();
+        let first_ts = stamp("20260616_120000");
+        let allocated = allocate_import_id(root.path(), &first_ts).unwrap();
+        let proj_alloc = crate::project_import_result(root.path(), allocated.import_id.as_str());
+        assert_eq!(proj_alloc.status, crate::ProjectionStatus::Pending);
+        assert_eq!(proj_alloc.error, None);
+        assert_eq!(proj_alloc.error_stage, None);
+
+        let payload = root.path().join("note.txt");
+        fs::write(&payload, b"hello").unwrap();
+        let second_ts = stamp("20260616_120500");
+        let bound = bind_import_record(root.path(), &second_ts, Some(&payload)).unwrap();
+        let proj_bound = crate::project_import_result(root.path(), bound.import_id.as_str());
+        assert_eq!(proj_bound.status, crate::ProjectionStatus::Pending);
+        assert_eq!(proj_bound.error, None);
+        assert_eq!(proj_bound.error_stage, None);
+    }
+
+    #[test]
+    fn empty_directory_occupant_is_left_empty_and_untouched() {
+        let root = journal();
+        let imports = root.path().join("imports");
+        fs::create_dir(&imports).unwrap();
+        let empty = imports.join("20260616_120000");
+        fs::create_dir(&empty).unwrap();
+        let source = stamp("20260616_120000");
+        let allocated = allocate_import_id(root.path(), &source).unwrap();
+        assert_eq!(allocated.import_id.as_str(), "20260616_120001");
+        assert_eq!(fs::read_dir(&empty).unwrap().count(), 0);
+    }
+
+    #[cfg(feature = "full-tests")]
     #[test]
     fn two_threads_receive_distinct_fresh_ids() {
         let root = journal();

@@ -90,6 +90,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on home, pairing only the `solstone` command no longer lists it as awaiting its first upload, and a newly paired device with sources turned on or paused shows as quiet instead of awaiting its first upload. paired apps reading your journal's shared sources list also get the latest sync time for Safari on an iphone or ipad.
 - page names in the side rail, such as suggestions in narrower browser windows or on tablets, no longer get cut off or clip at the bottom, and wrap onto a second line when needed. counts on the side rail and dock stay clear of their icons, and labels on the dock no longer clip at the bottom.
 - background checks for unfinished work on larger journals now do much less repeated disk reading and processing without changing what gets checked.
+- an import no longer briefly shows an error or unavailable status while it is starting or finishing.
 
 ### Removed
 

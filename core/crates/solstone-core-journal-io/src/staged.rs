@@ -11,10 +11,23 @@ use std::fs::File;
 use std::fs::{self, DirBuilder};
 use std::io;
 #[cfg(unix)]
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(windows)]
+use std::thread;
+#[cfg(windows)]
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{
+    ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, ERROR_SHARING_VIOLATION,
+};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
 #[cfg(unix)]
 use crate::atomic::fsync_dir;
@@ -143,6 +156,213 @@ where
         fsync_dir(parent);
     }
     Ok(())
+}
+
+/// A private staging directory inside its target parent that can be populated
+/// once and published atomically without replacing any existing entry.
+///
+/// If dropped without a successful [`Self::publish_exclusive`] call, the
+/// staging directory and its contents are removed best effort.
+pub struct ExclusiveStagedDir {
+    parent: PathBuf,
+    staging: StagingDir,
+    options: StagedDirOptions,
+}
+
+impl ExclusiveStagedDir {
+    /// Create a hidden staging directory inside `parent`.
+    pub fn create_in(
+        parent: &Path,
+        name_hint: &OsStr,
+        options: StagedDirOptions,
+    ) -> Result<Self, StagedWriteError> {
+        fs::create_dir_all(parent).map_err(|source| io_error(parent, source))?;
+        let hint_path = parent.join(name_hint);
+        let staging = StagingDir::create(parent, &hint_path, options)?;
+        #[cfg(unix)]
+        if let Some(mode) = options.directory_mode {
+            fs::set_permissions(staging.path(), fs::Permissions::from_mode(mode))
+                .map_err(|source| io_error(&hint_path, source))?;
+        }
+        Ok(Self {
+            parent: parent.to_path_buf(),
+            staging,
+            options,
+        })
+    }
+
+    /// Path of the private staging directory before publication.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        self.staging.path()
+    }
+
+    /// Atomically publish this staging directory to `destination` only when
+    /// `destination` does not already exist (including an empty directory,
+    /// regular file, or symlink).
+    ///
+    /// On `AlreadyExists`, the staging directory remains intact and armed so
+    /// the caller may probe another destination name or clean up on drop.
+    pub fn publish_exclusive(&mut self, destination: &Path) -> Result<(), StagedWriteError> {
+        if !self.staging.armed {
+            return Err(io_error(
+                destination,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "staging directory already published",
+                ),
+            ));
+        }
+        let parent = parent_dir(destination);
+        if parent != self.parent {
+            return Err(io_error(
+                destination,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "destination parent does not match staging directory parent",
+                ),
+            ));
+        }
+        let dest_name = destination.file_name().ok_or_else(|| {
+            io_error(
+                destination,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "destination has no final path component",
+                ),
+            )
+        })?;
+        if lexists(destination).map_err(|source| io_error(destination, source))? {
+            return Err(io_error(
+                destination,
+                io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+            ));
+        }
+        #[cfg(unix)]
+        {
+            if let Some(mode) = self.options.directory_mode {
+                fs::set_permissions(self.staging.path(), fs::Permissions::from_mode(mode))
+                    .map_err(|source| io_error(destination, source))?;
+            }
+            File::open(self.staging.path())
+                .and_then(|directory| directory.sync_all())
+                .map_err(|source| io_error(destination, source))?;
+            let stage_name = self.staging.path().file_name().ok_or_else(|| {
+                io_error(
+                    destination,
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "staging directory has no file name",
+                    ),
+                )
+            })?;
+            crate::media::publish_directory_noreplace(parent, stage_name, dest_name)
+                .map_err(|source| io_error(destination, source))?;
+        }
+        #[cfg(windows)]
+        {
+            let _ = (parent, dest_name, self.options);
+            move_directory_noreplace_windows(self.staging.path(), destination)
+                .map_err(|source| io_error(destination, source))?;
+        }
+        self.staging.armed = false;
+        #[cfg(unix)]
+        {
+            fsync_dir(&self.parent);
+        }
+        Ok(())
+    }
+}
+
+/// Populate and atomically publish a new directory at `destination` without
+/// replacing any existing entry — including an empty directory, regular file,
+/// or symlink.
+///
+/// Unlike [`publish_staged_dir`], concurrent callers targeting the same
+/// `destination` cannot silently replace an empty directory occupant: Unix
+/// publishes with native no-replace rename (`renameat2(RENAME_NOREPLACE)` /
+/// `renameatx_np(RENAME_EXCL)`) and Windows publishes with
+/// `MoveFileExW(..., 0)` (retrying briefly on transient sharing/access errors
+/// while `destination` remains absent). An existing occupant fails with
+/// `io::ErrorKind::AlreadyExists` and leaves the occupant untouched while
+/// cleaning up the staging directory.
+pub fn publish_staged_dir_exclusive<F, E>(
+    destination: &Path,
+    options: StagedDirOptions,
+    populate: F,
+) -> Result<(), StagedWriteError>
+where
+    F: FnOnce(&Path) -> Result<(), E>,
+    E: Error + Send + Sync + 'static,
+{
+    let parent = parent_dir(destination);
+    let dest_name = destination.file_name().ok_or_else(|| {
+        io_error(
+            destination,
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no final path component",
+            ),
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|source| io_error(destination, source))?;
+    if lexists(destination).map_err(|source| io_error(destination, source))? {
+        return Err(io_error(
+            destination,
+            io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+        ));
+    }
+    let mut staged = ExclusiveStagedDir::create_in(parent, dest_name, options)?;
+    populate(staged.path()).map_err(|source| StagedWriteError::Populate {
+        path: destination.to_path_buf(),
+        source: Box::new(source),
+    })?;
+    staged.publish_exclusive(destination)
+}
+
+#[cfg(windows)]
+fn move_directory_noreplace_windows(source: &Path, destination: &Path) -> io::Result<()> {
+    let source_wide = encode_wide_nul(source)?;
+    let destination_wide = encode_wide_nul(destination)?;
+    const BACKOFF_MS: &[u64] = &[5, 10, 20, 40, 80, 120];
+    let mut attempt = 0;
+    loop {
+        // SAFETY: both NUL-terminated UTF-16 buffers live through the synchronous Win32 call.
+        #[allow(unsafe_code)]
+        let ok = unsafe { MoveFileExW(source_wide.as_ptr(), destination_wide.as_ptr(), 0) };
+        if ok != 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        let code = error.raw_os_error().map(|raw| raw as u32);
+        if matches!(code, Some(ERROR_ALREADY_EXISTS | ERROR_FILE_EXISTS)) {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, error));
+        }
+        if matches!(code, Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION)) {
+            if lexists(destination)? {
+                return Err(io::Error::new(io::ErrorKind::AlreadyExists, error));
+            }
+            if let Some(&delay_ms) = BACKOFF_MS.get(attempt) {
+                attempt += 1;
+                thread::sleep(Duration::from_millis(delay_ms));
+                continue;
+            }
+        }
+        return Err(error);
+    }
+}
+
+#[cfg(windows)]
+fn encode_wide_nul(path: &Path) -> io::Result<Vec<u16>> {
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    if wide.contains(&0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path contains an interior NUL",
+        ));
+    }
+    wide.push(0);
+    Ok(wide)
 }
 
 struct StagingDir {
@@ -538,5 +758,70 @@ mod tests {
                 sibling.file_name().unwrap().to_os_string()
             ])
         );
+    }
+
+    #[test]
+    fn publish_staged_dir_exclusive_leaves_late_empty_directory_competitor_untouched() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("bundle");
+        let sibling = temporary.path().join("keep.txt");
+        fs::write(&sibling, b"sibling-bytes").unwrap();
+
+        let error =
+            publish_staged_dir_exclusive(&destination, StagedDirOptions::default(), |staging| {
+                fs::create_dir(&destination)?;
+                write_complete_set(staging)
+            })
+            .unwrap_err();
+
+        match error {
+            StagedWriteError::Io { source, .. } => {
+                assert_eq!(source.kind(), io::ErrorKind::AlreadyExists);
+            }
+            other => panic!("expected AlreadyExists IO error, got {other:?}"),
+        }
+        assert!(destination.is_dir());
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+        assert_eq!(fs::read(&sibling).unwrap(), b"sibling-bytes");
+        assert_eq!(
+            dir_names(temporary.path()),
+            BTreeSet::from([
+                destination.file_name().unwrap().to_os_string(),
+                sibling.file_name().unwrap().to_os_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn publish_staged_dir_exclusive_publishes_populated_directory_atomically() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("bundle");
+
+        publish_staged_dir_exclusive(
+            &destination,
+            StagedDirOptions {
+                directory_mode: Some(0o700),
+            },
+            write_complete_set,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(destination.join("payload.bin")).unwrap(),
+            b"complete-payload"
+        );
+        assert_eq!(
+            dir_names(temporary.path()),
+            BTreeSet::from([destination.file_name().unwrap().to_os_string()])
+        );
+        #[cfg(unix)]
+        {
+            let mode = fs::symlink_metadata(&destination)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700);
+        }
     }
 }

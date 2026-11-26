@@ -288,7 +288,10 @@ pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };
 #[cfg(any(unix, windows))]
-pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
+pub use staged::{
+    ExclusiveStagedDir, StagedDirOptions, StagedWriteError, publish_staged_dir,
+    publish_staged_dir_exclusive,
+};
 pub use strict_segment::{
     ExactLookupError, StrictCreateError, create_segment_parent_strict, create_segment_strict,
     preflight_segment_admission, resolve_segment_exact, resolve_segment_locator_exact,

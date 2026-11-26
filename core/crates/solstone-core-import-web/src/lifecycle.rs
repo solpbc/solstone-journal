@@ -19,7 +19,7 @@ use axum::{
 use jiff::{Timestamp, tz::TimeZone};
 use serde_json::{Map, Value, json};
 use solstone_core_import::{
-    ImportError, ImportMetadata, ManifestMatch, SourceHash, allocate_import_id,
+    ImportError, ImportMetadata, ManifestMatch, SourceHash, begin_staged_import,
     find_manifest_by_hash_where, hash_source, read_import_metadata, relocate_import,
     validate_timestamp, write_import_metadata,
 };
@@ -815,12 +815,6 @@ fn resolved_summary(
     response
 }
 
-fn claim_import_directory(root: &Path, semantic: &str) -> Result<String, String> {
-    let source = validate_timestamp(semantic).map_err(|error| error.to_string())?;
-    let allocated = allocate_import_id(root, &source).map_err(|error| error.to_string())?;
-    Ok(allocated.import_id.as_str().to_owned())
-}
-
 pub(crate) fn summary(metadata: &ImportMetadata) -> Value {
     json!({
         "schema_version": 1,
@@ -885,27 +879,6 @@ pub(crate) fn staged_by_source_hash(
                 && !apple_card_already_ran(root, &timestamp, false))
             .then_some(metadata)
         })
-}
-
-fn stage_bytes(
-    root: &Path,
-    timestamp: &str,
-    filename: &str,
-    bytes: &[u8],
-) -> Result<PathBuf, ImportError> {
-    let target = contained_import_file(root, timestamp, filename)?;
-    let directory = target.parent().expect("import target parent").to_owned();
-    create_directory_with_mode(&directory, 0o700).map_err(|error| ImportError::PathResolution {
-        path: directory.clone(),
-        message: error.to_string(),
-    })?;
-    atomic_replace(&target, bytes, AtomicWriteOptions { mode: Some(0o600) }).map_err(|error| {
-        ImportError::PromotionFailed {
-            path: target.clone(),
-            message: error.to_string(),
-        }
-    })?;
-    Ok(target)
 }
 
 pub(crate) fn contained_import_file(
@@ -1227,43 +1200,39 @@ pub(crate) fn stage_verified_upload_file(
         placed.method
     };
     let no_match_reason = placed.no_match_reason;
-    let import_id = match claim_import_directory(&state.root, &semantic) {
-        Ok(import_id) => import_id,
+    let source_timestamp = match validate_timestamp(&semantic) {
+        Ok(ts) => ts,
         Err(error) => {
-            return StagedCommitOutcome {
-                response: metadata_failed(error),
-                import_id: None,
-            };
-        }
-    };
-    let target = match contained_import_file(&state.root, &import_id, &filename) {
-        Ok(target) => target,
-        Err(error) => {
-            let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
             return StagedCommitOutcome {
                 response: metadata_failed(error.to_string()),
                 import_id: None,
             };
         }
     };
-    let directory = target.parent().expect("import target parent").to_owned();
-    if let Err(error) = create_directory_with_mode(&directory, 0o700) {
-        let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
-        return StagedCommitOutcome {
-            response: metadata_failed(error.to_string()),
-            import_id: None,
-        };
-    }
+    let mut staged = match begin_staged_import(&state.root) {
+        Ok(staged) => staged,
+        Err(error) => {
+            return StagedCommitOutcome {
+                response: metadata_failed(error.to_string()),
+                import_id: None,
+            };
+        }
+    };
+    let stage_target = match contained_path(staged.stage_dir(), &filename) {
+        Ok(target) => target,
+        Err(error) => {
+            return StagedCommitOutcome {
+                response: metadata_failed(error.to_string()),
+                import_id: None,
+            };
+        }
+    };
     let mut restore_upload_part_to = None;
     match source_file {
         VerifiedSourceFile::SaveTemp(counted) => {
             let (kept, _active_guard) = match counted.keep() {
                 Ok(pair) => pair,
                 Err(error) => {
-                    let _ = solstone_core_import::discard_abandoned_import_records(
-                        &state.root,
-                        &import_id,
-                    );
                     return StagedCommitOutcome {
                         response: metadata_failed(format!(
                             "Failed to stage temporary file: {error}"
@@ -1272,12 +1241,12 @@ pub(crate) fn stage_verified_upload_file(
                     };
                 }
             };
-            if let Err(error) =
-                install_file(&kept, &target, AtomicWriteOptions { mode: Some(0o600) })
-            {
+            if let Err(error) = install_file(
+                &kept,
+                &stage_target,
+                AtomicWriteOptions { mode: Some(0o600) },
+            ) {
                 let _ = std::fs::remove_file(&kept);
-                let _ =
-                    solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
                 return StagedCommitOutcome {
                     response: metadata_failed(error.to_string()),
                     import_id: None,
@@ -1293,15 +1262,13 @@ pub(crate) fn stage_verified_upload_file(
                 };
                 guard.remove(&state.root)
             }) {
-                let _ = std::fs::create_dir_all(&target);
+                let _ = std::fs::create_dir_all(&stage_target);
             }
             if let Err(error) = install_retained_file(
                 &part_path,
-                &target,
+                &stage_target,
                 AtomicWriteOptions { mode: Some(0o600) },
             ) {
-                let _ =
-                    solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
                 return StagedCommitOutcome {
                     response: metadata_failed(error.to_string()),
                     import_id: None,
@@ -1310,117 +1277,119 @@ pub(crate) fn stage_verified_upload_file(
             restore_upload_part_to = Some(part_path);
         }
     }
-    let mut metadata = staged_metadata(StagedMetadata {
-        zone: &zone,
-        timestamp: &semantic,
-        original_filename: &original_filename,
-        file_path: target.display().to_string(),
-        source_hash,
-        source: detected_source,
-        mime_type,
-        client_item_id,
-        data: &data,
-        is_local_path: false,
-        method,
-    });
-    solstone_core_import::originals::record_staged_upload(&mut metadata, &target);
-    metadata.insert("import_id".to_owned(), json!(import_id));
-    metadata.insert("source_timestamp".to_owned(), json!(semantic));
-    if method == "deterministic" {
-        metadata.insert("detected_timestamp".to_owned(), json!(semantic));
-    }
-    if let Some(caption) = caption {
-        metadata.insert("caption".to_owned(), json!(caption));
-    }
-    if let Some(captured_at) = captured_at {
-        metadata.insert("captured_at".to_owned(), json!(captured_at));
-    }
-    if let Some(offset) = placed.utc_offset_seconds {
-        metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
-    }
-    if let Some(tz) = placed.tz {
-        metadata.insert("capture_tz".to_owned(), json!(tz));
-    }
-    if let Some(device_noun) =
-        allowlisted_device_noun(data.get("device_noun").and_then(Value::as_str))
-    {
-        metadata.insert("device_noun".to_owned(), json!(device_noun));
-    }
-    metadata.insert("file_size".to_owned(), json!(file_size));
-    if source_hint(&metadata).is_none()
-        && state.route.is_none()
-        && solstone_core_import_sources::apple_export::detect_apple_source(&target)
-            .is_ok_and(|apple| apple)
-    {
-        metadata.insert("source_hint".to_owned(), json!(APPLE_SOURCE));
-        metadata.insert("source_inference".to_owned(), json!(APPLE_SOURCE));
-    }
-    if let Some(area) = data
-        .get("area")
-        .and_then(Value::as_str)
-        .filter(|area| !area.is_empty() && area.len() <= 96)
-    {
-        metadata.insert("area".to_owned(), json!(area));
-    }
-    if let Some(context) = context {
-        let hint = source_hint(&metadata);
-        if hint.as_deref() == Some("evernote")
-            && let Some(name) = context.get("notebook").and_then(Value::as_str)
-            && !name.trim().is_empty()
+    let infer_apple = state.route.is_none()
+        && solstone_core_import_sources::apple_export::detect_apple_source(&stage_target)
+            .is_ok_and(|apple| apple);
+    let published = staged.publish(&state.root, &source_timestamp, |candidate| {
+        let import_id = candidate.as_str();
+        let target = contained_import_file(&state.root, import_id, &filename)?;
+        let mut metadata = staged_metadata(StagedMetadata {
+            zone: &zone,
+            timestamp: &semantic,
+            original_filename: &original_filename,
+            file_path: target.display().to_string(),
+            source_hash: source_hash.clone(),
+            source: detected_source,
+            mime_type: mime_type.clone(),
+            client_item_id: client_item_id.clone(),
+            data: &data,
+            is_local_path: false,
+            method,
+        });
+        solstone_core_import::originals::record_staged_upload(&mut metadata, &target);
+        metadata.insert("import_id".to_owned(), json!(import_id));
+        metadata.insert("source_timestamp".to_owned(), json!(semantic));
+        if method == "deterministic" {
+            metadata.insert("detected_timestamp".to_owned(), json!(semantic));
+        }
+        if let Some(caption) = caption.as_ref() {
+            metadata.insert("caption".to_owned(), json!(caption));
+        }
+        if let Some(captured_at) = captured_at.as_ref() {
+            metadata.insert("captured_at".to_owned(), json!(captured_at));
+        }
+        if let Some(offset) = placed.utc_offset_seconds {
+            metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
+        }
+        if let Some(tz) = placed.tz.as_ref() {
+            metadata.insert("capture_tz".to_owned(), json!(tz));
+        }
+        if let Some(device_noun) =
+            allowlisted_device_noun(data.get("device_noun").and_then(Value::as_str))
         {
-            metadata.insert("notebook".to_owned(), json!(name.trim()));
+            metadata.insert("device_noun".to_owned(), json!(device_noun));
         }
-        if matches!(hint.as_deref(), Some(STRAVA_SOURCE | APPLE_SOURCE))
-            && let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+        metadata.insert("file_size".to_owned(), json!(file_size));
+        if source_hint(&metadata).is_none() && infer_apple {
+            metadata.insert("source_hint".to_owned(), json!(APPLE_SOURCE));
+            metadata.insert("source_inference".to_owned(), json!(APPLE_SOURCE));
+        }
+        if let Some(area) = data
+            .get("area")
+            .and_then(Value::as_str)
+            .filter(|area| !area.is_empty() && area.len() <= 96)
         {
-            metadata.insert(
-                solstone_core_import::BODY_FACET_METADATA.into(),
-                facet.clone(),
-            );
+            metadata.insert("area".to_owned(), json!(area));
         }
-        metadata.insert("context".to_owned(), Value::Object(context));
-    }
-    metadata.insert(
-        "timestamp_detection_no_match_reason".to_owned(),
-        no_match_reason.map_or(Value::Null, |reason| json!(reason)),
-    );
-    let rollback_on_metadata_failure = |detail: String| -> StagedCommitOutcome {
-        if let Some(ref part_path) = restore_upload_part_to {
-            let _ =
-                install_retained_file(&target, part_path, AtomicWriteOptions { mode: Some(0o600) });
+        if let Some(context) = context.as_ref() {
+            let hint = source_hint(&metadata);
+            if hint.as_deref() == Some("evernote")
+                && let Some(name) = context.get("notebook").and_then(Value::as_str)
+                && !name.trim().is_empty()
+            {
+                metadata.insert("notebook".to_owned(), json!(name.trim()));
+            }
+            if matches!(hint.as_deref(), Some(STRAVA_SOURCE | APPLE_SOURCE))
+                && let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+            {
+                metadata.insert(
+                    solstone_core_import::BODY_FACET_METADATA.into(),
+                    facet.clone(),
+                );
+            }
+            metadata.insert("context".to_owned(), Value::Object(context.clone()));
         }
-        let _ = solstone_core_import::discard_abandoned_import_records(&state.root, &import_id);
-        StagedCommitOutcome {
-            response: metadata_failed(detail),
-            import_id: None,
-        }
-    };
-    if let Err(error) =
-        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
-    {
-        return rollback_on_metadata_failure(error.to_string());
-    }
-    if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
-        return rollback_on_metadata_failure(error.to_string());
-    }
-    #[cfg(test)]
-    if FAIL_COMMIT_METADATA_ROOTS.get().is_some_and(|set| {
-        let mut guard = match set.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        guard.remove(&state.root)
-    }) {
-        return rollback_on_metadata_failure(
-            "simulated transient metadata write failure".to_owned(),
+        metadata.insert(
+            "timestamp_detection_no_match_reason".to_owned(),
+            no_match_reason.map_or(Value::Null, |reason| json!(reason)),
         );
-    }
-    if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
-        return rollback_on_metadata_failure(format!("Failed to write metadata: {error}"));
-    }
-    StagedCommitOutcome {
-        response: json_response(StatusCode::OK, summary(&metadata)),
-        import_id: Some(import_id),
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, import_id)?;
+        let metadata_path = contained_import_file(&state.root, import_id, "import.json")?;
+        #[cfg(test)]
+        if FAIL_COMMIT_METADATA_ROOTS.get().is_some_and(|set| {
+            let mut guard = match set.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            guard.remove(&state.root)
+        }) {
+            return Err(ImportError::MetadataWriteFailed {
+                path: metadata_path,
+                message: "simulated transient metadata write failure".to_owned(),
+            });
+        }
+        let _ = metadata_path;
+        Ok(metadata)
+    });
+    match published {
+        Ok((allocated, metadata)) => StagedCommitOutcome {
+            response: json_response(StatusCode::OK, summary(&metadata)),
+            import_id: Some(allocated.import_id.as_str().to_owned()),
+        },
+        Err(error) => {
+            if let Some(ref part_path) = restore_upload_part_to {
+                let _ = install_retained_file(
+                    &stage_target,
+                    part_path,
+                    AtomicWriteOptions { mode: Some(0o600) },
+                );
+            }
+            drop(staged);
+            StagedCommitOutcome {
+                response: metadata_failed(format!("Failed to write metadata: {error}")),
+                import_id: None,
+            }
+        }
     }
 }
 
@@ -1826,85 +1795,93 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     } else {
         placed_method
     };
-    let import_id = match claim_import_directory(&state.root, &semantic) {
-        Ok(import_id) => import_id,
-        Err(error) => return metadata_failed(error),
-    };
-    let file_path = match stage_bytes(&state.root, &import_id, "paste.txt", &bytes) {
-        Ok(path) => path,
+    let source_timestamp = match validate_timestamp(&semantic) {
+        Ok(ts) => ts,
         Err(error) => return metadata_failed(error.to_string()),
     };
+    let mut staged = match begin_staged_import(&state.root) {
+        Ok(staged) => staged,
+        Err(error) => return metadata_failed(error.to_string()),
+    };
+    let stage_paste = staged.stage_dir().join("paste.txt");
+    if let Err(error) = atomic_replace(
+        &stage_paste,
+        &bytes,
+        AtomicWriteOptions { mode: Some(0o600) },
+    ) {
+        return metadata_failed(error.to_string());
+    }
     drop(temporary);
     drop(_paste_active_guard);
     let original_filename = "paste.txt".to_owned();
     let mime_type = Some("text/plain".to_owned());
     let file_size = bytes.len() as u64;
-    let mut metadata = staged_metadata(StagedMetadata {
-        zone: &zone,
-        timestamp: &semantic,
-        original_filename: &original_filename,
-        file_path: file_path.display().to_string(),
-        source_hash,
-        source: detected_source,
-        mime_type,
-        client_item_id,
-        data: &data,
-        is_local_path: false,
-        method,
+    let published = staged.publish(&state.root, &source_timestamp, |candidate| {
+        let import_id = candidate.as_str();
+        let file_path = contained_import_file(&state.root, import_id, "paste.txt")?;
+        let mut metadata = staged_metadata(StagedMetadata {
+            zone: &zone,
+            timestamp: &semantic,
+            original_filename: &original_filename,
+            file_path: file_path.display().to_string(),
+            source_hash: source_hash.clone(),
+            source: detected_source,
+            mime_type: mime_type.clone(),
+            client_item_id: client_item_id.clone(),
+            data: &data,
+            is_local_path: false,
+            method,
+        });
+        solstone_core_import::originals::record_staged_upload(&mut metadata, &file_path);
+        metadata.insert("import_id".to_owned(), json!(import_id));
+        metadata.insert("source_timestamp".to_owned(), json!(semantic));
+        if method == "deterministic" {
+            metadata.insert("detected_timestamp".to_owned(), json!(semantic));
+        }
+        if let Some(caption) = caption.as_ref() {
+            metadata.insert("caption".to_owned(), json!(caption));
+        }
+        if let Some(captured_at) = captured_at.as_ref() {
+            metadata.insert("captured_at".to_owned(), json!(captured_at));
+        }
+        metadata.insert("file_size".to_owned(), json!(file_size));
+        if let Some(area) = data
+            .get("area")
+            .and_then(Value::as_str)
+            .filter(|area| !area.is_empty() && area.len() <= 96)
+        {
+            metadata.insert("area".to_owned(), json!(area));
+        }
+        if let Some(context) = context.as_ref() {
+            let hint = source_hint(&metadata);
+            if hint.as_deref() == Some("evernote")
+                && let Some(name) = context.get("notebook").and_then(Value::as_str)
+                && !name.trim().is_empty()
+            {
+                metadata.insert("notebook".to_owned(), json!(name.trim()));
+            }
+            if matches!(hint.as_deref(), Some(STRAVA_SOURCE | APPLE_SOURCE))
+                && let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
+            {
+                metadata.insert(
+                    solstone_core_import::BODY_FACET_METADATA.into(),
+                    facet.clone(),
+                );
+            }
+            metadata.insert("context".to_owned(), Value::Object(context.clone()));
+        }
+        metadata.insert(
+            "timestamp_detection_no_match_reason".to_owned(),
+            no_match_reason.map_or(Value::Null, |reason| json!(reason)),
+        );
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, import_id)?;
+        contained_import_file(&state.root, import_id, "import.json")?;
+        Ok(metadata)
     });
-    solstone_core_import::originals::record_staged_upload(&mut metadata, &file_path);
-    metadata.insert("import_id".to_owned(), json!(import_id));
-    metadata.insert("source_timestamp".to_owned(), json!(semantic));
-    if method == "deterministic" {
-        metadata.insert("detected_timestamp".to_owned(), json!(semantic));
-    }
-    if let Some(caption) = caption {
-        metadata.insert("caption".to_owned(), json!(caption));
-    }
-    if let Some(captured_at) = captured_at {
-        metadata.insert("captured_at".to_owned(), json!(captured_at));
-    }
-    metadata.insert("file_size".to_owned(), json!(file_size));
-    if let Some(area) = data
-        .get("area")
-        .and_then(Value::as_str)
-        .filter(|area| !area.is_empty() && area.len() <= 96)
-    {
-        metadata.insert("area".to_owned(), json!(area));
-    }
-    if let Some(context) = context {
-        let hint = source_hint(&metadata);
-        if hint.as_deref() == Some("evernote")
-            && let Some(name) = context.get("notebook").and_then(Value::as_str)
-            && !name.trim().is_empty()
-        {
-            metadata.insert("notebook".to_owned(), json!(name.trim()));
-        }
-        if matches!(hint.as_deref(), Some(STRAVA_SOURCE | APPLE_SOURCE))
-            && let Some(facet) = context.get(solstone_core_import::BODY_FACET_METADATA)
-        {
-            metadata.insert(
-                solstone_core_import::BODY_FACET_METADATA.into(),
-                facet.clone(),
-            );
-        }
-        metadata.insert("context".to_owned(), Value::Object(context));
-    }
-    metadata.insert(
-        "timestamp_detection_no_match_reason".to_owned(),
-        no_match_reason.map_or(Value::Null, |reason| json!(reason)),
-    );
-    if let Err(error) =
-        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
-    {
-        return metadata_failed(error.to_string());
-    }
-    if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
-        return metadata_failed(error.to_string());
-    }
-    if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
-        return metadata_failed(format!("Failed to write metadata: {error}"));
-    }
+    let (_, metadata) = match published {
+        Ok(pair) => pair,
+        Err(error) => return metadata_failed(format!("Failed to write metadata: {error}")),
+    };
     json_response(StatusCode::OK, summary(&metadata))
 }
 
@@ -2013,56 +1990,59 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
     } else {
         placed.method
     };
-    let import_id = match claim_import_directory(&state.root, &semantic) {
-        Ok(import_id) => import_id,
-        Err(error) => return metadata_failed(error),
+    let source_timestamp = match validate_timestamp(&semantic) {
+        Ok(ts) => ts,
+        Err(error) => return metadata_failed(error.to_string()),
     };
-    let mut metadata = staged_metadata(StagedMetadata {
-        zone: &zone,
-        timestamp: &semantic,
-        original_filename: &original_filename,
-        file_path: local_path,
-        source_hash,
-        source: detected_source,
-        mime_type: None,
-        client_item_id,
-        data: &data,
-        is_local_path: true,
-        method,
+    let mut staged = match begin_staged_import(&state.root) {
+        Ok(staged) => staged,
+        Err(error) => return metadata_failed(error.to_string()),
+    };
+    let published = staged.publish(&state.root, &source_timestamp, |candidate| {
+        let import_id = candidate.as_str();
+        let mut metadata = staged_metadata(StagedMetadata {
+            zone: &zone,
+            timestamp: &semantic,
+            original_filename: &original_filename,
+            file_path: local_path.clone(),
+            source_hash: source_hash.clone(),
+            source: detected_source,
+            mime_type: None,
+            client_item_id: client_item_id.clone(),
+            data: &data,
+            is_local_path: true,
+            method,
+        });
+        solstone_core_import::originals::record_new_import(&mut metadata);
+        metadata.insert("import_id".to_owned(), json!(import_id));
+        metadata.insert("source_timestamp".to_owned(), json!(semantic));
+        if method == "deterministic" {
+            metadata.insert("detected_timestamp".to_owned(), json!(semantic));
+        }
+        if let Some(caption) = caption.as_ref() {
+            metadata.insert("caption".to_owned(), json!(caption));
+        }
+        if let Some(captured_at) = captured_at.as_ref() {
+            metadata.insert("captured_at".to_owned(), json!(captured_at));
+        }
+        if let Some(offset) = placed.utc_offset_seconds {
+            metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
+        }
+        if let Some(tz) = placed.tz.as_ref() {
+            metadata.insert("capture_tz".to_owned(), json!(tz));
+        }
+        metadata.insert(
+            "timestamp_detection_no_match_reason".to_owned(),
+            no_match_reason.map_or(Value::Null, |reason| json!(reason)),
+        );
+        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, import_id)?;
+        contained_import_file(&state.root, import_id, "import.json")?;
+        Ok(metadata)
     });
-    solstone_core_import::originals::record_new_import(&mut metadata);
-    metadata.insert("import_id".to_owned(), json!(import_id));
-    metadata.insert("source_timestamp".to_owned(), json!(semantic));
-    if method == "deterministic" {
-        metadata.insert("detected_timestamp".to_owned(), json!(semantic));
-    }
-    if let Some(caption) = caption {
-        metadata.insert("caption".to_owned(), json!(caption));
-    }
-    if let Some(captured_at) = captured_at {
-        metadata.insert("captured_at".to_owned(), json!(captured_at));
-    }
-    if let Some(offset) = placed.utc_offset_seconds {
-        metadata.insert("capture_utc_offset_seconds".to_owned(), json!(offset));
-    }
-    if let Some(tz) = placed.tz {
-        metadata.insert("capture_tz".to_owned(), json!(tz));
-    }
-    metadata.insert(
-        "timestamp_detection_no_match_reason".to_owned(),
-        no_match_reason.map_or(Value::Null, |reason| json!(reason)),
-    );
-    if let Err(error) =
-        solstone_core_import::saved_start::initialize_saved_start(&mut metadata, &import_id)
-    {
-        return metadata_failed(error.to_string());
-    }
-    if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
-        return metadata_failed(error.to_string());
-    }
-    if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
-        return metadata_failed(format!("Failed to write metadata: {error}"));
-    }
+    let (_, metadata) = match published {
+        Ok(pair) => pair,
+        Err(error) => return metadata_failed(format!("Failed to write metadata: {error}")),
+    };
     json_response(StatusCode::OK, summary(&metadata))
 }
 
