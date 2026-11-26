@@ -72,34 +72,42 @@ pub fn day_holds_only_backfill_streams(journal: &Path, day: &str) -> bool {
 }
 
 /// Whether everything `day` holds arrived as history: every segment sits in a
-/// backfill stream, and the day is before that stream began.
+/// backfill stream, and none of them was captured as the day happened.
 ///
-/// A syncing source keeps delivering after it is connected, so its stream
-/// alone does not make a day history: a day the owner captured only through
-/// a synced source is as much a day of the journal as any other. A stream
-/// began on the day its record was created; one with no record began when
-/// the journal was set up. With neither known, the day reads as history.
+/// A file import (`import.*`) is history whenever it arrives: what it holds
+/// was made somewhere else and brought in later. A syncing source (a bound
+/// syncing stream, `photos`, `import.granola.*`, and `import.email`) keeps
+/// delivering after it is connected, so a day on or after the day its stream
+/// record was created is a day the owner captured through it, as much a day
+/// of the journal as any other. Every syncing source writes that record with
+/// its first segment; one whose record is missing or unreadable gives no
+/// start to compare with, and its days read as history.
 #[must_use]
 pub fn day_is_backfill_only(journal: &Path, day: &str) -> bool {
     let Some(streams) = backfill_only_streams(journal, day) else {
         return false;
     };
-    let setup_ms = setup_completed_at_ms(journal);
     streams.iter().all(|stream| {
-        let created_ms = match read_typed_stream_record(&stream_record_path(journal, stream)) {
+        if !(is_syncing_source_stream(journal, stream) || stream == EMAIL_SYNC_STREAM) {
+            return true;
+        }
+        match read_typed_stream_record(&stream_record_path(journal, stream)) {
             Ok(Some(record)) if record.created_at > 0 => {
-                i64::try_from(record.created_at.saturating_mul(1_000)).ok()
+                i64::try_from(record.created_at.saturating_mul(1_000))
+                    .ok()
+                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                    .is_none_or(|began| {
+                        day < solstone_core_journal_config::owner_day(journal, began).as_str()
+                    })
             }
-            _ => None,
-        };
-        created_ms
-            .or(setup_ms)
-            .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
-            .is_none_or(|began| {
-                day < solstone_core_journal_config::owner_day(journal, began).as_str()
-            })
+            _ => true,
+        }
     })
 }
+
+/// The stream the email source syncs into. It is named like a file import
+/// and carries no source binding, so its name is all that tells it apart.
+const EMAIL_SYNC_STREAM: &str = "import.email";
 
 /// The streams of a day whose every live segment sits in a backfill stream,
 /// or `None` when the day holds no segment or holds a captured one.
@@ -329,15 +337,29 @@ mod tests {
         // Whenever it arrived, each of those days holds only a syncing stream.
         assert!(day_holds_only_backfill_streams(root, "20260531"));
         assert!(day_holds_only_backfill_streams(root, "20260601"));
-        // A stream with no record began when the journal was set up.
+        // A file import is history whenever it arrived, record or none.
         shot("20260228", "import.image");
-        shot("20260301", "import.image");
+        shot("20260615", "import.image");
         assert!(day_is_backfill_only(root, "20260228"));
-        assert!(!day_is_backfill_only(root, "20260301"));
-        // A day both streams hold is history only if it is before both.
-        shot("20260301", "shots");
-        assert!(!day_is_backfill_only(root, "20260301"));
+        assert!(day_is_backfill_only(root, "20260615"));
+        stream(root, "import.image", None);
+        assert!(day_is_backfill_only(root, "20260615"));
+        // A day a file import and a synced stream both hold is history only
+        // if it is before the synced stream began.
+        shot("20260615", "shots");
+        assert!(!day_is_backfill_only(root, "20260615"));
         shot("20260228", "shots");
         assert!(day_is_backfill_only(root, "20260228"));
+        // Synced email lands in a stream named like an import: it began when
+        // its record was written, and without one its days are history.
+        shot("20260702", "import.email");
+        assert!(day_is_backfill_only(root, "20260702"));
+        stream(root, "import.email", None);
+        let record = root.join("streams/import.email.json");
+        let began = fs::read_to_string(&record)
+            .unwrap()
+            .replace(r#""created_at":0"#, r#""created_at":1780315200"#);
+        fs::write(&record, began).unwrap();
+        assert!(!day_is_backfill_only(root, "20260702"));
     }
 }

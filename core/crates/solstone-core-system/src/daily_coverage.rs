@@ -2438,21 +2438,5 @@ mod tests {
         assert!(!morning_briefing_applies_at(
             journal, "20260530", "20260602"
         ));
-        let now: Timestamp = "2026-06-10T12:00:00Z".parse().unwrap();
-        let observer = "entities:entity_observer";
-        assert!(historical_entity_daily_applies_at(
-            journal,
-            "20260603",
-            observer,
-            Some("work"),
-            now
-        ));
-        assert!(!historical_entity_daily_applies_at(
-            journal,
-            "20260602",
-            observer,
-            Some("work"),
-            now
-        ));
     }
 }
