@@ -154,6 +154,24 @@
     );
     equal('empty input yields no sections', R.groupClientsByDelivery([]).length, 0);
 
+    // per-source needs_attention classifies as failing even when top-level failing === false and sibling source is active
+    const siblingActiveSourceFailing = {
+      ...deliveringButStaleHeartbeat,
+      failing: false,
+      capture_state: 'active',
+      ingest_rejection: null,
+      source_delivery: {
+        audio: { state: 'current', elapsed_ms: 1000, ingest_rejection: null },
+        obsidian: {
+          state: 'needs_attention',
+          elapsed_ms: null,
+          ingest_rejection: { reason_code: 'obsidian_invalid', active_count: 2 },
+        },
+      },
+    };
+    equal('per-source needs_attention groups under failing', R.deliveryGroupFor(siblingActiveSourceFailing), 'failing');
+    equal('per-source needs_attention reason_code fallback', R.firstSourceAttentionReason(siblingActiveSourceFailing), 'obsidian_invalid');
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
     window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
   }

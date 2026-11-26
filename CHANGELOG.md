@@ -83,6 +83,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
+- when one source on a paired device has an upload turned away while another source on that device keeps adding to your journal, the problem now stays visible on home, network, status and `solstone journal doctor` until that source succeeds. paired devices that stay connected while idle also stay shown as connected instead of turning to not reporting or offline.
+- on home, pairing only the `solstone` command no longer lists it as awaiting its first upload, and a newly paired device with sources turned on or paused shows as quiet instead of awaiting its first upload. paired apps reading your journal's shared sources list also get the latest sync time for Safari on an iphone or ipad.
 
 ### Removed
 

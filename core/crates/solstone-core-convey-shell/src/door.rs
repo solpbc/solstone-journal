@@ -81,6 +81,7 @@ const MAX_PAIRING_FAILURES: usize = 3;
 // carrier that is refusing is still open while the owner is watching uploads
 // fail, which is exactly when the record has to already exist.
 const REFUSAL_REPORT_INTERVAL: Duration = Duration::from_secs(5);
+const CARRIER_PING_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 /// `SessionPolicy.deferralLimit` in the Swift client: how long it will tolerate
 /// a late PONG before calling the path lost. A PING behind a full send buffer
 /// during a bulk upload is legitimately late for most of this window, so a
@@ -1355,6 +1356,12 @@ async fn serve_carrier(
         REFUSAL_REPORT_INTERVAL,
     );
     refusal_report.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_pings_answered = connection.carrier_counts().pings_answered;
+    let mut ping_check = tokio::time::interval_at(
+        tokio::time::Instant::now() + CARRIER_PING_CHECK_INTERVAL,
+        CARRIER_PING_CHECK_INTERVAL,
+    );
+    ping_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         #[cfg(debug_assertions)]
         config
@@ -1448,6 +1455,29 @@ async fn serve_carrier(
                     connection.refusals(),
                     &mut reported_refusals,
                 );
+            }
+            _ = ping_check.tick() => {
+                if let Some(cid) = &cid {
+                    let answered = connection.carrier_counts().pings_answered;
+                    if answered > last_pings_answered {
+                        last_pings_answered = answered;
+                        if let Some(stamp) = solstone_core_sol_link::begin_live_device_note(
+                            &config.journal_root,
+                            cid.as_str(),
+                        ) {
+                            let journal_root = config.journal_root.clone();
+                            let cid = cid.as_str().to_owned();
+                            let _ = tokio::task::spawn_blocking(move || {
+                                solstone_core_sol_link::complete_live_device_persist(
+                                    &journal_root,
+                                    &cid,
+                                    &stamp,
+                                );
+                            })
+                            .await;
+                        }
+                    }
+                }
             }
         }
     }
@@ -1641,11 +1671,7 @@ fn report_carrier_refusals(
 }
 
 fn record_completed_handshake(journal_root: &std::path::Path, cid: &LinkedDeviceCid) {
-    match AuthorizationLedger::new(journal_root).touch_last_seen(cid.as_str()) {
-        Ok(true) => {}
-        Ok(false) => log::debug!("paired-device CID was absent while recording last seen"),
-        Err(error) => log::debug!("paired-device last-seen update failed: {error}"),
-    }
+    solstone_core_sol_link::seed_live_device_handshake(journal_root, cid.as_str());
     let mut extra = Map::new();
     extra.insert("fingerprint".to_owned(), json!(cid.as_str()));
     let envelope = CallosumEnvelope {

@@ -12,6 +12,7 @@ pub(crate) fn remove_paired_device(
     cid: &str,
 ) -> Result<RemoveOutcome, AuthorizedClientsMutationError> {
     let outcome = AuthorizationLedger::new(journal_root).remove(cid)?;
+    solstone_core_sol_link::evict_live_device(journal_root, cid);
     if let Err(_error) = solstone_core_push::remove_cid_registrations(journal_root, cid) {
         log::error!("push registrations for an unpaired device could not be removed");
     }

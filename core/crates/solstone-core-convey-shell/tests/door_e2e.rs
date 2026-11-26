@@ -6084,3 +6084,363 @@ async fn pairing_peer_is_confined_from_agents_pair_start_and_label_patch() {
     }
     handle.shutdown();
 }
+
+async fn loopback_json_get(address: SocketAddr, path: &str) -> serde_json::Value {
+    let request = format!("GET {path} HTTP/1.0\r\nhost: localhost\r\n\r\n");
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("loopback connects");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("loopback request writes");
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .expect("loopback response reads");
+    let split = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("HTTP header terminator");
+    let head = std::str::from_utf8(&response[..split]).expect("UTF-8 HTTP head");
+    let status: u16 = head
+        .split_whitespace()
+        .nth(1)
+        .expect("HTTP status code")
+        .parse()
+        .expect("numeric status");
+    assert_eq!(status, 200, "GET {path} returned {status}: {head}");
+    serde_json::from_slice(&response[split + 4..]).expect("JSON response body")
+}
+
+async fn send_carrier_ping_and_await_pong(
+    carrier: &mut tokio_rustls::client::TlsStream<TcpStream>,
+    decoder: &mut FrameDecoder,
+    nonce: [u8; 8],
+) {
+    carrier
+        .write_all(&Frame::control_ping(nonce).encode().expect("ping frame"))
+        .await
+        .expect("ping writes");
+    carrier.flush().await.expect("ping flushes");
+    let mut buffer = [0_u8; 4096];
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let read = carrier.read(&mut buffer).await.expect("carrier reads pong");
+            assert!(read > 0, "carrier closed while awaiting pong");
+            decoder.feed(&buffer[..read]);
+            for frame in decoder.drain().expect("pong frame decode") {
+                if frame.stream_id == 0
+                    && frame.flags == spl_core::frame::FLAG_PONG
+                    && frame.control_pong_nonce() == Some(nonce)
+                {
+                    return;
+                }
+            }
+        }
+    })
+    .await
+    .expect("carrier answered mux PING within 5 s");
+}
+
+fn rfc3339_age_ms_now(stamp: &str) -> i64 {
+    let parsed = time::OffsetDateTime::parse(stamp, &time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|error| panic!("invalid RFC3339 timestamp '{stamp}': {error}"));
+    let now = time::OffsetDateTime::now_utc();
+    ((now - parsed).whole_milliseconds() as i64).max(0)
+}
+
+async fn assert_all_live_surfaces_connected(
+    loopback: SocketAddr,
+    journal_root: &Path,
+    cid: &str,
+    context: &str,
+) {
+    let clients = loopback_json_get(loopback, "/app/network/api/clients").await;
+    assert_eq!(
+        clients["clients"][0]["state"], "connected",
+        "{context}: /app/network/api/clients must stay connected: {clients}"
+    );
+    let elapsed_ms = clients["clients"][0]["elapsed_ms"]
+        .as_i64()
+        .expect("elapsed_ms integer");
+    assert!(
+        elapsed_ms < 30_000,
+        "{context}: /app/network/api/clients elapsed_ms={elapsed_ms} exceeded 30 s"
+    );
+
+    let sources = loopback_json_get(loopback, "/app/network/api/sources").await;
+    let source_seen = sources["devices"][0]["device_last_seen_at"]
+        .as_str()
+        .expect("sources device_last_seen_at");
+    let source_age = rfc3339_age_ms_now(source_seen);
+    assert!(
+        source_age < 30_000,
+        "{context}: /app/network/api/sources age={source_age}ms exceeded 30 s"
+    );
+
+    let devices_api = loopback_json_get(loopback, "/app/network/api/devices").await;
+    let devices_seen = devices_api["devices"][0]["last_seen_at"]
+        .as_str()
+        .expect("devices last_seen_at");
+    let devices_age = rfc3339_age_ms_now(devices_seen);
+    assert!(
+        devices_age < 30_000,
+        "{context}: /app/network/api/devices age={devices_age}ms exceeded 30 s"
+    );
+
+    let pulse = loopback_json_get(loopback, "/app/home/api/pulse").await;
+    assert_eq!(
+        pulse["capture_health"]["unassessed"][0]["reach"], "active",
+        "{context}: /app/home/api/pulse reach must stay active"
+    );
+
+    let disk_devices: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal_root.join("link/devices.json")).expect("on-disk devices.json"),
+    )
+    .expect("valid devices.json");
+    let disk_seen = disk_devices[cid]["last_seen_at"]
+        .as_str()
+        .expect("on-disk last_seen_at");
+    let disk_age = rfc3339_age_ms_now(disk_seen);
+    assert!(
+        disk_age < 30_000,
+        "{context}: on-disk link/devices.json age={disk_age}ms exceeded 30 s"
+    );
+}
+
+#[tokio::test]
+async fn ios_browser_upload_populates_safari_on_network_sources_endpoint() {
+    let fixture = Fixture::established(1);
+    fs::create_dir_all(fixture.root.join("health")).expect("health dir");
+    let callosum = solstone_core_callosum::CallosumSocketServer::bind(
+        fixture.root.join("health/callosum.sock"),
+    )
+    .await
+    .expect("Callosum server");
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let mut carrier = live_carrier(&fixture, port).await;
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+
+    let declare = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "PUT",
+        "/app/network/api/clients/self/sources",
+        &[("content-type".into(), "application/json".into())],
+        br#"[{"source":"safari","state":"on"}]"#,
+    )
+    .await
+    .expect("declare safari");
+    assert_eq!(declare.status, 204);
+
+    let boundary = "safari-ingest-boundary";
+    let envelope = r#"{"day":"20260804","segment":"120000_1","source":"browser","files":[{"submitted":"browser_pages.jsonl"}]}"#;
+    let jsonl =
+        "{\"t\":\"segment_start\",\"ts\":1000,\"blocks\":[{\"text\":\"safari history\"}]}\n";
+    let multipart_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"envelope\"\r\n\r\n{envelope}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"browser_pages.jsonl\"\r\nContent-Type: application/octet-stream\r\n\r\n{jsonl}\r\n--{boundary}--\r\n"
+    );
+    let upload = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "POST",
+        "/app/devices/ingest",
+        &[
+            (
+                "content-type".into(),
+                format!("multipart/form-data; boundary={boundary}"),
+            ),
+            ("x-solstone-protocol-version".into(), "3".into()),
+        ],
+        multipart_body.as_bytes(),
+    )
+    .await
+    .expect("upload browser segment");
+    assert_eq!(
+        upload.status,
+        200,
+        "upload body: {}",
+        String::from_utf8_lossy(&upload.body)
+    );
+
+    let sources = loopback_json_get(handle.loopback_ipv4_addr(), "/app/network/api/sources").await;
+    let device = sources["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["cid"] == cid)
+        .expect("paired device in sources");
+    assert_eq!(device["sources"][0]["source"], "safari");
+    assert!(
+        device["sources"][0]["last_synced_at"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
+        "safari last_synced_at must be populated: {device}"
+    );
+    handle.shutdown();
+    callosum.stop().await;
+}
+
+#[tokio::test]
+async fn carrier_ping_and_linked_device_http_keep_live_presence_connected_while_silent_carrier_ages_out()
+ {
+    let ping_arm = async {
+        let fixture = Fixture::established(1);
+        let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+        let mut serve_opts = options(&fixture, router(fixture.root.clone()), 0);
+        serve_opts.stream_stall_timeout = Duration::from_secs(60);
+        let handle = serve(serve_opts).await.expect("serve ping fixture");
+        let loopback = handle.loopback_ipv4_addr();
+        let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+        let mut decoder = FrameDecoder::new();
+        let started = Instant::now();
+
+        // Answer mux PINGs every 18 s across multiple 30 s windows (up to 62 s) with zero HTTP requests on the carrier.
+        let mut next_ping_idx = 0_u64;
+        let ping_secs = [18_u64, 36, 54];
+        let check_secs = [22_u64, 34, 42, 52, 62];
+        let mut next_check_idx = 0_usize;
+
+        while next_check_idx < check_secs.len() {
+            let next_ping_at = ping_secs
+                .get(next_ping_idx as usize)
+                .copied()
+                .unwrap_or(u64::MAX);
+            let next_check_at = check_secs[next_check_idx];
+            let target_sec = next_ping_at.min(next_check_at);
+            let target = Duration::from_secs(target_sec);
+            if let Some(rem) = target.checked_sub(started.elapsed()) {
+                tokio::time::sleep(rem).await;
+            }
+            if next_ping_at <= next_check_at {
+                next_ping_idx += 1;
+                send_carrier_ping_and_await_pong(
+                    &mut carrier,
+                    &mut decoder,
+                    next_ping_idx.to_be_bytes(),
+                )
+                .await;
+                // Allow the 2 s door carrier ping poll to observe `pings_answered` and write through.
+                tokio::time::sleep(Duration::from_millis(2500)).await;
+            } else {
+                next_check_idx += 1;
+                assert_all_live_surfaces_connected(
+                    loopback,
+                    &fixture.root,
+                    &cid,
+                    &format!("mux-ping t={next_check_at}s"),
+                )
+                .await;
+            }
+        }
+        handle.shutdown();
+    };
+
+    let http_probe_arm = async {
+        let fixture = Fixture::established(1);
+        let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+        let mut serve_opts = options(&fixture, router(fixture.root.clone()), 0);
+        serve_opts.stream_stall_timeout = Duration::from_secs(60);
+        let handle = serve(serve_opts).await.expect("serve http fixture");
+        let loopback = handle.loopback_ipv4_addr();
+        let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+        let mut decoder = FrameDecoder::new();
+        let mut ids = FrameDialer::default();
+        let started = Instant::now();
+
+        // Send LinkedDevice HTTP status probes every 15 s across multiple 30 s windows with zero mux PINGs.
+        let probe_secs = [15_u64, 30, 45, 60];
+        let check_secs = [22_u64, 34, 50, 62];
+        let mut probe_idx = 0_usize;
+        let mut check_idx = 0_usize;
+
+        while check_idx < check_secs.len() {
+            let next_probe = probe_secs.get(probe_idx).copied().unwrap_or(u64::MAX);
+            let next_check = check_secs[check_idx];
+            let target = Duration::from_secs(next_probe.min(next_check));
+            if let Some(rem) = target.checked_sub(started.elapsed()) {
+                tokio::time::sleep(rem).await;
+            }
+            if next_probe <= next_check {
+                probe_idx += 1;
+                let resp =
+                    complete_status_exchange(&mut carrier, &mut decoder, ids.allocate()).await;
+                assert_eq!(resp.status, 200);
+            } else {
+                check_idx += 1;
+                assert_all_live_surfaces_connected(
+                    loopback,
+                    &fixture.root,
+                    &cid,
+                    &format!("http-probe t={next_check}s"),
+                )
+                .await;
+            }
+        }
+        handle.shutdown();
+    };
+
+    let silent_arm = async {
+        let fixture = Fixture::established(1);
+        let mut serve_opts = options(&fixture, router(fixture.root.clone()), 0);
+        serve_opts.stream_stall_timeout = Duration::from_secs(60);
+        let handle = serve(serve_opts).await.expect("serve silent fixture");
+        let loopback = handle.loopback_ipv4_addr();
+        let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+        let mut decoder = FrameDecoder::new();
+        let mut ids = FrameDialer::default();
+        // Wait for the initial carrier handshake record to settle on disk before starting the silent clock.
+        for _ in 0..50 {
+            if fixture.root.join("link/devices.json").exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let started = Instant::now();
+
+        // At 35 s (> 30 s CLIENT_ACTIVE_MS, < 120 s CLIENT_STALE_MS), an open carrier with zero new
+        // pings_answered and zero HTTP requests ages out to Stale.
+        tokio::time::sleep(Duration::from_secs(35).saturating_sub(started.elapsed())).await;
+        let stale_clients = loopback_json_get(loopback, "/app/network/api/clients").await;
+        assert_eq!(
+            stale_clients["clients"][0]["state"], "stale",
+            "silent open carrier must age to stale after 30 s: {stale_clients}"
+        );
+        let stale_pulse = loopback_json_get(loopback, "/app/home/api/pulse").await;
+        assert_eq!(
+            stale_pulse["capture_health"]["unassessed"][0]["reach"], "stale",
+            "silent open carrier must report stale reach on Home after 30 s"
+        );
+
+        // At 122 s (> 120 s CLIENT_STALE_MS), the still-open silent carrier ages out to Disconnected.
+        tokio::time::sleep(Duration::from_secs(122).saturating_sub(started.elapsed())).await;
+        let disc_clients = loopback_json_get(loopback, "/app/network/api/clients").await;
+        assert_eq!(
+            disc_clients["clients"][0]["state"], "disconnected",
+            "silent open carrier must age to disconnected after 120 s: {disc_clients}"
+        );
+        let disc_pulse = loopback_json_get(loopback, "/app/home/api/pulse").await;
+        assert_eq!(
+            disc_pulse["capture_health"]["unassessed"][0]["reach"], "offline",
+            "silent open carrier must report offline reach on Home after 120 s"
+        );
+
+        // Prove the carrier remained open the entire 122 s, and one real LinkedDevice HTTP request revives it.
+        let revived = complete_status_exchange(&mut carrier, &mut decoder, ids.allocate()).await;
+        assert_eq!(revived.status, 200);
+        let active_again = loopback_json_get(loopback, "/app/network/api/clients").await;
+        assert_eq!(active_again["clients"][0]["state"], "connected");
+        handle.shutdown();
+    };
+
+    tokio::join!(ping_arm, http_probe_arm, silent_arm);
+}

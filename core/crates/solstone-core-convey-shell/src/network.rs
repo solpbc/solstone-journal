@@ -403,12 +403,15 @@ pub(crate) async fn devices(
             );
         }
     };
-    let activity = match read_device_activity(&root.0.join("link/devices.json")) {
-        DeviceActivityRead::Present(activity) => Some(activity),
-        DeviceActivityRead::Missing => None,
+    let (activity, live_seen) = match read_device_activity(&root.0.join("link/devices.json")) {
+        DeviceActivityRead::Present(activity) => (
+            Some(activity),
+            Some(solstone_core_sol_link::live_seen_for(&root.0)),
+        ),
+        DeviceActivityRead::Missing => (None, Some(solstone_core_sol_link::live_seen_for(&root.0))),
         DeviceActivityRead::Unreadable | DeviceActivityRead::Malformed => {
             log::warn!("network devices could not read device activity metadata");
-            None
+            (None, None)
         }
     };
     let descriptions = match solstone_core_sol_link::client_description_store::read_descriptions(
@@ -429,9 +432,14 @@ pub(crate) async fn devices(
     let devices = entries
         .iter()
         .map(|entry| {
+            let live = live_seen
+                .as_ref()
+                .and_then(|seen| seen.get(&entry.fingerprint))
+                .map(String::as_str);
             network_device_json(
                 entry,
                 activity.as_ref(),
+                live,
                 descriptions.get(&entry.fingerprint),
             )
         })
@@ -638,12 +646,14 @@ pub(crate) fn unpair_mutation_refusal(
 pub(crate) fn network_device_json(
     entry: &solstone_core_sol_link::ledger::ClientEntry,
     activity: Option<&std::collections::BTreeMap<String, ClientActivity>>,
+    live_seen_at: Option<&str>,
     stored_desc: Option<&solstone_core_sol_link::client_description::StoredClientDescription>,
 ) -> Value {
-    let last_seen_at = activity
+    let disk_last_seen_at = activity
         .and_then(|devices| devices.get(&entry.fingerprint))
-        .map(|device| Value::from(device.last_seen_at.clone()))
-        .unwrap_or(Value::Null);
+        .map(|device| device.last_seen_at.as_str());
+    let last_seen_at = solstone_core_sol_link::newer_last_seen_at(disk_last_seen_at, live_seen_at)
+        .map_or(Value::Null, Value::from);
     let display_label =
         solstone_core_sol_link::client_description::current_display_label(entry, stored_desc);
     let value = Map::from_iter([

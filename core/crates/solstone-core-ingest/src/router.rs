@@ -284,8 +284,16 @@ async fn ingest_upload(
         };
         let envelope = match parse_envelope(parsed.envelope, parsed.files) {
             Ok(envelope) => envelope,
-            Err((code, detail)) => {
-                return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
+            Err((code, detail, source)) => {
+                return finish_ingest_completion(
+                    &state,
+                    &cid,
+                    IngestCompletion::rejected(
+                        code,
+                        refusal(code, StatusCode::BAD_REQUEST, detail),
+                    )
+                    .with_source(source),
+                );
             }
         };
         write_envelope(&state, &cid, envelope)
@@ -453,19 +461,46 @@ struct Envelope {
     calendar: Option<crate::calendar::Receipt>,
 }
 
-fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (ReasonCode, String)> {
+fn parse_envelope(
+    text: String,
+    raw_files: Vec<RawFile>,
+) -> Result<Envelope, (ReasonCode, String, Option<String>)> {
     let Value::Object(mut root) = serde_json::from_str::<Value>(&text).map_err(|_| {
         (
             ReasonCode::EnvelopeInvalid,
             "envelope is not JSON object".to_owned(),
+            None,
         )
     })?
     else {
         return Err((
             ReasonCode::EnvelopeInvalid,
             "envelope is not an object".to_owned(),
+            None,
         ));
     };
+    let raw_source = match root.remove("source") {
+        None => String::new(),
+        Some(Value::String(source)) => source,
+        Some(_) => {
+            return Err((
+                ReasonCode::SourceInvalidCharacter,
+                "source must be a string".to_owned(),
+                None,
+            ));
+        }
+    };
+    let source = validate_source(raw_source.as_bytes())
+        .map_err(|code| (code, "invalid source".to_owned(), None))?;
+    parse_envelope_body(root, source.clone(), raw_files)
+        .map_err(|(code, detail)| (code, detail, Some(source)))
+}
+
+fn parse_envelope_body(
+    mut root: Map<String, Value>,
+    source: String,
+    raw_files: Vec<RawFile>,
+) -> Result<Envelope, (ReasonCode, String)> {
     if root.contains_key("observer") {
         return Err((
             ReasonCode::LegacyObserverField,
@@ -482,18 +517,6 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
     validate_day(&day).map_err(|code| (code, "day must be YYYYMMDD".to_owned()))?;
     let segment = required_string(&mut root, "segment")?;
     validate_segment(&segment).map_err(|code| (code, "segment must be HHMMSS_LEN".to_owned()))?;
-    let source = match root.remove("source") {
-        None => String::new(),
-        Some(Value::String(source)) => source,
-        Some(_) => {
-            return Err((
-                ReasonCode::SourceInvalidCharacter,
-                "source must be a string".to_owned(),
-            ));
-        }
-    };
-    let source =
-        validate_source(source.as_bytes()).map_err(|code| (code, "invalid source".to_owned()))?;
     let meta = match root.remove("meta") {
         None => Map::new(),
         Some(Value::Object(meta)) => meta,
@@ -5625,6 +5648,7 @@ mod tests {
                     bytes: bytes.to_vec(),
                 }],
             )
+            .map_err(|(code, detail, _)| (code, detail))
         }
 
         #[test]
@@ -6844,6 +6868,185 @@ mod tests {
             assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
             assert_eq!(body["reason_code"], "screenshot_invalid");
             assert!(!dir.path().join("chronicle").exists(), "nothing was kept");
+        }
+    }
+
+    #[tokio::test]
+    async fn envelope_and_payload_rejections_attribute_validated_source_including_empty() {
+        let dir = root();
+        let journal = dir.path().to_path_buf();
+        seed_authorized_client(&journal, CID_A);
+        let (_now, clock) = frozen_clock(1_700_000_000_000);
+        let app = api_router_with(&journal, Arc::new(TestIngestNotifier), clock);
+
+        // Pre-source rejections (malformed multipart and invalid "source" field) record only top-level activity.
+        let (status, _) = call(
+            &app,
+            "POST",
+            "/app/devices/ingest",
+            Some("multipart/form-data; boundary=broken".to_owned()),
+            b"--broken\r\nnot-a-valid-part".to_vec(),
+            basis(CID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(activity_for(&journal, CID_A).sources.is_empty());
+
+        for bad_source in [json!(42), json!("bad/source")] {
+            let (status, _) = call_upload(
+                &app,
+                json!({
+                    "day": "20260804",
+                    "segment": "120000_1",
+                    "source": bad_source,
+                    "files": [{"submitted": "audio.flac"}],
+                }),
+                "audio.flac",
+                b"sound",
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(
+                activity_for(&journal, CID_A).sources.is_empty(),
+                "invalid source field must not populate per-source rejections"
+            );
+        }
+
+        // Valid sources (including "" unnamed capture) failing day, segment, meta, or files
+        // record ingest_rejection on both top-level activity and activity.sources[source].
+        for source in ["obsidian", "browser", "calendar", "screenshots", ""] {
+            let envelope_failures = [
+                (
+                    json!({
+                        "day": "not-a-day",
+                        "segment": "120000_1",
+                        "source": source,
+                        "files": [{"submitted": "audio.flac"}],
+                    }),
+                    "day_invalid",
+                ),
+                (
+                    json!({
+                        "day": "20260804",
+                        "segment": "bad_segment",
+                        "source": source,
+                        "files": [{"submitted": "audio.flac"}],
+                    }),
+                    "segment_invalid",
+                ),
+                (
+                    json!({
+                        "day": "20260804",
+                        "segment": "120000_1",
+                        "source": source,
+                        "meta": "not-an-object",
+                        "files": [{"submitted": "audio.flac"}],
+                    }),
+                    "envelope_invalid",
+                ),
+                (
+                    json!({
+                        "day": "20260804",
+                        "segment": "120000_1",
+                        "source": source,
+                        "files": "not-an-array",
+                    }),
+                    "file_metadata_invalid",
+                ),
+            ];
+            for (bad_envelope, expected_code) in envelope_failures {
+                let (status, body) = call_upload(&app, bad_envelope, "audio.flac", b"sound").await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{source}: {body}");
+                assert_eq!(body["reason_code"], expected_code);
+                let activity = activity_for(&journal, CID_A);
+                assert_eq!(
+                    activity.ingest_rejection.as_ref().unwrap().reason_code,
+                    expected_code
+                );
+                match activity.sources.get(source) {
+                    Some(SourceRecord::Valid(source_row)) => {
+                        assert_eq!(
+                            source_row.ingest_rejection.as_ref().unwrap().reason_code,
+                            expected_code,
+                            "source '{source}' must retain {expected_code}"
+                        );
+                    }
+                    other => panic!("expected valid source record for '{source}', got {other:?}"),
+                }
+            }
+        }
+
+        // Source-specific payload validator 400s attribute to their validated source key.
+        let payload_cases: [(&str, Value, &str, &[u8], &str); 4] = [
+            (
+                "browser",
+                json!({
+                    "day": "20260804",
+                    "segment": "120000_1",
+                    "source": "browser",
+                    "files": [{"submitted": "browser_history.jsonl"}],
+                }),
+                "browser_history.jsonl",
+                b"{not-valid-browser-jsonl}\n",
+                "browser_record_invalid",
+            ),
+            (
+                "calendar",
+                json!({
+                    "day": "20260804",
+                    "segment": "120000_1",
+                    "source": "calendar",
+                    "files": [{"submitted": "calendar_events.jsonl"}],
+                }),
+                "calendar_events.jsonl",
+                b"{not-valid-calendar-jsonl}\n",
+                "calendar_note_invalid",
+            ),
+            (
+                "obsidian",
+                json!({
+                    "day": "20260804",
+                    "segment": "120000_1",
+                    "source": "obsidian",
+                    "files": [{"submitted": "notes.md"}],
+                }),
+                "notes.md",
+                b"missing obsidian manifest",
+                "obsidian_note_invalid",
+            ),
+            (
+                "screenshots",
+                json!({
+                    "day": "20260804",
+                    "segment": "120000_1",
+                    "source": "screenshots",
+                    "files": [{"submitted": "screenshot_screen.png"}],
+                }),
+                "screenshot_screen.png",
+                b"not-a-png",
+                "screenshot_invalid",
+            ),
+        ];
+        for (source, bad_envelope, filename, bytes, expected_code) in payload_cases {
+            let (status, body) = call_upload(&app, bad_envelope, filename, bytes).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{source}: {body}");
+            assert_eq!(body["reason_code"], expected_code);
+            let activity = activity_for(&journal, CID_A);
+            assert_eq!(
+                activity.ingest_rejection.as_ref().unwrap().reason_code,
+                expected_code
+            );
+            match activity.sources.get(source) {
+                Some(SourceRecord::Valid(source_row)) => {
+                    assert_eq!(
+                        source_row.ingest_rejection.as_ref().unwrap().reason_code,
+                        expected_code
+                    );
+                }
+                other => panic!("expected valid source record for '{source}', got {other:?}"),
+            }
         }
     }
 }

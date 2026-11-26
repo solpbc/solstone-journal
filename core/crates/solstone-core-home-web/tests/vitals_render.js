@@ -290,6 +290,38 @@ async function issueReadCases() {
   assert(pairedHtml.includes('href="/app/sources/"'), pairedHtml);
   assert(pairedHtml.includes('href="/app/transcripts/"'), pairedHtml);
 
+  // Per-source needs_attention chip when top-level failing === false, and Day-0 declared_quiet chip without "awaiting first upload"
+  const perSourceAndDeclaredQuietHtml = renderVitalsHtml({
+    ...ordinary,
+    segment_count: 1,
+    capture_health: {
+      status: 'active',
+      registry: 'registry_complete',
+      clients: [
+        {
+          name: 'Studio Mac',
+          status: 'active',
+          failing: false,
+          capture_elapsed_ms: 5000,
+          source_delivery: {
+            audio: { state: 'current', elapsed_ms: 5000, ingest_rejection: null },
+            obsidian: {
+              state: 'needs_attention',
+              elapsed_ms: null,
+              ingest_rejection: { reason_code: 'obsidian_invalid', active_count: 2 },
+            },
+          },
+        },
+      ],
+      unassessed: [{ name: 'Pocket Phone', reason: 'declared_quiet' }],
+    },
+  });
+  assert(perSourceAndDeclaredQuietHtml.includes('data-device-chip="failing"'), perSourceAndDeclaredQuietHtml);
+  assert(perSourceAndDeclaredQuietHtml.includes('href="/app/health/#registeredClientsCard"'), perSourceAndDeclaredQuietHtml);
+  assert(perSourceAndDeclaredQuietHtml.includes('data-device-chip="quiet"'), perSourceAndDeclaredQuietHtml);
+  assert(!perSourceAndDeclaredQuietHtml.includes('data-device-chip="awaiting"'), perSourceAndDeclaredQuietHtml);
+  assert(!perSourceAndDeclaredQuietHtml.includes('awaiting first upload'), perSourceAndDeclaredQuietHtml);
+
   // Crashed / crash-looping services in supervisor status
   receiveSupervisorStatus({
     event: 'status',

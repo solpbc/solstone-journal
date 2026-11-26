@@ -1504,6 +1504,31 @@ module.exports = async function networkContractCases(manifestDir, copy) {
     assert.ok(now !== card && p.doc.activeElement === now, `drawn again, focus on the same card (on ${focusOn(p)})`);
   });
 
+  await test('per-source needs_attention after a sibling 200 upload groups under failing and surfaces its reason_code in delivery detail', async () => {
+    const sourceFailing = Object.assign({}, DELIVERED, {
+      cid: 'sha256:multisource',
+      cid_short: 'multisource',
+      display_label: 'Studio Mac',
+      failing: false,
+      capture_state: 'active',
+      ingest_rejection: null,
+      source_delivery: {
+        audio: { state: 'current', elapsed_ms: 2000, ingest_rejection: null },
+        obsidian: {
+          state: 'needs_attention',
+          elapsed_ms: null,
+          ingest_rejection: { reason_code: 'obsidian_invalid', active_count: 2 },
+        },
+      },
+    });
+    const p = await listPage([sourceFailing]);
+    assert.ok(p.q('.client-group-header[data-group="failing"]'), 'grouped under failing');
+    const card = p.q('.client-card[data-cid="sha256:multisource"]');
+    assert.ok(card && card.classList.contains('stale'), 'card carries stale/failing emphasis');
+    openDetails(p, 'sha256:multisource');
+    assert.ok(card.textContent.includes('obsidian_invalid'), `delivery detail shows per-source reason_code (${card.textContent})`);
+  });
+
   async function dialogPage(nonce) {
     const answers = journal(copy, { 'GET /app/network/api/pair/nonce-status': nonce || { present: true, used: false } });
     const p = await boot(env, '/app/network/', { answers });

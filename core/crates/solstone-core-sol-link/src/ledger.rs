@@ -713,6 +713,13 @@ impl AuthorizationLedger {
         let clients = load_authorized_for_mutation(&self.authorized_clients_path)
             .map_err(AuthorizedClientsMutationError::Load)?;
         if clients.get(fingerprint).is_none() {
+            if let Some(journal_root) = self
+                .authorized_clients_path
+                .parent()
+                .and_then(std::path::Path::parent)
+            {
+                crate::live_presence::evict_live_device(journal_root, fingerprint);
+            }
             return Ok(false);
         }
         self.set_cached(clients);
@@ -872,6 +879,7 @@ impl AuthorizationLedger {
             .parent()
             .and_then(std::path::Path::parent)
         {
+            crate::live_presence::evict_live_device(journal_root, fingerprint);
             if crate::source_declarations::remove_locked(journal_root, fingerprint).is_err() {
                 log::warn!("could not remove declarations for an unpaired device");
             }
@@ -1138,17 +1146,32 @@ fn allocate_label_ordinal(clients: &Clients, base_label: &str, fingerprint: &str
     ordinal
 }
 
+pub(crate) fn advance_last_seen(current: &mut String, candidate: &str) -> bool {
+    let Some(next) = parse_rfc3339_utc(candidate) else {
+        return false;
+    };
+    if parse_rfc3339_utc(current).is_none_or(|existing| next > existing) {
+        *current = candidate.to_owned();
+        true
+    } else {
+        false
+    }
+}
+
 fn touch_device(
     path: &Path,
     fingerprint: &str,
     last_seen_at: &str,
 ) -> Result<(), DevicesMutationError> {
-    mutate_devices(path, |devices| {
-        let activity = devices
-            .entry(fingerprint.to_owned())
-            .or_insert_with(|| ClientActivity::new(last_seen_at));
-        activity.last_seen_at = last_seen_at.to_owned();
-        ((), true)
+    mutate_devices(path, |devices| match devices.get_mut(fingerprint) {
+        Some(activity) => {
+            let changed = advance_last_seen(&mut activity.last_seen_at, last_seen_at);
+            ((), changed)
+        }
+        None => {
+            devices.insert(fingerprint.to_owned(), ClientActivity::new(last_seen_at));
+            ((), true)
+        }
     })
 }
 
@@ -1251,9 +1274,15 @@ fn record_accepted_device(
     source: Option<&str>,
 ) -> Result<(), DevicesMutationError> {
     mutate_devices(path, |devices| {
-        let activity = devices
-            .entry(cid.to_owned())
-            .or_insert_with(|| ClientActivity::new(accepted_at));
+        let activity = match devices.get_mut(cid) {
+            Some(activity) => {
+                let _ = advance_last_seen(&mut activity.last_seen_at, accepted_at);
+                activity
+            }
+            None => devices
+                .entry(cid.to_owned())
+                .or_insert_with(|| ClientActivity::new(accepted_at)),
+        };
         if let Some(source) = source {
             apply_accepted(
                 &mut activity.last_accepted_ingest_at,
@@ -1291,9 +1320,15 @@ fn record_device_rejection(
     source: Option<&str>,
 ) -> Result<(), DevicesMutationError> {
     mutate_devices(path, |devices| {
-        let activity = devices
-            .entry(cid.to_owned())
-            .or_insert_with(|| ClientActivity::new(at));
+        let activity = match devices.get_mut(cid) {
+            Some(activity) => {
+                let _ = advance_last_seen(&mut activity.last_seen_at, at);
+                activity
+            }
+            None => devices
+                .entry(cid.to_owned())
+                .or_insert_with(|| ClientActivity::new(at)),
+        };
         apply_rejected(&mut activity.ingest_rejection, at, reason_code);
         if let Some(source) = source {
             let source_activity = source_activity_for_mutation(&mut activity.sources, source);
@@ -1675,7 +1710,7 @@ mod tests {
         else {
             panic!("activity present");
         };
-        assert_eq!(activity["a"].last_seen_at, NOW);
+        assert_eq!(activity["a"].last_seen_at, "2026-04-19T18:05:12Z");
         assert_eq!(
             activity["a"].last_accepted_ingest_at.as_deref(),
             Some("2026-04-19T18:05:12Z")
@@ -2723,6 +2758,121 @@ mod pairing_identity_read_tests {
             Err(AuthorizedClientsRead::Unreadable)
         );
         assert_eq!(ledger.read_state(), AuthorizedClientsRead::Unreadable);
+    }
+
+    #[test]
+    fn last_seen_at_is_monotonic_across_touch_accept_and_reject_without_unneeded_rewrites() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(ClientEntry::new(
+                "a",
+                "phone",
+                "2026-04-19T00:00:00Z",
+                "instance",
+                ClientRole::Roleless,
+            ))
+            .unwrap();
+
+        assert!(
+            ledger
+                .touch_last_seen_at("a", "2026-04-19T18:10:00Z")
+                .unwrap()
+        );
+        let before_bytes = fs::read(ledger.devices_path()).unwrap();
+        #[cfg(unix)]
+        let before_ino = {
+            use std::os::unix::fs::MetadataExt;
+            fs::metadata(ledger.devices_path()).unwrap().ino()
+        };
+
+        // Equal and older timestamps must not move last_seen_at backward or rewrite devices.json.
+        assert!(
+            ledger
+                .touch_last_seen_at("a", "2026-04-19T18:10:00Z")
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .touch_last_seen_at("a", "2026-04-19T18:05:00Z")
+                .unwrap()
+        );
+        assert_eq!(fs::read(ledger.devices_path()).unwrap(), before_bytes);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(
+                fs::metadata(ledger.devices_path()).unwrap().ino(),
+                before_ino,
+                "non-advancing touch_last_seen_at must not atomically replace devices.json"
+            );
+        }
+
+        // Older accepted ingest and rejection timestamps must not move last_seen_at backward.
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:08:00Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "180800_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:09:00Z",
+                    "event_append_failed",
+                    Some("obsidian"),
+                )
+                .unwrap()
+        );
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        assert_eq!(activity["a"].last_seen_at, "2026-04-19T18:10:00Z");
+
+        // Newer accepted ingest and rejection timestamps advance last_seen_at monotonically.
+        assert!(
+            ledger
+                .record_accepted_ingest(
+                    "a",
+                    "2026-04-19T18:12:00Z",
+                    AcceptedSegment {
+                        day: "20260419".to_owned(),
+                        name: "181200_1".to_owned(),
+                    },
+                    Some("audio"),
+                )
+                .unwrap()
+        );
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        assert_eq!(activity["a"].last_seen_at, "2026-04-19T18:12:00Z");
+
+        assert!(
+            ledger
+                .record_ingest_rejection(
+                    "a",
+                    "2026-04-19T18:15:00Z",
+                    "event_append_failed",
+                    Some("obsidian"),
+                )
+                .unwrap()
+        );
+        let DeviceActivityRead::Present(activity) = read_device_activity(ledger.devices_path())
+        else {
+            panic!("activity present");
+        };
+        assert_eq!(activity["a"].last_seen_at, "2026-04-19T18:15:00Z");
     }
 
     fn authorized_path(root: &Path) -> PathBuf {

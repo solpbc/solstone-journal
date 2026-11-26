@@ -462,6 +462,12 @@ fn capture_disposition(capture: &Value) -> CaptureDisposition {
     }
     if status == "no_clients" {
         match capture.get("registry").and_then(Value::as_str) {
+            Some("registry_complete")
+                if !unassessed_has_reason(capture, "awaiting_first_delivery")
+                    && unassessed_has_reason(capture, "declared_quiet") =>
+            {
+                CaptureDisposition::Quiet
+            }
             Some("registry_empty" | "no_eligible_records" | "registry_complete") => {
                 CaptureDisposition::Calm(calm_kind(capture))
             }
@@ -1836,5 +1842,79 @@ mod tests {
             2,
             "search failure is counted once alongside missing_original"
         );
+    }
+
+    #[test]
+    fn declared_quiet_reports_quiet_calm_and_per_source_rejection_after_sibling_upload_stays_amber()
+    {
+        let backlog = fresh_backlog();
+        let quiet_capture = json!({
+            "status": "no_clients",
+            "registry": "registry_complete",
+            "clients": [],
+            "unassessed": [
+                {"name": "iPhone", "cid": "sha256:phone", "reason": "declared_quiet", "reach": "active"}
+            ],
+        });
+        let quiet_glance = build_health_glance_with_index_in(
+            &quiet_capture,
+            None,
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            ENGLISH,
+        );
+        assert_eq!(quiet_glance["verdict"], "calm");
+        assert_eq!(quiet_glance["severity"], "neutral");
+        assert_eq!(
+            quiet_glance["headline"],
+            text(ENGLISH, QUIET_HEADLINE_ID),
+            "declared_quiet Day-0 posture must report Quiet without attention issues"
+        );
+        assert!(quiet_glance["issues"].as_array().unwrap().is_empty());
+
+        // Sibling source B uploaded 200 (status: "active", failing: false, top-level ingest_rejection absent),
+        // while source A remains in source_delivery NeedsAttention -> amber attention issue.
+        let sibling_capture = json!({
+            "status": "active",
+            "registry": "registry_complete",
+            "clients": [{
+                "name": "MacBook",
+                "cid": "sha256:mac",
+                "failing": false,
+                "status": "active",
+                "reach": "active",
+                "capture_elapsed_ms": 5_000,
+                "source_delivery": {
+                    "audio": {"state": "current", "elapsed_ms": 5_000, "ingest_rejection": null},
+                    "obsidian": {
+                        "state": "needs_attention",
+                        "elapsed_ms": null,
+                        "ingest_rejection": {
+                            "reason_code": "obsidian_invalid",
+                            "first": "2026-08-14T23:20:00Z",
+                            "latest": "2026-08-14T23:20:00Z",
+                            "active_count": 2,
+                        }
+                    }
+                }
+            }],
+            "unassessed": [],
+        });
+        let sibling_glance = build_health_glance_with_index_in(
+            &sibling_capture,
+            Some("5 seconds ago"),
+            &backlog,
+            &Value::Null,
+            now(),
+            None,
+            None,
+            ENGLISH,
+        );
+        assert_eq!(sibling_glance["verdict"], "attention");
+        assert_eq!(sibling_glance["severity"], "amber");
+        assert_eq!(sibling_glance["issues"].as_array().unwrap().len(), 1);
     }
 }

@@ -234,6 +234,28 @@ test('folds stay on the device that named the key', () => {
   assert.strictEqual(cell(root, 'browsers', 'phone'), sources.relative(NOW - 5 * MIN, NOW, ZONE));
 });
 
+test('safari source maps into timestamp-only browsers cells without state words', () => {
+  const root = render(ok([
+    client('phone', {
+      last_accepted_ingest_at: iso(NOW - 4 * MIN),
+      source_delivery: {
+        safari: {
+          state: 'needs_attention',
+          elapsed_ms: 4 * MIN,
+          last_accepted_ingest_at: iso(NOW - 4 * MIN),
+          ingest_rejection: { reason_code: 'browser_record_invalid', first: iso(NOW - MIN), latest: iso(NOW - MIN), active_count: 1 },
+        },
+      },
+      reported: { platform: 'ios', device_type: 'phone' },
+    }),
+  ]));
+  assert.strictEqual(cell(root, 'browsers', 'phone'), sources.relative(NOW - 4 * MIN, NOW, ZONE));
+  assert.strictEqual(rowLabels(root).indexOf('safari'), -1);
+  for (const stateWord of ['needs attention', 'needs_attention', 'paused', 'browser_record_invalid']) {
+    assert.strictEqual(root.textContent.includes(stateWord), false, stateWord);
+  }
+});
+
 test('an unnamed accept that says nothing it carried is the device time and not a source cell', () => {
   for (const key of ['', 'mobile-segment']) {
     const root = render(ok([client('studio', {

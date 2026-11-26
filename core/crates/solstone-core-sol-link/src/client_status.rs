@@ -168,9 +168,13 @@ pub fn inspect_clients_at(journal_root: &Path, now_ms: i64) -> ClientInspection 
             activity,
         },
         AuthorizedClientsRead::Present(entries) => {
+            let live_seen = crate::live_presence::live_seen_for(journal_root);
             let mut clients = entries
                 .into_iter()
-                .map(|entry| assessment_for(entry, activity_for(&activity_read), activity, now_ms))
+                .map(|entry| {
+                    let live = live_seen.get(&entry.fingerprint).map(String::as_str);
+                    assessment_for(entry, activity_for(&activity_read), live, activity, now_ms)
+                })
                 .collect::<Vec<_>>();
             clients.sort_by(|left, right| left.cid.cmp(&right.cid));
             if clients.is_empty() {
@@ -290,12 +294,21 @@ fn activity_for(
 fn assessment_for(
     client_entry: ClientEntry,
     activities: Option<&std::collections::BTreeMap<String, ClientActivity>>,
+    live_seen_at: Option<&str>,
     activity_state: ClientActivityState,
     now_ms: i64,
 ) -> ClientAssessment {
     let cid = client_entry.fingerprint.clone();
     let activity = activities.and_then(|activities| activities.get(&cid));
-    let last_seen_at = activity.map(|activity| activity.last_seen_at.clone());
+    let disk_last_seen_at = activity.map(|activity| activity.last_seen_at.as_str());
+    let last_seen_at = match activity_state {
+        ClientActivityState::Unreadable | ClientActivityState::Malformed => {
+            disk_last_seen_at.map(str::to_owned)
+        }
+        ClientActivityState::Present | ClientActivityState::Missing => {
+            crate::live_presence::newer_last_seen_at(disk_last_seen_at, live_seen_at)
+        }
+    };
     let last_accepted_ingest_at =
         activity.and_then(|activity| activity.last_accepted_ingest_at.clone());
     let last_accepted_segment =

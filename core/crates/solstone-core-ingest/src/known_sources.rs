@@ -12,7 +12,9 @@ use solstone_core_sol_link::ledger::{
     read_authorized_clients, read_device_activity,
 };
 use solstone_core_sol_link::source_declarations::{self, Declaration, DeclarationError, State};
-use solstone_core_sol_link::{current_display_label, read_descriptions};
+use solstone_core_sol_link::{
+    current_display_label, live_seen_for, newer_last_seen_at, read_descriptions,
+};
 
 type Key = (String, Option<String>);
 type History = BTreeMap<Key, String>;
@@ -87,6 +89,7 @@ fn history(
     cid: &str,
     activity: Option<&ClientActivity>,
     vaults: Option<&BTreeMap<String, String>>,
+    use_safari: bool,
 ) -> History {
     let mut history = History::new();
     for (vault, stamp) in vaults.into_iter().flatten() {
@@ -115,7 +118,13 @@ fn history(
                 continue;
             }
             "tmux" => "terminal",
-            "browser" => "browsers",
+            "browser" => {
+                if use_safari {
+                    "safari"
+                } else {
+                    "browsers"
+                }
+            }
             "watch-audio" => "watch",
             "obsidian" | "calendar" | "screenshots" | "audio" | "screen" | "location"
             | "camera" | "safari" | "terminal" | "browsers" | "watch" => name,
@@ -227,6 +236,7 @@ pub fn snapshot(root: &Path, cid: Option<String>) -> Result<Snapshot, Declaratio
         DeviceActivityRead::Missing => BTreeMap::new(),
         _ => return Err(DeclarationError::Unavailable),
     };
+    let live_seen = live_seen_for(root);
     let vaults = crate::obsidian::synced_vaults(root).map_err(|_| DeclarationError::Unavailable)?;
     pairs.sort_by(|a, b| a.fingerprint.cmp(&b.fingerprint));
     let mut hash = Sha256::new();
@@ -236,20 +246,31 @@ pub fn snapshot(root: &Path, cid: Option<String>) -> Result<Snapshot, Declaratio
         let reported = stored.and_then(|d| d.reported.as_ref());
         let activity = activities.get(&pair.fingerprint);
         let declaration = declarations.get(&pair.fingerprint);
+        let platform = reported
+            .and_then(|r| r.platform.clone())
+            .or_else(|| pair.platform.map(|p| p.as_wire().to_string()));
+        let use_safari = declaration
+            .is_some_and(|decl| decl.sources.iter().any(|s| s.source == "safari"))
+            || platform
+                .as_deref()
+                .is_some_and(|p| p.eq_ignore_ascii_case("ios") || p.eq_ignore_ascii_case("ipados"));
         let history = history(
             root,
             &pair.fingerprint,
             activity,
             vaults.get(&pair.fingerprint),
+            use_safari,
+        );
+        let device_last_seen_at = newer_last_seen_at(
+            activity.map(|a| a.last_seen_at.as_str()),
+            live_seen.get(&pair.fingerprint).map(String::as_str),
         );
         let device = Device {
             display_label: current_display_label(&pair, stored),
-            platform: reported
-                .and_then(|r| r.platform.clone())
-                .or_else(|| pair.platform.map(|p| p.as_wire().to_string())),
+            platform,
             device_type: reported.and_then(|r| r.device_type.clone()),
             cid: pair.fingerprint,
-            device_last_seen_at: activity.map(|a| a.last_seen_at.clone()),
+            device_last_seen_at,
             sources: resolve(declaration, history),
         };
         // Encode structural fields only, in canonical device and source order.
@@ -278,4 +299,192 @@ pub fn snapshot(root: &Path, cid: Option<String>) -> Result<Snapshot, Declaratio
         self_cid: cid,
         devices,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::{Value, json};
+    use solstone_core_sol_link::ledger::{
+        AcceptedSegment, AuthorizationLedger, ClientEntry, ClientRole,
+    };
+    use solstone_core_sol_link::source_declarations::{self, Source, State};
+    use solstone_core_sol_link::{
+        Platform, ReportedDescription, StoredClientDescription, client_descriptions_path,
+    };
+    use tempfile::TempDir;
+
+    use super::snapshot;
+
+    fn pair_device(root: &std::path::Path, cid: &str, label: &str, platform: Option<Platform>) {
+        let mut entry = ClientEntry::new(
+            cid,
+            label,
+            "2026-08-13T00:00:00Z",
+            "instance",
+            ClientRole::Roleless,
+        );
+        entry.platform = platform;
+        AuthorizationLedger::new(root).add(entry).unwrap();
+    }
+
+    fn write_reported(
+        root: &std::path::Path,
+        rows: impl IntoIterator<Item = (&'static str, ReportedDescription)>,
+    ) {
+        let map: BTreeMap<String, StoredClientDescription> = rows
+            .into_iter()
+            .map(|(cid, reported)| {
+                (
+                    cid.to_owned(),
+                    StoredClientDescription {
+                        protocol_version: 1,
+                        revision: 1,
+                        reported: Some(reported),
+                        owner_label: None,
+                        updated_at: Some("2026-08-13T00:01:30Z".to_owned()),
+                    },
+                )
+            })
+            .collect();
+        std::fs::write(
+            client_descriptions_path(root),
+            serde_json::to_vec(&map).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn record_browser_upload(root: &std::path::Path, cid: &str, stamp: &str) {
+        AuthorizationLedger::new(root)
+            .record_accepted_ingest(
+                cid,
+                stamp,
+                AcceptedSegment {
+                    day: "20260813".to_owned(),
+                    name: "120000_1".to_owned(),
+                },
+                Some("browser"),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn ios_browser_uploads_map_to_safari_across_declared_reported_and_legacy_pairing_while_desktop_maps_to_browsers()
+     {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+
+        pair_device(root, "sha256:declared_safari", "iPhone declared", None);
+        source_declarations::replace(
+            root,
+            "sha256:declared_safari",
+            vec![Source {
+                source: "safari".to_owned(),
+                detail: None,
+                state: State::On,
+            }],
+            "2026-08-13T00:01:00Z".to_owned(),
+        )
+        .unwrap();
+        record_browser_upload(root, "sha256:declared_safari", "2026-08-13T00:02:00Z");
+
+        for (cid, label, _) in [
+            ("sha256:reported_ios", "iPhone reported", "ios"),
+            ("sha256:reported_ipados", "iPad reported", "ipados"),
+        ] {
+            pair_device(root, cid, label, None);
+            record_browser_upload(root, cid, "2026-08-13T00:03:00Z");
+        }
+        write_reported(
+            root,
+            [
+                (
+                    "sha256:reported_ios",
+                    ReportedDescription {
+                        app_id: Some("app.solstone.ios".to_owned()),
+                        platform: Some("ios".to_owned()),
+                        device_type: Some("phone".to_owned()),
+                        ..ReportedDescription::default()
+                    },
+                ),
+                (
+                    "sha256:reported_ipados",
+                    ReportedDescription {
+                        app_id: Some("app.solstone.ios".to_owned()),
+                        platform: Some("ipados".to_owned()),
+                        device_type: Some("tablet".to_owned()),
+                        ..ReportedDescription::default()
+                    },
+                ),
+            ],
+        );
+
+        pair_device(
+            root,
+            "sha256:legacy_ios",
+            "iPhone legacy",
+            Some(Platform::Ios),
+        );
+        record_browser_upload(root, "sha256:legacy_ios", "2026-08-13T00:04:00Z");
+
+        pair_device(root, "sha256:desktop_mac", "MacBook", Some(Platform::Macos));
+        record_browser_upload(root, "sha256:desktop_mac", "2026-08-13T00:05:00Z");
+
+        let snap = serde_json::to_value(snapshot(root, None).unwrap()).unwrap();
+        let devices = snap["devices"].as_array().unwrap();
+        let by_cid = |cid: &str| -> &Value {
+            devices
+                .iter()
+                .find(|d| d["cid"] == cid)
+                .unwrap_or_else(|| panic!("missing device {cid}"))
+        };
+
+        assert_eq!(
+            by_cid("sha256:declared_safari")["sources"],
+            json!([{
+                "source": "safari",
+                "detail": null,
+                "state": "on",
+                "origin": "declared",
+                "last_synced_at": "2026-08-13T00:02:00Z",
+                "declared_at": "2026-08-13T00:01:00Z",
+            }])
+        );
+        for cid in ["sha256:reported_ios", "sha256:reported_ipados"] {
+            assert_eq!(
+                by_cid(cid)["sources"],
+                json!([{
+                    "source": "safari",
+                    "detail": null,
+                    "state": null,
+                    "origin": "observed",
+                    "last_synced_at": "2026-08-13T00:03:00Z",
+                    "declared_at": null,
+                }])
+            );
+        }
+        assert_eq!(
+            by_cid("sha256:legacy_ios")["sources"],
+            json!([{
+                "source": "safari",
+                "detail": null,
+                "state": null,
+                "origin": "observed",
+                "last_synced_at": "2026-08-13T00:04:00Z",
+                "declared_at": null,
+            }])
+        );
+        assert_eq!(
+            by_cid("sha256:desktop_mac")["sources"],
+            json!([{
+                "source": "browsers",
+                "detail": null,
+                "state": null,
+                "origin": "observed",
+                "last_synced_at": "2026-08-13T00:05:00Z",
+                "declared_at": null,
+            }])
+        );
+    }
 }

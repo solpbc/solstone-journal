@@ -37,6 +37,8 @@ pub mod http;
 #[cfg(feature = "host")]
 pub mod ledger;
 #[cfg(feature = "host")]
+pub mod live_presence;
+#[cfg(feature = "host")]
 pub mod mark;
 #[cfg(feature = "host")]
 pub mod pairing;
@@ -78,6 +80,12 @@ pub use door::{
     DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
     authorization_publication_ticks, build_device_door_server_config, refresh_once,
     spawn_authorization_refresh,
+};
+#[cfg(feature = "host")]
+pub use live_presence::{
+    LAST_SEEN_PERSIST_INTERVAL, begin_live_device_note, complete_live_device_persist,
+    evict_live_device, live_seen_for, newer_last_seen_at, note_live_device,
+    seed_live_device_handshake,
 };
 #[cfg(feature = "host")]
 pub use pairing_identity::{

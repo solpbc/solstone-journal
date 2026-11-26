@@ -814,17 +814,28 @@
       return '<div class="pulse-device-utilities">' + links + '</div>';
     }
 
+    function clientHasSourceAttention(client) {
+      if (!isPlainObject(client?.source_delivery)) return false;
+      return Object.values(client.source_delivery).some(function (row) {
+        return isPlainObject(row) && row.state === 'needs_attention';
+      });
+    }
+
     function renderDeviceStripHtml(pulse) {
       const capture = pulse?.capture_health;
       if (!isPlainObject(capture)) return '';
       const clients = Array.isArray(capture.clients) ? capture.clients.filter(isPlainObject) : [];
-      const awaitingUnassessed = (Array.isArray(capture.unassessed) ? capture.unassessed.filter(isPlainObject) : [])
+      const unassessed = Array.isArray(capture.unassessed) ? capture.unassessed.filter(isPlainObject) : [];
+      const awaitingUnassessed = unassessed
         .filter(function (row) { return row.reason === 'awaiting_first_delivery'; });
+      const declaredQuietUnassessed = unassessed
+        .filter(function (row) { return row.reason === 'declared_quiet'; });
       const registry = typeof capture.registry === 'string' ? capture.registry : '';
       const isEmptyRegistry = registry === 'registry_empty'
         || (capture.status === 'no_clients'
           && clients.length === 0
           && awaitingUnassessed.length === 0
+          && declaredQuietUnassessed.length === 0
           && registry !== 'registry_unknown'
           && registry !== 'partial_registry');
       if (isEmptyRegistry) {
@@ -837,7 +848,7 @@
           + deviceUtilityLinksHtml(pulse)
           + '</div>';
       }
-      if (clients.length === 0 && awaitingUnassessed.length === 0) {
+      if (clients.length === 0 && awaitingUnassessed.length === 0 && declaredQuietUnassessed.length === 0) {
         return '<div class="pulse-device-strip" data-home-device-strip="utilities">'
           + deviceUtilityLinksHtml(pulse)
           + '</div>';
@@ -846,7 +857,7 @@
       const chips = [];
       clients.forEach(function (client) {
         const label = String(client.name || '').trim() || fallbackDevice;
-        if (client.failing === true) {
+        if (client.failing === true || clientHasSourceAttention(client)) {
           chips.push('<a class="pulse-device-chip pulse-device-chip--failing" data-device-chip="failing" href="/app/health/#registeredClientsCard">'
             + window.JournalI18n.renderHtml('journal.window.home.status.device.turned.away', [['device', label]])
             + '</a>');
@@ -872,6 +883,15 @@
           + window.JournalI18n.renderHtml('journal.window.home.status.device.quiet', [
             ['device', label],
             ['age', formatQuietDuration(elapsed)],
+          ])
+          + '</span>');
+      });
+      declaredQuietUnassessed.forEach(function (entry) {
+        const label = String(entry.name || '').trim() || fallbackDevice;
+        chips.push('<span class="pulse-device-chip pulse-device-chip--quiet" data-device-chip="quiet">'
+          + window.JournalI18n.renderHtml('journal.window.home.status.device.active', [
+            ['device', label],
+            ['relative', window.JournalI18n.render('journal.window.health.status.quiet')],
           ])
           + '</span>');
       });

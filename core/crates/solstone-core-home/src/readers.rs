@@ -994,13 +994,33 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
 
 /// Resolve the current capture-health rollup from certificate-authorized clients.
 pub fn get_capture_health(context: &HomeContext) -> Value {
-    capture_health_json(&inspect_clients_at(
-        context.journal_root(),
-        context.now_ms(),
-    ))
+    let descriptions = solstone_core_sol_link::read_descriptions(context.journal_root()).ok();
+    let declarations =
+        solstone_core_sol_link::source_declarations::read(context.journal_root()).ok();
+    capture_health_json_with(
+        &inspect_clients_at(context.journal_root(), context.now_ms()),
+        descriptions.as_ref(),
+        declarations.as_ref(),
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
+    capture_health_json_with(inspection, None, None)
+}
+
+pub(crate) fn capture_health_json_with(
+    inspection: &ClientInspection,
+    descriptions: Option<
+        &std::collections::BTreeMap<String, solstone_core_sol_link::StoredClientDescription>,
+    >,
+    declarations: Option<
+        &std::collections::BTreeMap<
+            String,
+            solstone_core_sol_link::source_declarations::Declaration,
+        >,
+    >,
+) -> Value {
     let (rows, activity, registry) = match inspection {
         ClientInspection::LedgerUnavailable { .. } => {
             return json!({
@@ -1024,21 +1044,32 @@ pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
         return json!({
             "status": "unknown",
             "clients": [],
-            "unassessed": rows.iter().map(unassessed_client_row).collect::<Vec<_>>(),
+            "unassessed": rows
+                .iter()
+                .map(|row| unassessed_client_row(row, declarations))
+                .collect::<Vec<_>>(),
             "registry": registry,
         });
     }
     let unassessed = rows
         .iter()
-        .filter(|row| row.capture_state == ClientCaptureState::NoCapture)
-        .map(unassessed_client_row)
+        .filter(|row| {
+            row.capture_state == ClientCaptureState::NoCapture
+                && !is_cli_no_capture_client(row, descriptions)
+        })
+        .map(|row| unassessed_client_row(row, declarations))
         .collect::<Vec<_>>();
     let Some(status) = rollup_client_capture_states(rows) else {
+        let effective_registry = if !rows.is_empty() && unassessed.is_empty() {
+            "no_eligible_records"
+        } else {
+            registry
+        };
         return json!({
             "status": "no_clients",
             "clients": [],
             "unassessed": unassessed,
-            "registry": registry,
+            "registry": effective_registry,
         });
     };
     let clients: Vec<Value> = rows
@@ -1052,6 +1083,47 @@ pub(crate) fn capture_health_json(inspection: &ClientInspection) -> Value {
         "unassessed": unassessed,
         "registry": registry,
     })
+}
+
+fn is_cli_no_capture_client(
+    row: &ClientAssessment,
+    descriptions: Option<
+        &std::collections::BTreeMap<String, solstone_core_sol_link::StoredClientDescription>,
+    >,
+) -> bool {
+    if row.capture_state != ClientCaptureState::NoCapture {
+        return false;
+    }
+    let Some(reported) = descriptions
+        .and_then(|map| map.get(&row.cid))
+        .and_then(|stored| stored.reported.as_ref())
+    else {
+        return false;
+    };
+    (reported.app_id.as_deref() == Some("solstone") && reported.device_type.is_none())
+        || reported.platform.as_deref() == Some("cli")
+}
+
+fn has_declared_quiet_sources(
+    row: &ClientAssessment,
+    declarations: Option<
+        &std::collections::BTreeMap<
+            String,
+            solstone_core_sol_link::source_declarations::Declaration,
+        >,
+    >,
+) -> bool {
+    declarations
+        .and_then(|map| map.get(&row.cid))
+        .is_some_and(|decl| {
+            decl.sources.iter().any(|source| {
+                matches!(
+                    source.state,
+                    solstone_core_sol_link::source_declarations::State::On
+                        | solstone_core_sol_link::source_declarations::State::Paused
+                )
+            })
+        })
 }
 
 fn home_client_row(row: &ClientAssessment) -> Value {
@@ -1102,12 +1174,26 @@ fn source_delivery_name(state: SourceDelivery) -> &'static str {
     }
 }
 
-fn unassessed_client_row(row: &ClientAssessment) -> Value {
+fn unassessed_client_row(
+    row: &ClientAssessment,
+    declarations: Option<
+        &std::collections::BTreeMap<
+            String,
+            solstone_core_sol_link::source_declarations::Declaration,
+        >,
+    >,
+) -> Value {
     json!({
         "name": client_name(row),
         "cid": row.cid,
         "reason": match row.capture_state {
-            ClientCaptureState::NoCapture => "awaiting_first_delivery",
+            ClientCaptureState::NoCapture => {
+                if has_declared_quiet_sources(row, declarations) {
+                    "declared_quiet"
+                } else {
+                    "awaiting_first_delivery"
+                }
+            }
             ClientCaptureState::Unknown => "activity_unavailable",
             ClientCaptureState::Degraded
             | ClientCaptureState::Active
@@ -3213,6 +3299,124 @@ mod tests {
         assert_eq!(
             clock_tmux.get("source_label").cloned(),
             Some(crate::sources::source_phrase("terminal", None).into())
+        );
+    }
+
+    #[test]
+    fn cli_no_capture_exclusion_and_declared_quiet_unassessed_projection() {
+        use std::collections::BTreeMap;
+
+        use solstone_core_sol_link::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
+        use solstone_core_sol_link::source_declarations::{self, Source, State};
+        use solstone_core_sol_link::{
+            ReportedDescription, StoredClientDescription, client_descriptions_path,
+        };
+
+        let write_cli_description =
+            |root: &Path, cid: &str, app_id: Option<&str>, platform: Option<&str>| {
+                let mut map = BTreeMap::new();
+                map.insert(
+                    cid.to_owned(),
+                    StoredClientDescription {
+                        protocol_version: 1,
+                        revision: 1,
+                        reported: Some(ReportedDescription {
+                            app_id: app_id.map(str::to_owned),
+                            platform: platform.map(str::to_owned),
+                            device_type: None,
+                            ..ReportedDescription::default()
+                        }),
+                        owner_label: None,
+                        updated_at: Some("2026-06-02T00:01:00Z".to_owned()),
+                    },
+                );
+                std::fs::write(
+                    client_descriptions_path(root),
+                    serde_json::to_vec(&map).unwrap(),
+                )
+                .unwrap();
+            };
+
+        // 1. Sole NoCapture CLI client -> status: "no_clients", unassessed: [], registry: "no_eligible_records".
+        for (app_id, platform) in [(Some("solstone"), None), (None, Some("cli"))] {
+            let root = TempDir::new().unwrap();
+            AuthorizationLedger::new(root.path())
+                .add(ClientEntry::new(
+                    "sha256:cli",
+                    "workstation",
+                    "2026-06-02T00:00:00Z",
+                    "instance",
+                    ClientRole::Roleless,
+                ))
+                .unwrap();
+            write_cli_description(root.path(), "sha256:cli", app_id, platform);
+            let health = get_capture_health(&context(root.path()));
+            assert_eq!(health["status"], "no_clients");
+            assert_eq!(health["clients"], json!([]));
+            assert_eq!(health["unassessed"], json!([]));
+            assert_eq!(health["registry"], "no_eligible_records");
+        }
+
+        // 2. Newly paired capture client with reported == None stays in unassessed alongside a CLI client.
+        let root = TempDir::new().unwrap();
+        let mut ledger = AuthorizationLedger::new(root.path());
+        ledger
+            .add(ClientEntry::new(
+                "sha256:cli",
+                "workstation",
+                "2026-06-02T00:00:00Z",
+                "instance-cli",
+                ClientRole::Roleless,
+            ))
+            .unwrap();
+        ledger
+            .add(ClientEntry::new(
+                "sha256:phone",
+                "iPhone",
+                "2026-06-02T00:00:00Z",
+                "instance-phone",
+                ClientRole::Roleless,
+            ))
+            .unwrap();
+        write_cli_description(root.path(), "sha256:cli", Some("solstone"), None);
+        let health = get_capture_health(&context(root.path()));
+        assert_eq!(health["status"], "no_clients");
+        assert_eq!(health["registry"], "registry_complete");
+        assert_eq!(health["unassessed"].as_array().unwrap().len(), 1);
+        assert_eq!(health["unassessed"][0]["cid"], "sha256:phone");
+        assert_eq!(health["unassessed"][0]["reason"], "awaiting_first_delivery");
+
+        // 3. Declared State::On or State::Paused emits reason: "declared_quiet", whereas NeedsAttention alone stays awaiting.
+        for state in [State::On, State::Paused] {
+            source_declarations::replace(
+                root.path(),
+                "sha256:phone",
+                vec![Source {
+                    source: "audio".to_owned(),
+                    detail: None,
+                    state,
+                }],
+                "2026-06-02T00:02:00Z".to_owned(),
+            )
+            .unwrap();
+            let quiet_health = get_capture_health(&context(root.path()));
+            assert_eq!(quiet_health["unassessed"][0]["reason"], "declared_quiet");
+        }
+        source_declarations::replace(
+            root.path(),
+            "sha256:phone",
+            vec![Source {
+                source: "audio".to_owned(),
+                detail: None,
+                state: State::NeedsAttention,
+            }],
+            "2026-06-02T00:03:00Z".to_owned(),
+        )
+        .unwrap();
+        let attention_only = get_capture_health(&context(root.path()));
+        assert_eq!(
+            attention_only["unassessed"][0]["reason"],
+            "awaiting_first_delivery"
         );
     }
 }

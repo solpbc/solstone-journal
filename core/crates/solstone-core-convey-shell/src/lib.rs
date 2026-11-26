@@ -1943,9 +1943,10 @@ fn router_with_roots(
         .clone()
         .merge(asset_cache::hashed_routes(routes))
         .route_layer(axum::middleware::from_fn(asset_cache::refuse_unknown_hash));
+    let track_journal_root = journal_root.clone();
     let routes =
         session_gate::apply_layer_with_owner(routes, journal_root, include_agents, target_use);
-    shared_sources::track_requests(form_body_guard::apply_layer(routes))
+    shared_sources::track_requests(form_body_guard::apply_layer(routes), track_journal_root)
         .fallback(not_found)
         .layer(axum::middleware::from_fn(timing::measure))
         .layer(axum::middleware::from_fn(asset_cache::apply))

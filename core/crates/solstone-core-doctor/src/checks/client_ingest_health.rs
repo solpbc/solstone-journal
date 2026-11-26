@@ -8,6 +8,7 @@ use crate::{
 };
 use solstone_core_cli_copy as copy;
 
+use solstone_core_sol_link::client_status::SourceDelivery;
 use solstone_core_sol_link::ledger::IngestRejection;
 
 fn rejection_date(rejection: &IngestRejection) -> String {
@@ -15,6 +16,18 @@ fn rejection_date(rejection: &IngestRejection) -> String {
         .ok()
         .map(|timestamp| timestamp.strftime("%Y-%m-%d").to_string())
         .unwrap_or_else(|| "unknown".into())
+}
+
+fn format_rejection(device: &str, rejection: &IngestRejection) -> String {
+    copy::display(
+        "journal.cli.doctor.client.ingest.health.rejection",
+        [
+            ("device", &device),
+            ("reason", &rejection.reason_code),
+            ("attempts", &rejection.active_count),
+            ("since", &(rejection_date(rejection))),
+        ],
+    )
 }
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
@@ -40,22 +53,26 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    let failures = records
-        .iter()
-        .filter_map(|record| {
-            record.ingest_rejection.as_ref().map(|rejection| {
-                copy::display(
-                    "journal.cli.doctor.client.ingest.health.rejection",
-                    [
-                        ("device", &record.cid),
-                        ("reason", &rejection.reason_code),
-                        ("attempts", &rejection.active_count),
-                        ("since", &(rejection_date(rejection))),
-                    ],
-                )
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut failures = Vec::new();
+    for record in &records {
+        if let Some(rejection) = record.ingest_rejection.as_ref() {
+            failures.push(format_rejection(&record.cid, rejection));
+        }
+        let mut skipped_top = false;
+        for delivery in record.source_delivery.values() {
+            if delivery.state != SourceDelivery::NeedsAttention {
+                continue;
+            }
+            let Some(rejection) = delivery.ingest_rejection.as_ref() else {
+                continue;
+            };
+            if !skipped_top && record.ingest_rejection.as_ref() == Some(rejection) {
+                skipped_top = true;
+                continue;
+            }
+            failures.push(format_rejection(&record.cid, rejection));
+        }
+    }
     if failures.is_empty() {
         Ok(make_result(
             check,

@@ -710,9 +710,26 @@
     disconnected: global.JournalI18n.render('journal.window.network.connection.line.labels.disconnected.not.connected.right.now'),
   };
 
+  function hasSourceAttention(client) {
+    const sources = client && client.source_delivery;
+    if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return false;
+    return Object.values(sources).some((entry) => entry && typeof entry === 'object' && entry.state === 'needs_attention');
+  }
+
+  function firstSourceAttentionReason(client) {
+    const sources = client && client.source_delivery;
+    if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return null;
+    for (const entry of Object.values(sources)) {
+      if (entry && typeof entry === 'object' && entry.state === 'needs_attention' && entry.ingest_rejection?.reason_code) {
+        return entry.ingest_rejection.reason_code;
+      }
+    }
+    return null;
+  }
+
   function deliveryGroupFor(client) {
     if (!client || typeof client !== 'object') return 'unknown';
-    if (client.failing || client.capture_state === 'degraded') return 'failing';
+    if (client.failing || client.capture_state === 'degraded' || hasSourceAttention(client)) return 'failing';
     if (client.capture_state === 'active') return 'adding';
     if (client.capture_state === 'stale') return 'recent';
     if (client.capture_state === 'unknown') return 'unknown';
@@ -894,6 +911,7 @@
     DELIVERY_GROUP_ORDER,
     DELIVERY_GROUP_LABELS,
     deliveryGroupFor,
+    firstSourceAttentionReason,
     deliveryChipClass,
     deliveryChipLabel,
     connectionLineLabel,

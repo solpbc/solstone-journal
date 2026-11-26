@@ -13,29 +13,31 @@ use axum::{
 use solstone_core_convey_http::{envelope::error_envelope, identity::AccessBasis};
 use solstone_core_ingest::known_sources::snapshot;
 use solstone_core_sol_link::source_declarations::{self, DeclarationError};
+use std::path::PathBuf;
 use std::sync::Arc;
-
-type Recent = Arc<std::sync::Mutex<std::collections::BTreeMap<String, jiff::Timestamp>>>;
 
 // This layer sits on the journal router, inside the device authorization
 // gate. An open carrier alone never refreshes a device's timestamp.
-pub(crate) fn track_requests(router: Router) -> Router {
-    let recent = Recent::default();
-    router
-        .layer(Extension(recent.clone()))
-        .layer(axum::middleware::from_fn_with_state(recent, note_request))
+pub(crate) fn track_requests(router: Router, journal_root: PathBuf) -> Router {
+    let root = Arc::new(journal_root);
+    router.layer(axum::middleware::from_fn_with_state(root, note_request))
 }
 
 async fn note_request(
-    axum::extract::State(recent): axum::extract::State<Recent>,
+    axum::extract::State(journal_root): axum::extract::State<Arc<PathBuf>>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if let Some(AccessBasis::LinkedDevice { cid, .. }) = request.extensions().get::<AccessBasis>() {
-        recent
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(cid.as_str().to_owned(), jiff::Timestamp::now());
+    if let Some(AccessBasis::LinkedDevice { cid, .. }) = request.extensions().get::<AccessBasis>()
+        && let Some(stamp) =
+            solstone_core_sol_link::begin_live_device_note(&journal_root, cid.as_str())
+    {
+        let root = journal_root.clone();
+        let cid = cid.as_str().to_owned();
+        let _ = tokio::task::spawn_blocking(move || {
+            solstone_core_sol_link::complete_live_device_persist(&root, &cid, &stamp);
+        })
+        .await;
     }
     next.run(request).await
 }
@@ -85,7 +87,6 @@ fn device_required() -> Response {
 async fn list(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
-    Extension(recent): Extension<Recent>,
 ) -> Response {
     let cid = match basis {
         AccessBasis::Localhost => None,
@@ -93,11 +94,7 @@ async fn list(
         AccessBasis::PairingPeer { .. } => return device_required(),
     };
     match tokio::task::spawn_blocking(move || snapshot(&root.0, cid)).await {
-        Ok(Ok(mut v)) => {
-            let mut seen = recent.lock().unwrap_or_else(|p| p.into_inner());
-            v.include_recent_requests(&mut seen);
-            Json(v).into_response()
-        }
+        Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err(e)) => failure(e),
         Err(_) => failure(DeclarationError::Unavailable),
     }

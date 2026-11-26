@@ -63,7 +63,7 @@
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.audio'), keys: ['audio'], carried: 'audio' },
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.screen'), keys: ['screen'], carried: 'screen' },
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.terminal'), keys: ['terminal', 'tmux'] },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.browsers'), keys: ['browser', 'browsers'] },
+    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.browsers'), keys: ['browser', 'browsers', 'safari'] },
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.obsidian'), keys: ['obsidian'] },
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.location'), keys: ['location'], carried: 'location' },
     { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.calendar'), keys: ['calendar'] },

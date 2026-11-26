@@ -2718,6 +2718,92 @@ fn empty_source_is_named_default_on_a_multi_source_device() {
 }
 
 #[test]
+fn per_source_rejection_surfaces_in_client_ingest_health_capture_health_and_stall_after_sibling_upload()
+ {
+    let c = fixture();
+    let now = c.now.as_millisecond();
+    // Sibling source "audio" succeeded most recently (clearing top-level ingest_rejection to null),
+    // while source "obsidian" still holds an active per-source rejection.
+    write_client_fixture(
+        &c,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "phone",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": now - 1_000,
+            "sources": {
+                "audio": {"last_accepted_ingest_at": rfc3339_millis(now - 1_000)},
+                "obsidian": {
+                    "ingest_rejection": {
+                        "active_count": 3,
+                        "reason_code": "obsidian_invalid",
+                        "first": rfc3339_millis(now),
+                        "latest": rfc3339_millis(now),
+                    }
+                },
+            }
+        }),
+    );
+
+    let ingest = result("client_ingest_health", &c);
+    let capture = result("capture_health", &c);
+    let stall = result("client_delivery_stall", &c);
+    assert_eq!(ingest.status, Status::Warn);
+    assert_eq!(
+        ingest.detail,
+        "device abcdefgh failing ingest: obsidian_invalid, 3x since 2026-01-01"
+    );
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(
+        capture.detail,
+        "rollup=attention; the solstone app on phone is having trouble adding obsidian"
+    );
+    assert_eq!(stall.status, Status::Warn);
+    assert_eq!(
+        stall.detail,
+        "the journal rejected an upload from phone (obsidian needs attention)"
+    );
+
+    // When top-level ingest_rejection still holds the identical rejection, client_ingest_health deduplicates it.
+    let same_ts = rfc3339_millis(now);
+    std::fs::write(
+        c.journal_path.join("link/devices.json"),
+        serde_json::json!({
+            "abcdefgh": {
+                "last_seen_at": rfc3339_millis(now - 1_000),
+                "ingest_rejection": {
+                    "active_count": 3,
+                    "reason_code": "obsidian_invalid",
+                    "first": same_ts,
+                    "latest": same_ts,
+                },
+                "sources": {
+                    "obsidian": {
+                        "ingest_rejection": {
+                            "active_count": 3,
+                            "reason_code": "obsidian_invalid",
+                            "first": same_ts,
+                            "latest": same_ts,
+                        }
+                    }
+                }
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let deduped = result("client_ingest_health", &c);
+    assert_eq!(deduped.status, Status::Warn);
+    assert_eq!(
+        deduped.detail,
+        "device abcdefgh failing ingest: obsidian_invalid, 3x since 2026-01-01"
+    );
+}
+
+#[test]
 fn batteries_preserve_staged_home_and_journal() {
     let c = fixture();
     fs::create_dir_all(&c.home_dir).unwrap();

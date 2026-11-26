@@ -2039,7 +2039,9 @@ systemctl --user start solstone-linux</code></div>
       const segmentCell = segment
         ? `${escapeHtml(segment.readable || window.JournalI18n.render('journal.window.network.status.text.time.unavailable'))}<code class="client-segment-key">${escapeHtml(segment.key)}</code>`
         : 'none';
-      const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
+      const failure = client.ingest_rejection?.reason_code
+        || window.NetworkRender.firstSourceAttentionReason(client)
+        || client.unassessed_reason;
       // The connection fact (open-socket heartbeat) is a distinct signal from delivery,
       // but for an 'adding' device it says nothing the chip doesn't already say — see
       // clientCardHTML, which omits it there entirely rather than passing it through.
@@ -2245,7 +2247,7 @@ systemctl --user start solstone-linux</code></div>
       const pairedDay = render.dayKeyFor(client.paired_at);
       const pairedLabel = pairedDay ? window.JournalI18n.render('journal.window.network.paired.day', [['date', String(window.JournalFormat.day(pairedDay))]]) : '';
       return `
-        <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}" tabindex="-1">
+        <div class="client-card ${deliveryGroup === 'failing' ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}" tabindex="-1">
           <div class="client-header">
             <span class="client-name">${escapeHtml(displayName)}</span>
             <span class="client-status ${render.deliveryChipClass(client)}">${escapeHtml(deliveryLabel)}</span>
