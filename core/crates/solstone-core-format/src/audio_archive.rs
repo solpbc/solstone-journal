@@ -23,7 +23,6 @@ pub struct AudioArchivePlacement {
 
 /// A single member's placed part within a tile.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AudioArchivePlacementPart {
     #[serde(deserialize_with = "deserialize_stored_name")]
     pub stored_name: String,
@@ -63,7 +62,6 @@ fn deserialize_stored_name<'de, D: serde::Deserializer<'de>>(
 impl<'de> Deserialize<'de> for AudioArchivePlacement {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
         struct Wire {
             version: u32,
             parts: Vec<AudioArchivePlacementPart>,
@@ -279,6 +277,29 @@ mod tests {
             validate_stored_name("wrong_prefix_0123456789abcdef"),
             Err(StoredNameError::InvalidShape(_))
         ));
+    }
+
+    #[test]
+    fn placement_reads_past_fields_from_a_later_version() {
+        let placement: AudioArchivePlacement = serde_json::from_value(serde_json::json!({
+            "version": AUDIO_ARCHIVE_PLACEMENT_VERSION,
+            "later_placement_field": true,
+            "parts": [{
+                "stored_name": "p0000_0123456789abcdef.ogg",
+                "original_occurrence": "utc|1",
+                "origin_ms": 0,
+                "offset_ms": 500,
+                "length_ms": 7500,
+                "later_part_field": {"kept": false},
+            }],
+        }))
+        .unwrap();
+        assert_eq!(placement.parts.len(), 1);
+        assert_eq!(placement.parts[0].stored_name, "p0000_0123456789abcdef.ogg");
+        assert_eq!(
+            (placement.parts[0].offset_ms, placement.parts[0].length_ms),
+            (500, 7500)
+        );
     }
 
     #[test]

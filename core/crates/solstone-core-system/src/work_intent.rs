@@ -15,7 +15,6 @@ use solstone_core_journal_io::{
 
 /// A bounded continuation of one requested day, never a second completion ledger.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct RebuildProgress {
     pub version: u32,
     pub root_binding: String,
@@ -25,7 +24,6 @@ pub struct RebuildProgress {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SegmentSeal {
     pub generation: u64,
     pub raw_fingerprint: String,
@@ -33,7 +31,6 @@ pub struct SegmentSeal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct DailyTarget {
     pub identity: DailyUnitIdentity,
     pub contract: String,

@@ -20,12 +20,14 @@ const REGISTRY_FILE: &str = ".registry";
 const MAX_SOURCE_SNAPSHOT_RETRIES: usize = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ContinuityDocument {
     pub version: u32,
     pub streams: BTreeMap<String, ContinuityRecord>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub write_streams: BTreeMap<String, String>,
+    /// Fields a later version wrote. Never interpreted; written back as read.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_json::Value>,
 }
 
 impl Default for ContinuityDocument {
@@ -34,12 +36,12 @@ impl Default for ContinuityDocument {
             version: 1,
             streams: BTreeMap::new(),
             write_streams: BTreeMap::new(),
+            extra: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ContinuityRecord {
     pub source: String,
     pub writers: Vec<String>,
@@ -48,7 +50,6 @@ pub struct ContinuityRecord {
 /// Stored decision plan. Sources without a selected stream are retained in the
 /// operation record so recovery does not recalculate the continuity choice.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct TakeoverPlan {
     pub adopted_cid: String,
     pub retired_cid: String,
@@ -56,7 +57,6 @@ pub struct TakeoverPlan {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct TakeoverSourcePlan {
     pub source: String,
     pub stream: Option<String>,
@@ -875,6 +875,35 @@ mod tests {
         assert_eq!(
             receipt_cids_for_stream(journal.path(), &old_stream, B, "audio").unwrap(),
             old_receipts
+        );
+    }
+
+    #[test]
+    fn fields_from_a_later_version_are_read_past_and_the_document_keeps_its_own() {
+        let journal = Journal::new();
+        let stream = bind(journal.path(), A, "audio");
+        publish_takeover(journal.path(), B, A);
+        let path = journal.path().join("streams/continuity.json");
+        let mut raw: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let known = read_continuity(journal.path()).unwrap();
+        raw["later_document_field"] = serde_json::json!({"kept": true});
+        raw["streams"][&stream]["later_record_field"] = 1.into();
+        fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
+
+        let read = read_continuity(journal.path()).unwrap();
+        assert_eq!(read.streams, known.streams);
+        assert_eq!(read.write_streams, known.write_streams);
+
+        // The next takeover rewrites the document; its unknown field survives.
+        publish_takeover(journal.path(), C, B);
+        let rewritten: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            rewritten["later_document_field"],
+            raw["later_document_field"]
+        );
+        assert_eq!(
+            read_continuity(journal.path()).unwrap().streams[&stream].writers,
+            vec![A.to_owned(), B.to_owned(), C.to_owned()]
         );
     }
 
