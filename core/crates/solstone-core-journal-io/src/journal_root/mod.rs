@@ -48,6 +48,22 @@ pub enum JournalEntryKind {
 }
 
 impl JournalEntryKind {
+    /// The fixed text that stands for this kind inside a saved observation
+    /// revision. Spelled out so that renaming a variant cannot change a saved
+    /// revision; never change an existing token.
+    pub const fn revision_token(self) -> &'static str {
+        match self {
+            Self::RegularFile => "RegularFile",
+            Self::Directory => "Directory",
+            Self::Symlink => "Symlink",
+            Self::Fifo => "Fifo",
+            Self::Socket => "Socket",
+            Self::CharacterDevice => "CharacterDevice",
+            Self::BlockDevice => "BlockDevice",
+            Self::Other => "Other",
+        }
+    }
+
     /// Classify a Unix `st_mode` file-type mask without following a symlink.
     #[cfg(unix)]
     pub fn from_mode(mode: SFlag) -> Self {
@@ -417,6 +433,26 @@ mod tests {
     use nix::sys::stat::SFlag;
 
     use super::JournalEntryKind;
+
+    /// These tokens are hashed into observation revisions saved in owners'
+    /// journals. If this test fails, restore the old token, or make the change
+    /// deliberately and say so in the changelog.
+    #[test]
+    fn revision_tokens_are_fixed_text() {
+        let expected = [
+            (JournalEntryKind::RegularFile, "RegularFile"),
+            (JournalEntryKind::Directory, "Directory"),
+            (JournalEntryKind::Symlink, "Symlink"),
+            (JournalEntryKind::Fifo, "Fifo"),
+            (JournalEntryKind::Socket, "Socket"),
+            (JournalEntryKind::CharacterDevice, "CharacterDevice"),
+            (JournalEntryKind::BlockDevice, "BlockDevice"),
+            (JournalEntryKind::Other, "Other"),
+        ];
+        for (kind, token) in expected {
+            assert_eq!(kind.revision_token(), token);
+        }
+    }
 
     #[test]
     fn from_mode_maps_each_kind_once() {

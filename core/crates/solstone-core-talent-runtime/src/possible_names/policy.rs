@@ -97,7 +97,7 @@ pub(crate) fn fingerprint() -> String {
         "derived_text": {
             "files": DERIVED_TEXT
                 .iter()
-                .map(|(file, family)| [(*file).to_owned(), format!("{family:?}")])
+                .map(|(file, family)| [(*file).to_owned(), family.fingerprint_token().to_owned()])
                 .collect::<Vec<_>>(),
             "rendering": DERIVED_TEXT_RENDERING,
         },

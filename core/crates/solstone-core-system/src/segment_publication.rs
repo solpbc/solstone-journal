@@ -278,6 +278,28 @@ mod tests {
         }
     }
 
+    /// This value is saved in owners' journals. If this test fails you have
+    /// changed what every existing journal owes: restore the old value, or make
+    /// the change deliberately and say so in the changelog.
+    #[test]
+    fn golden_publication_snapshot() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = journal.path().join("chronicle/20260101/notes/120000_60");
+        std::fs::create_dir_all(segment.join("talents")).unwrap();
+        std::fs::write(
+            segment.join("audio.jsonl"),
+            "{\"start\":\"00:00:01\",\"text\":\"A meeting about a garden.\"}\n",
+        )
+        .unwrap();
+        std::fs::write(segment.join("talents/activity.md"), "summary").unwrap();
+        std::fs::write(segment.join("unlisted.bin"), "never published").unwrap();
+        let snapshot = snapshot(journal.path(), &segment, Some(1)).unwrap();
+        assert_eq!(
+            serde_json::to_string(&snapshot).unwrap(),
+            "{\"version\":1,\"source_mtime_ms\":1,\"files\":{\"chronicle/20260101/notes/120000_60/audio.jsonl\":\"d8d7584f106656e0db3792afd96da84c0a9663808166f873da7aa91bf96d86c6\",\"chronicle/20260101/notes/120000_60/talents/activity.md\":\"761b7ad8ad439b2855fcbb611331c646ef0870b0631247bba3f3025cb6df5a53\"}}"
+        );
+    }
+
     #[test]
     fn publication_receipt_normalizes_mixed_separators() {
         let journal = tempfile::tempdir().unwrap();

@@ -148,6 +148,53 @@ pub enum RawPerceptFamily {
     RawScreen,
 }
 
+// Fingerprint tokens are hashed into values saved in owners' journals (daily
+// evidence revisions, talent versions). They are spelled out so that renaming a
+// variant, or changing a derive, cannot change a saved fingerprint. Each match
+// is exhaustive on purpose: a new variant needs its token chosen here. Never
+// change an existing token; doing so makes every journal owe that work again.
+impl Family {
+    /// The fixed text that stands for this family inside a durable fingerprint.
+    pub const fn fingerprint_token(self) -> &'static str {
+        match self {
+            Self::Markdown => "Markdown",
+            Self::Event => "Event",
+            Self::Activity => "Activity",
+            Self::Experience => "Experience",
+            Self::ActionLog => "ActionLog",
+            Self::StructuredImport => "StructuredImport",
+            Self::AiChat => "AiChat",
+            Self::Browser => "Browser",
+            Self::DayAccumulator => "DayAccumulator",
+            Self::FacetEntity => "FacetEntity",
+            Self::Observation => "Observation",
+            Self::Documents => "Documents",
+            Self::Screen => "Screen",
+            Self::Sense => "Sense",
+            Self::MorningBriefing => "MorningBriefing",
+            Self::AgentMemory => "AgentMemory",
+            Self::Workout => "Workout",
+            Self::BodyRecords => "BodyRecords",
+            Self::ProtectedVideo => "ProtectedVideo",
+            Self::DesktopActivity => "DesktopActivity",
+            Self::ScreenText => "ScreenText",
+            Self::Calendar => "Calendar",
+            Self::PossibleNames => "PossibleNames",
+            Self::Audio => "Audio",
+        }
+    }
+}
+
+impl RawPerceptFamily {
+    /// The fixed text that stands for this family inside a durable fingerprint.
+    pub const fn fingerprint_token(self) -> &'static str {
+        match self {
+            Self::Audio => "Audio",
+            Self::RawScreen => "RawScreen",
+        }
+    }
+}
+
 #[cfg(test)]
 const ALL_FAMILIES: [Family; 24] = [
     Family::Markdown,
@@ -182,6 +229,19 @@ pub enum ContentResolution {
     Unindexed(RawPerceptFamily),
     IndexedElsewhere,
     Unrecognized,
+}
+
+impl ContentResolution {
+    /// The fixed text that stands for this resolution inside a durable
+    /// fingerprint. See [`Family::fingerprint_token`].
+    pub fn fingerprint_token(self) -> String {
+        match self {
+            Self::Indexed(family) => format!("Indexed({})", family.fingerprint_token()),
+            Self::Unindexed(family) => format!("Unindexed({})", family.fingerprint_token()),
+            Self::IndexedElsewhere => "IndexedElsewhere".to_owned(),
+            Self::Unrecognized => "Unrecognized".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3022,6 +3082,96 @@ mod tests {
     };
 
     use super::*;
+
+    /// These tokens are hashed into fingerprints saved in owners' journals. If
+    /// this test fails you have changed what every existing journal owes:
+    /// restore the old token, or make the change deliberately and say so in
+    /// the changelog. The expected strings are literals so that renaming a
+    /// variant cannot move a token with it.
+    #[test]
+    fn fingerprint_tokens_are_fixed_text() {
+        let families = [
+            (Family::Markdown, "Markdown", "Indexed(Markdown)"),
+            (Family::Event, "Event", "Indexed(Event)"),
+            (Family::Activity, "Activity", "Indexed(Activity)"),
+            (Family::Experience, "Experience", "Indexed(Experience)"),
+            (Family::ActionLog, "ActionLog", "Indexed(ActionLog)"),
+            (
+                Family::StructuredImport,
+                "StructuredImport",
+                "Indexed(StructuredImport)",
+            ),
+            (Family::AiChat, "AiChat", "Indexed(AiChat)"),
+            (Family::Browser, "Browser", "Indexed(Browser)"),
+            (
+                Family::DayAccumulator,
+                "DayAccumulator",
+                "Indexed(DayAccumulator)",
+            ),
+            (Family::FacetEntity, "FacetEntity", "Indexed(FacetEntity)"),
+            (Family::Observation, "Observation", "Indexed(Observation)"),
+            (Family::Documents, "Documents", "Indexed(Documents)"),
+            (Family::Screen, "Screen", "Indexed(Screen)"),
+            (Family::Sense, "Sense", "Indexed(Sense)"),
+            (
+                Family::MorningBriefing,
+                "MorningBriefing",
+                "Indexed(MorningBriefing)",
+            ),
+            (Family::AgentMemory, "AgentMemory", "Indexed(AgentMemory)"),
+            (Family::Workout, "Workout", "Indexed(Workout)"),
+            (Family::BodyRecords, "BodyRecords", "Indexed(BodyRecords)"),
+            (
+                Family::ProtectedVideo,
+                "ProtectedVideo",
+                "Indexed(ProtectedVideo)",
+            ),
+            (
+                Family::DesktopActivity,
+                "DesktopActivity",
+                "Indexed(DesktopActivity)",
+            ),
+            (Family::ScreenText, "ScreenText", "Indexed(ScreenText)"),
+            (Family::Calendar, "Calendar", "Indexed(Calendar)"),
+            (
+                Family::PossibleNames,
+                "PossibleNames",
+                "Indexed(PossibleNames)",
+            ),
+            (Family::Audio, "Audio", "Indexed(Audio)"),
+        ];
+        assert_eq!(families.map(|(family, _, _)| family), ALL_FAMILIES);
+        for (family, token, indexed) in families {
+            assert_eq!(family.fingerprint_token(), token);
+            assert_eq!(
+                ContentResolution::Indexed(family).fingerprint_token(),
+                indexed
+            );
+        }
+        let unindexed = [
+            (RawPerceptFamily::Audio, "Audio", "Unindexed(Audio)"),
+            (
+                RawPerceptFamily::RawScreen,
+                "RawScreen",
+                "Unindexed(RawScreen)",
+            ),
+        ];
+        for (family, token, resolution) in unindexed {
+            assert_eq!(family.fingerprint_token(), token);
+            assert_eq!(
+                ContentResolution::Unindexed(family).fingerprint_token(),
+                resolution
+            );
+        }
+        assert_eq!(
+            ContentResolution::IndexedElsewhere.fingerprint_token(),
+            "IndexedElsewhere"
+        );
+        assert_eq!(
+            ContentResolution::Unrecognized.fingerprint_token(),
+            "Unrecognized"
+        );
+    }
 
     fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
         super::produce_chunks(family, rel, text)

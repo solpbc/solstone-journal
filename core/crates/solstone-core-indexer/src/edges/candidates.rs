@@ -231,7 +231,8 @@ impl EdgeResolver {
     /// resolve every name the same way.
     pub fn candidates_digest(&mut self, facet: &str) -> Result<i64, EdgeError> {
         self.load_facet(facet)?;
-        Ok(digest_i64(format!("{:?}", self.cache.get(facet))))
+        let candidates = self.cache.get(facet).map(Vec::as_slice).unwrap_or_default();
+        Ok(digest_i64(candidates_digest_text(candidates)))
     }
 
     /// A digest of everything speaker labels and mentions resolve against.
@@ -597,6 +598,30 @@ fn json_truthy(value: Option<&Value>) -> bool {
     }
 }
 
+/// The text [`CandidateResolver::candidates_digest`] hashes. The digest is saved
+/// in each journal's index, so the layout and the field names are written out
+/// here and do not follow the type: renaming the struct or a field cannot
+/// change a saved digest. Only the values themselves use the standard quoting
+/// of strings, optional strings and string lists.
+fn candidates_digest_text(candidates: &[EntityNameCandidate]) -> String {
+    let rows = candidates
+        .iter()
+        .map(|candidate| {
+            let EntityNameCandidate {
+                id,
+                name,
+                aka,
+                emails,
+            } = candidate;
+            format!(
+                "EntityNameCandidate {{ id: {id:?}, name: {name:?}, aka: {aka:?}, emails: {emails:?} }}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("Some([{rows}])")
+}
+
 fn digest_i64(text: String) -> i64 {
     let digest = Sha256::digest(text.as_bytes());
     let mut bytes = [0u8; 8];
@@ -608,6 +633,37 @@ fn digest_i64(text: String) -> i64 {
 mod tests {
     use super::*;
     use crate::test_support::reserve_temp_path;
+
+    /// This value is saved in owners' journals. If this test fails you have
+    /// changed what every existing journal owes (each facet's names are
+    /// resolved again): restore the old value, or make the change deliberately
+    /// and say so in the changelog.
+    #[test]
+    fn golden_candidates_digest() {
+        let candidates = vec![
+            EntityNameCandidate {
+                id: Some("ada_lovelace".to_owned()),
+                name: "Ada \"the countess\" O'Lovelace".to_owned(),
+                aka: vec!["Ada".to_owned(), "A. L.".to_owned()],
+                emails: vec!["ada@example.com".to_owned()],
+            },
+            EntityNameCandidate {
+                id: None,
+                name: "Zo\u{eb}".to_owned(),
+                aka: Vec::new(),
+                emails: Vec::new(),
+            },
+        ];
+        assert_eq!(candidates_digest_text(&[]), "Some([])");
+        assert_eq!(
+            candidates_digest_text(&candidates),
+            "Some([EntityNameCandidate { id: Some(\"ada_lovelace\"), name: \"Ada \\\"the countess\\\" O'Lovelace\", aka: [\"Ada\", \"A. L.\"], emails: [\"ada@example.com\"] }, EntityNameCandidate { id: None, name: \"Zo\u{eb}\", aka: [], emails: [] }])"
+        );
+        assert_eq!(
+            digest_i64(candidates_digest_text(&candidates)),
+            9130257801521164861
+        );
+    }
     use serde_json::json;
     use solstone_core_entity_matching::find_matching_entity;
 

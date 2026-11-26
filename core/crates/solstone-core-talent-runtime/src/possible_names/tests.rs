@@ -403,6 +403,15 @@ fn the_schema_and_parser_require_one_answer_per_candidate() {
     }
 }
 
+/// This value is saved in owners' journals. If this test fails you have changed
+/// what every existing journal owes (every segment's possible names are made
+/// again): restore the old value, or make the change deliberately and say so in
+/// the changelog.
+#[test]
+fn golden_talent_version() {
+    assert_eq!(talent_version("prompt"), "possible-names-v1-e5368b269b35");
+}
+
 #[test]
 fn the_talent_version_follows_the_prompt() {
     let version = talent_version("prompt");

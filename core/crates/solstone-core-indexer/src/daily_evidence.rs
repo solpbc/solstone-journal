@@ -488,7 +488,7 @@ fn project_sources(
         // even when this source produces no searchable chunks at all.
         sources.push(SourceEvidence {
             path: rel.clone(),
-            shape: format!("{resolution:?}"),
+            shape: resolution.fingerprint_token(),
             content_digest,
             agent: agent.clone(),
             facet: metadata.facet.to_lowercase(),
@@ -1194,6 +1194,43 @@ mod tests {
                 .chunks
                 .iter()
                 .any(|chunk| chunk.text.contains("hidden"))
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    /// This value is saved in owners' journals. If this test fails you have
+    /// changed what every existing journal owes: restore the old value, or make
+    /// the change deliberately and say so in the changelog.
+    #[test]
+    fn golden_daily_evidence_revision() {
+        let root = root("daily-golden-revision");
+        write(
+            &root,
+            "chronicle/20260910/mic/090000_60/talents/audio.md",
+            "# Named\n\nA useful fact.",
+        );
+        write(
+            &root,
+            "chronicle/20260910/phone.audio/120000_60/note-0.jsonl",
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\"}}\n{\"start\":\"12:00:01\",\"text\":\"a source sentence\"}\n",
+        );
+        write(
+            &root,
+            "chronicle/20260910/mic/090000_60/audio.jsonl",
+            "{\"start\":\"09:00:01\",\"text\":\"A meeting about a garden.\"}\n",
+        );
+        let shapes = capture_day_projection(&root, "20260910")
+            .unwrap()
+            .sources
+            .into_iter()
+            .map(|source| source.shape)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shapes,
+            ["Indexed(Audio)", "Indexed(Markdown)", "Unindexed(Audio)"]
+        );
+        assert_eq!(
+            revision(&root, "morning_briefing", None),
+            "7296ae94042701c9ce6084872da3ba65eee63a8b6818d354d52dd8ee1639e100"
         );
         fs::remove_dir_all(root).unwrap();
     }

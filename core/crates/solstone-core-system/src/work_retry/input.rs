@@ -212,6 +212,32 @@ mod tests {
         }
     }
 
+    /// This value is saved in owners' journals. If this test fails you have
+    /// changed what every existing journal owes: restore the old value, or make
+    /// the change deliberately and say so in the changelog.
+    /// Unix only: the hashed sense path is written with the platform's separator.
+    #[cfg(unix)]
+    #[test]
+    fn golden_activity_input_hash() {
+        let root = tempfile::tempdir().unwrap();
+        for segment in ["120000_300", "desktop/120500_300"] {
+            let path = root
+                .path()
+                .join("chronicle/20260101")
+                .join(segment)
+                .join("talents/sense.json");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "{\"density\":\"active\"}").unwrap();
+        }
+        let activity = serde_json::json!({"id":"work_120000", "activity":"work", "facet":"work",
+            "segments":["120000_300", "120500_300", "121000_300"]});
+        let activity = activity.as_object().unwrap();
+        assert_eq!(
+            activity_hash(root.path(), "20260101", activity).unwrap(),
+            "a971f017e2ddac5e1c7df9cb55514497b1b74ace4107504a2318ed2352c74fd6"
+        );
+    }
+
     #[test]
     fn direct_layout_tracks_sense_and_keeps_legacy_hash_separate() {
         let root = tempfile::tempdir().unwrap();
