@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -3777,14 +3778,17 @@ fn screen_text_schema_absence_preserves_ordinary_search() {
 #[test]
 fn screen_text_denial_preserves_case_and_near_name_siblings() {
     let (root, connection) = seeded_root("screen-text-exact-family");
-    for name in [
+    for (idx, name) in [
         "screen_text.md",
         "screen-text.md",
         "screenXtext.md",
         "SCREEN_TEXT.md",
         "screen_text_extra.md",
-    ] {
-        let path = format!("20260101/default/100000_60/talents/{name}");
+    ]
+    .iter()
+    .enumerate()
+    {
+        let path = format!("20260101/default/10{idx:02}00_60/talents/{name}");
         insert(
             &connection,
             "nearname witness",
@@ -4915,6 +4919,358 @@ fn selected_email_search_requires_messages_permission_and_excludes_spoken_only()
             .results
             .is_empty()
     );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn relevance_collapse_key_and_tie_priority_cover_segments_exclusions_and_fidelity() {
+    use crate::execute::{relevance_collapse_key, relevance_tie_priority};
+
+    // Chronicle segments collapse across all primary and derived files.
+    for path in [
+        "20250211/talk/082200_480/audio.jsonl",
+        "chronicle/20250211/talk/082200_480/audio.jsonl",
+        "20250211/talk/082200_480/mic_audio.jsonl",
+        "20250211/talk/082200_480/sys_audio.jsonl",
+        "20250211/talk/082200_480/session_transcript.jsonl",
+        "20250211/talk/082200_480/talents/topics.md",
+        "20250211/talk/082200_480/talents/activity.md",
+        "20250211/talk/082200_480/talents/sense.md",
+        "20250211/talk/082200_480/talents/company/notes.md",
+    ] {
+        assert_eq!(
+            relevance_collapse_key(path),
+            Some("20250211/talk/082200_480"),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        relevance_collapse_key("20250508/import.image/170500_0/image_transcript.md"),
+        Some("20250508/import.image/170500_0")
+    );
+    assert_eq!(
+        relevance_collapse_key("20251124/obsidian/202000_240/note_transcript.md"),
+        Some("20251124/obsidian/202000_240")
+    );
+    assert_eq!(
+        relevance_collapse_key("20250311/desk/061500_180/talents/screen_text.md"),
+        Some("20250311/desk/061500_180")
+    );
+    assert_eq!(
+        relevance_collapse_key("20250512/import.document/150000_0/document_transcript.md"),
+        Some("20250512/import.document/150000_0")
+    );
+    // Legacy streamless chronicle segment collapses consistently across direct and talents files.
+    assert_eq!(
+        relevance_collapse_key("20250211/082200_480/audio.jsonl"),
+        Some("20250211/082200_480")
+    );
+    assert_eq!(
+        relevance_collapse_key("20250211/082200_480/talents/topics.md"),
+        Some("20250211/082200_480")
+    );
+    // Day-level location document stays collapsed per path.
+    assert_eq!(
+        relevance_collapse_key("20250211/location.md"),
+        Some("20250211/location.md")
+    );
+
+    // Exclusions stay uncollapsed.
+    for uncollapsed in [
+        "20250101/calendar/070000_300/calendar_001903b5.jsonl",
+        "20250211/talk/082200_480/talents/possible_names.json",
+        "20251230/import.apple_health/060000_300/body.jsonl",
+        "20251230/body.md",
+        "20251230/talents/summary.md",
+        "facets/company/activities/20250922.jsonl",
+        "facets/household/entities/20250616.jsonl",
+        "facets/writing/entities/william_shakespeare/observations.jsonl",
+        "reflections/weekly/20250921.md",
+        "imports/job1/summary.md",
+    ] {
+        assert_eq!(relevance_collapse_key(uncollapsed), None, "{uncollapsed}");
+    }
+
+    // Tie-break priority: speech (0) < primary transcript/screen_text (1) < derived talents/other (2).
+    assert_eq!(
+        relevance_tie_priority("20250211/talk/082200_480/audio.jsonl"),
+        0
+    );
+    assert_eq!(
+        relevance_tie_priority("20250211/talk/082200_480/mic_audio.jsonl"),
+        0
+    );
+    assert_eq!(
+        relevance_tie_priority("20250211/talk/082200_480/note_transcript.md"),
+        1
+    );
+    assert_eq!(
+        relevance_tie_priority("20250311/desk/061500_180/talents/screen_text.md"),
+        1
+    );
+    assert_eq!(
+        relevance_tie_priority("20250211/talk/082200_480/talents/topics.md"),
+        2
+    );
+    assert_eq!(
+        relevance_tie_priority("20250211/talk/082200_480/talents/sense.md"),
+        2
+    );
+    assert_eq!(
+        relevance_tie_priority("facets/household/entities/20250616.jsonl"),
+        2
+    );
+}
+
+#[test]
+fn connection_relevance_collapses_chronicle_segments_prefers_audio_on_tie_and_paginates_cleanly() {
+    let root = temp_root("connection-segment-collapse");
+    // Segment A: 4 files (audio.jsonl with 2 matching lines, topics.md, activity.md, sense.md).
+    // Give topics.md the strongest multi-term score; audio.jsonl and sense.md also match.
+    write_rel(
+        &root,
+        "chronicle/20250211/talk/082200_480/audio.jsonl",
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"08:22:16\",\"speaker\":\"davy\",\"text\":\"Raleigh gold in Guiana\"}\n",
+            "{\"start\":\"08:23:26\",\"speaker\":\"sailor\",\"text\":\"faces chests gold in Guiana\"}\n",
+        ),
+    );
+    write_rel(
+        &root,
+        "chronicle/20250211/talk/082200_480/talents/topics.md",
+        "## Topics\n\n- Raleigh city of gold faces chests\n\n## Quotes\n\n- Raleigh gold faces chests\n",
+    );
+    write_rel(
+        &root,
+        "chronicle/20250211/talk/082200_480/talents/activity.md",
+        "Raleigh gold faces chests summary.\n",
+    );
+    write_rel(
+        &root,
+        "chronicle/20250211/talk/082200_480/talents/sense.md",
+        "Raleigh gold discussion.\n",
+    );
+
+    // Segment B: exact BM25 tie between audio.jsonl and talents/sense.md (identical rendered tokens,
+    // since audio.jsonl renders `[start] speaker: text` into FTS5).
+    write_rel(
+        &root,
+        "chronicle/20250922/talk/091500_840/audio.jsonl",
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"09:15:44\",\"speaker\":\"clerk\",\"text\":\"Raleigh pillar rumour\"}\n",
+        ),
+    );
+    write_rel(
+        &root,
+        "chronicle/20250922/talk/091500_840/talents/sense.md",
+        "[09:15:44] clerk: Raleigh pillar rumour\n",
+    );
+
+    // Segment C: separate conversation matching Raleigh.
+    write_rel(
+        &root,
+        "chronicle/20250315/talk/073000_480/audio.jsonl",
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"07:30:50\",\"speaker\":\"kemp\",\"text\":\"Raleigh sailed away\"}\n",
+        ),
+    );
+    write_rel(
+        &root,
+        "chronicle/20250315/talk/073000_480/talents/activity.md",
+        "Raleigh sailing note.\n",
+    );
+
+    scan_journal(&root, true).expect("scan");
+
+    let run_checks = |boundary: &ConnectionBoundary, query: &str, expect_seg_a_audio: bool| {
+        let single_shot = crate::search_connection(
+            &root,
+            boundary,
+            &ConnectionSearchRequest {
+                query: query.to_string(),
+                limit: 20,
+                relax: true,
+                ..ConnectionSearchRequest::default()
+            },
+            reference_date(),
+        )
+        .unwrap();
+        assert_eq!(single_shot.order, Order::Relevance);
+        let keys: Vec<String> = single_shot
+            .results
+            .iter()
+            .filter_map(|hit| {
+                crate::execute::relevance_collapse_key(&hit.metadata.path).map(str::to_owned)
+            })
+            .collect();
+        let unique_keys: BTreeSet<&str> = keys.iter().map(String::as_str).collect();
+        assert_eq!(
+            keys.len(),
+            unique_keys.len(),
+            "duplicate chronicle segments in single_shot: {keys:?}"
+        );
+        assert_eq!(
+            unique_keys.len(),
+            3,
+            "all 3 distinct segments surface: {keys:?}"
+        );
+        if expect_seg_a_audio {
+            let seg_a = single_shot
+                .results
+                .iter()
+                .find(|hit| hit.metadata.path.starts_with("20250211/talk/082200_480/"))
+                .expect("segment A must not vanish when topics.md is denied by row_clause");
+            assert!(
+                !seg_a.metadata.path.ends_with("/talents/topics.md"),
+                "denied topics.md leaked: {}",
+                seg_a.metadata.path
+            );
+        }
+
+        // Paginate limit=1 across both keyed and fallback paths and assert exact parity.
+        let paginate = || -> Vec<(String, i64)> {
+            let mut collected = Vec::new();
+            let mut cursor = None;
+            loop {
+                let page = crate::search_connection(
+                    &root,
+                    boundary,
+                    &ConnectionSearchRequest {
+                        query: query.to_string(),
+                        limit: 1,
+                        relax: true,
+                        start_after: cursor.clone(),
+                        ..ConnectionSearchRequest::default()
+                    },
+                    reference_date(),
+                )
+                .unwrap();
+                if page.results.is_empty() {
+                    break;
+                }
+                let last = page.results.last().unwrap();
+                cursor = Some(crate::types::ConnectionStartAfter {
+                    day: last.metadata.day.clone(),
+                    path: last.metadata.path.clone(),
+                    idx: last.metadata.idx,
+                    score_bits: Some(last.score.to_bits()),
+                });
+                for hit in page.results {
+                    collected.push((hit.metadata.path, hit.metadata.idx));
+                }
+            }
+            collected
+        };
+
+        let expected: Vec<(String, i64)> = single_shot
+            .results
+            .iter()
+            .map(|hit| (hit.metadata.path.clone(), hit.metadata.idx))
+            .collect();
+        assert_eq!(paginate(), expected, "keyed limit=1 pagination parity");
+
+        Connection::open(db_path(&root))
+            .unwrap()
+            .execute("UPDATE chunk_source_readiness SET ready = 0", [])
+            .unwrap();
+        assert_eq!(paginate(), expected, "fallback limit=1 pagination parity");
+        Connection::open(db_path(&root))
+            .unwrap()
+            .execute("UPDATE chunk_source_readiness SET ready = 1", [])
+            .unwrap();
+    };
+
+    // 1. Full categories including messages (enabling legacy topics.md alongside transcripts + facets):
+    //    Use a relaxed-OR query (no single chunk holds every word) AND a single-term strict-AND
+    //    query so both rungs prove multi-chunk segment collapse and limit=1 pagination parity.
+    let full = connection_boundary(
+        &[
+            "transcripts",
+            "messages",
+            "facets",
+            "entities",
+            "screen_text",
+            "body",
+            "notes",
+            "documents",
+            "calendar",
+            "photos",
+        ],
+        ConnectionScope::WholeJournal,
+    );
+    run_checks(&full, "Raleigh city gold faces chests ElDorado", false);
+    run_checks(&full, "Raleigh", false);
+
+    // Exact tie-break check on Segment B: audio.jsonl beats talents/sense.md on identical BM25 score.
+    let tie = crate::search_connection(
+        &root,
+        &full,
+        &ConnectionSearchRequest {
+            query: "pillar rumour".to_string(),
+            limit: 10,
+            relax: false,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(tie.results.len(), 1);
+    assert_eq!(
+        tie.results[0].metadata.path,
+        "20250922/talk/091500_840/audio.jsonl"
+    );
+
+    // 2. Without messages (topics.md passes key_clause via solstone_is_topic, then fails
+    //    solstone_current_topic_chunk in row_clause): Segment A MUST fall through to its
+    //    admitted audio/activity hit rather than disappearing, on page 1 and across pages.
+    let no_messages =
+        connection_boundary(&["transcripts", "facets"], ConnectionScope::WholeJournal);
+    run_checks(
+        &no_messages,
+        "Raleigh city gold faces chests ElDorado",
+        true,
+    );
+
+    // 3. Without transcripts (only facets): Segment A/B/C still return their admitted facets hits
+    //    and zero audio.jsonl or topics.md leaks.
+    let facets_only = connection_boundary(&["facets"], ConnectionScope::WholeJournal);
+    let facets_res = crate::search_connection(
+        &root,
+        &facets_only,
+        &ConnectionSearchRequest {
+            query: "Raleigh".to_string(),
+            limit: 10,
+            relax: false,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(facets_res.results.len(), 3);
+    assert!(facets_res.results.iter().all(|hit| {
+        !hit.metadata.path.ends_with("/audio.jsonl")
+            && !hit.metadata.path.ends_with("/talents/topics.md")
+    }));
+
+    // 4. Blank-query browse stays Order::Recency and is NOT collapsed across files of a segment.
+    let browse = crate::search_connection(
+        &root,
+        &no_messages,
+        &ConnectionSearchRequest {
+            query: String::new(),
+            day: Some("20250922".to_string()),
+            limit: 10,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(browse.order, Order::Recency);
+    assert_eq!(browse.results.len(), 2);
 
     fs::remove_dir_all(root).unwrap();
 }

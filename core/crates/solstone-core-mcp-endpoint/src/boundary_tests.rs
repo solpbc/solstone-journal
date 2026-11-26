@@ -1478,12 +1478,40 @@ fn ac14_unauthorized_chunks_do_not_change_visible_search_page_or_coverage() {
 #[test]
 fn ac13_cursor_rejects_a_replaced_anchor_and_valid_cursor_continues_without_repeats() {
     let journal = fixture();
+    let next_seg = "090500_300";
+    let next_path = format!("{DAY}/{STREAM}/{next_seg}/talents/audio.md");
+    let next_dir = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(next_seg);
+    fs::create_dir_all(next_dir.join("talents")).unwrap();
+    fs::write(
+        next_dir.join("talents/facets.json"),
+        "[{\"facet\":\"alpha\"}]",
+    )
+    .unwrap();
+    fs::write(next_dir.join("talents/audio.md"), "indexed next\n").unwrap();
     let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
     index
         .execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
-             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 1, '')",
-            params![PATH, DAY, STREAM],
+             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 0, '')",
+            params![next_path, DAY, STREAM],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) \
+             VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            params![next_path],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?1, ?2)",
+            params![next_path, FACET_A],
         )
         .unwrap();
     drop(index);
@@ -1506,8 +1534,8 @@ fn ac13_cursor_rejects_a_replaced_anchor_and_valid_cursor_continues_without_repe
     index
         .execute(
             "INSERT INTO chunks(rowid, content, path, day, facet, agent, stream, idx, time_bucket) \
-             VALUES (2, 'replacement indexed bytes', ?1, ?2, '', 'fixture-stream', ?3, 1, '')",
-            params![PATH, DAY, STREAM],
+             VALUES (2, 'replacement indexed bytes', ?1, ?2, '', 'fixture-stream', ?3, 0, '')",
+            params![next_path, DAY, STREAM],
         )
         .unwrap();
     drop(index);
@@ -1524,12 +1552,40 @@ fn ac13_cursor_rejects_a_replaced_anchor_and_valid_cursor_continues_without_repe
 #[test]
 fn ac13_cursor_rejects_a_reset_rebuild_with_rowids_restarted_at_one() {
     let journal = fixture();
+    let next_seg = "090500_300";
+    let next_path = format!("{DAY}/{STREAM}/{next_seg}/talents/audio.md");
+    let next_dir = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(next_seg);
+    fs::create_dir_all(next_dir.join("talents")).unwrap();
+    fs::write(
+        next_dir.join("talents/facets.json"),
+        "[{\"facet\":\"alpha\"}]",
+    )
+    .unwrap();
+    fs::write(next_dir.join("talents/audio.md"), "indexed next\n").unwrap();
     let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
     index
         .execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
-             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 1, '')",
-            params![PATH, DAY, STREAM],
+             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 0, '')",
+            params![next_path, DAY, STREAM],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) \
+             VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            params![next_path],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?1, ?2)",
+            params![next_path, FACET_A],
         )
         .unwrap();
     drop(index);
@@ -1541,8 +1597,8 @@ fn ac13_cursor_rejects_a_reset_rebuild_with_rowids_restarted_at_one() {
     index
         .execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
-             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 1, '')",
-            params![PATH, DAY, STREAM],
+             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 0, '')",
+            params![next_path, DAY, STREAM],
         )
         .unwrap();
     index
@@ -20818,8 +20874,9 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
     assert_eq!(doc_hits.len(), 2, "{browse_all}");
     assert_eq!(screen_hits.len(), 2, "{browse_all}");
 
-    // Keyword search matching every chunk of both PDFs collapses each PDF to one hit,
-    // while non-document multi-chunk material (screen_text) keeps every matching minute.
+    // Keyword search collapses each chronicle segment (both multi-chunk PDFs and the
+    // multi-minute screen segment) to one hit, while empty-query browse above kept
+    // both screen minutes.
     let searched = probe(
         &journal,
         "search",
@@ -20836,7 +20893,7 @@ fn multi_chunk_pdf_collapses_to_one_search_hit_across_browse_query_and_paginatio
         .filter(|row| row["content_kind"] == "screen_text")
         .collect();
     assert_eq!(search_docs.len(), 2, "{searched}");
-    assert_eq!(search_screens.len(), 2, "{searched}");
+    assert_eq!(search_screens.len(), 1, "{searched}");
     let first_doc_title = search_docs[0]["title"].as_str().unwrap().to_owned();
     let second_doc_title = search_docs[1]["title"].as_str().unwrap().to_owned();
     assert_eq!(

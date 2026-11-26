@@ -291,8 +291,116 @@ fn append_connection_start_after(
     );
 }
 
-const COLLAPSED_RELEVANCE_PATH_SQL: &str =
-    "(chunks.path LIKE '%/document_transcript.md' OR chunks.path LIKE '%/location.md')";
+/// Collapse key for relevance-ordered connection searches so multiple chunks
+/// and derived talent files of one chronicle segment (or one day's
+/// `location.md`) occupy at most one result slot.
+///
+/// Chronicle segments (`YYYYMMDD/<stream>/<seg>/...` and legacy streamless
+/// `YYYYMMDD/<seg>/...`) collapse to their segment prefix, except:
+/// - `calendar_*.jsonl` (one sync segment holds many independent events, and
+///   one event can appear on both its recorded day and occurrence day);
+/// - `talents/possible_names.json` (tentative entity-gated hits with their own
+///   contract that must not shadow or collide with primary segment hits);
+/// - `body.jsonl` (one window file holds multiple distinct body records).
+pub(crate) fn relevance_collapse_key(path: &str) -> Option<&str> {
+    let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+    if rel.ends_with("/location.md") {
+        return Some(rel);
+    }
+    let (day, after_day) = rel.split_once('/')?;
+    if !solstone_core_format::segment::is_date_key(day) {
+        return rel.ends_with("/document_transcript.md").then_some(rel);
+    }
+    let (second, after_second) = after_day.split_once('/')?;
+    if matches!(second, "" | "." | "..") {
+        return None;
+    }
+    let (prefix_len, stream, rest) = if let Some((third, rest)) = after_second.split_once('/') {
+        if matches!(third, "" | "." | "..") || rest.is_empty() {
+            return None;
+        }
+        if third == "talents" && solstone_core_format::segment::segment_key(second).is_some() {
+            (day.len() + 1 + second.len(), None, after_second)
+        } else if second != "talents" {
+            (
+                day.len() + 1 + second.len() + 1 + third.len(),
+                Some(second),
+                rest,
+            )
+        } else {
+            return None;
+        }
+    } else if solstone_core_format::segment::segment_key(second).is_some()
+        && !after_second.is_empty()
+    {
+        (day.len() + 1 + second.len(), None, after_second)
+    } else {
+        return None;
+    };
+
+    if stream == Some("calendar")
+        || rest
+            .rsplit('/')
+            .next()
+            .is_some_and(|name| name.starts_with("calendar_") && name.ends_with(".jsonl"))
+        || rest == "talents/possible_names.json"
+        || rest == "body.jsonl"
+    {
+        return None;
+    }
+
+    Some(&rel[..prefix_len])
+}
+
+/// Tie-break priority applied on exact BM25 score ties (smaller wins):
+/// - `0`: direct spoken transcripts (`audio.jsonl`, `*_audio.jsonl`, `*_transcript.jsonl`),
+///   which carry exact line timestamps and live speaker attribution;
+/// - `1`: other primary segment transcripts/originals (`note_transcript.md`,
+///   `image_transcript.md`, `document_transcript.md`, `talents/screen_text.md`, etc.);
+/// - `2`: derived talent summaries (`topics.md`, `activity.md`, `sense.md`, etc.)
+///   and non-segment entries.
+pub(crate) fn relevance_tie_priority(path: &str) -> i64 {
+    if solstone_core_format::content::is_audio_transcript_path(path) {
+        return 0;
+    }
+    if solstone_core_format::content::screen_text::is_screen_text_path(path) {
+        return 1;
+    }
+    let rel = path.strip_prefix("chronicle/").unwrap_or(path);
+    if relevance_collapse_key(rel).is_some()
+        && !rel.ends_with("/location.md")
+        && !rel.contains("/talents/")
+    {
+        return 1;
+    }
+    2
+}
+
+fn is_after_relevance_start_after(
+    score: f64,
+    tie_priority: i64,
+    day: &str,
+    path: &str,
+    idx: i64,
+    start_after: &crate::types::ConnectionStartAfter,
+) -> bool {
+    let key_after = || {
+        day < start_after.day.as_str()
+            || (day == start_after.day.as_str()
+                && (path < start_after.path.as_str()
+                    || (path == start_after.path.as_str() && idx < start_after.idx)))
+    };
+    if let Some(score_bits) = start_after.score_bits {
+        let anchor_score = f64::from_bits(score_bits);
+        let anchor_priority = relevance_tie_priority(&start_after.path);
+        score > anchor_score
+            || (score == anchor_score
+                && (tie_priority > anchor_priority
+                    || (tie_priority == anchor_priority && key_after())))
+    } else {
+        key_after()
+    }
+}
 
 fn append_relevance_start_after(
     clause: &mut String,
@@ -304,12 +412,15 @@ fn append_relevance_start_after(
     };
     if let Some(score_bits) = start_after.score_bits {
         let score = f64::from_bits(score_bits);
+        let tie_priority = relevance_tie_priority(&start_after.path);
         clause.push_str(
-            " AND (score > ? OR (score = ? AND (COALESCE(day, '') < ? OR (COALESCE(day, '') = ? AND (path < ? OR (path = ? AND idx < ?))))))",
+            " AND (score > ? OR (score = ? AND (tie_priority > ? OR (tie_priority = ? AND (COALESCE(day, '') < ? OR (COALESCE(day, '') = ? AND (path < ? OR (path = ? AND idx < ?))))))))",
         );
         values.extend([
             Value::Real(score),
             Value::Real(score),
+            Value::Integer(tie_priority),
+            Value::Integer(tie_priority),
             Value::Text(start_after.day.clone()),
             Value::Text(start_after.day.clone()),
             Value::Text(start_after.path.clone()),
@@ -814,6 +925,28 @@ fn register_indexed_permissions(
         |context| {
             Ok(additional_indexed_permission(context.get_raw(0).as_str()?)
                 .map_or("", AdmittedCategory::as_str))
+        },
+    )?;
+    connection.create_scalar_function(
+        "solstone_relevance_collapse_key",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_DIRECTONLY,
+        |context| match context.get_raw(0).as_str() {
+            Ok(path) => Ok(relevance_collapse_key(path).map(str::to_owned)),
+            Err(_) => Ok(None),
+        },
+    )?;
+    connection.create_scalar_function(
+        "solstone_relevance_tie_priority",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_DIRECTONLY,
+        |context| match context.get_raw(0).as_str() {
+            Ok(path) => Ok(relevance_tie_priority(path)),
+            Err(_) => Ok(2_i64),
         },
     )
 }
@@ -2235,7 +2368,8 @@ impl QueryConnection {
 
     /// Relevance-ordered connection search using the FTS5 inverted index and
     /// `chunk_sources` keys so that `chunks` content pages are only read for
-    /// returned batches. `bm25(chunks)` reads only postings and `docsize`.
+    /// returned batches (and lazily for any collapsed group that spans the
+    /// continuation cursor). `bm25(chunks)` reads only postings and `docsize`.
     fn fetch_connection_hits_by_keys_relevance(
         &mut self,
         plan: &SqlPlan,
@@ -2252,27 +2386,17 @@ impl QueryConnection {
         let key_clause = &key.clause;
         let mut values = vec![Value::Text(expression.clone())];
         values.extend(key.params.iter().cloned().map(Value::Text));
-        values.extend(key.params.iter().cloned().map(Value::Text));
-        let mut outer_filter = String::from("1=1");
-        append_relevance_start_after(&mut outer_filter, &mut values, start_after);
         let sql = format!(
             "WITH matched(rid, score) AS MATERIALIZED (SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ?) \
-             SELECT rid, score, unkeyed FROM ( \
-                 SELECT matched.rid AS rid, matched.score AS score, (chunks.rowid IS NULL) AS unkeyed, \
-                        chunks.day AS day, chunks.path AS path, chunks.idx AS idx \
-                 FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
-                 WHERE chunks.rowid IS NULL OR (({key_clause}) AND NOT {COLLAPSED_RELEVANCE_PATH_SQL}) \
-                 UNION ALL \
-                 SELECT rid, score, 0 AS unkeyed, day, path, idx FROM ( \
-                     SELECT matched.rid AS rid, matched.score AS score, \
-                            chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
-                            ROW_NUMBER() OVER (PARTITION BY chunks.path ORDER BY matched.score ASC, chunks.idx DESC, matched.rid DESC) AS rn \
-                     FROM matched JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
-                     WHERE ({key_clause}) AND {COLLAPSED_RELEVANCE_PATH_SQL} \
-                 ) WHERE rn = 1 \
-             ) \
-             WHERE unkeyed OR ({outer_filter}) \
-             ORDER BY unkeyed DESC, score ASC, COALESCE(day, '') DESC, path DESC, idx DESC, rid DESC"
+             SELECT matched.rid, matched.score, (chunks.rowid IS NULL) AS unkeyed, \
+                    solstone_relevance_tie_priority(chunks.path) AS tie_priority, \
+                    COALESCE(chunks.day, '') AS day, COALESCE(chunks.path, '') AS path, \
+                    COALESCE(chunks.idx, 0) AS idx, \
+                    solstone_relevance_collapse_key(chunks.path) AS collapse_key \
+             FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
+             WHERE chunks.rowid IS NULL OR ({key_clause}) \
+             ORDER BY unkeyed DESC, matched.score ASC, tie_priority ASC, \
+                      COALESCE(chunks.day, '') DESC, chunks.path DESC, chunks.idx DESC, matched.rid DESC"
         );
         let (extra_columns, joins) = self.hit_projection()?;
         let batch = limit.min(500);
@@ -2284,7 +2408,9 @@ impl QueryConnection {
             .query(params_from_iter(values.iter()))
             .map_err(|error| self.classify(error))?;
         let mut hits = Vec::new();
-        let mut pending: Vec<(i64, f64)> = Vec::with_capacity(batch);
+        let mut pending: Vec<(i64, f64, Option<String>)> = Vec::with_capacity(batch);
+        let mut seen_groups: BTreeSet<String> = BTreeSet::new();
+        let mut pre_cursor_groups: BTreeMap<String, Vec<i64>> = BTreeMap::new();
         let mut first = true;
         loop {
             let row = candidates.next().map_err(|error| self.classify(error))?;
@@ -2297,8 +2423,44 @@ impl QueryConnection {
                 first = false;
                 let rid: i64 = row.get(0).map_err(|error| self.classify(error))?;
                 let score: f64 = row.get(1).map_err(|error| self.classify(error))?;
-                pending.push((rid, score));
-                if pending.len() < batch {
+                let tie_priority: i64 = row.get(3).map_err(|error| self.classify(error))?;
+                let day: String = row.get(4).map_err(|error| self.classify(error))?;
+                let path: String = row.get(5).map_err(|error| self.classify(error))?;
+                let idx: i64 = row.get(6).map_err(|error| self.classify(error))?;
+                let collapse_key: Option<String> =
+                    row.get(7).map_err(|error| self.classify(error))?;
+
+                if let Some(anchor) = start_after
+                    && !is_after_relevance_start_after(
+                        score,
+                        tie_priority,
+                        &day,
+                        &path,
+                        idx,
+                        anchor,
+                    )
+                {
+                    if let Some(group) = collapse_key {
+                        pre_cursor_groups.entry(group).or_default().push(rid);
+                    }
+                    continue;
+                }
+
+                if let Some(group) = collapse_key.as_deref() {
+                    if seen_groups.contains(group) {
+                        continue;
+                    }
+                    if let Some(prior_rids) = pre_cursor_groups.remove(group)
+                        && self.any_rowid_admitted(&prior_rids, &row_clause, row_params)?
+                    {
+                        seen_groups.insert(group.to_owned());
+                        continue;
+                    }
+                }
+
+                pending.push((rid, score, collapse_key));
+                let target_batch = (limit - hits.len()).clamp(1, batch);
+                if pending.len() < target_batch {
                     continue;
                 }
             }
@@ -2310,7 +2472,7 @@ impl QueryConnection {
                 );
                 let mut row_values: Vec<Value> = pending
                     .iter()
-                    .map(|(rid, _)| Value::Integer(*rid))
+                    .map(|(rid, _, _)| Value::Integer(*rid))
                     .collect();
                 row_values.extend(row_params.iter().cloned().map(Value::Text));
                 let mut admitted: BTreeMap<i64, SearchHit> = self
@@ -2318,8 +2480,13 @@ impl QueryConnection {
                     .into_iter()
                     .map(|hit| (hit.row_id, hit))
                     .collect();
-                for (row_id, score) in pending.drain(..) {
+                for (row_id, score, collapse_key) in pending.drain(..) {
                     if let Some(mut hit) = admitted.remove(&row_id) {
+                        if let Some(group) = collapse_key
+                            && !seen_groups.insert(group)
+                        {
+                            continue;
+                        }
                         hit.score = score;
                         hits.push(hit);
                         if hits.len() == limit {
@@ -2332,6 +2499,31 @@ impl QueryConnection {
                 return Ok(Some(hits));
             }
         }
+    }
+
+    fn any_rowid_admitted(
+        &self,
+        rids: &[i64],
+        row_clause: &str,
+        row_params: &[String],
+    ) -> Result<bool, IndexAccessError> {
+        for chunk in rids.chunks(500) {
+            let sql = format!(
+                "SELECT 1 FROM chunks WHERE chunks.rowid IN ({}) AND {row_clause} LIMIT 1",
+                category_placeholders(chunk.len())
+            );
+            let mut values: Vec<Value> = chunk.iter().copied().map(Value::Integer).collect();
+            values.extend(row_params.iter().cloned().map(Value::Text));
+            let found: Option<i64> = self
+                .connection
+                .query_row(&sql, params_from_iter(values.iter()), |row| row.get(0))
+                .optional()
+                .map_err(|error| self.classify(error))?;
+            if found.is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn fetch_connection_hits_relevance(
@@ -2358,35 +2550,40 @@ impl QueryConnection {
         let base_where = format!("1=1{rest}");
         let mut values = vec![Value::Text(expression.clone())];
         values.extend(plan.params[1..].iter().cloned().map(Value::Text));
-        values.extend(plan.params[1..].iter().cloned().map(Value::Text));
         let mut outer_filter = String::from("1=1");
         append_relevance_start_after(&mut outer_filter, &mut values, start_after);
         values.push(Value::Integer(limit as i64));
         let sql = format!(
             "WITH matched(rid, score) AS MATERIALIZED (SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ?), \
+             admitted AS MATERIALIZED ( \
+                 SELECT matched.rid AS rid, matched.score AS score, \
+                        solstone_relevance_tie_priority(chunks.path) AS tie_priority, \
+                        chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
+                        solstone_relevance_collapse_key(chunks.path) AS collapse_key \
+                 FROM matched JOIN chunks ON chunks.rowid = matched.rid \
+                 WHERE ({base_where}) \
+             ), \
              picked AS ( \
-                 SELECT rid, score, day, path, idx FROM ( \
-                     SELECT matched.rid AS rid, matched.score AS score, \
-                            chunks.day AS day, chunks.path AS path, chunks.idx AS idx \
-                     FROM matched JOIN chunks ON chunks.rowid = matched.rid \
-                     WHERE ({base_where}) AND NOT {COLLAPSED_RELEVANCE_PATH_SQL} \
+                 SELECT rid, score, tie_priority, day, path, idx FROM ( \
+                     SELECT rid, score, tie_priority, day, path, idx \
+                     FROM admitted \
+                     WHERE collapse_key IS NULL \
                      UNION ALL \
-                     SELECT rid, score, day, path, idx FROM ( \
-                         SELECT matched.rid AS rid, matched.score AS score, \
-                                chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
-                                ROW_NUMBER() OVER (PARTITION BY chunks.path ORDER BY matched.score ASC, chunks.idx DESC, matched.rid DESC) AS rn \
-                         FROM matched JOIN chunks ON chunks.rowid = matched.rid \
-                         WHERE ({base_where}) AND {COLLAPSED_RELEVANCE_PATH_SQL} \
+                     SELECT rid, score, tie_priority, day, path, idx FROM ( \
+                         SELECT rid, score, tie_priority, day, path, idx, \
+                                ROW_NUMBER() OVER (PARTITION BY collapse_key ORDER BY score ASC, tie_priority ASC, COALESCE(day, '') DESC, path DESC, idx DESC, rid DESC) AS rn \
+                         FROM admitted \
+                         WHERE collapse_key IS NOT NULL \
                      ) WHERE rn = 1 \
                  ) \
                  WHERE {outer_filter} \
-                 ORDER BY score ASC, COALESCE(day, '') DESC, path DESC, idx DESC, rid DESC \
+                 ORDER BY score ASC, tie_priority ASC, COALESCE(day, '') DESC, path DESC, idx DESC, rid DESC \
                  LIMIT ? \
              ) \
              SELECT chunks.content, chunks.path, chunks.day, chunks.facet, chunks.agent, \
                     chunks.stream, chunks.idx, picked.score, chunks.rowid, {extra_columns} \
              FROM picked JOIN chunks ON chunks.rowid = picked.rid{joins} \
-             ORDER BY picked.score ASC, COALESCE(chunks.day, '') DESC, chunks.path DESC, chunks.idx DESC, picked.rid DESC"
+             ORDER BY picked.score ASC, picked.tie_priority ASC, COALESCE(chunks.day, '') DESC, chunks.path DESC, chunks.idx DESC, picked.rid DESC"
         );
         self.hit_rows(&sql, &values)
     }

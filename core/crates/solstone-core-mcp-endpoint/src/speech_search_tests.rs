@@ -543,3 +543,364 @@ fn tools_list_preserves_13_tools_plain_object_root_schemas_and_annotations() {
         }
     }
 }
+
+#[test]
+fn mcp_search_collapses_chronicle_segments_preserves_boundaries_fidelity_and_pagination() {
+    let journal = fixture("solstone-mcp-segment-collapse-");
+    add_entity(
+        journal.path(),
+        "nick_sorrell",
+        "Nick Sorrell",
+        false,
+        "alpha",
+    );
+    add_entity(
+        journal.path(),
+        "robert_southwell",
+        "Robert Southwell",
+        false,
+        "alpha",
+    );
+
+    // Segment 1 (alpha): audio.jsonl (2 lines), topics.md (multi-chunk), activity.md, sense.md.
+    let seg1 = segment_dir(journal.path(), "20250211", "talk", "082200_480");
+    fs::write(
+        seg1.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"08:22:16\",\"speaker\":\"nick_sorrell\",\"sentence_id\":1,\"text\":\"Raleigh gold in Guiana for Fryer\"}\n",
+            "{\"start\":\"08:23:26\",\"speaker\":\"(the sailor)\",\"sentence_id\":2,\"text\":\"faces in their chests and gold\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("talents/topics.md"),
+        "## Topics\n\n- Raleigh city of gold faces in their chests\n\n## Quotes\n\n- Raleigh gold faces chests\n",
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("talents/activity.md"),
+        "Heard about Raleigh city of gold and faces in their chests.\n",
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("talents/sense.md"),
+        "Raleigh gold mention at the stairs.\n",
+    )
+    .unwrap();
+    let sidecar = Sidecar::new(
+        "seg1-pn",
+        SidecarSource {
+            file: "audio.jsonl".to_owned(),
+            sha256: source_sha256(&seg1, "audio.jsonl").unwrap(),
+        },
+        "rev",
+        1,
+        vec![SidecarEntry {
+            sentence: 1,
+            start_byte: "Raleigh gold in Guiana for ".len(),
+            end_byte: "Raleigh gold in Guiana for Fryer".len(),
+            heard: "Fryer".to_owned(),
+            entity_id: "robert_southwell".to_owned(),
+            name: "Robert Southwell".to_owned(),
+        }],
+    );
+    fs::write(
+        seg1.join("talents/possible_names.json"),
+        serde_json::to_string(&sidecar).unwrap(),
+    )
+    .unwrap();
+
+    // Segment 2 (alpha): exact BM25 tie between audio.jsonl and talents/sense.md
+    // (identical rendered tokens since audio.jsonl indexes `[start] speaker: text`).
+    // audio.jsonl must win the tie and deliver exact clock + unnamed speaker.
+    let seg2 = segment_dir(journal.path(), "20250922", "talk", "091500_840");
+    fs::write(
+        seg2.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg2.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"09:15:44\",\"speaker\":\"(a clerk by the pillar)\",\"text\":\"Raleigh pillar rumour\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        seg2.join("talents/sense.md"),
+        "[09:15:44] (a clerk by the pillar): Raleigh pillar rumour\n",
+    )
+    .unwrap();
+
+    // Segment 3 (alpha): separate conversation.
+    let seg3 = segment_dir(journal.path(), "20250315", "talk", "073000_480");
+    fs::write(
+        seg3.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg3.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"07:30:50\",\"speaker\":\"nick_sorrell\",\"text\":\"Raleigh sailed away\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(seg3.join("talents/activity.md"), "Raleigh sailing note.\n").unwrap();
+
+    // Segment 4 (beta — out of scope for alpha-only grant): must never leak.
+    let seg4_beta = segment_dir(journal.path(), "20250401", "talk", "110000_300");
+    fs::write(
+        seg4_beta.join("talents/facets.json"),
+        json!([{"facet": "beta"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg4_beta.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"11:01:00\",\"speaker\":1,\"text\":\"Raleigh gold secret beta remark\"}\n",
+        ),
+    )
+    .unwrap();
+
+    // Segment 5 (hidden body day on alpha): must never leak even when body + facets are granted.
+    let hidden_day = "20250402";
+    let seg5_hidden = segment_dir(
+        journal.path(),
+        hidden_day,
+        "import.apple_health",
+        "080000_300",
+    );
+    fs::write(
+        seg5_hidden.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg5_hidden.join("body.jsonl"),
+        "{\"type\":\"workout\",\"activity\":\"Raleigh gold hidden body workout\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        seg5_hidden.join("talents/activity.md"),
+        "Raleigh gold hidden body day activity summary.\n",
+    )
+    .unwrap();
+    fs::write(
+        journal
+            .path()
+            .join(format!("chronicle/{hidden_day}/body.md")),
+        "Raleigh gold hidden body day summary.\n",
+    )
+    .unwrap();
+    let hidden_path =
+        solstone_core_format::content::body_hidden_days::hidden_days_path(journal.path());
+    fs::create_dir_all(hidden_path.parent().unwrap()).unwrap();
+    fs::write(
+        hidden_path,
+        solstone_core_format::content::body_hidden_days::hidden_days_bytes(
+            &[hidden_day.to_owned()].into(),
+        ),
+    )
+    .unwrap();
+
+    // Two distinct photos on the same day to verify blank-query chronological photo browse.
+    for (seg, time_label, desc) in [
+        ("090000_0", "09:00", "Morning stage sketch"),
+        (
+            "170500_0",
+            "17:05",
+            "Evening yellow slippers by the cittern",
+        ),
+    ] {
+        let pdir = segment_dir(journal.path(), "20250508", "import.image", seg);
+        fs::write(
+            pdir.join("talents/facets.json"),
+            json!([{"facet": "alpha"}]).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            pdir.join("image_transcript.md"),
+            format!("# Photo {time_label}\n\n## Description\n\n{desc}\n"),
+        )
+        .unwrap();
+    }
+
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+    // 1. Full categories including messages (matching Claude's OAuth connection) scoped to alpha:
+    //    3 distinct alpha segments -> exactly 3 hits (never 7+ duplicated chunks), 0 beta leaks.
+    grant(
+        journal.path(),
+        &[
+            "transcripts",
+            "messages",
+            "facets",
+            "entities",
+            "screen_text",
+            "body",
+            "notes",
+            "documents",
+            "calendar",
+            "photos",
+        ],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let full = probe(
+        journal.path(),
+        "search",
+        json!({"query": "Raleigh city gold faces chests ElDorado", "limit": 10}),
+    )
+    .unwrap();
+    let full_rows = full["results"].as_array().unwrap();
+    assert_eq!(full_rows.len(), 3, "{full}");
+    assert!(
+        full_rows.iter().all(|row| {
+            let snippet = row["snippet"].as_str().unwrap_or("");
+            !snippet.contains("secret beta") && !snippet.contains("hidden body")
+        }),
+        "{full}"
+    );
+    let full_dates: BTreeSet<&str> = full_rows
+        .iter()
+        .map(|row| row["date"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        full_dates,
+        BTreeSet::from(["20250211", "20250315", "20250922"]),
+        "{full}"
+    );
+
+    // Single-term strict-AND query across all 8 matching chunks also collapses cleanly to 3 segments.
+    let single_term = probe(
+        journal.path(),
+        "search",
+        json!({"query": "Raleigh", "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(
+        single_term["results"].as_array().unwrap().len(),
+        3,
+        "{single_term}"
+    );
+
+    // 2. Exact BM25 tie on Segment 2: audio.jsonl wins with exact clock, unnamed speaker, link, segments.
+    let tie = probe(
+        journal.path(),
+        "search",
+        json!({"query": "pillar rumour", "limit": 10}),
+    )
+    .unwrap();
+    let tie_rows = tie["results"].as_array().unwrap();
+    assert_eq!(tie_rows.len(), 1, "{tie}");
+    assert_eq!(tie_rows[0]["date"], "20250922");
+    assert_eq!(tie_rows[0]["time"], "09:15:44");
+    assert_eq!(tie_rows[0]["speaker"], "(a clerk by the pillar)");
+    assert!(
+        tie_rows[0]["link"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://go.solstone.app/j#")
+    );
+    assert!(!tie_rows[0]["segments"].as_array().unwrap().is_empty());
+
+    // 3. Page 1 -> Page 2 -> Page 3 cursor pagination (limit=1) produces exact same 3 segments,
+    //    zero cross-page duplicates, and zero skips.
+    let mut paged_dates = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut args = json!({"query": "Raleigh city gold faces chests ElDorado", "limit": 1});
+        if let Some(token) = &cursor {
+            args["cursor"] = Value::String(token.clone());
+        }
+        let page = probe(journal.path(), "search", args).unwrap();
+        let rows = page["results"].as_array().unwrap();
+        assert!(rows.len() <= 1, "{page}");
+        for row in rows {
+            paged_dates.push(row["date"].as_str().unwrap().to_owned());
+        }
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    let expected_dates: Vec<String> = full_rows
+        .iter()
+        .map(|row| row["date"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(paged_dates, expected_dates);
+
+    // 4. Messages denied (topics.md rejected in row_clause) & entities denied (possible_names blocked):
+    //    Segment 1 still surfaces cleanly (not dropped!) and possible_names never leaks.
+    grant(
+        journal.path(),
+        &["transcripts", "facets"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let no_msg = probe(
+        journal.path(),
+        "search",
+        json!({"query": "Raleigh city gold faces chests ElDorado", "limit": 10}),
+    )
+    .unwrap();
+    let no_msg_rows = no_msg["results"].as_array().unwrap();
+    assert_eq!(no_msg_rows.len(), 3, "{no_msg}");
+    let no_msg_pn = probe(
+        journal.path(),
+        "search",
+        json!({"query": "Robert Southwell", "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(no_msg_pn["results"].as_array().unwrap().len(), 0);
+
+    // 5. Transcripts denied (facets only): zero audio.jsonl/topics.md leaks, all 3 segments
+    //    still surface via admitted activity.md / sense.md.
+    grant(
+        journal.path(),
+        &["facets"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let no_tx = probe(
+        journal.path(),
+        "search",
+        json!({"query": "Raleigh", "limit": 10}),
+    )
+    .unwrap();
+    let no_tx_rows = no_tx["results"].as_array().unwrap();
+    assert_eq!(no_tx_rows.len(), 3, "{no_tx}");
+    assert!(no_tx_rows.iter().all(|row| row.get("speaker").is_none()));
+
+    // 6. Blank-query chronological photo browse preserves both distinct photos on 20250508 in order.
+    grant(
+        journal.path(),
+        &["photos"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let photos = probe(
+        journal.path(),
+        "search",
+        json!({"day": "20250508", "kind": ["photos"], "limit": 10}),
+    )
+    .unwrap();
+    let photo_rows = photos["results"].as_array().unwrap();
+    assert_eq!(photo_rows.len(), 2, "{photos}");
+    assert_eq!(photo_rows[0]["time"], "09:00:00");
+    assert_eq!(photo_rows[1]["time"], "17:05:00");
+}
