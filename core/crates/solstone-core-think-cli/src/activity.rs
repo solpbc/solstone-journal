@@ -152,6 +152,18 @@ fn owner_asked_activity(journal: &std::path::Path, day: &str, facet: &str, id: &
     })
 }
 
+/// A recording earns its talents once it is more than a clip: two segments,
+/// or three minutes.
+const SYNTHESIS_MIN_SPOKEN_SEGMENTS: usize = 2;
+const SYNTHESIS_MIN_SPOKEN_SECS: u64 = 180;
+/// A written exchange earns them once it goes back and forth.
+const SYNTHESIS_MIN_TURNS: usize = 3;
+/// Or once it is long enough to be worth reading for someone: about a page.
+const SYNTHESIS_MIN_CHARS: usize = 1_500;
+
+/// Whether an activity that arrived as history holds enough for its talents
+/// to say something: a recording, or an exchange with some length to it. A
+/// lone photo, note or document does not.
 fn historical_backfill_merits_synthesis(
     journal: &std::path::Path,
     day: &str,
@@ -187,11 +199,7 @@ fn historical_backfill_merits_synthesis(
             let Some(fname) = name.to_str() else {
                 continue;
             };
-            if fname == "audio.jsonl"
-                || fname.ends_with("_audio.jsonl")
-                || fname == "imported_audio.jsonl"
-                || fname.starts_with("audio.")
-            {
+            if crate::segment::is_spoken_audio_file(fname) {
                 has_spoken_audio = true;
             }
             if fname == "conversation_transcript.jsonl" {
@@ -199,15 +207,13 @@ fn historical_backfill_merits_synthesis(
                 if let Ok(text) = std::fs::read_to_string(entry.path()) {
                     for line in text.lines().filter(|l| !l.trim().is_empty()) {
                         if let Ok(val) = serde_json::from_str::<Value>(line) {
-                            if val.get("schema").is_some() {
-                                continue;
-                            }
-                            turn_count += 1;
+                            // The file's first line describes it and is no turn.
                             if let Some(body) = val
                                 .get("content")
                                 .or_else(|| val.get("text"))
                                 .and_then(Value::as_str)
                             {
+                                turn_count += 1;
                                 char_count += body.chars().count();
                             }
                         }
@@ -217,34 +223,15 @@ fn historical_backfill_merits_synthesis(
                 && let Ok(text) = std::fs::read_to_string(entry.path())
             {
                 char_count += text.chars().count();
-                let msg_turns = text
-                    .lines()
-                    .filter(|line| {
-                        let trimmed = line.trim_start();
-                        trimmed.starts_with("From:")
-                            || trimmed.starts_with("### Message ")
-                            || trimmed.starts_with("### Turn ")
-                            || (trimmed.starts_with('[') && trimmed.contains("] "))
-                    })
-                    .count();
-                if msg_turns > 0 {
-                    exchange_like = true;
-                    turn_count += msg_turns;
-                }
             }
         }
     }
 
-    if has_spoken_audio && (segments.len() >= 2 || total_duration_secs >= 180) {
-        return true;
-    }
-    if turn_count >= 3 {
-        return true;
-    }
-    if (exchange_like || has_spoken_audio) && char_count >= 1_500 {
-        return true;
-    }
-    false
+    (has_spoken_audio
+        && (segments.len() >= SYNTHESIS_MIN_SPOKEN_SEGMENTS
+            || total_duration_secs >= SYNTHESIS_MIN_SPOKEN_SECS))
+        || turn_count >= SYNTHESIS_MIN_TURNS
+        || ((exchange_like || has_spoken_audio) && char_count >= SYNTHESIS_MIN_CHARS)
 }
 
 fn selected_configs_with_refresh(
