@@ -49,9 +49,10 @@ const IMAGE_META_FILENAME: &str = "image_meta.json";
 const VISION_MAX_LONG_EDGE: u32 = 1024;
 const VISION_JPEG_QUALITY: u8 = 85;
 const VISION_SCHEMA_JSON: &str = include_str!("image_vision.schema.json");
-const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Return JSON:\n\
-- description: concise plain visual description (no Markdown links or image markup).\n\
-- visible_text: verbatim transcription of all legible text (include URLs only when visible; never invent URLs), or null if none.\n\
+const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. \
+Transcribe every legible piece of text verbatim, including small print, labels, signs, receipts, whiteboard writing, and URLs only when visible (never invent URLs). Return JSON:\n\
+- description: concise plain visual description of the scene/subjects (no Markdown links or image markup).\n\
+- visible_text: complete verbatim transcription of all legible text in the image (do not summarize, omit, or truncate any readable lines; separate lines with newlines), or null only if no legible text is visible.\n\
 - belonging_class: \"lived_moment\" (scene, people, selfie, place, meal, life), \"reference_to_remember\" (whiteboard, slides, book, document, sign, menu, receipt, note), \"errand_or_utilitarian\" (parking spot, shelf/price tag, serial/label, screen photo), or \"noise_or_accidental\" (pocket shot, accidental blur, blank/obstructed).";
 const VISION_CONTEXT: &str = "import.image.vision";
 const VISIBLE_TEXT_MARKER: &str = "> [visible text — model-derived]";
@@ -750,7 +751,7 @@ fn prepare(
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty());
 
-    let vision = match vision_jpeg(&image, orientation) {
+    let vision = match vision_jpeg(path, format, &image, orientation) {
         Ok(_) if !solstone_core_import::work_continues() => PhotoVisionOutcome::TransientFailure {
             reason: "generate cancelled".to_owned(),
         },
@@ -1725,15 +1726,30 @@ fn read_image(path: &Path, manual: bool) -> Result<DecodedImage, ImageImportErro
     Ok((image, format, modified, orientation, exif, triage))
 }
 
-/// The copy of an imported image that goes to the vision model: decoded pixels
-/// only, turned upright, capped at 1024 px on the longest side (never upscaling
-/// smaller copies such as 512 px library photos), and encoded afresh as JPEG.
-/// Nothing from the source container rides along, so embedded EXIF location,
-/// camera, and capture time stay strictly in the owner's journal.
+/// The copy of an imported image that goes to the vision model: upright pixels
+/// capped at 1024 px on the longest side (never upscaling smaller copies such
+/// as 512 px library photos), with zero source metadata containers (EXIF, GPS,
+/// IPTC, XMP, ICC, comments, or trailing bytes).
+///
+/// When the source is already an upright RGB/grayscale JPEG within the 1024 px
+/// cap, its compressed DCT scan passes through without a second lossy JPEG
+/// generation while stripping every `APP*` and `COM` segment; any rotated,
+/// oversized, non-JPEG, or non-standard JPEG falls back to fresh JPEG encoding.
 fn vision_jpeg(
+    source_path: &Path,
+    format: ImageFormat,
     image: &DynamicImage,
     orientation: Orientation,
 ) -> Result<Vec<u8>, image::ImageError> {
+    if format == ImageFormat::Jpeg
+        && orientation == Orientation::NoTransforms
+        && image.width().max(image.height()) <= VISION_MAX_LONG_EDGE
+        && matches!(image.color(), image::ColorType::Rgb8 | image::ColorType::L8)
+        && let Ok(raw) = fs::read(source_path)
+        && let Some(stripped) = strip_jpeg_metadata_segments(&raw)
+    {
+        return Ok(stripped);
+    }
     let mut upright = image.clone();
     upright.apply_orientation(orientation);
     if upright.width().max(upright.height()) > VISION_MAX_LONG_EDGE {
@@ -1748,6 +1764,108 @@ fn vision_jpeg(
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, VISION_JPEG_QUALITY)
         .encode_image(&rgb)?;
     Ok(jpeg)
+}
+
+/// Strip every `APP0..APP15` and `COM` marker (EXIF, GPS, XMP, IPTC, ICC,
+/// comments, thumbnails) and any trailing bytes after `EOI` from a standard
+/// baseline/progressive JPEG without re-encoding DCT blocks. Returns `None`
+/// on `APP14` (Adobe color transform) or any unrecognized/malformed framing
+/// so the caller cleanly falls back to fresh pixel re-encoding.
+fn strip_jpeg_metadata_segments(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    out.extend_from_slice(&[0xFF, 0xD8]);
+    let mut i = 2usize;
+    let mut saw_sos = false;
+    while i < bytes.len() {
+        if bytes[i] != 0xFF {
+            return None;
+        }
+        while i < bytes.len() && bytes[i] == 0xFF {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return None;
+        }
+        let marker = bytes[i];
+        i += 1;
+        match marker {
+            // EOI terminates the JPEG cleanly; drop any trailing bytes.
+            0xD9 => {
+                if !saw_sos {
+                    return None;
+                }
+                out.extend_from_slice(&[0xFF, 0xD9]);
+                return Some(out);
+            }
+            // APP14 can declare non-standard Adobe color transforms (e.g., CMYK/YCCK).
+            0xEE => return None,
+            // Drop all APP0..APP15 metadata/ICC/EXIF/XMP/IPTC and COM comment segments.
+            0xE0..=0xEF | 0xFE => {
+                if i + 2 > bytes.len() {
+                    return None;
+                }
+                let seg_len = u16::from_be_bytes([bytes[i], bytes[i + 1]]) as usize;
+                if seg_len < 2 || i + seg_len > bytes.len() {
+                    return None;
+                }
+                i += seg_len;
+            }
+            // Keep essential frame/table/restart-interval segments verbatim.
+            0xC0..=0xC3 | 0xC4 | 0xDB | 0xDD => {
+                if i + 2 > bytes.len() {
+                    return None;
+                }
+                let seg_len = u16::from_be_bytes([bytes[i], bytes[i + 1]]) as usize;
+                if seg_len < 2 || i + seg_len > bytes.len() {
+                    return None;
+                }
+                out.push(0xFF);
+                out.push(marker);
+                out.extend_from_slice(&bytes[i..i + seg_len]);
+                i += seg_len;
+            }
+            // Start of Scan: copy header + entropy-coded scan until the next marker.
+            0xDA => {
+                if i + 2 > bytes.len() {
+                    return None;
+                }
+                let seg_len = u16::from_be_bytes([bytes[i], bytes[i + 1]]) as usize;
+                if seg_len < 2 || i + seg_len > bytes.len() {
+                    return None;
+                }
+                saw_sos = true;
+                out.push(0xFF);
+                out.push(marker);
+                out.extend_from_slice(&bytes[i..i + seg_len]);
+                i += seg_len;
+                let scan_start = i;
+                while i < bytes.len() {
+                    if bytes[i] == 0xFF {
+                        if i + 1 >= bytes.len() {
+                            return None;
+                        }
+                        let next = bytes[i + 1];
+                        if next == 0x00 || (0xD0..=0xD7).contains(&next) {
+                            i += 2;
+                            continue;
+                        }
+                        if next == 0xFF {
+                            i += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+                out.extend_from_slice(&bytes[scan_start..i]);
+            }
+            _ => return None,
+        }
+    }
+    None
 }
 
 fn degenerate_preview() -> ImportPreview {
@@ -2066,7 +2184,7 @@ pub fn retry_photo_observation(
         })?
         .as_str()
         .to_owned();
-    let vision = match vision_jpeg(&image, orientation) {
+    let vision = match vision_jpeg(&pixel_path, format, &image, orientation) {
         Ok(jpeg) => interpret_generate_vision(wire.execute(&build_generate_request(&jpeg))),
         Err(error) => PhotoVisionOutcome::AnalysisUnavailable {
             reason: format!("cannot prepare image for vision: {error}"),
@@ -5040,5 +5158,53 @@ mod tests {
         faceprints::choose(journal.path(), "ent-alice", &photo_key).unwrap();
         let confirmed = faceprints::confirmed_photo(journal.path(), "ent-alice").unwrap();
         assert_eq!(confirmed, Some(distinct_jpeg(55)));
+    }
+
+    #[test]
+    fn vision_jpeg_passthrough_strips_exif_and_preserves_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgb = image::RgbImage::from_fn(320, 240, |x, y| {
+            image::Rgb([(x % 251) as u8, (y % 239) as u8, ((x + y) % 223) as u8])
+        });
+        let mut base = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut base, 75)
+            .encode_image(&rgb)
+            .unwrap();
+        assert_eq!(&base[..2], &[0xFF, 0xD8]);
+
+        // Inject synthetic APP1 (EXIF/GPS secret), COM comment secret, and trailing bytes after EOI.
+        let exif_payload = b"Exif\0\0SECRET_GPS_40.015_-105.270";
+        let com_payload = b"SECRET_CAMERA_COMMENT";
+        let mut with_meta = Vec::new();
+        with_meta.extend_from_slice(&[0xFF, 0xD8]);
+        with_meta.push(0xFF);
+        with_meta.push(0xE1);
+        with_meta.extend_from_slice(&((exif_payload.len() + 2) as u16).to_be_bytes());
+        with_meta.extend_from_slice(exif_payload);
+        with_meta.push(0xFF);
+        with_meta.push(0xFE);
+        with_meta.extend_from_slice(&((com_payload.len() + 2) as u16).to_be_bytes());
+        with_meta.extend_from_slice(com_payload);
+        with_meta.extend_from_slice(&base[2..]);
+        with_meta.extend_from_slice(b"SECRET_TRAILING_BYTES");
+
+        let path = dir.path().join("photo.jpg");
+        fs::write(&path, &with_meta).unwrap();
+        let decoded = image::load_from_memory_with_format(&with_meta, ImageFormat::Jpeg).unwrap();
+
+        let out = vision_jpeg(
+            &path,
+            ImageFormat::Jpeg,
+            &decoded,
+            Orientation::NoTransforms,
+        )
+        .unwrap();
+        assert!(!out.windows(10).any(|w| w == b"SECRET_GPS"));
+        assert!(!out.windows(13).any(|w| w == b"SECRET_CAMERA"));
+        assert!(!out.windows(15).any(|w| w == b"SECRET_TRAILING"));
+        // Stripped passthrough matches the original stripped scan (no re-encode at q=85),
+        // and decodes to byte-identical RGB pixels!
+        let out_decoded = image::load_from_memory_with_format(&out, ImageFormat::Jpeg).unwrap();
+        assert_eq!(out_decoded.to_rgb8(), decoded.to_rgb8());
     }
 }
