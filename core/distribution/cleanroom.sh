@@ -505,14 +505,22 @@ talent_orchestration_rung() {
 		|| refuse "orchestration daily schedule metadata missing"
 	! grep -F 'fallback' "$journal/config/schedules.json" >/dev/null \
 		|| refuse "orchestration fallback leaked into schedule metadata"
+	# entity_suggest with no candidates writes its empty result without a
+	# model call (cb3777ba2), so the fixture never sees it; prove the daily
+	# batch still published that empty result instead.
 	sorted=$(LC_ALL=C sort "$journal/generation-evidence")
 	[ "$sorted" = "daily_schedule
-entity_suggest
 morning_briefing
 sense" ] || {
 		cat "$journal/generation-evidence" >&2
 		refuse "generation fixture saw an incomplete or unexpected production daily batch"
 	}
+	set -- "$journal"/facets/*/entities/*_observer_suggestions.json
+	[ -f "$1" ] || refuse "orchestration empty entity suggestion was not published"
+	for suggestions in "$@"; do
+		tr -d '[:space:]' <"$suggestions" | grep -F '"entities":[]' >/dev/null \
+			|| refuse "orchestration entity suggestion was not the empty no-candidate result"
+	done
 	set -- "$journal"/talents/daily_schedule/*.jsonl
 	if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
 		refuse "orchestration daily_schedule terminal event log missing"
