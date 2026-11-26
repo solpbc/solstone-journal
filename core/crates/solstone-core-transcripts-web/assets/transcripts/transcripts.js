@@ -4538,22 +4538,28 @@
     }
 
     function messageForwardedHtml(forwarded) {
-      if (!forwarded || typeof forwarded !== 'object') return '';
-      const text = String(forwarded.text || '');
-      const hasBlocks = Array.isArray(forwarded.blocks) && forwarded.blocks.length > 0;
-      if (!text.trim() && !hasBlocks) return '';
-      const author = typeof forwarded.from === 'string' ? forwarded.from.trim() : '';
-      const heading = author
-        ? window.JournalI18n.renderHtml('journal.window.transcripts.message.forwarded.from', [['author', author]])
-        : window.JournalI18n.renderHtml('journal.window.transcripts.message.forwarded.heading');
-      const subject = typeof forwarded.subject === 'string' ? forwarded.subject.trim() : '';
-      const blocks = messageBlocks(forwarded, text);
-      let html = '<div class="tr-msg-forwarded">';
-      html += `<div class="tr-msg-forwarded-head">${heading}</div>`;
-      if (subject) html += `<div class="tr-msg-forwarded-subject">${escapeHtml(subject)}</div>`;
-      html += `<div class="tr-msg-forwarded-body">${blocks.map(messageBlockHtml).join('')}</div>`;
-      html += messageTruncatedHtml(forwarded.truncated, forwarded.cut_chars);
-      html += '</div>';
+      const list = Array.isArray(forwarded)
+        ? forwarded
+        : (forwarded && typeof forwarded === 'object' ? [forwarded] : []);
+      let html = '';
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        const text = String(item.text || '');
+        const hasBlocks = Array.isArray(item.blocks) && item.blocks.length > 0;
+        if (!text.trim() && !hasBlocks) continue;
+        const author = typeof item.from === 'string' ? item.from.trim() : '';
+        const heading = author
+          ? window.JournalI18n.renderHtml('journal.window.transcripts.message.forwarded.from', [['author', author]])
+          : window.JournalI18n.renderHtml('journal.window.transcripts.message.forwarded.heading');
+        const subject = typeof item.subject === 'string' ? item.subject.trim() : '';
+        const blocks = messageBlocks(item, text);
+        html += '<div class="tr-msg-forwarded">';
+        html += `<div class="tr-msg-forwarded-head">${heading}</div>`;
+        if (subject) html += `<div class="tr-msg-forwarded-subject">${escapeHtml(subject)}</div>`;
+        html += `<div class="tr-msg-forwarded-body">${blocks.map(messageBlockHtml).join('')}</div>`;
+        html += messageTruncatedHtml(item.truncated, item.cut_chars);
+        html += '</div>';
+      }
       return html;
     }
 

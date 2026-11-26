@@ -4220,14 +4220,14 @@ test('a selected email renders cc, subject, folded reply_to, attachments, forwar
           { kind: 'paragraph', start: 0, end: p1End },
           { kind: 'possible_quote', start: qStart, end: qEnd },
         ],
-        forwarded: {
+        forwarded: [{
           from: 'Jordan',
           subject: 'Room schedule',
           text: 'Room seven is free at two.',
           truncated: true,
           cut_chars: 420,
           blocks: [{ kind: 'paragraph', start: 0, end: Buffer.byteLength('Room seven is free at two.') }],
-        },
+        }],
         reply_to: {
           author: 'Casey',
           sent_at: '2020-01-14T23:20:00Z',

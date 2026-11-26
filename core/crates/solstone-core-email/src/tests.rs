@@ -597,6 +597,33 @@ fn end_to_end_read_only_scan_choice_sync_widen_tombstone_delete_and_rebuild() {
             .join("conversation_transcript.jsonl");
         let text = std::fs::read_to_string(&p).unwrap();
         let row: Value = serde_json::from_str(text.lines().nth(1).unwrap()).unwrap();
+        let row_map = row.as_object().unwrap();
+
+        // Cross-crate roundtrip check: every landed exchange must read cleanly
+        // through solstone-core-format's conversation reader and search indexer.
+        let item = solstone_core_format::content::conversation::conversation_item(
+            root,
+            &rec.segment_rel,
+            "conversation_transcript.jsonl",
+        )
+        .expect("conversation_item must recognize landed import.email segment");
+        assert_eq!(item.source, Some("email"));
+        assert_eq!(item.content_kind, Some("messages"));
+        assert!(
+            item.first_sent_at.is_some() && item.last_sent_at.is_some(),
+            "header line must carry first_sent_at and last_sent_at"
+        );
+        let projected = solstone_core_format::content::conversation::message_fields(
+            "import.email",
+            "conversation_transcript.jsonl",
+            0,
+            row_map,
+            false,
+        )
+        .expect("message_fields must project landed email row");
+        let indexed = solstone_core_format::content::conversation::indexed_message(row_map)
+            .expect("indexed_message must index landed email row");
+
         if rec.key == "gm:1002" {
             saw_in_reply_to = true;
             assert!(
@@ -607,32 +634,35 @@ fn end_to_end_read_only_scan_choice_sync_widen_tombstone_delete_and_rebuild() {
             );
             assert!(!row["text"].as_str().unwrap().contains("Could we meet"));
             assert_eq!(row["email"]["parent_match_rule"], "in_reply_to");
-            assert_eq!(row["reply_to"]["author"], "Casey");
+            assert_eq!(projected["reply_to"]["author"], "Casey");
             assert!(
-                row["reply_to"]["text"]
+                projected["reply_to"]["text"]
                     .as_str()
                     .unwrap()
                     .contains("Thursday afternoon")
             );
-            assert_eq!(row["attachments"][0]["name"], "agenda.pdf");
-            assert_eq!(row["attachments"][1]["name"], "site-photo.jpg");
-            assert_eq!(row["attachments"][1]["inline"], true);
+            assert_eq!(projected["attachments"][0]["name"], "agenda.pdf");
+            assert_eq!(projected["attachments"][1]["name"], "site-photo.jpg");
+            assert_eq!(projected["attachments"][1]["inline"], true);
+            assert!(indexed.contains("Thursday afternoon"));
+            assert!(indexed.contains("Yes, the afternoon works."));
         }
         if rec.key == "gm:1005" {
             saw_references_only = true;
             assert_eq!(row["email"]["parent_match_rule"], "references_only");
-            assert_eq!(row["reply_to"]["author"], "Casey");
+            assert_eq!(projected["reply_to"]["author"], "Casey");
         }
         if rec.key == "gm:1004" {
             saw_forwarded = true;
             assert!(row["text"].as_str().unwrap().contains("Looping you in"));
-            assert_eq!(row["forwarded"]["subject"], "Room schedule");
+            assert_eq!(projected["forwarded"][0]["subject"], "Room schedule");
             assert!(
-                row["forwarded"]["text"]
+                projected["forwarded"][0]["text"]
                     .as_str()
                     .unwrap()
                     .contains("Room seven is free")
             );
+            assert!(indexed.contains("Room seven is free"));
         }
     }
     assert!(saw_in_reply_to && saw_references_only && saw_forwarded);

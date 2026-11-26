@@ -938,14 +938,31 @@ pub fn run_sync_with_publisher(
             std::fs::create_dir_all(&seg_dir).map_err(|e| EmailError::Storage(e.to_string()))?;
 
             let mut jsonl = String::new();
-            let header_line = json!({
-                "source": "email",
-                "provider": account.provider,
-                "run_id": run_id,
-                "email": {
+            let first_sent_at = exchanges
+                .first()
+                .and_then(|ex| Timestamp::from_millisecond(ex.sent_ms).ok())
+                .map(|ts| ts.to_string());
+            let last_sent_at = exchanges
+                .last()
+                .and_then(|ex| Timestamp::from_millisecond(ex.sent_ms).ok())
+                .map(|ts| ts.to_string());
+            let mut header_obj = Map::new();
+            header_obj.insert("source".into(), Value::String("email".into()));
+            header_obj.insert("provider".into(), Value::String(account.provider.clone()));
+            header_obj.insert("run_id".into(), Value::String(run_id.clone()));
+            if let Some(ts) = first_sent_at {
+                header_obj.insert("first_sent_at".into(), Value::String(ts));
+            }
+            if let Some(ts) = last_sent_at {
+                header_obj.insert("last_sent_at".into(), Value::String(ts));
+            }
+            header_obj.insert(
+                "email".into(),
+                json!({
                     "account": account.account,
-                }
-            });
+                }),
+            );
+            let header_line = Value::Object(header_obj);
             jsonl.push_str(&header_line.to_string());
             jsonl.push('\n');
 
@@ -1246,38 +1263,38 @@ fn build_reply_to(ph: &Header, pex: &Extracted) -> Value {
     Value::Object(obj)
 }
 
-fn merge_forwarded(blocks: &[ForwardedBlock]) -> Option<Value> {
-    let first = blocks.first()?;
-    let mut obj = Map::new();
-    if let Some(from) = &first.from {
-        obj.insert("from".into(), Value::String(from.clone()));
+fn serialize_forwarded(blocks: &[ForwardedBlock]) -> Option<Value> {
+    if blocks.is_empty() {
+        return None;
     }
-    if let Some(date) = &first.date {
-        obj.insert("date".into(), Value::String(date.clone()));
-    }
-    if let Some(subject) = &first.subject {
-        obj.insert("subject".into(), Value::String(subject.clone()));
-    }
-    let combined_text = if blocks.len() == 1 {
-        first.text.clone()
-    } else {
-        let joined = blocks
-            .iter()
-            .map(|b| b.text.as_str())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n---\n\n");
-        cap_text(&joined, CAP_CHARS).text
-    };
-    obj.insert("text".into(), Value::String(combined_text));
-    if first.truncated {
-        obj.insert("truncated".into(), Value::Bool(true));
-        obj.insert("cut_chars".into(), Value::from(first.cut_chars as u64));
-        if let Some(how) = &first.cut_at {
-            obj.insert("cut_at".into(), Value::String(how.clone()));
-        }
-    }
-    Some(Value::Object(obj))
+    let items: Vec<Value> = blocks
+        .iter()
+        .filter_map(|block| {
+            if block.text.trim().is_empty() {
+                return None;
+            }
+            let mut obj = Map::new();
+            if let Some(from) = &block.from {
+                obj.insert("from".into(), Value::String(from.clone()));
+            }
+            if let Some(date) = &block.date {
+                obj.insert("date".into(), Value::String(date.clone()));
+            }
+            if let Some(subject) = &block.subject {
+                obj.insert("subject".into(), Value::String(subject.clone()));
+            }
+            obj.insert("text".into(), Value::String(block.text.clone()));
+            if block.truncated {
+                obj.insert("truncated".into(), Value::Bool(true));
+                obj.insert("cut_chars".into(), Value::from(block.cut_chars as u64));
+                if let Some(how) = &block.cut_at {
+                    obj.insert("cut_at".into(), Value::String(how.clone()));
+                }
+            }
+            Some(Value::Object(obj))
+        })
+        .collect();
+    (!items.is_empty()).then_some(Value::Array(items))
 }
 
 fn build_turn_row(ex: &PreparedExchange, seg_start: Timestamp, provider: &str) -> Value {
@@ -1393,7 +1410,7 @@ fn build_turn_row(ex: &PreparedExchange, seg_start: Timestamp, provider: &str) -
             serde_json::to_value(&uncertain_spans).unwrap_or(Value::Null),
         );
     }
-    if let Some(fwd) = merge_forwarded(&ex.owner_ex.forwarded) {
+    if let Some(fwd) = serialize_forwarded(&ex.owner_ex.forwarded) {
         row.insert("forwarded".into(), fwd);
     }
     if let Some(reply) = &ex.reply_to {
