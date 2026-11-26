@@ -516,14 +516,26 @@ pub(crate) fn apply_result_cancellable(
             continue;
         };
         let prior_eid = entry_entity_id(prior);
-        let Some(existing) = resolved.iter_mut().find(|row| {
-            (prior_eid.is_some() && entry_entity_id(row) == prior_eid)
-                || row
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .is_some_and(|name| same_correspondent(prior_name, name))
-        }) else {
-            resolved.push(prior.clone());
+        // Two rows the journal resolved to different people are two people,
+        // however alike their names.
+        let Some(existing) =
+            resolved
+                .iter_mut()
+                .find(|row| match (prior_eid, entry_entity_id(row)) {
+                    (Some(prior_eid), Some(row_eid)) => prior_eid == row_eid,
+                    _ => row
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| same_correspondent(prior_name, name)),
+                })
+        else {
+            let mut kept = prior.clone();
+            // A person the owner has since hidden stays unlinked, as in any
+            // row the talent gives.
+            if prior_eid.is_some_and(|id| hidden_ids.contains(id)) {
+                kept.insert("entity_id".to_owned(), Value::Null);
+            }
+            resolved.push(kept);
             continue;
         };
         // One row for the person, under the name the talent gave, still
@@ -1833,6 +1845,13 @@ fn cleaned_words(text: &str) -> Vec<String> {
 }
 
 fn roster_name_matches(roster_name: &str, candidate: &str) -> bool {
+    same_person_as_written(roster_name, candidate)
+        || crate::possible_names::retrieval::near_spelling(roster_name, candidate)
+}
+
+/// Whether two names are one person's by their words alone: the same name, a
+/// first name standing for the full one, or the last name cut to an initial.
+fn same_person_as_written(roster_name: &str, candidate: &str) -> bool {
     if same_name(roster_name, candidate) {
         return true;
     }
@@ -1860,7 +1879,7 @@ fn roster_name_matches(roster_name: &str, candidate: &str) -> bool {
             return true;
         }
     }
-    crate::possible_names::retrieval::near_spelling(roster_name, candidate)
+    false
 }
 
 /// What the history fill-in writes as the context of a correspondent it read
@@ -1889,12 +1908,21 @@ fn read_from_exchange(row: &Map<String, Value>) -> bool {
 /// Whether a correspondent an exchange names and a name the talent gave are
 /// one person: the same name however it is written, or the short and long
 /// form of one first name before the same last name.
-fn same_correspondent(exchange_name: &str, given_name: &str) -> bool {
-    if roster_name_matches(exchange_name, given_name) {
+///
+/// A short form is a first name cut by three letters or more (Chris for
+/// Christopher, Sam for Samuel). A name one or two letters longer is far more
+/// often another name (Dan and Dana, Paul and Paula) than a longer form, and
+/// for the same reason a near spelling is no match here: both names were
+/// read from text, not heard.
+pub fn same_correspondent(exchange_name: &str, given_name: &str) -> bool {
+    if same_person_as_written(exchange_name, given_name) {
         return true;
     }
     let (left, right) = (cleaned_words(exchange_name), cleaned_words(given_name));
-    let short_for = |short: &str, long: &str| short.chars().count() >= 3 && long.starts_with(short);
+    let short_for = |short: &str, long: &str| {
+        let cut = long.chars().count().saturating_sub(short.chars().count());
+        short.chars().count() >= 3 && cut >= 3 && long.starts_with(short)
+    };
     left.len() >= 2
         && right.len() >= 2
         && left.last() == right.last()
@@ -5344,10 +5372,45 @@ mod tests {
         );
         // The same person under a shorter name is one row, under the name the
         // talent gave, and it is still the exchange's reading the next time.
-        let once = run(json!([read]), json!([mentioned("Chris Adams")]));
+        let once = run(json!([read.clone()]), json!([mentioned("Chris Adams")]));
         assert_eq!(once, [pair("Chris Adams", "corresponded")]);
         let text = fs::read_to_string(&activity_path).unwrap();
         let row: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
         assert_eq!(run(row["participation"].clone(), json!([])), once);
+        // A name a letter longer is someone else: each keeps their own row.
+        let dan = corresponded("Dan Smith", EXCHANGE_SENDER_CONTEXT);
+        assert_eq!(
+            run(json!([dan]), json!([mentioned("Dana Smith")])),
+            [
+                pair("Dan Smith", "corresponded"),
+                pair("Dana Smith", "mentioned")
+            ]
+        );
+        // So are two rows the journal resolved to different people, even
+        // under one name.
+        let mut another = corresponded("Ada Lovelace", EXCHANGE_RECIPIENT_CONTEXT);
+        another["entity_id"] = json!("another_ada");
+        assert_eq!(
+            run(json!([another]), json!([mentioned("Ada Lovelace")])).len(),
+            2
+        );
+        // And two rows resolved to one person are one row, however the
+        // exchange wrote the name.
+        let mut initialed = corresponded("A. Lovelace", EXCHANGE_RECIPIENT_CONTEXT);
+        initialed["entity_id"] = json!("person");
+        assert_eq!(
+            run(json!([initialed]), json!([mentioned("Ada Lovelace")])),
+            [pair("Ada Lovelace", "corresponded")]
+        );
+    }
+
+    #[test]
+    fn a_short_form_is_a_first_name_cut_by_three_letters_or_more() {
+        assert!(same_correspondent("Christopher Adams", "Chris Adams"));
+        assert!(same_correspondent("Sam Reyes", "Samuel Reyes"));
+        assert!(same_correspondent("Christopher Adams", "Christopher"));
+        assert!(!same_correspondent("Dan Smith", "Dana Smith"));
+        assert!(!same_correspondent("Paula Jones", "Paul Jones"));
+        assert!(!same_correspondent("Chris Adams", "Chris Baker"));
     }
 }
