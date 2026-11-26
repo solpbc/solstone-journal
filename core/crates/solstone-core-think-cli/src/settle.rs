@@ -559,6 +559,18 @@ fn settle_day(
     // A finished day is over and nothing of it has arrived or been thought
     // within the window, so a segment still being thought is never left out.
     let finished = day < today && (at_once() || now - latest >= SETTLE_WINDOW_MS);
+    // A day before the last closed week keeps the activities it has: what is
+    // settled there is only ever added to, never grown, folded or thought again.
+    let kept_as_written = day
+        < local_day(
+            &context.journal,
+            now - solstone_core_system::daily_coverage::CONTRACT_REOWE_CLOSED_DAYS
+                * 24
+                * 60
+                * 60
+                * 1000,
+        )
+        .as_str();
     let close_tail = finished
         || now - latest >= QUIET_CLOSE_MS
         || (idle && (at_once() || now - latest >= SETTLE_WINDOW_MS));
@@ -663,6 +675,11 @@ fn settle_day(
         let has_subset_to_fold = held
             .iter()
             .any(|row| is_absorbable_subset(row, id, stream, &record_segments));
+        if kept_as_written && !record_segments.is_disjoint(&written) {
+            entry.refused = true;
+            keep.insert(key);
+            continue;
+        }
         if record_segments.is_subset(&written) && !has_subset_to_fold {
             // Written already. If its segments were thought again since, its
             // talents run again when what they read has changed.

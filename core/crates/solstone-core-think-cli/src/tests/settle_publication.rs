@@ -757,3 +757,60 @@ fn grow_preserves_owner_held_description_and_never_retires_other_streams() {
         ])
     );
 }
+
+/// The fold fixture: two segments settle as one activity, then a segment that
+/// starts earlier arrives `late_by` after the day and the stream is checked.
+/// Returns the day file's bytes before and after, and the talent requests
+/// made by the late check.
+fn late_earlier_segment(late_by: i64) -> (Bed, Vec<u8>, Vec<u8>, usize) {
+    let bed = bed();
+    let idle = serde_json::json!({"density":"idle","content_type":"idle","facets":[]});
+    bed.deliver(DAY, "090500_300", &work_with("Reviewed PR."), at(9, 11));
+    bed.deliver(DAY, "091000_300", &work_with("Merged PR."), at(9, 16));
+    bed.deliver(DAY, "091500_300", &idle, at(9, 21));
+    bed.settle(at(9, 28));
+    let file = bed
+        .journal
+        .join(format!("facets/work/activities/{DAY}.jsonl"));
+    let before = fs::read(&file).unwrap();
+    let requests = bed.talent_requests();
+    bed.deliver(
+        DAY,
+        "090000_300",
+        &work_with("Opened PR."),
+        at(11, 0) + late_by,
+    );
+    bed.settle(at(11, 10) + late_by);
+    let after = fs::read(&file).unwrap();
+    let made = bed.talent_requests() - requests;
+    (bed, before, after, made)
+}
+
+#[test]
+fn an_older_days_settled_activities_are_never_grown_folded_or_thought_again() {
+    const DAYS: i64 = 24 * 60 * MINUTE;
+    // Inside the last closed week the late segment still widens the activity.
+    let (bed, before, after, _) = late_earlier_segment(3 * DAYS);
+    assert_ne!(before, after);
+    assert_eq!(
+        bed.records(DAY),
+        [(
+            "work_090000_300".to_owned(),
+            keys(&["090000_300", "090500_300", "091000_300"])
+        )]
+    );
+
+    // Past it, the day's file stays exactly as written and no talent runs.
+    let (bed, before, after, made) = late_earlier_segment(10 * DAYS);
+    assert_eq!(before, after);
+    assert_eq!(made, 0);
+    assert_eq!(
+        bed.records(DAY),
+        [(
+            "work_090500_300".to_owned(),
+            keys(&["090500_300", "091000_300"])
+        )]
+    );
+    // Nothing is left to check there: the day is not looked at again.
+    assert!(!crate::settle::holds_day(&bed.journal, DAY));
+}
