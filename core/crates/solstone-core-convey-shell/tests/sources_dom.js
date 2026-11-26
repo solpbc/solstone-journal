@@ -479,6 +479,9 @@ test('try again replaces the error with the device it gets back', async () => {
       if (url === '/app/settings/api/garmin') {
         return { status: 200, json: async () => ({ available: true, connected: false, syncing: false }) };
       }
+      if (url === '/app/sources/api/email') {
+        return { status: 200, json: async () => ({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }) };
+      }
       clientAttempts += 1;
       if (clientAttempts === 1) return { status: 503, json: async () => ({ reason_code: 'authorization_ledger_unreadable' }) };
       return { status: 200, json: async () => ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]).body };
@@ -494,6 +497,7 @@ test('try again replaces the error with the device it gets back', async () => {
     '/app/settings/api/plaud',
     '/app/settings/api/granola',
     '/app/settings/api/garmin',
+    '/app/sources/api/email',
     '/app/network/api/clients',
   ]);
   assert.ok(calls.every((call) => call.method === 'GET'));
@@ -558,7 +562,10 @@ test('syncs renders unconfigured hint alongside paired, empty, and failed device
     assert.strictEqual(manageLink.getAttribute('href'), '/app/settings/#sync');
     assert.strictEqual(manageLink.textContent, manage);
     assert.strictEqual(syncs.querySelector('.sources-syncs-empty').textContent, emptyHint);
-    assert.strictEqual(syncs.querySelectorAll('.sources-sync-row').length, 0);
+    const rows = syncs.querySelectorAll('.sources-sync-row');
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].getAttribute('data-sync'), 'email');
+    assert.strictEqual(rows[0].querySelector('.ss-pill').textContent, 'ready to set up');
   });
 });
 
@@ -590,7 +597,7 @@ test('connected Plaud and Granola rows cover last_added, nothing added yet, sync
     },
   });
   assert.strictEqual(root.querySelector('.sources-syncs-empty'), null);
-  const rows = root.querySelectorAll('.sources-sync-row');
+  const rows = root.querySelectorAll('.sources-sync-row').filter((r) => r.getAttribute('data-sync') !== 'email');
   assert.strictEqual(rows.length, 2);
   assert.strictEqual(rows[0].getAttribute('data-sync'), 'plaud');
   assert.strictEqual(
@@ -623,7 +630,7 @@ test('connected Plaud and Granola rows cover last_added, nothing added yet, sync
       body: { connected: true, syncing: false, last_added: null, last_sync: null },
     },
   });
-  const rows2 = checkedAndIdle.querySelectorAll('.sources-sync-row');
+  const rows2 = checkedAndIdle.querySelectorAll('.sources-sync-row').filter((r) => r.getAttribute('data-sync') !== 'email');
   assert.strictEqual(
     rows2[0].querySelector('.sources-sync-secondary').textContent,
     globalThis.JournalI18n.render('journal.window.sources.syncs.last.checked', [['when', '3 min ago']]),
@@ -658,7 +665,7 @@ test('sync attention maps Granola attention_code via catalog, falls back on unkn
       },
     },
   });
-  const rows = mapped.querySelectorAll('.sources-sync-row');
+  const rows = mapped.querySelectorAll('.sources-sync-row').filter((r) => r.getAttribute('data-sync') !== 'email');
   const plaudAtt = rows[0].querySelector('.sources-sync-attention');
   assert.strictEqual(plaudAtt.getAttribute('href'), '/app/settings/#sync');
   assert.strictEqual(plaudAtt.textContent, 'server localized plaud message');
@@ -681,7 +688,7 @@ test('sync attention maps Granola attention_code via catalog, falls back on unkn
       },
     },
   });
-  const oneRow = fallback.querySelectorAll('.sources-sync-row');
+  const oneRow = fallback.querySelectorAll('.sources-sync-row').filter((r) => r.getAttribute('data-sync') !== 'email');
   assert.strictEqual(oneRow.length, 1);
   assert.strictEqual(oneRow[0].querySelector('.sources-sync-attention').textContent, 'legacy granola fault text');
 });
@@ -714,6 +721,12 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
           json: async () => ({ available: true, connected: false, syncing: false }),
         };
       }
+      if (url === '/app/sources/api/email') {
+        return {
+          status: 200,
+          json: async () => ({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }),
+        };
+      }
       granolaAttempts += 1;
       if (granolaAttempts === 1) return { status: 400, json: async () => ({ error: 'storage', code: 'storage' }) };
       return {
@@ -737,12 +750,12 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
     globalThis.JournalI18n.render('journal.window.sources.syncs.unavailable'),
   );
 
-  // Clicking retry refetches clients + failed Granola, skipping healthy Plaud.
+  // Clicking retry refetches clients + failed Granola, skipping healthy Plaud/Garmin/Email.
   await root.querySelector('[data-retry]').click();
   assert.strictEqual(root.querySelector('[data-retry]'), null);
   assert.strictEqual(deviceBox(root, 'studio').querySelector('.sources-device-time').textContent, '4 min ago');
   assert.strictEqual(root.querySelectorAll('.sources-sync-unavailable').length, 0);
-  const connectedRow = root.querySelector('.sources-sync-row');
+  const connectedRow = root.querySelector('[data-sync="granola"]');
   assert.strictEqual(connectedRow.getAttribute('data-sync'), 'granola');
   assert.strictEqual(
     connectedRow.querySelector('.sources-sync-status').textContent,
@@ -753,6 +766,7 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
     '/app/settings/api/plaud',
     '/app/settings/api/granola',
     '/app/settings/api/garmin',
+    '/app/sources/api/email',
     '/app/network/api/clients',
     '/app/settings/api/granola',
   ]);
@@ -829,11 +843,135 @@ test('Garmin sync row renders on desktop, isolates failures, shows attention/exp
     granola: { status: 200, body: { connected: false, syncing: false } },
     garmin: { status: 503, body: null },
   });
-  const rows = failedGarmin.querySelectorAll('.sources-sync-row');
+  const rows = failedGarmin.querySelectorAll('.sources-sync-row').filter((r) => r.getAttribute('data-sync') !== 'email');
   assert.strictEqual(rows.length, 2);
   assert.strictEqual(rows[0].getAttribute('data-sync'), 'plaud');
   assert.strictEqual(rows[1].getAttribute('data-sync'), 'garmin');
   assert.notStrictEqual(rows[1].querySelector('.sources-sync-unavailable-garmin'), null);
+});
+
+test('email selective-sync row covers all 8 states, inline left-out counts-only fold, and isolated API failure', () => {
+  // 1. ready_to_set_up
+  const ready = render({
+    clients: ok([]),
+    email: { status: 200, body: { source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false } },
+  });
+  const readyRow = ready.querySelector('[data-sync="email"]');
+  assert.strictEqual(readyRow.querySelector('.ss-pill').textContent, 'ready to set up');
+  assert.ok(readyRow.textContent.includes('connect a mailbox to bring in messages you sent.'));
+  assert.strictEqual(readyRow.querySelector('.sources-sync-action-email').getAttribute('href'), '/app/sources/email');
+
+  // 2. scanning
+  const scanning = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: {
+        source: 'email', state: 'setting_up', phase: 'scanning', account: 'maya.chen@gmail.com',
+        connected: true, syncing: true,
+        scan: { complete: false, paused: false, checked: 142800, total: 287063, bodies_read: 0 },
+      },
+    },
+  });
+  const scanRow = scanning.querySelector('[data-sync="email"]');
+  assert.strictEqual(scanRow.querySelector('.ss-pill').textContent, 'setting up');
+  assert.ok(scanRow.textContent.includes('142,800 of 287,063 messages. no message bodies read yet.'));
+  assert.strictEqual(scanRow.querySelector('.sources-sync-action-email').textContent, 'open email');
+
+  // 3. awaiting_choice
+  const awaiting = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: {
+        source: 'email', state: 'setting_up', phase: 'awaiting_choice', account: 'maya.chen@gmail.com',
+        connected: true, syncing: false, scan: { complete: true, eligible_sent: 16410 },
+      },
+    },
+  });
+  const awaitRow = awaiting.querySelector('[data-sync="email"]');
+  assert.ok(awaitRow.textContent.includes('scan done. 16,410 sent messages ready to choose.'));
+  assert.strictEqual(awaitRow.querySelector('.sources-sync-action-email').textContent, 'choose what comes in');
+
+  // 4. fetching (with status link)
+  const fetching = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: {
+        source: 'email', state: 'on', phase: 'fetching', account: 'maya.chen@gmail.com',
+        connected: true, syncing: true, sync: { active: true, done: 612, total: 1740 },
+      },
+    },
+  });
+  const fetchRow = fetching.querySelector('[data-sync="email"]');
+  assert.strictEqual(fetchRow.querySelector('.ss-pill').textContent, 'on');
+  assert.ok(fetchRow.textContent.includes('bringing in 612 of 1,740 messages'));
+  assert.strictEqual(fetchRow.querySelector('.ss-inline-link').getAttribute('href'), '/app/health/');
+
+  // 5. steady on with inline left-out counts-only fold
+  const steady = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: {
+        source: 'email', state: 'on', phase: 'steady', account: 'maya.chen@gmail.com',
+        connected: true, syncing: false,
+        sync: { active: false, done: 1740, total: 1740, last_added_at: iso(NOW - 14 * MIN), last_checked_at: iso(NOW - 6 * MIN) },
+        accounting: {
+          sent_total: 16443, in_journal: 1740, removed_by_owner: 0, outside_choice: 14670,
+          left_out: { total: 33, calendar_responses: 24, automatic_replies: 5, drafts: 3, delivery_reports: 1 },
+        },
+      },
+    },
+  });
+  const steadyRow = steady.querySelector('[data-sync="email"]');
+  assert.ok(steadyRow.textContent.includes('1,740 in your journal · last added 14 min ago · last checked 6 min ago'));
+  const fold = steadyRow.querySelector('details');
+  assert.notStrictEqual(fold, null);
+  assert.strictEqual(fold.querySelector('summary').textContent, '33 left out');
+  assert.ok(fold.textContent.includes('calendar responses'));
+  assert.ok(fold.textContent.includes('no message content is kept for mail left out.'));
+  assert.strictEqual(steadyRow.querySelector('.sources-sync-action-email').textContent, 'manage email');
+
+  // 6 & 7. needs_attention split: password_rejected vs all_mail_hidden
+  const pwAttn = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: { source: 'email', state: 'needs_attention', phase: 'needs_attention', account: 'maya.chen@gmail.com', attention_reason: 'password_rejected', connected: true, syncing: false },
+    },
+  });
+  assert.ok(pwAttn.querySelector('[data-sync="email"]').textContent.includes('Gmail stopped accepting this app password. nothing new is coming in.'));
+  assert.strictEqual(pwAttn.querySelector('.sources-sync-action-email').textContent, 'fix in email');
+
+  const imapAttn = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: { source: 'email', state: 'needs_attention', phase: 'needs_attention', account: 'maya.chen@gmail.com', attention_reason: 'all_mail_hidden', connected: true, syncing: false },
+    },
+  });
+  assert.ok(imapAttn.querySelector('[data-sync="email"]').textContent.includes("Gmail isn't letting your journal read All Mail over IMAP. nothing new is coming in."));
+
+  // 8. disconnected (off) & isolated API failure
+  const off = render({
+    clients: ok([]),
+    email: {
+      status: 200,
+      body: { source: 'email', state: 'off', phase: 'disconnected', account: 'maya.chen@gmail.com', connected: false, syncing: false, accounting: { in_journal: 1740 } },
+    },
+  });
+  const offRow = off.querySelector('[data-sync="email"]');
+  assert.strictEqual(offRow.querySelector('.ss-pill').textContent, 'off');
+  assert.ok(offRow.textContent.includes('disconnected. 1,740 messages already in your journal stay.'));
+  assert.strictEqual(offRow.querySelector('.sources-sync-action-email').textContent, 'reconnect email');
+
+  const broken = render({
+    clients: ok([]),
+    email: { status: 503, body: null },
+  });
+  assert.notStrictEqual(broken.querySelector('.sources-sync-unavailable-email'), null);
 });
 
 (async () => {
@@ -843,6 +981,7 @@ test('Garmin sync row renders on desktop, isolates failures, shows attention/exp
     passed += 1;
   }
   passed += await require(path.join(__dirname, 'sources_contract_dom.js'))(path.join(__dirname, '..'));
+  passed += await require(path.join(__dirname, 'email_source_dom.js'))(path.join(__dirname, '..'));
   console.log('DOM CASES: ' + passed + ' passed');
 })().catch((error) => {
   console.error(error);

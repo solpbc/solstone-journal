@@ -1,0 +1,16 @@
+{
+  "description": "Facts row label for the current range and message types.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "388006be34e1b10e5592e78fead9baca93150f964dc634e501bc146972ab7b70",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

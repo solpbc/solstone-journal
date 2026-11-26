@@ -1,0 +1,16 @@
+{
+  "description": "Heading on /app/sources/email while the header-only scan is running.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e6b269d10fcf935a3d8b44e59d64e673798113cb11dfe9ea35b94157d661016",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

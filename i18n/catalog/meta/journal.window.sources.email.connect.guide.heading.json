@@ -1,0 +1,16 @@
+{
+  "description": "Heading above the 3-step guide to create a Google app password.",
+  "context": "Journal window, /app/sources/email connect screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6e516a5d99626df3aaca4026aedcfb08db3014d0bea04e4a11929cc52d770e5d",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

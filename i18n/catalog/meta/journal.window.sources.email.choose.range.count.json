@@ -1,0 +1,30 @@
+{
+  "description": "Message count beside each range radio option.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c7d2302aa7b60498fe8b3305cb50b5eea4c9c3c5333137f76b20432af9cefba4",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

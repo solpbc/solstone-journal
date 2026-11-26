@@ -1,0 +1,16 @@
+{
+  "description": "Confirmation modal body for disconnecting Gmail.",
+  "context": "Journal window, /app/sources/email disconnect modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6c7a0eb85070b21430f1942468c727936d135b0d6e97ed084ab19c9ae166ce7a",
+  "max_length": 218,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line on /app/sources/ when email is disconnected and no messages were brought in.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c1bb53ee056adb6d5c8b0430d06f9c9597d93728afdf5c5ec5e2ecd94f4f4116",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

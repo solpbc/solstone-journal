@@ -1,0 +1,16 @@
+{
+  "description": "Checkbox label for newly started sent messages.",
+  "context": "Journal window, /app/sources/email message-type chooser and steady facts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "047371a92ebf235771834073179f61e77540dceb528bace9d9563a5aad5ff48f",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

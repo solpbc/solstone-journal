@@ -1,0 +1,16 @@
+{
+  "description": "Description for the forwards checkbox.",
+  "context": "Journal window, /app/sources/email message-type chooser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd1eb090c6fc17928d56ac1bd8c6eb15bb9010e09e79c3b9e348fd28abbf7973",
+  "max_length": 182,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

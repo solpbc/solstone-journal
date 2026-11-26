@@ -1,0 +1,16 @@
+{
+  "description": "Link to /app/health/ on the email fetching screen.",
+  "context": "Journal window, /app/sources/email fetching screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a652d03f37f220fc5dcc4ee480c59e3bb0b68a656c6971645a93fffea9eeac3",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

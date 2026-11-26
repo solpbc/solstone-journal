@@ -1,0 +1,16 @@
+{
+  "description": "Action link on the steady email row in /app/sources/.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "269f70b20aaeb6560cd62e0554e48e53d13e9253296df85e076b6052005c37e5",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

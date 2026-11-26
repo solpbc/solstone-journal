@@ -1,0 +1,16 @@
+{
+  "description": "Inline error and needs-attention notice when Gmail All Mail is hidden or IMAP is off.",
+  "context": "Journal window, /app/sources/email connect and needs-attention screens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9f30eb44223f1b6c1e6f49da3e0ec4f8411346c46249fcc5059ceed09961584b",
+  "max_length": 296,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

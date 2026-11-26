@@ -1,0 +1,16 @@
+{
+  "description": "Checkbox label for forwarded sent messages.",
+  "context": "Journal window, /app/sources/email message-type chooser and steady facts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e46a243553fe9ceaade18826831ec5338b23f202c92161c0278791385231a956",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

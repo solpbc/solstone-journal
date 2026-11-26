@@ -1,0 +1,16 @@
+{
+  "description": "Collapsed troubleshooting summary for owners who do not see App passwords in Google.",
+  "context": "Journal window, /app/sources/email connect guide.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6051088a40a6b565bdff959b8a9bc916f1e00bcf9677debe34cd2622a8e71fce",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

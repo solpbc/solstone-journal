@@ -20,7 +20,8 @@ const CLIENTS = '/app/network/api/clients';
 const PLAUD = '/app/settings/api/plaud';
 const GRANOLA = '/app/settings/api/granola';
 const GARMIN = '/app/settings/api/garmin';
-const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN];
+const EMAIL = '/app/sources/api/email';
+const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN, EMAIL];
 
 let cases = 0;
 async function test(name, fn) {
@@ -264,6 +265,7 @@ function makePage(env, { wide = true, withApi = false } = {}) {
   if (withApi) vm.runInContext(fs.readFileSync(path.join(shell, 'api.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'store.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(shell, 'views.js'), 'utf8'), context);
+  vm.runInContext(env.frameScript, context, { filename: 'selective_sync_frame.js' });
 
   const page = {
     window, doc, media, calls, errors, timers, main: shellMain,
@@ -280,6 +282,9 @@ function makePage(env, { wide = true, withApi = false } = {}) {
     loadScript() {
       vm.runInContext(env.script, context, { filename: 'sources.js' });
     },
+    loadEmailScript() {
+      vm.runInContext(env.emailScript, context, { filename: 'email_source.js' });
+    },
     async mount() {
       page.ready = [];
       page.view = await window.SolViews.mount('sources', { reportReady: (s) => page.ready.push(s) });
@@ -289,10 +294,16 @@ function makePage(env, { wide = true, withApi = false } = {}) {
     root: () => doc.getElementById('sources-root'),
     reads: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET'),
     readsOf: (url) => calls.filter((c) => c.url === url && c.method === 'GET'),
-    answerSyncs({ plaud = [200, { connected: false, syncing: false }], granola = [200, { connected: false, syncing: false }], garmin = [200, { available: true, connected: false, syncing: false }] } = {}) {
+    answerSyncs({
+      plaud = [200, { connected: false, syncing: false }],
+      granola = [200, { connected: false, syncing: false }],
+      garmin = [200, { available: true, connected: false, syncing: false }],
+      email = [200, { source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }],
+    } = {}) {
       calls.filter((c) => c.url === PLAUD && !c.settled).forEach((c) => c.answer(plaud[0], plaud[1]));
       calls.filter((c) => c.url === GRANOLA && !c.settled).forEach((c) => c.answer(granola[0], granola[1]));
       calls.filter((c) => c.url === GARMIN && !c.settled).forEach((c) => c.answer(garmin[0], garmin[1]));
+      calls.filter((c) => c.url === EMAIL && !c.settled).forEach((c) => c.answer(email[0], email[1]));
     },
     last: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET').slice(-1)[0],
     leave() {
@@ -335,12 +346,15 @@ function focusIsSomewhere(p, label) {
 // Run from sources_dom.js: answers with the number of cases.
 module.exports = async function sourcesContractCases(manifestDir) {
   const workspace = fs.readFileSync(path.join(manifestDir, 'assets/sources/workspace.html'), 'utf8');
+  const frameScript = fs.readFileSync(path.join(manifestDir, 'assets/sources/selective_sync_frame.js'), 'utf8');
+  const emailScript = fs.readFileSync(path.join(manifestDir, 'assets/sources/email_source.js'), 'utf8');
   const script = fs.readFileSync(path.join(manifestDir, 'assets/sources/sources.js'), 'utf8');
-  const env = { manifestDir, script, workspace };
+  const env = { manifestDir, frameScript, emailScript, script, workspace };
 
   await test('the fragment declares the contract and its first reads', async () => {
     assert.ok(workspace.includes('<!-- view-contract -->'), 'the view-contract marker');
     assert.ok(workspace.includes(`<!-- first-read: /app/sources/ -> ${FIRST_READS.join(' ')} -->`), 'the first reads');
+    assert.ok(workspace.includes(`<!-- first-read: /app/sources/email -> ${EMAIL} -->`), 'the email detail first read');
   });
 
   await test('the script only registers: nothing reads, draws, listens or times at load', async () => {
@@ -363,6 +377,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
     assert.strictEqual(p.readsOf(PLAUD).length, 1, 'one plaud read');
     assert.strictEqual(p.readsOf(GRANOLA).length, 1, 'one granola read');
     assert.strictEqual(p.readsOf(GARMIN).length, 1, 'one garmin read');
+    assert.strictEqual(p.readsOf(EMAIL).length, 1, 'one email read');
     assert.ok(p.reads()[0].url === CLIENTS, 'of the clients, by its absolute address');
     assert.ok(p.media.query === '(max-width: 700px)', 'the layout query');
     assert.strictEqual(p.media.listenerCount(), 1, 'one media listener');
@@ -438,7 +453,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('leaving while the reads are out aborts them, and their late answers draw nothing', async () => {
     const p = await boot(env);
     const allCalls = [...p.calls];
-    assert.strictEqual(allCalls.length, 4, 'four reads in flight');
+    assert.strictEqual(allCalls.length, 5, 'five reads in flight');
     const root = p.root();
     p.leave();
     await settle();
@@ -508,13 +523,14 @@ module.exports = async function sourcesContractCases(manifestDir) {
         [ORIGIN + PLAUD]: mkEarly({ connected: false, syncing: false }),
         [ORIGIN + GRANOLA]: mkEarly({ connected: false, syncing: false }),
         [ORIGIN + GARMIN]: mkEarly({ available: true, connected: false, syncing: false }),
+        [ORIGIN + EMAIL]: mkEarly({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }),
       },
     };
     p.loadScript();
     p.place();
     await p.mount();
-    assert.strictEqual(p.calls.length, 0, 'the first load takes all four early reads and asks nothing');
-    assert.strictEqual(p.window.__solEarly.stats.adopted, 4, 'adopted all four');
+    assert.strictEqual(p.calls.length, 0, 'the first load takes all five early reads and asks nothing');
+    assert.strictEqual(p.window.__solEarly.stats.adopted, 5, 'adopted all five');
     assert.deepStrictEqual(Object.keys(p.window.__solEarly.reads), [], 'all early reads are taken');
     assert.deepStrictEqual(p.ready, ['error'], 'it drew the unreadable device as the error state');
     p.root().querySelector('.sources-retry').click();
@@ -597,6 +613,42 @@ module.exports = async function sourcesContractCases(manifestDir) {
     p.media.matches = true;
     p.media.fire({ type: 'change' });
     assert.ok(p.doc.activeElement === outside, `focus stays outside (it is on ${tagOf(p.doc.activeElement)})`);
+  });
+
+  await test('/app/sources/email mounts through the shared selective-sync frame and disposes cleanly', async () => {
+    const p = makePage(env);
+    p.window.location.href = ORIGIN + '/app/sources/email';
+    p.window.location.pathname = '/app/sources/email';
+    p.place();
+    const keys = p.windowKeys();
+    p.loadEmailScript();
+    p.loadScript();
+    assert.deepStrictEqual(p.windowKeys(), keys, 'no global added when loading email detail + sources');
+    await p.mount();
+    assert.strictEqual(p.readsOf(EMAIL).length, 1, 'one email status read');
+    assert.strictEqual(p.reads().length, 0, 'does not read clients on detail route');
+    p.readsOf(EMAIL)[0].answer(200, {
+      source: 'email',
+      state: 'setting_up',
+      phase: 'scanning',
+      provider: 'gmail',
+      account: 'maya.chen@gmail.com',
+      connected: true,
+      syncing: true,
+      scan: { complete: false, paused: false, checked: 100, total: 500, sent_found: 12, eligible_sent: 12, earliest_month: 'march 2020', bodies_read: 0 },
+      sync: { active: false, done: 0, total: 0 },
+      accounting: { sent_total: 12, in_journal: 0, removed_by_owner: 0, outside_choice: 12, left_out: { total: 0, calendar_responses: 0, automatic_replies: 0, drafts: 0, delivery_reports: 0 } },
+      runs: [],
+    });
+    await settle();
+    assert.deepStrictEqual(p.ready, ['content'], 'email detail reports content');
+    assert.strictEqual(p.timers.size, 1, 'polling timer scheduled while scanning');
+    const view = p.view;
+    p.leave();
+    await settle();
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(view.ctx.held())), { listeners: 0, timeouts: 0, intervals: 0, observers: 0, undo: 0, bodyClasses: 0, reads: 0 });
+    assert.strictEqual(p.timers.size, 0, 'polling timer cleared on dispose');
+    assert.deepStrictEqual(p.windowKeys(), keys, 'no global left after dispose');
   });
 
   return cases;

@@ -1,0 +1,16 @@
+{
+  "description": "Inline note shown when the owner unticks a previously enabled message type.",
+  "context": "Journal window, /app/sources/email widen-choice mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6b4082fc1d1b66943c968475b60d4415b432526e7be07fbf0c41b97763a6081e",
+  "max_length": 226,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

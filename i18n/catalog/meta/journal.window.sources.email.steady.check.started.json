@@ -1,0 +1,16 @@
+{
+  "description": "Status confirmation after pressing 'check now'.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d4ecad6e2c4c70cb86ecb13f7e29f36b51e321b4641b4cef921a998a5c06388",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

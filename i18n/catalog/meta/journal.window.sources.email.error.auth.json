@@ -1,0 +1,16 @@
+{
+  "description": "Inline error when Gmail rejects the email and app password.",
+  "context": "Journal window, /app/sources/email connect and password forms.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d2778beaf6c6864d482cfc1de949742e7b025f8af3867496ca0ba4c9b8626b79",
+  "max_length": 273,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

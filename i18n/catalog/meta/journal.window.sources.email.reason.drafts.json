@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for unsent draft messages.",
+  "context": "Journal window, email left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fdc72e0fc1e0c90bd4e1eae00ae82929c5659e3e8e75b15d5cceb7b724d144a1",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

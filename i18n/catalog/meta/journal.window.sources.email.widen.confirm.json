@@ -1,0 +1,30 @@
+{
+  "description": "Primary button label when widening adds older messages.",
+  "context": "Journal window, /app/sources/email widen-choice mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "90142b329225259d53f665d36cf1a75df31f57bdee71e4c21644511dc81b8790",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

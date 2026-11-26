@@ -1,0 +1,16 @@
+{
+  "description": "Error notice when GET /app/sources/api/email/choice-preview fails.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe5eab9cd6a17367f66bd0190c3e5c727227136cec6e500fc9dbe4e3be609f44",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

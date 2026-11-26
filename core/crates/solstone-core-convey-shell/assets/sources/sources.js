@@ -9,32 +9,42 @@
 (function (global) {
   'use strict';
 
+  const frame = global.SolSelectiveSync
+    || (typeof require === 'function' ? require('./selective_sync_frame.js') : null);
+
+  function t(key, args) {
+    return global.JournalI18n.render(key, args || []);
+  }
+
   const COPY = {
-    title: global.JournalI18n.render('journal.window.sources.copy.title.sources'),
-    lede: global.JournalI18n.render('journal.window.sources.switcher.lede'),
-    switcherLabel: global.JournalI18n.render('journal.window.sources.switcher.aria.label'),
-    switcherImports: global.JournalI18n.render('journal.window.sources.switcher.tab.imports'),
-    empty: global.JournalI18n.render('journal.window.sources.copy.empty.no.devices.are.paired.yet'),
-    pair: global.JournalI18n.render('journal.window.sources.copy.pair.pair.a.device'),
-    manage: global.JournalI18n.render('journal.window.sources.copy.manage.manage.devices'),
-    importFiles: global.JournalI18n.render('journal.window.sources.copy.import.import.files.from.other.apps'),
-    nothing: global.JournalI18n.render('journal.window.sources.copy.nothing.nothing.added.yet'),
-    error: global.JournalI18n.render('journal.window.sources.copy.error.this.didn.t.load'),
-    retry: global.JournalI18n.render('journal.window.sources.copy.retry.try.again'),
-    syncsHeading: global.JournalI18n.render('journal.window.sources.syncs.heading'),
-    syncsManage: global.JournalI18n.render('journal.window.sources.syncs.manage'),
-    syncsEmpty: global.JournalI18n.render('journal.window.sources.syncs.empty.hint'),
-    syncsEmptyWithGarmin: global.JournalI18n.render('journal.window.sources.syncs.empty.hint.with.garmin'),
-    plaud: global.JournalI18n.render('journal.window.sources.syncs.provider.plaud'),
-    granola: global.JournalI18n.render('journal.window.sources.syncs.provider.granola'),
-    garmin: global.JournalI18n.render('journal.window.sources.syncs.provider.garmin'),
-    syncSyncing: global.JournalI18n.render('journal.window.sources.syncs.state.syncing'),
-    syncPaused: global.JournalI18n.render('journal.window.sources.syncs.state.paused'),
-    syncUnavailable: global.JournalI18n.render('journal.window.sources.syncs.unavailable'),
-    garminExpiring: global.JournalI18n.render('journal.window.sources.syncs.garmin.expiring'),
+    title: t('journal.window.sources.copy.title.sources'),
+    lede: t('journal.window.sources.switcher.lede'),
+    switcherLabel: t('journal.window.sources.switcher.aria.label'),
+    switcherImports: t('journal.window.sources.switcher.tab.imports'),
+    empty: t('journal.window.sources.copy.empty.no.devices.are.paired.yet'),
+    pair: t('journal.window.sources.copy.pair.pair.a.device'),
+    manage: t('journal.window.sources.copy.manage.manage.devices'),
+    importFiles: t('journal.window.sources.copy.import.import.files.from.other.apps'),
+    nothing: t('journal.window.sources.copy.nothing.nothing.added.yet'),
+    error: t('journal.window.sources.copy.error.this.didn.t.load'),
+    retry: t('journal.window.sources.copy.retry.try.again'),
+    syncsHeading: t('journal.window.sources.syncs.heading'),
+    syncsManage: t('journal.window.sources.syncs.manage'),
+    syncsEmpty: t('journal.window.sources.syncs.empty.hint'),
+    syncsEmptyWithGarmin: t('journal.window.sources.syncs.empty.hint.with.garmin'),
+    plaud: t('journal.window.sources.syncs.provider.plaud'),
+    granola: t('journal.window.sources.syncs.provider.granola'),
+    garmin: t('journal.window.sources.syncs.provider.garmin'),
+    email: t('journal.window.sources.email.title'),
+    syncSyncing: t('journal.window.sources.syncs.state.syncing'),
+    syncPaused: t('journal.window.sources.syncs.state.paused'),
+    syncUnavailable: t('journal.window.sources.syncs.unavailable'),
+    garminExpiring: t('journal.window.sources.syncs.garmin.expiring'),
   };
 
   const SOURCES_HREF = '/app/sources/';
+  const EMAIL_HREF = '/app/sources/email';
+  const HEALTH_HREF = '/app/health/';
   const NETWORK = '/app/network/';
   const IMPORT = '/app/import/';
   const SYNC_SETTINGS = '/app/settings/#sync';
@@ -42,9 +52,20 @@
   const PLAUD = '/app/settings/api/plaud';
   const GRANOLA = '/app/settings/api/granola';
   const GARMIN = '/app/settings/api/garmin';
+  const EMAIL = '/app/sources/api/email';
 
   const DEFAULT_SYNC = { status: 200, body: { connected: false, syncing: false } };
   const DEFAULT_GARMIN_SYNC = { status: 200, body: { available: false, connected: false, syncing: false } };
+  const DEFAULT_EMAIL_SYNC = {
+    status: 200,
+    body: {
+      source: 'email',
+      state: 'ready_to_set_up',
+      phase: 'not_connected',
+      connected: false,
+      syncing: false,
+    },
+  };
 
   const GRANOLA_ATTENTION_KEYS = {
     invalid_key: 'journal.window.settings.granola.response.invalidkey',
@@ -60,17 +81,17 @@
   };
 
   const NAMED = [
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.audio'), keys: ['audio'], carried: 'audio' },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.screen'), keys: ['screen'], carried: 'screen' },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.terminal'), keys: ['terminal', 'tmux'] },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.browsers'), keys: ['browser', 'browsers', 'safari'] },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.obsidian'), keys: ['obsidian'] },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.location'), keys: ['location'], carried: 'location' },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.calendar'), keys: ['calendar'] },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.camera'), keys: ['camera'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.audio'), keys: ['audio'], carried: 'audio' },
+    { label: t('journal.window.sources.source.or.date.unit.label.screen'), keys: ['screen'], carried: 'screen' },
+    { label: t('journal.window.sources.source.or.date.unit.label.terminal'), keys: ['terminal', 'tmux'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.browsers'), keys: ['browser', 'browsers', 'safari'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.obsidian'), keys: ['obsidian'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.location'), keys: ['location'], carried: 'location' },
+    { label: t('journal.window.sources.source.or.date.unit.label.calendar'), keys: ['calendar'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.camera'), keys: ['camera'] },
     // S1 / J4 in the design system's screenshots copy file.
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.screenshots'), keys: ['screenshots'] },
-    { label: global.JournalI18n.render('journal.window.sources.source.or.date.unit.label.watch'), keys: ['watch', 'watch-audio'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.screenshots'), keys: ['screenshots'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.watch'), keys: ['watch', 'watch-audio'] },
   ];
 
   const NOT_ROWS = { '': true, mobile: true, 'mobile-segment': true, share: true };
@@ -79,8 +100,8 @@
   const OWN_CAPTURE = ['', 'mobile', 'mobile-segment'];
 
   const MONTHS = [
-    global.JournalI18n.render('journal.window.sources.months.label.january'), global.JournalI18n.render('journal.window.sources.months.label.february'), global.JournalI18n.render('journal.window.sources.months.label.march'), global.JournalI18n.render('journal.window.sources.months.label.april'), global.JournalI18n.render('journal.window.sources.months.label.may'), global.JournalI18n.render('journal.window.sources.months.label.june'),
-    global.JournalI18n.render('journal.window.sources.months.label.july'), global.JournalI18n.render('journal.window.sources.months.label.august'), global.JournalI18n.render('journal.window.sources.months.label.september'), global.JournalI18n.render('journal.window.sources.months.label.october'), global.JournalI18n.render('journal.window.sources.months.label.november'), global.JournalI18n.render('journal.window.sources.months.label.december'),
+    t('journal.window.sources.months.label.january'), t('journal.window.sources.months.label.february'), t('journal.window.sources.months.label.march'), t('journal.window.sources.months.label.april'), t('journal.window.sources.months.label.may'), t('journal.window.sources.months.label.june'),
+    t('journal.window.sources.months.label.july'), t('journal.window.sources.months.label.august'), t('journal.window.sources.months.label.september'), t('journal.window.sources.months.label.october'), t('journal.window.sources.months.label.november'), t('journal.window.sources.months.label.december'),
   ];
 
   function parseTime(iso) {
@@ -231,12 +252,18 @@
     return typeof entry.body.connected !== 'boolean';
   }
 
+  function emailFailed(entry) {
+    if (!entry || entry.status !== 200) return true;
+    if (!entry.body || typeof entry.body !== 'object') return true;
+    return typeof entry.body.phase !== 'string';
+  }
+
   function syncAttention(id, data) {
     if (!data) return '';
     if (id === 'granola') {
       const code = typeof data.attention_code === 'string' ? data.attention_code.trim() : '';
       if (code && Object.prototype.hasOwnProperty.call(GRANOLA_ATTENTION_KEYS, code)) {
-        return global.JournalI18n.render(GRANOLA_ATTENTION_KEYS[code]);
+        return t(GRANOLA_ATTENTION_KEYS[code]);
       }
     }
     const attention = typeof data.attention === 'string' ? data.attention.trim() : '';
@@ -252,6 +279,7 @@
         plaud: payload.plaud || DEFAULT_SYNC,
         granola: payload.granola || DEFAULT_SYNC,
         garmin: payload.garmin || DEFAULT_GARMIN_SYNC,
+        email: payload.email || DEFAULT_EMAIL_SYNC,
       };
     }
     return {
@@ -259,6 +287,7 @@
       plaud: (payload && payload.plaud) || DEFAULT_SYNC,
       granola: (payload && payload.granola) || DEFAULT_SYNC,
       garmin: (payload && payload.garmin) || DEFAULT_GARMIN_SYNC,
+      email: (payload && payload.email) || DEFAULT_EMAIL_SYNC,
     };
   }
 
@@ -389,7 +418,180 @@
     return band;
   }
 
-  function paintSyncs(doc, plaudEntry, granolaEntry, garminEntry, opts) {
+  function paintEmailRow(doc, emailEntry, opts) {
+    const f = frame || global.SolSelectiveSync;
+    const isFailed = emailFailed(emailEntry);
+    if (isFailed) {
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        state: 'unavailable',
+        unavailable: true,
+        statusText: COPY.syncUnavailable,
+        actionLabel: t('journal.window.sources.email.row.open'),
+        actionHref: EMAIL_HREF,
+      });
+    }
+
+    const data = emailEntry.body;
+    const phase = data.phase || 'not_connected';
+    const state = data.state || 'ready_to_set_up';
+    const account = data.account || '';
+    const scan = data.scan || {};
+    const sync = data.sync || {};
+    const acc = data.accounting || {};
+    const lo = acc.left_out || { total: 0 };
+
+    if (phase === 'not_connected' && state === 'ready_to_set_up') {
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        state: 'ready_to_set_up',
+        statusText: t('journal.window.sources.email.row.ready'),
+        actionLabel: t('journal.window.sources.email.row.connect'),
+        actionHref: EMAIL_HREF,
+      });
+    }
+
+    if (state === 'needs_attention' || phase === 'needs_attention') {
+      const reason = data.attention_reason || 'password_rejected';
+      let statusText;
+      if (reason === 'all_mail_hidden' || reason === 'imap_disabled') {
+        statusText = t('journal.window.sources.email.row.attention.imap');
+      } else if (reason === 'unreachable') {
+        statusText = t('journal.window.sources.email.row.attention.unreachable');
+      } else {
+        statusText = t('journal.window.sources.email.row.attention.password');
+      }
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        subtitle: account,
+        state: 'needs_attention',
+        statusText,
+        actionLabel: t('journal.window.sources.email.row.fix'),
+        actionHref: EMAIL_HREF,
+        actionTone: 'attn',
+      });
+    }
+
+    if (phase === 'scanning' || phase === 'scan_paused') {
+      const checked = Number(scan.checked || 0);
+      const total = Number(scan.total || 0);
+      const statusText = total > 0
+        ? t('journal.window.sources.email.row.scanning', [
+          ['checked', f.formatCount(checked)],
+          ['total', f.formatCount(total)],
+        ])
+        : t('journal.window.sources.email.row.scanning.empty');
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        subtitle: account,
+        state: 'setting_up',
+        statusText,
+        actionLabel: t('journal.window.sources.email.row.open'),
+        actionHref: EMAIL_HREF,
+      });
+    }
+
+    if (phase === 'awaiting_choice') {
+      const eligible = Number(scan.eligible_sent || 0);
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        subtitle: account,
+        state: 'setting_up',
+        statusText: t('journal.window.sources.email.row.scan.done', [
+          ['quantity', eligible],
+          ['count', f.formatCount(eligible)],
+        ]),
+        actionLabel: t('journal.window.sources.email.row.choose'),
+        actionHref: EMAIL_HREF,
+        actionTone: 'accent',
+      });
+    }
+
+    if (phase === 'fetching') {
+      const done = Number(sync.done || 0);
+      const total = Number(sync.total || 0);
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        subtitle: account,
+        state: 'on',
+        statusText: t('journal.window.sources.email.row.bringing.in', [
+          ['done', f.formatCount(done)],
+          ['total', f.formatCount(total)],
+        ]),
+        statusLink: {
+          label: t('journal.window.sources.email.row.follow.status'),
+          href: HEALTH_HREF,
+        },
+        actionLabel: t('journal.window.sources.email.row.open'),
+        actionHref: EMAIL_HREF,
+      });
+    }
+
+    if (phase === 'disconnected' || state === 'off') {
+      const inJournal = Number(acc.in_journal || 0);
+      const statusText = inJournal > 0
+        ? t('journal.window.sources.email.row.disconnected', [
+          ['quantity', inJournal],
+          ['count', f.formatCount(inJournal)],
+        ])
+        : t('journal.window.sources.email.row.disconnected.none');
+      return f.renderSyncRow(doc, {
+        id: 'email',
+        name: COPY.email,
+        subtitle: account,
+        state: 'off',
+        statusText,
+        actionLabel: t('journal.window.sources.email.row.reconnect'),
+        actionHref: EMAIL_HREF,
+      });
+    }
+
+    // Steady `on` state
+    const parts = [
+      t('journal.window.sources.email.row.in.journal', [['count', f.formatCount(acc.in_journal || 0)]]),
+    ];
+    const addedMs = parseTime(sync.last_added_at);
+    if (addedMs !== null) {
+      parts.push(t('journal.window.sources.syncs.last.added', [['when', relative(addedMs, opts.now, opts.timeZone)]]));
+    }
+    const checkedMs = parseTime(sync.last_checked_at);
+    if (checkedMs !== null) {
+      parts.push(t('journal.window.sources.syncs.last.checked', [['when', relative(checkedMs, opts.now, opts.timeZone)]]));
+    }
+
+    const leftOut = lo.total > 0
+      ? {
+        total: lo.total,
+        summary: t('journal.window.sources.email.row.left.out.summary', [['count', f.formatCount(lo.total)]]),
+        items: [
+          { label: t('journal.window.sources.email.reason.calendar'), count: lo.calendar_responses || 0 },
+          { label: t('journal.window.sources.email.reason.auto'), count: lo.automatic_replies || 0 },
+          { label: t('journal.window.sources.email.reason.drafts'), count: lo.drafts || 0 },
+          { label: t('journal.window.sources.email.reason.bounces'), count: lo.delivery_reports || 0 },
+        ],
+        note: t('journal.window.sources.email.row.left.out.note'),
+      }
+      : null;
+
+    return f.renderSyncRow(doc, {
+      id: 'email',
+      name: COPY.email,
+      subtitle: account,
+      state: 'on',
+      statusText: parts.join(' \u00b7 '),
+      leftOut,
+      actionLabel: t('journal.window.sources.email.row.manage'),
+      actionHref: EMAIL_HREF,
+    });
+  }
+
+  function paintSyncs(doc, plaudEntry, granolaEntry, garminEntry, emailEntry, opts) {
     const section = el(doc, 'section', 'sources-syncs');
     const head = el(doc, 'div', 'sources-syncs-head');
     head.appendChild(text(doc, 'h2', 'sources-syncs-title', COPY.syncsHeading));
@@ -404,12 +606,11 @@
     const granolaConnected = !granolaFailed && granolaEntry.body.connected === true;
     const garminConnected = garminAvailable && !garminFailed && garminEntry.body.connected === true;
 
-    if (!plaudFailed && !granolaFailed && !garminFailed && !plaudConnected && !granolaConnected && !garminConnected) {
-      section.appendChild(text(doc, 'p', 'sources-syncs-empty', garminAvailable ? COPY.syncsEmptyWithGarmin : COPY.syncsEmpty));
-      return section;
-    }
-
     const list = el(doc, 'ul', 'sources-sync-list');
+
+    // Selective-sync sources (Email; Photos plugs onto the same shared pattern)
+    list.appendChild(paintEmailRow(doc, emailEntry, opts));
+
     const providers = [
       ['plaud', COPY.plaud, plaudEntry, plaudFailed, plaudConnected],
       ['granola', COPY.granola, granolaEntry, granolaFailed, granolaConnected],
@@ -432,7 +633,7 @@
         const unavailable = el(doc, 'a', 'sources-sync-link sources-sync-unavailable-' + id);
         unavailable.setAttribute('href', SYNC_SETTINGS);
         unavailable.appendChild(text(doc, 'strong', 'sources-sync-name', providerName));
-        unavailable.appendChild(text(doc, 'span', 'sources-sync-sep', ' · '));
+        unavailable.appendChild(text(doc, 'span', 'sources-sync-sep', ' \u00b7 '));
         unavailable.appendChild(text(doc, 'span', 'sources-sync-status', COPY.syncUnavailable));
         row.appendChild(unavailable);
         list.appendChild(row);
@@ -443,10 +644,10 @@
       const main = el(doc, 'div', 'sources-sync-main');
       const primary = el(doc, 'span', 'sources-sync-primary');
       primary.appendChild(text(doc, 'strong', 'sources-sync-name', providerName));
-      primary.appendChild(text(doc, 'span', 'sources-sync-sep', ' · '));
+      primary.appendChild(text(doc, 'span', 'sources-sync-sep', ' \u00b7 '));
       const addedMs = parseTime(data.last_added);
       const primaryWords = addedMs !== null
-        ? global.JournalI18n.render('journal.window.sources.syncs.last.added', [['when', relative(addedMs, opts.now, opts.timeZone)]])
+        ? t('journal.window.sources.syncs.last.added', [['when', relative(addedMs, opts.now, opts.timeZone)]])
         : COPY.nothing;
       primary.appendChild(text(doc, 'span', 'sources-sync-status', primaryWords));
       main.appendChild(primary);
@@ -459,7 +660,7 @@
       } else {
         const checkedMs = parseTime(data.last_sync);
         if (checkedMs !== null) {
-          secondaryWords = global.JournalI18n.render('journal.window.sources.syncs.last.checked', [['when', relative(checkedMs, opts.now, opts.timeZone)]]);
+          secondaryWords = t('journal.window.sources.syncs.last.checked', [['when', relative(checkedMs, opts.now, opts.timeZone)]]);
         }
       }
       if (secondaryWords !== '') {
@@ -474,6 +675,10 @@
       list.appendChild(row);
     });
     section.appendChild(list);
+
+    if (!plaudFailed && !granolaFailed && !garminFailed && !plaudConnected && !granolaConnected && !garminConnected) {
+      section.appendChild(text(doc, 'p', 'sources-syncs-empty', garminAvailable ? COPY.syncsEmptyWithGarmin : COPY.syncsEmpty));
+    }
     return section;
   }
 
@@ -487,6 +692,8 @@
     'sources-current',
     'sources-import',
     'sources-syncs-manage',
+    'sources-sync-action-email',
+    'sources-sync-unavailable-email',
     'sources-sync-unavailable-plaud',
     'sources-sync-unavailable-granola',
     'sources-sync-unavailable-garmin',
@@ -523,7 +730,7 @@
     const hasPairedDevices = clientsOk && clientsEntry.body.clients.length > 0;
     root.appendChild(paintSwitcher(doc, hasPairedDevices));
     root.appendChild(paintDevices(doc, root, clientsEntry, opts));
-    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, unpacked.garmin, opts));
+    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, unpacked.garmin, unpacked.email, opts));
   }
 
   // The state a drawn payload reports as the view's readiness.
@@ -556,17 +763,20 @@
     const needPlaud = !prev || !prev.plaud || syncFailed(prev.plaud);
     const needGranola = !prev || !prev.granola || syncFailed(prev.granola);
     const needGarmin = !prev || !prev.garmin || (!garminHidden(prev.garmin) && syncFailed(prev.garmin));
+    const needEmail = !prev || !prev.email || emailFailed(prev.email);
     const results = await Promise.all([
       fetchEndpoint(opts.fetch, CLIENTS, ended),
       needPlaud ? fetchEndpoint(opts.fetch, PLAUD, ended) : Promise.resolve(prev.plaud),
       needGranola ? fetchEndpoint(opts.fetch, GRANOLA, ended) : Promise.resolve(prev.granola),
       needGarmin ? fetchEndpoint(opts.fetch, GARMIN, ended) : Promise.resolve(prev.garmin),
+      needEmail ? fetchEndpoint(opts.fetch, EMAIL, ended) : Promise.resolve(prev.email),
     ]);
-    if (ended() || !results[0] || !results[1] || !results[2] || !results[3]) return null;
+    if (ended() || !results[0] || !results[1] || !results[2] || !results[3] || !results[4]) return null;
     const clients = results[0];
     const plaud = results[1];
     const granola = results[2];
     const garmin = results[3];
+    const email = results[4];
     const payload = {
       status: clients.status,
       body: clients.body,
@@ -574,6 +784,7 @@
       plaud: plaud,
       granola: granola,
       garmin: garmin,
+      email: email,
     };
     opts.last = payload;
     render(doc, root, payload, opts);
@@ -603,13 +814,32 @@
     };
   }
 
-  // Sources on the view contract. Everything is the mount's: its reads are the
-  // view's (`ctx.fetch`, adopted from the page's early reads), and the layout
-  // listener goes with it.
+  function detailSlugFor(pathname) {
+    const match = /^\/app\/sources\/([^/]+)\/?$/.exec(String(pathname || ''));
+    if (!match) return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch (_) {
+      return match[1];
+    }
+  }
+
+  // Sources on the view contract. Delegates `/app/sources/<source>` subpaths
+  // to registered selective-sync detail views (`SolSelectiveSync`), and draws
+  // the `/app/sources/` overview otherwise.
   function mount(ctx) {
     const doc = global.document;
     const root = doc.getElementById('sources-root');
     if (!root) throw new Error('sources has no root');
+    const pathname = (ctx.route && ctx.route.pathname) || (global.location && global.location.pathname) || SOURCES_HREF;
+    const slug = detailSlugFor(pathname);
+    const sharedFrame = frame || global.SolSelectiveSync;
+    if (slug && sharedFrame && typeof sharedFrame.getDetail === 'function') {
+      const detail = sharedFrame.getDetail(slug);
+      if (detail) {
+        return detail.mount(ctx, root, sharedFrame);
+      }
+    }
     const media = global.matchMedia('(max-width: 700px)');
     const state = stateFor(media, ctx.fetch);
     state.ended = () => ctx.disposed;

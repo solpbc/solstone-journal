@@ -1,0 +1,30 @@
+{
+  "description": "Estimated new journal segments when widening a selective-sync choice.",
+  "context": "Journal window, selective-sync source widen-choice estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "c0228639ddc28b53737407ca414ddc02de15869083381ab02a5ad2c0230b3ecb",
+  "max_length": 210,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

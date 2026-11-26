@@ -1872,6 +1872,8 @@ fn router_with_roots(
         .route("/app/more/workspace", get(more_workspace))
         .route("/app/more/static/{*rest}", get(more_static))
         .route("/app/sources/", get(sources_shell))
+        .route("/app/sources/email", get(sources_shell))
+        .route("/app/sources/email/", get(sources_shell))
         .route("/app/sources/workspace", get(sources_workspace))
         .route("/app/sources/static/{*rest}", get(sources_static))
         .merge(photos_library::router())
@@ -2302,7 +2304,11 @@ mod tests {
         let app = router(journal.path().to_path_buf());
         for path in [
             "/app/sources/",
+            "/app/sources/email",
+            "/app/sources/email/",
             "/app/sources/workspace",
+            "/app/sources/static/selective_sync_frame.js",
+            "/app/sources/static/email_source.js",
             "/app/sources/static/sources.js",
         ] {
             let response = app

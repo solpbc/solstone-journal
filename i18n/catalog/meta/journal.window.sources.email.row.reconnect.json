@@ -1,0 +1,16 @@
+{
+  "description": "Action link on /app/sources/ when email is disconnected.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5c29e02777d0e1efe5e51399824c8805e17c90d8997ef10a8a628d11a0d6eb4",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

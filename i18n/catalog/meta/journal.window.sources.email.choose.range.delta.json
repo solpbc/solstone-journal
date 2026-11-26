@@ -1,0 +1,30 @@
+{
+  "description": "Delta message count beside an uncovered range option in widen mode.",
+  "context": "Journal window, /app/sources/email widen-choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "1a85da99631134dfe7b7c2abc577d3d70ab80bf83fcf85c936ec80f6df4b2fe9",
+  "max_length": 212,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

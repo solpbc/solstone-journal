@@ -1,0 +1,16 @@
+{
+  "description": "Toggle button label to show a masked password input.",
+  "context": "Journal window, password field visibility toggle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6107d74845dbea860a54c445485fb485a8e49381e8ea35476e2321bb7e216ae",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

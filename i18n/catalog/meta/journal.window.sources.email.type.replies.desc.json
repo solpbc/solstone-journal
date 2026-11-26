@@ -1,0 +1,16 @@
+{
+  "description": "Description for the replies checkbox.",
+  "context": "Journal window, /app/sources/email message-type chooser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4637efb8beada60dd6ebc550533bdaa960641b22babd046635b907ee584a7ed7",
+  "max_length": 203,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

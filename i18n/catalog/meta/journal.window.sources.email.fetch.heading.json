@@ -1,0 +1,16 @@
+{
+  "description": "Heading on /app/sources/email while chosen messages are being fetched.",
+  "context": "Journal window, /app/sources/email fetching screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cb9e511fc0eb50586871f80fc9982cc76a9d0c6e3f325196f8ff5679099da102",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Stat box label for sent messages discovered so far during scan.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "571acff9284bc11f032240fb519f260a03bd9f01bea6d03d7b9e0696333b85d4",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

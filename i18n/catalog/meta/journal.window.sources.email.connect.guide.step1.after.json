@@ -1,0 +1,16 @@
+{
+  "description": "Continuation of step 1 right after the Google app passwords link.",
+  "context": "Journal window, /app/sources/email connect guide step 1.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "31a88f8d05905cca7083985e5764836ab9f58e2010fb881d6f0b2db2153dffda",
+  "max_length": 155,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

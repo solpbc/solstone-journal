@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the email pointer card in Settings > Sync.",
+  "context": "Journal window, settings view, sync section. Row heading pointing to email management on the sources view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b4f4592103c1c0a280db303c513193d776a8a133f2312b29c0d02551979ef377",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Sub-label under total sent messages naming the date span.",
+  "context": "Journal window, /app/sources/email steady state. Example: 'march 2011 to today'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "earliest",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8a97bdec3742ff91bfbe1fe1d7437fd6b38c94c5fcbf338f5fd065457f8ac772",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

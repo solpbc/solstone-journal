@@ -1,0 +1,16 @@
+{
+  "description": "Primary button on the disconnected screen to open the connect form.",
+  "context": "Journal window, /app/sources/email disconnected screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9bcc62c39bbec982aa7a247168fa7637e1ca08d01416eb63d84146f29215e0d1",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Footer note inside the left-out disclosure on the choice screen.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "93b78efa45bab2a4aaee1247a0e6bbfc59b77be7e83ed512bc5637b72bcdbba2",
+  "max_length": 193,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

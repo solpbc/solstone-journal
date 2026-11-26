@@ -1,0 +1,16 @@
+{
+  "description": "Primary button label when owner chooses nothing from before today.",
+  "context": "Journal window, selective-sync source choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "89d58b75caf7e9f4d93c058e9123e653eaf5e544d0f8f94a36ea403e7bda7bd2",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

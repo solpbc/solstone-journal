@@ -1,0 +1,16 @@
+{
+  "description": "Lede paragraph on /app/sources/email connect screen.",
+  "context": "Journal window, /app/sources/email connect screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2ffdf0f43b87a05f56dd12cd96fa85f5e6f7d0bd8e3a7509075bcedc5271d60a",
+  "max_length": 273,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

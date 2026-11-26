@@ -1,0 +1,16 @@
+{
+  "description": "Note on /app/sources/email when Gmail is disconnected and no messages were brought in.",
+  "context": "Journal window, /app/sources/email disconnected screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "36f4fa3e89ad74ab83c74751e0d55f82926c7c8a4fb515979175015aadab7844",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

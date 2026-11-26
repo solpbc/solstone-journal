@@ -1,0 +1,16 @@
+{
+  "description": "Non-blocking advisory shown if Gmail mailbox count lands on 1,000 / 2,000 / 5,000 / 10,000.",
+  "context": "Journal window, /app/sources/email choice screen advisory.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0e4ae3c5fe2ca8cf249d41b9108bc7a1aec39f3de2859419bcdfae29d62901f2",
+  "max_length": 279,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

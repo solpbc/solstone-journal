@@ -1,0 +1,16 @@
+{
+  "description": "Collapsed disclosure summary listing past email sync runs.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b086256aa77066be0fcec240cf9bf78571cb419a0616fe40aef50e08ad40de84",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

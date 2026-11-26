@@ -1,0 +1,16 @@
+{
+  "description": "Step 3 in the Google app password setup guide.",
+  "context": "Journal window, /app/sources/email connect guide.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b89861b51cd47558657fa2246dfb4203b5c1aa96cc8c9d3c5373b8cee5418786",
+  "max_length": 187,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

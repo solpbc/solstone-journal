@@ -1,0 +1,16 @@
+{
+  "description": "Explanation line on /app/sources/email while fetching.",
+  "context": "Journal window, /app/sources/email fetching screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "307618de02cac52e934b47fe15c2a4f4e2e6b3be2a9976d767e1eca4de05be6b",
+  "max_length": 221,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Label above the mail provider selector on /app/sources/email.",
+  "context": "Journal window, /app/sources/email connect screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a65dc4cc2f70ea0f78ee1d07e774306398fef9e96c60f01838be59f8971bcb4",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

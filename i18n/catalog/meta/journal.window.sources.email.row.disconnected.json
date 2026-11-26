@@ -1,0 +1,30 @@
+{
+  "description": "Sub-line on /app/sources/ when email is disconnected and messages remain in the journal.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "266a330b78bd2cf229af25dd32a10d3cef824ab076fa7b3941e6aca0a4e50aab",
+  "max_length": 289,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

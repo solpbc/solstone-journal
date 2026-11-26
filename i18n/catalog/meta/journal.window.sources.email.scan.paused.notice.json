@@ -1,0 +1,25 @@
+{
+  "description": "Notice when a header scan was interrupted or paused.",
+  "context": "Journal window, /app/sources/email paused scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "82e6784ab3efe8009c54f432aa2fa853b5cf4b664fcb52b682004b56eaa5ad79",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

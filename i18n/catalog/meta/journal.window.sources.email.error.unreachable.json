@@ -1,0 +1,16 @@
+{
+  "description": "Inline error when Gmail cannot be reached over the network.",
+  "context": "Journal window, /app/sources/email connect and needs-attention screens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6769d164eb1a1c8d419b22a1f4d9dbccbc1841e70d42abb1bf9ed162baae6de3",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

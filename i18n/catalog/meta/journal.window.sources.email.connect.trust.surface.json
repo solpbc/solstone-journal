@@ -1,0 +1,16 @@
+{
+  "description": "Surface trust claim disclosure on /app/sources/email before connecting Gmail.",
+  "context": "Journal window, /app/sources/email connect screen. Consent and trust disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d6003747325a57730969fca65223d6a1445084cda73d7a32e6ec2d6da90e82f4",
+  "max_length": 389,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

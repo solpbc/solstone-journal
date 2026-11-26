@@ -162,7 +162,7 @@ pub fn estimate_for_timestamps(timestamps_ms: &[i64], zone: &TimeZone) -> Proces
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RangeCounts {
     #[serde(rename = "30d")]
     pub last_30d: usize,
@@ -186,6 +186,8 @@ pub struct ChoicePreview {
     pub range: RangePreset,
     pub types: Vec<MessageType>,
     pub ranges: RangeCounts,
+    #[serde(default)]
+    pub range_deltas: RangeCounts,
     pub types_in_selected_range: TypeCounts,
     pub selected_messages: usize,
     pub delta_messages: usize,
@@ -236,13 +238,8 @@ pub fn preview_choice(
 
     let type_ticked = |d: &Decision| d.message_type.is_some_and(|t| types.contains(&t));
 
-    let mut ranges = RangeCounts {
-        last_30d: 0,
-        last_6m: 0,
-        last_1y: 0,
-        all: 0,
-        none: 0,
-    };
+    let mut ranges = RangeCounts::default();
+    let mut range_deltas = RangeCounts::default();
     let mut types_in_selected_range = TypeCounts {
         replies: 0,
         new_messages: 0,
@@ -265,21 +262,34 @@ pub fn preview_choice(
         if !type_ticked(d) {
             continue;
         }
+        let is_new = !landed_keys.contains(&d.key);
         if in_preset(d, RangePreset::Last30d) {
             ranges.last_30d += 1;
+            if is_new {
+                range_deltas.last_30d += 1;
+            }
         }
         if in_preset(d, RangePreset::Last6m) {
             ranges.last_6m += 1;
+            if is_new {
+                range_deltas.last_6m += 1;
+            }
         }
         if in_preset(d, RangePreset::Last1y) {
             ranges.last_1y += 1;
+            if is_new {
+                range_deltas.last_1y += 1;
+            }
         }
         ranges.all += 1;
+        if is_new {
+            range_deltas.all += 1;
+        }
 
         if in_preset(d, range) {
             let ms = d.sent_ms.unwrap_or(0);
             selected_ts.push(ms);
-            if !landed_keys.contains(&d.key) {
+            if is_new {
                 delta_ts.push(ms);
             }
         }
@@ -292,6 +302,7 @@ pub fn preview_choice(
         range,
         types: types.to_vec(),
         ranges,
+        range_deltas,
         types_in_selected_range,
         selected_messages: selected_ts.len(),
         delta_messages: delta_ts.len(),

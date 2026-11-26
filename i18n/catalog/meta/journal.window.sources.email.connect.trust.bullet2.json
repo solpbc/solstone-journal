@@ -1,0 +1,16 @@
+{
+  "description": "Second mechanic bullet inside the email trust disclosure fold.",
+  "context": "Journal window, /app/sources/email connect screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "38656a0247b2b41956990963c6dc71809bc017550b23d945b2448744e77ad284",
+  "max_length": 336,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ]
+}

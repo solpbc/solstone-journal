@@ -1,0 +1,16 @@
+{
+  "description": "Status confirmation after recovering a sync run from Trash.",
+  "context": "Journal window, /app/sources/email trash receipt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d177c39098b97631f2e583014a1df2fc695b316037a33b74bb2cccd000556213",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line on the email row in /app/sources/ when not connected.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f1f49237302613b6c158d6226e7da3b1b2be58cd416d1bed89b930b2648ca82d",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

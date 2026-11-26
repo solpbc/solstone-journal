@@ -1,0 +1,16 @@
+{
+  "description": "Validation message when connect is submitted without an email address.",
+  "context": "Journal window, /app/sources/email connect form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a5c80eaee485b6a05c056fe5f044d02afceb3fc2181584e4f89b0aa1ac9c513a",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

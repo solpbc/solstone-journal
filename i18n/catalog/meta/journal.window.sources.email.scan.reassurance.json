@@ -1,0 +1,16 @@
+{
+  "description": "Calm reassurance beneath the header scan stats.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc3ce6114873575053a8237c305bccfb5d5bd2e36749c7ff5e79785eb85386ed",
+  "max_length": 214,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

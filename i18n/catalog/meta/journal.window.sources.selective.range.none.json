@@ -1,0 +1,16 @@
+{
+  "description": "Range option bringing in no historical items, starting from today forward.",
+  "context": "Journal window, selective-sync source choice screen. Range radio option.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ad8e5012845702297025d5f9cc4b1d7dc54eda617e1b659eb0fe7755922e1341",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

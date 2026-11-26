@@ -1,0 +1,29 @@
+{
+  "description": "Summary line above the choice controls when eligible sent mail exists and nothing was left out.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scanned",
+      "type": "string"
+    },
+    {
+      "name": "eligible",
+      "type": "string"
+    },
+    {
+      "name": "earliest",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b81f0b203c093ec615b578b8ef5e1f7751c57061a9035c9d9ebc90d8db037e38",
+  "max_length": 235,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

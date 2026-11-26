@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for out-of-office and automated replies.",
+  "context": "Journal window, email left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "33bfc27b5b5e71f866fb85a9156e5f03908f5f927fb1b0e9441ca0e55a6aa286",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Heading above the 3-unit processing estimate on initial choice.",
+  "context": "Journal window, selective-sync source choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7bbe09878209af7c0eb1ff40d3fffb312f298906dec6910cbd568349052c3edb",
+  "max_length": 149,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

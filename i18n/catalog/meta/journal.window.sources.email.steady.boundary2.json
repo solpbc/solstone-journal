@@ -1,0 +1,16 @@
+{
+  "description": "Second boundary note on /app/sources/email steady state.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "abe5c0fd6ca6dea7a940653716acd7ea39f73add593e9cc9b988e94ec411c2c4",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

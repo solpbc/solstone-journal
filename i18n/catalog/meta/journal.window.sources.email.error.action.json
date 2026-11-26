@@ -1,0 +1,16 @@
+{
+  "description": "Fallback inline error when an email source action fails unexpectedly.",
+  "context": "Journal window, /app/sources/email detail view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "20ff9927f451d5806e9bc244ba3b94cc14712fa71a8936e88e5cae5f17ddf027",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Progress caption beneath the fetch progress bar.",
+  "context": "Journal window, /app/sources/email fetching screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "175bcf3bc4dad55ef6ab05dfc163385a69ba9a1063d3463420e14f72597443a4",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Collapsed disclosure summary for left-out counts on the choice screen.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4840f496c94de7b350eb786081910c8b69c656be3ec9a043f4ab9192efef83c3",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

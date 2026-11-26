@@ -1,0 +1,16 @@
+{
+  "description": "First boundary note on /app/sources/email steady state.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c44ec4af5a8bcb2368c7fa53fc8703b9e815d44649b1cf5dce1304e81ac1dc3",
+  "max_length": 193,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

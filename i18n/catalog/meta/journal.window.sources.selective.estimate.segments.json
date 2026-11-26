@@ -1,0 +1,30 @@
+{
+  "description": "Estimated journal segments for a selective-sync choice.",
+  "context": "Journal window, selective-sync source estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a99ba2f7e185d8b250bbbad76cc231ed26ef259ae797b65d3ffc0841e2f204ea",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

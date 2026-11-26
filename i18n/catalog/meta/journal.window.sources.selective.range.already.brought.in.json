@@ -1,0 +1,16 @@
+{
+  "description": "Tag shown on range options already covered by an earlier confirmed choice.",
+  "context": "Journal window, selective-sync source widen-choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b73825b7195fa3256cbfd0a98ab47460749cbda021b935d608cd63bb5d7a0d29",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

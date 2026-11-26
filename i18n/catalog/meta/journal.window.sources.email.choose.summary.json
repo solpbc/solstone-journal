@@ -1,0 +1,33 @@
+{
+  "description": "Summary line above the choice controls when both eligible sent mail and left-out mail exist.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scanned",
+      "type": "string"
+    },
+    {
+      "name": "eligible",
+      "type": "string"
+    },
+    {
+      "name": "earliest",
+      "type": "string"
+    },
+    {
+      "name": "left_out",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9bcc895cd203ea7c6814aba67317472b4adfbbb5cc3a314e3b8a430990728a42",
+  "max_length": 264,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

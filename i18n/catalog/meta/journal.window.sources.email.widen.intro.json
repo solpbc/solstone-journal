@@ -1,0 +1,16 @@
+{
+  "description": "Intro line in widen-choice mode.",
+  "context": "Journal window, /app/sources/email widen-choice mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da79c4773922b5321cefb1491f970f8c138d0a27b087f3a9fa7b39b5e8748e40",
+  "max_length": 236,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

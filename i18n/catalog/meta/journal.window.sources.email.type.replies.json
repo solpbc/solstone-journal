@@ -1,0 +1,16 @@
+{
+  "description": "Checkbox label for sent reply messages.",
+  "context": "Journal window, /app/sources/email message-type chooser and steady facts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a32c46f83bf14fa7f0c35cd1f3b878dc6087acded9333e986b73337ba8fc5aea",
+  "max_length": 127,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

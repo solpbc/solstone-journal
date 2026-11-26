@@ -1,0 +1,16 @@
+{
+  "description": "Heading above the 3-unit processing estimate when widening an existing choice.",
+  "context": "Journal window, selective-sync source widen-choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3c7fcf9eb1adabb3681363e7973fca01f3e3b92c6a8e379da5b78dbdd5950a68",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

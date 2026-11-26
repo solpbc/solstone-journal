@@ -1,0 +1,25 @@
+{
+  "description": "Sub-line on the email row in /app/sources/ while header scanning is running.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "0171e0a89530e5dafe51e4ffef4a419d0a71a037a34ef5f555466eb7369c3784",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

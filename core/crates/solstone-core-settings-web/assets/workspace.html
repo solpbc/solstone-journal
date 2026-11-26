@@ -3227,6 +3227,16 @@ button:focus:not(:focus-visible) {
         <p class="granola-load-error" id="garminLoadError" role="alert" hidden>{{journal.window.settings.garmin.load.failed}}</p>
       </div>
 
+      <div id="emailSyncPointer" class="granola-card" aria-labelledby="emailPointerTitle">
+        <div class="granola-head">
+          <h3 class="settings-subsection-title" id="emailPointerTitle">{{journal.window.settings.sync.email.title}}</h3>
+        </div>
+        <p class="settings-subsection-desc">{{journal.window.settings.sync.email.description}}</p>
+        <div class="granola-actions">
+          <a class="btn-secondary" href="/app/sources/email" style="display:inline-flex;align-items:center;min-height:44px;text-decoration:none;font-weight:600;color:var(--ink);">{{journal.window.settings.sync.email.open}}</a>
+        </div>
+      </div>
+
       </form>
     </section>
 

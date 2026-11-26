@@ -1,0 +1,16 @@
+{
+  "description": "Primary button label when saving an updated choice with zero added older items.",
+  "context": "Journal window, selective-sync source widen-choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a135c4f9c7ca1463659a001be8f4c8929b69588c709a289ba715fb9b35eacbb5",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

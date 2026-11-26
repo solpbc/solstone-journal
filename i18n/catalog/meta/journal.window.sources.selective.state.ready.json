@@ -1,0 +1,16 @@
+{
+  "description": "Canonical source state pill label before a selective-sync source is connected.",
+  "context": "Journal window, sources view and source detail views. Canonical state pill.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4cc1b74ea3e8d33468614712786377f76d444ecd29f55627f36c204febea024e",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

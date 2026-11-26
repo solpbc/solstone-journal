@@ -1,0 +1,16 @@
+{
+  "description": "Canonical source state pill label when a source needs owner action.",
+  "context": "Journal window, sources view and source detail views. Canonical state pill.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "45cab31c4ee6314bb387731f0a8cec71ce70686b35352a27dab6f2ac88280859",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

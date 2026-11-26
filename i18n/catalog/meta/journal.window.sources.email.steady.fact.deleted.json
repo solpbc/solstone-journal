@@ -1,0 +1,16 @@
+{
+  "description": "Facts row label shown only when the owner has deleted synced email messages.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d439e1d14fd9a8f89c38eaba344c76fd78c636ed226dd345cd5aa43925ac159",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

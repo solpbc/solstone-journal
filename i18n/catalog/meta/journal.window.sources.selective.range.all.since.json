@@ -1,0 +1,21 @@
+{
+  "description": "Sub-label on the 'all of it' range option naming the earliest month found.",
+  "context": "Journal window, selective-sync source choice screen. Example: 'since march 2011'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "month",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "57b41c0f600c4b4ce13bbe14aa5a8a8ce6c277f6e5b26ef88ca4ac92c588ea95",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

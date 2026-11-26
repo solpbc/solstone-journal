@@ -1,0 +1,16 @@
+{
+  "description": "Stat box label for earliest sent month discovered so far during scan.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fca433a4395eab1ce42c600a09a0076753f894df152bf8831112efb16cfbf43f",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

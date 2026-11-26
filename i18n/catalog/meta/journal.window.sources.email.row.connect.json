@@ -1,0 +1,16 @@
+{
+  "description": "Action link on the email row in /app/sources/ when not connected.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b5f9d296317325658c16b6275ab35d1895a1fbe266ecebee7e22b5a017750838",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Heading above the message-type checkboxes on /app/sources/email.",
+  "context": "Journal window, /app/sources/email choice and widen screens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1155b9bf607bfb5eeceab776c214a668a32be6fdf0b03ee3377c7ac4402d259d",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

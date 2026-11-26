@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for bounce and delivery status reports.",
+  "context": "Journal window, email left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e8a9a91fe509a91ec269224efe7a8fc1217a8957b151a781dbcad5f2d03b9b93",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

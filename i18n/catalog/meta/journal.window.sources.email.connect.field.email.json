@@ -1,0 +1,16 @@
+{
+  "description": "Label for the Gmail address input field.",
+  "context": "Journal window, /app/sources/email connect form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0b1358a84e36d6a3d9d00eddbe364cb156e72ab74b6c536a2cd097ac38cf4cd1",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

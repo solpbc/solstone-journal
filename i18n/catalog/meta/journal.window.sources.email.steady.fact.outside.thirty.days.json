@@ -1,0 +1,16 @@
+{
+  "description": "Sub-label under outside your choice when range is 30d.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c77dd2b9dd6e59ab779dbe0b49a3052f0622d8cbcec33569ae431984bc2d40b4",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

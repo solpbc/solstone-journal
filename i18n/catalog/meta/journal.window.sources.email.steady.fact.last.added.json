@@ -1,0 +1,16 @@
+{
+  "description": "Facts row label for when an email was last added.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "884104d37d74f6340a1ad468f13037c8a599219c3f1eabf4bc466c91edd6e487",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

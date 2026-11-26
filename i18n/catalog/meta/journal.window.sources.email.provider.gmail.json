@@ -1,0 +1,16 @@
+{
+  "description": "Provider label for Gmail.",
+  "context": "Journal window, /app/sources/email connect provider picker and account subtitle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "81919db3a3fd9a16faebb6dadada67b9d92b99ba97885bff5fbce748942e9664",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error line when inline Trash recovery fails.",
+  "context": "Journal window, /app/sources/email trash receipt.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3f4f524d02f5d4c3826de5e55b27a1e7b2b7e4a68c6b58136c6c15b3175ea55",
+  "max_length": 182,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

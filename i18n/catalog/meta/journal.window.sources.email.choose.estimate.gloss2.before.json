@@ -1,0 +1,16 @@
+{
+  "description": "Second gloss line before the 'status' link under the email processing estimate.",
+  "context": "Journal window, /app/sources/email estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5fbc787463805bc39214b4e88b6450d1f01f041492d96d58ae6eaec9549b2158",
+  "max_length": 221,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

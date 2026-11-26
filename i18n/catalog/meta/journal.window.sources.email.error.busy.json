@@ -1,0 +1,16 @@
+{
+  "description": "Inline notice when an action collides with an in-progress email scan or sync.",
+  "context": "Journal window, /app/sources/email detail view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "394423ca5a131c9810171bfb27303c05f0d7e7c4c1ff2c540a09be14978a1ed7",
+  "max_length": 174,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

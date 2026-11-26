@@ -1,0 +1,16 @@
+{
+  "description": "Heading when widening or updating the email choice from steady state.",
+  "context": "Journal window, /app/sources/email widen-choice mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a72749baea9e4da9deef66bb1eab5b1a35322b4f6d226b449acf893feef7ff0",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

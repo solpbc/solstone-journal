@@ -1,0 +1,16 @@
+{
+  "description": "Footer note inside the collapsed left-out counts disclosure on /app/sources/.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0c3d1836f9033fcf814ebbf52a6ca7c1b2c653fb2567347df51f3911116c6859",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

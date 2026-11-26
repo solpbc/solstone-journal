@@ -1,0 +1,16 @@
+{
+  "description": "Facts row label for eligible sent messages outside the chosen range or types.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7495f5bdafd7841808748bae1e2061a46f308408227ee1d871a41ebfc20dda49",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

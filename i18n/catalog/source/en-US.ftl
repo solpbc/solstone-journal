@@ -6605,7 +6605,7 @@ journal.window.agents.permission.kind.facets.description = facet descriptions, a
 
 journal.window.agents.permission.kind.facets.label = summaries
 
-journal.window.agents.permission.kind.messages.description = words written and sent in chats and AI chats you imported, and details drawn from those words. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
+journal.window.agents.permission.kind.messages.description = words written and sent in imported chats and AI chats, and email you chose to keep, plus details drawn from those words. email attachments are only named here; their contents aren't included. an agent needs both transcripts and messages to read a conversation when your journal can't tell if it was spoken or written.
 
 journal.window.agents.permission.kind.messages.label = messages
 
@@ -24269,3 +24269,391 @@ journal.window.entities.faces.unconfirmed.alt.photos = a profile pic from a meet
 journal.window.transcripts.photo.copy.pending = this photo hasn't been described yet. today's photos come first, then earlier ones.
 
 journal.window.transcripts.consent.trash.photo.library.stays = nothing changes in your photo library. deleted photos don't come back on a later sync.
+journal.window.settings.sync.email.title = email
+
+journal.window.settings.sync.email.description = connect and manage email in sources.
+
+journal.window.settings.sync.email.open = open in sources
+
+journal.window.sources.selective.state.ready = ready to set up
+
+journal.window.sources.selective.state.setting.up = setting up
+
+journal.window.sources.selective.state.on = on
+
+journal.window.sources.selective.state.needs.attention = needs attention
+
+journal.window.sources.selective.state.off = off
+
+journal.window.sources.selective.state.paused = paused
+
+journal.window.sources.selective.state.unavailable = unavailable
+
+journal.window.sources.selective.back.sources = sources
+
+journal.window.sources.selective.range.heading = from before today
+
+journal.window.sources.selective.range.thirty.days = the last 30 days
+
+journal.window.sources.selective.range.six.months = the last 6 months
+
+journal.window.sources.selective.range.one.year = the last year
+
+journal.window.sources.selective.range.all = all of it
+
+journal.window.sources.selective.range.all.since = since { $month }
+
+journal.window.sources.selective.range.none = nothing from before today
+
+journal.window.sources.selective.range.already.brought.in = already brought in
+
+journal.window.sources.selective.estimate.heading = what this choice will process
+
+journal.window.sources.selective.estimate.delta.heading = what the added choice will process
+
+journal.window.sources.selective.estimate.segments = { $quantity ->
+        [one] ~1 segment
+       *[other] ~{ $count } segments
+    }
+
+journal.window.sources.selective.estimate.new.segments = { $quantity ->
+        [one] ~1 new segment
+       *[other] ~{ $count } new segments
+    }
+
+journal.window.sources.selective.estimate.days = { $quantity ->
+        [one] 1 day
+       *[other] { $count } days
+    }
+
+journal.window.sources.selective.estimate.more.days = { $quantity ->
+        [one] 1 more day
+       *[other] { $count } more days
+    }
+
+journal.window.sources.selective.estimate.thoughts = { $quantity ->
+        [one] ~1 thought
+       *[other] ~{ $count } thoughts
+    }
+
+journal.window.sources.selective.action.start.from.today = start from today
+
+journal.window.sources.selective.action.save.choice = save choice
+
+journal.window.sources.selective.action.cancel = cancel
+
+journal.window.sources.selective.action.disconnect = disconnect
+
+journal.window.sources.selective.action.try.again = try again
+
+journal.window.sources.selective.action.show = show
+
+journal.window.sources.selective.action.hide = hide
+
+journal.window.sources.email.title = email
+
+journal.window.sources.email.provider.gmail = Gmail
+
+journal.window.sources.email.provider.auth.kind = app password
+
+journal.window.sources.email.row.ready = connect a mailbox to bring in messages you sent.
+
+journal.window.sources.email.row.connect = connect email
+
+journal.window.sources.email.row.scanning = scanning headers: { $checked } of { $total } messages. no message bodies read yet.
+
+journal.window.sources.email.row.scanning.empty = scanning headers. no message bodies read yet.
+
+journal.window.sources.email.row.open = open email
+
+journal.window.sources.email.row.scan.done = { $quantity ->
+        [one] scan done. 1 sent message ready to choose.
+       *[other] scan done. { $count } sent messages ready to choose.
+    }
+
+journal.window.sources.email.row.choose = choose what comes in
+
+journal.window.sources.email.row.bringing.in = bringing in { $done } of { $total } messages
+
+journal.window.sources.email.row.follow.status = follow older mail on status
+
+journal.window.sources.email.row.in.journal = { $count } in your journal
+
+journal.window.sources.email.row.left.out.summary = { $count } left out
+
+journal.window.sources.email.row.left.out.note = no message content is kept for mail left out.
+
+journal.window.sources.email.row.manage = manage email
+
+journal.window.sources.email.row.attention.password = Gmail stopped accepting this app password. nothing new is coming in.
+
+journal.window.sources.email.row.attention.imap = Gmail isn't letting your journal read All Mail over IMAP. nothing new is coming in.
+
+journal.window.sources.email.row.attention.unreachable = couldn't reach Gmail right now. nothing new is coming in.
+
+journal.window.sources.email.row.fix = fix in email
+
+journal.window.sources.email.row.disconnected = { $quantity ->
+        [one] disconnected. 1 message already in your journal stays.
+       *[other] disconnected. { $count } messages already in your journal stay.
+    }
+
+journal.window.sources.email.row.disconnected.none = disconnected.
+
+journal.window.sources.email.row.reconnect = reconnect email
+
+journal.window.sources.email.connect.lede = bring in email you wrote and the message each reply answered. your journal scans headers first, then lets you choose what comes in before anything syncs.
+
+journal.window.sources.email.connect.provider.label = mail provider
+
+journal.window.sources.email.connect.provider.note = Gmail is supported first. other providers that offer app passwords will appear here as they're added.
+
+journal.window.sources.email.connect.trust.surface = a Google app password gives full access to your Google account, including sending and deleting mail. your journal only reads and never sends, marks read, labels, moves, or deletes mail. your journal connects straight to Google, with sol pbc out of the sign-in and sync.
+
+journal.window.sources.email.connect.trust.summary = how this works and how to revoke it
+
+journal.window.sources.email.connect.trust.bullet1 = your journal uses read-only IMAP commands to scan headers first, then read only the messages you choose.
+
+journal.window.sources.email.connect.trust.bullet2 = it keeps the words you wrote, the message a reply answered, the text of a message you forwarded (each up to a size limit), and attachment names. it does not keep raw messages, full headers, HTML, or attachment files.
+
+journal.window.sources.email.connect.trust.bullet3 = your journal keeps a local header index so scans stay fast. disconnecting removes your app password and stops syncing; messages already in your journal stay.
+
+journal.window.sources.email.connect.trust.bullet4 = you can revoke this app password any time in your Google account. changing your Google password revokes all app passwords automatically.
+
+journal.window.sources.email.connect.guide.heading = create a Google app password
+
+journal.window.sources.email.connect.guide.step1.link = open Google app passwords
+
+journal.window.sources.email.connect.guide.step1.after = and sign in to your Google account.
+
+journal.window.sources.email.connect.guide.step2 = enter a name like "solstone" and select create.
+
+journal.window.sources.email.connect.guide.step3 = copy the 16-character password and paste it below. spaces are fine.
+
+journal.window.sources.email.connect.help.summary = don't see app passwords in Google?
+
+journal.window.sources.email.connect.help.body = Google requires 2-Step Verification before you can create an app password. Google also turns off app passwords for accounts that use security keys only, accounts enrolled in Advanced Protection, and some work or school accounts managed by Google Workspace. connecting Gmail requires an app password.
+
+journal.window.sources.email.connect.field.email = Gmail address
+
+journal.window.sources.email.connect.placeholder.email = you@gmail.com
+
+journal.window.sources.email.connect.field.password = app password
+
+journal.window.sources.email.connect.placeholder.password = xxxx xxxx xxxx xxxx
+
+journal.window.sources.email.connect.submit = connect and scan headers
+
+journal.window.sources.email.connect.submitting = connecting…
+
+journal.window.sources.email.connect.reassurance = nothing syncs during the scan. you'll review what was found before any message comes in.
+
+journal.window.sources.email.error.auth = Gmail didn't accept this email and app password. check that you used a 16-character app password rather than your regular Google password, and try again.
+
+journal.window.sources.email.error.imap = couldn't read All Mail over IMAP. in Gmail settings under Labels, turn on "Show in IMAP" for All Mail, or check with your Google Workspace admin if IMAP is off, then try again.
+
+journal.window.sources.email.error.unreachable = couldn't reach Gmail right now. check your journal's internet connection and try again.
+
+journal.window.sources.email.error.missing.email = enter your Gmail address.
+
+journal.window.sources.email.error.missing.password = enter your 16-character Google app password.
+
+journal.window.sources.email.error.load = couldn't load email status. try again.
+
+journal.window.sources.email.error.preview = couldn't update message counts. try again.
+
+journal.window.sources.email.error.action = couldn't finish that right now. try again.
+
+journal.window.sources.email.error.busy = an email scan or sync is already running. wait a moment and try again.
+
+journal.window.sources.email.scan.heading = scanning your mailbox headers
+
+journal.window.sources.email.scan.progress = { $checked } of { $total } messages checked
+
+journal.window.sources.email.scan.stat.sent = sent messages found so far
+
+journal.window.sources.email.scan.stat.earliest = earliest sent message so far
+
+journal.window.sources.email.scan.stat.bodies = message bodies read
+
+journal.window.sources.email.scan.reassurance = you can leave this page while the scan runs. nothing will sync until you come back and choose.
+
+journal.window.sources.email.scan.cancel = cancel scan
+
+journal.window.sources.email.scan.paused.notice = the scan paused at { $checked } of { $total } messages. what was scanned is saved.
+
+journal.window.sources.email.scan.resume = resume scan
+
+journal.window.sources.email.choose.heading = choose what comes in
+
+journal.window.sources.email.choose.summary = scanned { $scanned } messages in your mailbox. { $eligible } sent messages from { $earliest } to today can come in, plus { $left_out } left out.
+
+journal.window.sources.email.choose.summary.no.leftout = scanned { $scanned } messages in your mailbox. { $eligible } sent messages from { $earliest } to today can come in.
+
+journal.window.sources.email.choose.summary.no.sent = scanned { $scanned } messages in your mailbox. no sent messages are ready to bring in.
+
+journal.window.sources.email.choose.folder.cap = Gmail returned an exact round count that may reflect an IMAP folder limit. check Gmail settings under Forwarding and POP/IMAP if older sent mail looks missing.
+
+journal.window.sources.email.choose.left.out.summary = { $count } left out automatically
+
+journal.window.sources.email.choose.left.out.note = these are skipped automatically, and no message content is kept for them.
+
+journal.window.sources.email.reason.calendar = calendar responses
+
+journal.window.sources.email.reason.auto = automatic replies
+
+journal.window.sources.email.reason.drafts = drafts
+
+journal.window.sources.email.reason.bounces = delivery reports
+
+journal.window.sources.email.choose.range.count = { $quantity ->
+        [one] 1 message
+       *[other] { $count } messages
+    }
+
+journal.window.sources.email.choose.range.none.count = 0 older messages
+
+journal.window.sources.email.choose.range.delta = { $quantity ->
+        [one] +1 more message
+       *[other] +{ $count } more messages
+    }
+
+journal.window.sources.email.choose.range.helper = newly sent messages of the types you choose come in on their own after you start. you can change this later.
+
+journal.window.sources.email.choose.types.heading = types of messages
+
+journal.window.sources.email.type.replies = replies
+
+journal.window.sources.email.type.replies.desc = messages you sent in answer to someone, with the message you answered beside yours.
+
+journal.window.sources.email.type.new = new messages
+
+journal.window.sources.email.type.new.desc = messages you started, with their subject.
+
+journal.window.sources.email.type.forwards = forwards
+
+journal.window.sources.email.type.forwards.desc = messages you forwarded, with your note and the forwarded text.
+
+journal.window.sources.email.choose.types.validation = choose at least one type of message.
+
+journal.window.sources.email.choose.estimate.zero = 0 older segments · 0 past days · 0 thoughts to catch up
+
+journal.window.sources.email.choose.estimate.gloss1 = messages sent close together share one segment.
+
+journal.window.sources.email.choose.estimate.gloss2.before = older mail is processed newest first, behind today's activity. you can pause or resume it any time on
+
+journal.window.sources.email.choose.estimate.gloss2.link = status
+
+journal.window.sources.email.choose.confirm = { $quantity ->
+        [one] bring in 1 message
+       *[other] bring in { $count } messages
+    }
+
+journal.window.sources.email.widen.heading = change what comes in
+
+journal.window.sources.email.widen.intro = you can reach further back or change which types come in. messages already in your journal are not brought in again.
+
+journal.window.sources.email.widen.untick.note = unticking a type stops future messages of that kind from coming in. messages already in your journal stay.
+
+journal.window.sources.email.widen.confirm = { $quantity ->
+        [one] bring in 1 more message
+       *[other] bring in { $count } more messages
+    }
+
+journal.window.sources.email.fetch.heading = bringing in your chosen messages
+
+journal.window.sources.email.fetch.progress = { $done } of { $total } messages in your journal
+
+journal.window.sources.email.fetch.explanation = your journal fetches chosen messages newest first, then processes older days behind today's activity.
+
+journal.window.sources.email.fetch.status.link = follow and pause older history on status
+
+journal.window.sources.email.steady.fact.sent = sent messages found
+
+journal.window.sources.email.steady.fact.sent.span = { $earliest } to today
+
+journal.window.sources.email.steady.fact.in.journal = in your journal
+
+journal.window.sources.email.steady.fact.deleted = deleted by you
+
+journal.window.sources.email.steady.fact.outside = outside your choice
+
+journal.window.sources.email.steady.fact.outside.thirty.days = older than the last 30 days
+
+journal.window.sources.email.steady.fact.outside.six.months = older than the last 6 months
+
+journal.window.sources.email.steady.fact.outside.one.year = older than the last year
+
+journal.window.sources.email.steady.fact.outside.none = from before you started
+
+journal.window.sources.email.steady.fact.left.out = left out
+
+journal.window.sources.email.steady.fact.choice = choice
+
+journal.window.sources.email.steady.fact.last.added = last added
+
+journal.window.sources.email.steady.fact.last.checked = last checked
+
+journal.window.sources.email.steady.boundary1 = a message already in your journal stays if you delete the email in Gmail.
+
+journal.window.sources.email.steady.boundary2 = messages you delete from your journal do not come back on a later sync.
+
+journal.window.sources.email.steady.boundary3 = to move an email to trash, open it in transcripts and delete it.
+
+journal.window.sources.email.steady.action.change = change what comes in
+
+journal.window.sources.email.steady.action.check = check now
+
+journal.window.sources.email.steady.action.password = use a new password
+
+journal.window.sources.email.steady.check.started = checking Gmail for new messages.
+
+journal.window.sources.email.runs.summary = past syncs
+
+journal.window.sources.email.runs.move.to.trash = move to trash
+
+journal.window.sources.email.runs.modal.title = move this sync's messages to trash?
+
+journal.window.sources.email.runs.modal.body = { $quantity ->
+        [one] this moves 1 email message from the { $date } sync into your journal's trash. nothing in Gmail changes. messages wait in trash until they're erased, and you can recover them until then. deleted messages do not come back on a later sync.
+       *[other] this moves { $count } email messages from the { $date } sync into your journal's trash. nothing in Gmail changes. messages wait in trash until they're erased, and you can recover them until then. deleted messages do not come back on a later sync.
+    }
+
+journal.window.sources.email.runs.modal.confirm = { $quantity ->
+        [one] move 1 message to trash
+       *[other] move { $count } messages to trash
+    }
+
+journal.window.sources.email.runs.receipt.moved = { $quantity ->
+        [one] moved 1 message to trash.
+       *[other] moved { $count } messages to trash.
+    }
+
+journal.window.sources.email.runs.receipt.recover = recover
+
+journal.window.sources.email.runs.receipt.open.trash = open trash
+
+journal.window.sources.email.runs.receipt.recovered = recovered messages from trash.
+
+journal.window.sources.email.runs.receipt.recover.failed = couldn't recover those messages here. open trash to try again.
+
+journal.window.sources.email.attention.password.alert = Gmail stopped accepting this app password. changing your Google password revokes app passwords automatically. create a new app password in Google and save it here to resume syncing; messages already in your journal stay.
+
+journal.window.sources.email.attention.password.field = new app password
+
+journal.window.sources.email.attention.password.save = save new password
+
+journal.window.sources.email.attention.password.saved = new app password saved.
+
+journal.window.sources.email.disconnect.modal.title = disconnect Gmail?
+
+journal.window.sources.email.disconnect.modal.body = this removes your app password and stops syncing new email. messages already in your journal stay.
+
+journal.window.sources.email.disconnected.note = { $quantity ->
+        [one] Gmail is disconnected. 1 message already in your journal stays.
+       *[other] Gmail is disconnected. { $count } messages already in your journal stay.
+    }
+
+journal.window.sources.email.disconnected.note.none = Gmail is disconnected.
+
+journal.window.sources.email.disconnected.reconnect = reconnect Gmail

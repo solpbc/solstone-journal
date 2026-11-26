@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for calendar invitation responses.",
+  "context": "Journal window, email left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "362da2eef95dbcae61bafaa7af9ea2b7c03ec2903e5cc8004d5943c3a34fd3da",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

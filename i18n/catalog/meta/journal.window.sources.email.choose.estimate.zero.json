@@ -1,0 +1,16 @@
+{
+  "description": "Single-line estimate summary when no older messages are selected.",
+  "context": "Journal window, /app/sources/email estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7d4ce23a57bf7048928ef3d7b6b94b714ea18e4b30b4af1ef652612841f16afd",
+  "max_length": 175,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

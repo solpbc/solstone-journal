@@ -1,0 +1,16 @@
+{
+  "description": "Canonical source state pill label when a selective-sync source is paused.",
+  "context": "Journal window, sources view and source detail views. Canonical state pill.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd7388c578d50e4a0746e9b352b91bca48827551ef442e581a74a8feea5bf9a4",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Attention sub-line on /app/sources/ when Gmail All Mail is hidden or IMAP is off.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1f1d87eb158cf6bcfdf069ab185d441c384762ff0e0b63c2704df508f56c6fb9",
+  "max_length": 203,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

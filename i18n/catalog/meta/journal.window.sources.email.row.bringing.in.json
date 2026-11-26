@@ -1,0 +1,25 @@
+{
+  "description": "Progress portion of the email row meta in /app/sources/ while fetching chosen messages.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b0c3ce4b2bb08791b62150b806412833e1808326dce4ff85c389a4272e6d0da",
+  "max_length": 164,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Action link on the email row in /app/sources/ while scanning or bringing in messages.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c622391a74e8cefc73cbbcea94b243cef1adf0e45c16b278410d82554e2b6ec",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

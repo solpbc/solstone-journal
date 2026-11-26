@@ -1,0 +1,25 @@
+{
+  "description": "Progress caption beneath the header scan progress bar.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8126f68e03f0e7b9920a3f5eca996dab576ca465bad2257909bf3b87f9900083",
+  "max_length": 163,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Third boundary note on /app/sources/email steady state.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5c3e00307cd8392f402070beb2a634761d8b5e43943d830b5731ba89df5bedb",
+  "max_length": 184,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

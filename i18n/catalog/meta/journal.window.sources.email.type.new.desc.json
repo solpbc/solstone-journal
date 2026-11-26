@@ -1,0 +1,16 @@
+{
+  "description": "Description for the new messages checkbox.",
+  "context": "Journal window, /app/sources/email message-type chooser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86f910e27e84f4aa9788c68b0969836f7ffb70caf7c3c822d590c5d7c15aa0a4",
+  "max_length": 161,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Toggle button label to hide a visible password input.",
+  "context": "Journal window, password field visibility toggle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acd7eaf3910c936fed0227fd1090c71a1f9b1eb0f61249ddc1a895b03f209924",
+  "max_length": 124,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

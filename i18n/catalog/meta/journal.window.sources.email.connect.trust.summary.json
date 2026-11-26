@@ -1,0 +1,16 @@
+{
+  "description": "Collapsed disclosure summary under the email trust claim.",
+  "context": "Journal window, /app/sources/email connect screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b282d4c571342d00824679036eb8084ea7111b4bd863d6b3813e6af6ad71c62c",
+  "max_length": 155,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

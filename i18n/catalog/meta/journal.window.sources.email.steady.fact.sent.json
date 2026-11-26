@@ -1,0 +1,16 @@
+{
+  "description": "Facts row label for total sent messages scanned.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a9e34d1799afd49da8ad0748593c5acc3d817380fdf898272daf963e14f7527",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

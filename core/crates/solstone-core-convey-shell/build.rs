@@ -137,6 +137,8 @@ fn main() {
     let more_static = manifest.join("assets/more/more.js");
     let sources_workspace = manifest.join("assets/sources/workspace.html");
     let sources_static = manifest.join("assets/sources/sources.js");
+    let sources_frame_static = manifest.join("assets/sources/selective_sync_frame.js");
+    let sources_email_static = manifest.join("assets/sources/email_source.js");
     let year_workspace = manifest.join("assets/year/workspace.html");
     let year_static = manifest.join("assets/year/year.js");
 
@@ -160,6 +162,8 @@ fn main() {
         &more_static,
         &sources_workspace,
         &sources_static,
+        &sources_frame_static,
+        &sources_email_static,
         &year_workspace,
         &year_static,
     ] {
@@ -212,6 +216,14 @@ fn main() {
     assets.push(("/app/more/static/more.js".to_owned(), more_static));
     assets.push(("/app/sources/workspace".to_owned(), sources_workspace));
     assets.push(("/app/sources/static/sources.js".to_owned(), sources_static));
+    assets.push((
+        "/app/sources/static/selective_sync_frame.js".to_owned(),
+        sources_frame_static,
+    ));
+    assets.push((
+        "/app/sources/static/email_source.js".to_owned(),
+        sources_email_static,
+    ));
     assets.push(("/app/year/workspace".to_owned(), year_workspace));
     assets.push(("/app/year/static/year.js".to_owned(), year_static));
     for (route, filename) in [

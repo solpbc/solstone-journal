@@ -1,0 +1,16 @@
+{
+  "description": "Error notice when GET /app/sources/api/email fails.",
+  "context": "Journal window, /app/sources/email detail view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "79bcd6ab600e342cbeb53f62dfd4b85d1512c1356bb108dff0edcd23d6ef240f",
+  "max_length": 158,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

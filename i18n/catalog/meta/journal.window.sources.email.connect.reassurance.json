@@ -1,0 +1,16 @@
+{
+  "description": "Reassurance line below the connect button.",
+  "context": "Journal window, /app/sources/email connect form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e0d15f5c60a108aba8b2e72dcb75a7a3a6ff8720c713b55f2ff863ce658fb14",
+  "max_length": 208,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

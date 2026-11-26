@@ -1,0 +1,16 @@
+{
+  "description": "Sub-label under outside your choice when range is none.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0f95cdae9c7678323419f87dde06e7cf34c1c37e47059fd331d2ecfcb0d733f6",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

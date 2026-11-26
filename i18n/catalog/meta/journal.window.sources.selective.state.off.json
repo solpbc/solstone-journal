@@ -1,0 +1,16 @@
+{
+  "description": "Canonical source state pill label when a selective-sync source is disconnected or turned off.",
+  "context": "Journal window, sources view and source detail views. Canonical state pill.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "586bf5ca34678fde5d5ee91f0d9afc705ee026707d1342de2557fe14bed025a4",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Action link on /app/sources/ when email needs attention.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42fc7345b2b77f29795dd5fa3eb2bc69e208fb97a3707ebf6caacd20ea339171",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

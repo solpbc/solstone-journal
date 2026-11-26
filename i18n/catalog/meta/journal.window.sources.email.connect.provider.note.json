@@ -1,0 +1,16 @@
+{
+  "description": "Calm note below the Gmail provider option on /app/sources/email.",
+  "context": "Journal window, /app/sources/email connect screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b7440e731f066a8c8a245c853be6764bc96325d1e41aed31cf2fc889b197fe14",
+  "max_length": 221,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "First gloss line under the email processing estimate.",
+  "context": "Journal window, /app/sources/email estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df38cda67dfe3dea6380e3b23706623f35ca4ea0fb462cbb5410e380ac2de920",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

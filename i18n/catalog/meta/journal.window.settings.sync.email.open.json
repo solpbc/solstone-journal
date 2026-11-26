@@ -1,0 +1,16 @@
+{
+  "description": "Link label in Settings > Sync opening /app/sources/email.",
+  "context": "Journal window, settings view, sync section. Link to open the email source page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fbed9b1464150b8722d3f6d97c2b324d71fb70a4c3962052751b735a951e2ba",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

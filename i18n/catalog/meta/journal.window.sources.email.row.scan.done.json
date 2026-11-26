@@ -1,0 +1,30 @@
+{
+  "description": "Sub-line on the email row in /app/sources/ when header scan is complete and awaiting owner choice.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "41b35b2f9117eb5d2188fed37f98f98097e91cf4fadf0d6b67be80869b5eaae8",
+  "max_length": 266,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

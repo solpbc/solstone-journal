@@ -1,0 +1,16 @@
+{
+  "description": "Secondary button cancelling an active header scan.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b651b26a91898d6edbded5cddd23ac8ee5677724cfd924bbc28ae92bac02047a",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

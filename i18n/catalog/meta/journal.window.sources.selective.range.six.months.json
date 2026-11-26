@@ -1,0 +1,16 @@
+{
+  "description": "Range option for the last 6 months.",
+  "context": "Journal window, selective-sync source choice screen. Range radio option.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3925849bdee765543575b424598974a5dfcd585011a3fdee9b56a4e7da3104db",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

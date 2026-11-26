@@ -1,0 +1,16 @@
+{
+  "description": "Inline validation message when all message types are unticked.",
+  "context": "Journal window, /app/sources/email choice and widen screens.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "90ba24673fe6ea633e97145eaa552aa5ccda6575fbcd9618464584a421059a2c",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

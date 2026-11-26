@@ -1,0 +1,16 @@
+{
+  "description": "Button label to disconnect a connected source.",
+  "context": "Journal window, selective-sync source detail screens and disconnect modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dab9a110087b8e4346ef42ab06bb8afe951fe1326a825efd32c86ba637ef6e2c",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

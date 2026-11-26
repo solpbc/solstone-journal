@@ -1,0 +1,16 @@
+{
+  "description": "Inline link text on the email row in /app/sources/ pointing to /app/health/ while fetching.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "26c1b3a0a42096e2e35d566e4ce0f5a44e856b875f099d82ac9575297f2df9e7",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

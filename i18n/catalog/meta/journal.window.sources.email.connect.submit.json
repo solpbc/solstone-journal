@@ -1,0 +1,16 @@
+{
+  "description": "Primary button label to verify Gmail credentials and begin the header scan.",
+  "context": "Journal window, /app/sources/email connect form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a205d65e0f88c9983d158625f26eff424b762b8ae881b0ef6ae4835d3b21888a",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

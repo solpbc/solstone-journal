@@ -1,0 +1,21 @@
+{
+  "description": "Summary line above the choice controls when no eligible sent messages were found.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "scanned",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "298da75f346ba506aa43fc5f081c68de189f92fb76dab876c448d09b09f58775",
+  "max_length": 206,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

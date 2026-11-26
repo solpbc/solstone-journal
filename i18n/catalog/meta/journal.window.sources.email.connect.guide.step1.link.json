@@ -1,0 +1,16 @@
+{
+  "description": "External link text opening Google's app passwords page.",
+  "context": "Journal window, /app/sources/email connect guide and password replacement form.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e89bc406888cfb40eb3f030641d76b8ab5dbabec00f80e2ab6d2708b583079d0",
+  "max_length": 145,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

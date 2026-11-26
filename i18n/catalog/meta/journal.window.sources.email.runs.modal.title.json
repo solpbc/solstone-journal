@@ -1,0 +1,16 @@
+{
+  "description": "Confirmation modal heading for moving one email sync run to Trash.",
+  "context": "Journal window, /app/sources/email past sync trash modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2dbdf290dc53b77db93468a8b0e25e45da8b1de7e962a1a6eb2bf49b2899a67f",
+  "max_length": 155,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

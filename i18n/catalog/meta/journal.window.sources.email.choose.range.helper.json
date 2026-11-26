@@ -1,0 +1,16 @@
+{
+  "description": "Helper note beneath the date range radio group.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5cfc74289f9b05b606830204363fbaf73eb596022d2230f9d3d75afcdd35e0da",
+  "max_length": 228,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

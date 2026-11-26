@@ -1,0 +1,16 @@
+{
+  "description": "Group heading above the canonical five historical range radio options.",
+  "context": "Journal window, selective-sync source choice screen. Heading above the date range chooser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76c6b4ec1145483d287ac6ebbb6152bc87840fe035bd96719e14583b818cc958",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

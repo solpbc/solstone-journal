@@ -1,0 +1,16 @@
+{
+  "description": "Count label beside the 'nothing from before today' range option.",
+  "context": "Journal window, /app/sources/email choice screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "672dee9a6dda955917158ced3bad9782fc29f49ed077a5a680eeba4f281c4546",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

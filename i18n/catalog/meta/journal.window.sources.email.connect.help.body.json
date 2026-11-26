@@ -1,0 +1,16 @@
+{
+  "description": "Troubleshooting explanation for Google App passwords prerequisites and exclusions.",
+  "context": "Journal window, /app/sources/email connect guide help fold.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "be54765d08538cbfbd2a37d61bf749f50898206bb018498db9a0d7c2b022d828",
+  "max_length": 419,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

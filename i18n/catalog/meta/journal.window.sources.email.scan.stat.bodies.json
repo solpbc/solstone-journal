@@ -1,0 +1,16 @@
+{
+  "description": "Stat box label proving zero message bodies are read during header scan.",
+  "context": "Journal window, /app/sources/email header scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2adc70ff334985b4f5ff6a7eaa72f1776cbdffd7d12a90b83d2cd4b77155ccf7",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

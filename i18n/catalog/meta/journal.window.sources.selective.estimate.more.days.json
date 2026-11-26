@@ -1,0 +1,30 @@
+{
+  "description": "Estimated additional journal days when widening a selective-sync choice.",
+  "context": "Journal window, selective-sync source widen-choice estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "356bb4d01a5940d9b1d1459a6f018fc1e0cfe4e5247748ec59ae0fbd6a35b707",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

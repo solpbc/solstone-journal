@@ -1,0 +1,16 @@
+{
+  "description": "Attention sub-line on /app/sources/ when Gmail could not be reached.",
+  "context": "Journal window, sources view, syncs band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d0f6205734e8491f33a22a79d3b2bd9c9d4102df4f578ed4f811daf1664b0aa3",
+  "max_length": 177,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

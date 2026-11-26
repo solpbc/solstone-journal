@@ -1,0 +1,34 @@
+{
+  "description": "Confirmation modal body explaining per-run recoverable Trash and non-return.",
+  "context": "Journal window, /app/sources/email past sync trash modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "0205491536552d20a5b18e6190843b6d51a5518ee9c363a822a130a716394b4f",
+  "max_length": 654,
+  "risk": "consent",
+  "auto_merge": false,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

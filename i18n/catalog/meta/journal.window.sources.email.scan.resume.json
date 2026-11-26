@@ -1,0 +1,16 @@
+{
+  "description": "Primary button resuming a paused header scan.",
+  "context": "Journal window, /app/sources/email paused scan screen.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ea642031d880e88d594d986cc7ac9a00b4244f9bda635f832eb344682702c760",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

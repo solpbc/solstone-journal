@@ -1,0 +1,16 @@
+{
+  "description": "Sub-label under outside your choice when range is 1y.",
+  "context": "Journal window, /app/sources/email steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5958563dbab9534910ca63b87e3f1c7dddbe0ab4d804173bb0d2f552a0936fe5",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

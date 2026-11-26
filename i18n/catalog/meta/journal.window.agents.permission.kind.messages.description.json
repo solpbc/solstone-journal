@@ -6,8 +6,8 @@
   ],
   "arguments": [],
   "format_intent": "text",
-  "source_revision": "3e37368da7efe170fb28a84d7d4b403d0fc497103ad7636f067cfa58af8e11d1",
-  "max_length": 220,
+  "source_revision": "456011bf6d3b5974e6d7b3fa7812590116ced0abb74b3bd2b46a83fbfc07198e",
+  "max_length": 400,
   "risk": "consent",
   "auto_merge": false,
   "surfaces": [

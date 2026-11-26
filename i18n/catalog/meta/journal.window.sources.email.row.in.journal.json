@@ -1,0 +1,21 @@
+{
+  "description": "Count portion of steady email row meta in /app/sources/.",
+  "context": "Journal window, sources view, syncs band. Example: '1,740 in your journal'.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ea02255db2fb11a56cdbd81128dac4013872b334e33b2ab7123d20fcc3217041",
+  "max_length": 146,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
