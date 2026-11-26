@@ -13,6 +13,9 @@
 
 set -eu
 export LC_ALL=C
+# Fix file creation mask so exported rootfs extraction and normalization do
+# not vary with the caller's umask (for example 0002 under systemd --user).
+umask 0022
 
 refuse() {
 	printf 'acquire-builder: %s\n' "$*" >&2
@@ -70,7 +73,10 @@ normalize_rootfs() {
 	"$RUNTIME" rm -f "$cid" >/dev/null
 	cid=
 	mkdir "$scratch/root"
-	tar -C "$scratch/root" -xf "$scratch/raw.tar"
+	chmod 0755 "$scratch/root"
+	# --no-same-permissions applies the fixed umask 0022 even when invoked as
+	# root, matching the non-root extraction mode used to compute the pin.
+	tar -C "$scratch/root" --no-same-permissions -xf "$scratch/raw.tar"
 	rm -f "$scratch/root/.dockerenv"
 	rm -f "$scratch/root/etc/hostname" "$scratch/root/etc/hosts" "$scratch/root/etc/resolv.conf"
 	if [ -e "$scratch/root/etc/machine-id" ]; then
