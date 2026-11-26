@@ -11,7 +11,7 @@ cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts
 ## Capability gate and version skew
 
 1. Check `GET /api/system/status` for `"resumable_import_uploads"` in `capabilities` (or `resumable` on `GET /app/import/api/sources`: `{ "threshold_bytes": 16777216, "chunk_bytes": 4194304, "max_file_bytes": 4294967296 }`).
-2. Files strictly below `threshold_bytes` (`16 MiB`) continue using single-request multipart `POST /app/import/api/save`.
+2. For files below `threshold_bytes` (16 MiB), use multipart `POST /app/import/api/save` by default. When the bridge rejects a browser file with HTTP 413 and the journal advertises resumable uploads, the browser retries once through the upload routes with the same item ID.
 3. Files at or above `16 MiB` (up to `4 GiB`) use `/app/import/api/uploads*` when `"resumable_import_uploads"` is advertised.
 4. Fallback rule:
    - If `"resumable_import_uploads"` is **not** advertised (older journal), fall back to `POST /app/import/api/save` when the platform transport supports streaming that size, or show a clear update prompt when the platform cannot single-POST the file. Note that an older journal answers `405 Method Not Allowed` (not `404`) to `POST /app/import/api/uploads` because that path matches the `GET`-only `/app/import/api/{timestamp}` route, so treat `404` and `405` identically on any unprobed fallback check.
@@ -29,7 +29,7 @@ cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts
      - `400` / `413` / `422` / `507`: validation refusal or insufficient journal space (`total_bytes + 256 MiB` free-space floor, `8 GiB` aggregate partial-upload cap).
 
 2. **`PUT /app/import/api/uploads/{upload_id}?offset={offset}`** (`application/octet-stream`)
-   - Body: raw bytes `file[offset .. min(offset + 4194304, total_bytes)]` (`1 ..= 4,194,304` bytes).
+   - Body: raw bytes starting at the confirmed offset. Send between one byte and the smaller of `chunk_bytes` and the remaining file length. A nonfinal PUT can be shorter than `chunk_bytes`.
    - Wire framing invariants (required for both direct HTTP and `spl-rust` mTLS bridge pass-through):
      - Exact `Content-Length` header is mandatory.
      - Never send `Transfer-Encoding: chunked` (`400 content_length_required`).

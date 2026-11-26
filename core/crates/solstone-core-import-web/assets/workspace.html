@@ -4890,8 +4890,7 @@ function setupQuickImportForm() {
         if (settingValue) {
           fd.append('setting', settingValue);
         }
-        response = await importWrite('/app/import/api/save', { method: 'POST', body: fd }, { upload: true, fileUpload: hasFile });
-        data = await response.json();
+        ({response, data} = await saveBrowserForm(fd, 'quick'));
       }
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
@@ -4916,7 +4915,7 @@ function setupQuickImportForm() {
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
       await loadImports();
-      if (_err && _err.cancelled === true) return;
+      if (_err?.cancelled) return;
       if (window.showError) {
         showError(_err instanceof Error && _err.message
           ? _err.message
@@ -5163,6 +5162,77 @@ async function resyncBrowserUploadStatus(uploadId, file, hasher, currentOffset, 
   return { ok: true, nextOffset: srvOff, hasher: syncedHasher, advanced };
 }
 
+async function saveBrowserForm(form, kind) {
+  const file = form.get('file');
+  const clientItemIdKey = kind + 'ClientItemId';
+  const revision = previewRevisions[kind];
+  const view = window.location?.hash;
+  const checkSelection = () => {
+    if (previewRevisions[kind] !== revision || window.location?.hash !== view || ctx.disposed) throw { cancelled: true, superseded: true };
+  };
+  const sourceHint = form.get('source_hint') || '';
+  let setting = form.get('setting') || '';
+  const canResume = file && resumableUploadConfig && typeof file.slice === 'function';
+  // Bind retries to the whole selected file and its import choices. A saved
+  // prefix from another submission must never supply this one's checksum.
+  const prefix = canResume && RESUMABLE_STORAGE_PREFIX + 'save:' + JSON.stringify(
+    [file.name, file.size, file.lastModified, kind, sourceHint]
+  ) + ':';
+  const prior = prefix && Object.entries(readLocalResumeIndex()).filter(
+    ([, entry]) => entry?.fingerprintKey?.startsWith(prefix)
+  );
+  let digest;
+  const getDigest = async () => {
+    if (!digest) {
+      const hasher = await reconcileHasherToOffset(new JsSha256(), file, file.size, resumableUploadConfig.chunkBytes);
+      digest = hasher.finalizeHex();
+    }
+    checkSelection();
+    return digest;
+  };
+  const resume = async (clientItemId, fingerprintKey) => {
+    checkSelection();
+    importDraft[clientItemIdKey] = clientItemId;
+    const submission = { clientItemId, fingerprintKey, digest, checkSelection };
+    if (!readLocalResumeState(fingerprintKey)) {
+      // The journal may accept create just before this page goes away.
+      saveLocalResumeState(fingerprintKey, { clientItemId, nextOffset: 0 });
+    }
+    return uploadBrowserFileResumable(file, { clientItemIdKey, sourceHint, setting, submission });
+  };
+  try {
+    if (prior?.length) {
+      const sha = await getDigest();
+      const candidates = prior.filter(([id, entry]) =>
+        entry.fingerprintKey.startsWith(prefix + sha + ':' + id + ':') && readLocalResumeState(entry.fingerprintKey)
+      );
+      const settingField = document.getElementById(kind + 'SettingInput');
+      for (const [id, entry] of candidates) {
+        const savedSetting = entry.fingerprintKey.slice((prefix + sha + ':' + id + ':').length);
+        if (savedSetting !== setting) {
+          if (setting || settingField?.dataset.settingEdited || candidates.length !== 1) continue;
+          setting = savedSetting;
+          if (settingField) settingField.value = setting;
+        }
+        return await resume(id, entry.fingerprintKey);
+      }
+    }
+    const response = await importWrite('/app/import/api/save', { method: 'POST', body: form }, { upload: true, fileUpload: Boolean(file) });
+    if (response.status === 413 && file) {
+      checkSelection();
+      if (!canResume || file.size > resumableUploadConfig.maxFileBytes) {
+        throw new Error(window.JournalI18n.render('journal.window.import.response.error.that.file.is.too.large.to'));
+      }
+      const sha = await getDigest();
+      const id = form.get('client_item_id');
+      return await resume(id, prefix + sha + ':' + id + ':' + setting);
+    }
+    return { response, data: await response.json() };
+  } finally {
+    checkSelection();
+  }
+}
+
 async function uploadBrowserFileResumable(file, options = {}) {
   const cfg = resumableUploadConfig || {
     thresholdBytes: 16 * 1024 * 1024,
@@ -5173,9 +5243,10 @@ async function uploadBrowserFileResumable(file, options = {}) {
     throw new Error(window.JournalI18n.render('journal.window.import.response.error.that.file.is.too.large.to'));
   }
 
-  const fingerprintKey = await computeFileFingerprintKey(file);
+  const submission = options.submission;
+  const fingerprintKey = submission?.fingerprintKey || await computeFileFingerprintKey(file);
   const stored = readLocalResumeState(fingerprintKey);
-  let clientItemId = stored?.clientItemId
+  let clientItemId = submission?.clientItemId || stored?.clientItemId
     || importDraft[options.clientItemIdKey]
     || crypto.randomUUID();
   if (options.clientItemIdKey) {
@@ -5243,8 +5314,8 @@ async function uploadBrowserFileResumable(file, options = {}) {
           }
         } else if (resyncResp.status === 404) {
           clearLocalResumeByClientItem(clientItemId);
-          clientItemId = crypto.randomUUID();
-          if (options.clientItemIdKey) importDraft[options.clientItemIdKey] = clientItemId;
+          clientItemId = submission?.clientItemId || crypto.randomUUID();
+          if (!submission && options.clientItemIdKey) importDraft[options.clientItemIdKey] = clientItemId;
           localBrowserUploads.delete(stored.clientItemId);
           localBrowserUploads.set(clientItemId, ctlRecord);
         }
@@ -5254,6 +5325,7 @@ async function uploadBrowserFileResumable(file, options = {}) {
     }
 
     if (!uploadId) {
+      submission?.checkSelection();
       const createPayload = {
         client_item_id: clientItemId,
         filename: file.name,
@@ -5262,6 +5334,7 @@ async function uploadBrowserFileResumable(file, options = {}) {
         imported_via: 'browser',
         device_noun: 'browser',
       };
+      if (submission) createPayload.sha256 = submission.digest;
       if (options.sourceHint) createPayload.source_hint = options.sourceHint;
       if (options.setting) createPayload.setting = options.setting;
 
@@ -5273,6 +5346,10 @@ async function uploadBrowserFileResumable(file, options = {}) {
       }, { upload: true });
 
       if (createResp.status === 404 || createResp.status === 405) {
+        if (submission) {
+          clearLocalResumeByClientItem(clientItemId);
+          throw new Error(window.JournalI18n.render('journal.window.import.response.error.that.file.is.too.large.to'));
+        }
         // Unprobed older-journal fallback to single-request /save.
         const fd = new FormData();
         fd.append('imported_via', 'browser');
@@ -5285,6 +5362,9 @@ async function uploadBrowserFileResumable(file, options = {}) {
           body: fd,
           signal: abortCtl.signal,
         }, { upload: true });
+        if (saveResp.status === 413) {
+          throw new Error(window.JournalI18n.render('journal.window.import.response.error.that.file.is.too.large.to'));
+        }
         const saveData = await saveResp.json();
         return { response: saveResp, data: saveData };
       }
@@ -5337,6 +5417,7 @@ async function uploadBrowserFileResumable(file, options = {}) {
       const chunkArr = new Uint8Array(chunkBuf);
       const chunkShaHex = await sha256HexForChunk(chunkArr);
 
+      submission?.checkSelection();
       let putResp;
       try {
         putResp = await importWrite(
@@ -5457,9 +5538,10 @@ async function uploadBrowserFileResumable(file, options = {}) {
     }
 
     updateLocalStrip(uploadId, file.size, 'checking');
-    const finalSha256 = hasher.finalizeHex();
+    const finalSha256 = submission?.digest || hasher.finalizeHex();
     let commitResp = null;
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      submission?.checkSelection();
       try {
         commitResp = await importWrite(
           `/app/import/api/uploads/${encodeURIComponent(uploadId)}/commit`,
@@ -5498,7 +5580,7 @@ async function uploadBrowserFileResumable(file, options = {}) {
     renderHandoffTray();
     return { response: commitResp, data: commitData };
   } catch (err) {
-    if (ctlRecord.cancelled || (err && err.cancelled === true)) {
+    if (ctlRecord.cancelled || (err?.cancelled && !err.superseded)) {
       clearLocalResumeByClientItem(clientItemId);
       transferStripItems.delete(clientItemId);
       renderTransferStrip();
@@ -5555,11 +5637,7 @@ async function uploadGuidedSourceFile(source) {
       fd.append('setting', settingValue);
     }
 
-    response = await importWrite('/app/import/api/save', {
-      method: 'POST',
-      body: fd,
-    }, { upload: true, fileUpload: true });
-    data = await response.json();
+    ({response, data} = await saveBrowserForm(fd, 'guided'));
   }
   if (!response.ok) {
     throw new Error(importErrorMessage(data, window.JournalI18n.render('journal.window.import.window.explanation.failed.to.save.import')));
@@ -5936,6 +6014,7 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
 ctx.on(window.document, 'input', event => {
   if (!importOwns(event.target)) return;
   const id = event.target?.id;
+  if (id === 'quickSettingInput' || id === 'guidedSettingInput') event.target.dataset.settingEdited = 'true';
   if (['guidedPathInput', 'guidedFileInput'].includes(id)) currentGuidedSaved = null;
   if (['guidedSettingInput', 'guidedPathInput', 'guidedFileInput', 'guidedArchiveZone', 'guidedArchiveManifest'].includes(id)) invalidateImportPreview('guided');
   if (['timestampInput', 'settingInput', 'fileInput', 'pasteText', 'quickSettingInput'].includes(id)) invalidateImportPreview('quick');

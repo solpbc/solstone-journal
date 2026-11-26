@@ -98,6 +98,7 @@ function makeContext(globals) {
   vm.runInContext(MOUNT_SCOPE, context);
   const source = scriptFromWorkspace();
   vm.runInContext(`
+    let resumableUploadConfig = null;
     const importPreviews = { guided: null, quick: null };
     const previewRevisions = { guided: 0, quick: 0 };
     const importInFlight = { guided: false, quick: false };
@@ -119,7 +120,7 @@ function makeContext(globals) {
   for (const name of ['quantityArgs', 'historyLoadMoreLabel', 'guideStepLabel', 'formattedEntryCount',
     'importCopyText', 'createImportDeleteCopy', 'importHost', 'enableHandoff', 'handoffText',
     'setImportButton', 'invalidateImportPreview', 'restoreImportButton',
-    'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
+    'saveBrowserForm', 'prepareImportPreview', 'renderThinkingProgress', 'scheduleThinkingProgress']) {
     vm.runInContext(functionSource(source, name), context);
   }
   // A source's name on the page: its card's word, else the page's own table.
@@ -371,6 +372,8 @@ function shut(el) {
 }
 
 class CapturedFormData {
+  get(key) { return this.entries.find(([name]) => name === key)?.[1] ?? null; }
+
   constructor() {
     this.entries = [];
   }
@@ -489,6 +492,100 @@ async function runQuickSubmit() {
   assert.strictEqual(harness.requests[0].url, '/app/import/api/save');
   assertFacetAbsentAndSettingPreserved(harness.requests[0], 'quick setting');
   cases += 1;
+}
+
+async function runRefusedFileRetry() {
+  const { createHash } = require('node:crypto');
+  for (const kind of ['quick', 'guided']) {
+    for (const reselect of [false, true]) {
+      const content = Buffer.alloc(65537, 65);
+      content[65536] = 66;
+      const file = new File([content], 'notes.txt', {lastModified: 1000});
+      const digest = createHash('sha256').update(content).digest('hex');
+      const id = 'selected-item';
+      const form = new CapturedFormData();
+      form.append('file', file);
+      form.append('client_item_id', id);
+      form.append('setting', 'project notes');
+      if (kind === 'guided') form.append('source_hint', 'evernote');
+      const requests = [];
+      const payload = [];
+      let interruptCreate = reselect;
+      const legacyKey = 'test:notes.txt:65537:1000:' + createHash('sha256').update(content.subarray(0, 65536)).digest('hex');
+      const storage = new Map([
+        [legacyKey, JSON.stringify({clientItemId: 'other-item', uploadId: 'other-upload', nextOffset: 65537})],
+        ['index', JSON.stringify({'other-item': {fingerprintKey: legacyKey, uploadId: 'other-upload'}})],
+      ]);
+      const context = makeContext({
+        AbortController, Uint8Array, form, kind,
+        window: {crypto: require('node:crypto').webcrypto, localStorage: {
+          getItem: key => storage.get(key) ?? null,
+          setItem: (key, value) => storage.set(key, value),
+          removeItem: key => storage.delete(key),
+        }},
+        renderTransferStrip() {}, renderHandoffTray() {},
+        async fetch(url, init) {
+          requests.push([init.method, url]);
+          if (url.endsWith('/save')) return new Response('too large', {status: 413});
+          if (url.endsWith('/uploads')) {
+            const data = JSON.parse(init.body);
+            assert.strictEqual(data.client_item_id, id);
+            assert.strictEqual(data.sha256, digest);
+            assert.strictEqual(data.source_hint, kind === 'guided' ? 'evernote' : undefined);
+            assert.strictEqual(data.setting, 'project notes');
+            if (interruptCreate) {
+              interruptCreate = false;
+              vm.runInContext('invalidateImportPreview(kind)', context);
+              if (kind === 'guided') throw new TypeError('connection lost after create');
+            }
+            return Response.json({upload_id: 'current', next_offset: 0, chunk_bytes: 65536}, {status: 201});
+          }
+          if (init.method === 'GET') return Response.json({next_offset: 0});
+          if (init.method === 'PUT') {
+            payload.push(Buffer.from(init.body));
+            return Response.json({next_offset: Buffer.concat(payload).length});
+          }
+          assert.ok(url.endsWith('/current/commit'));
+          assert.strictEqual(JSON.parse(init.body).sha256, digest);
+          return Response.json({status: 'staged'});
+        },
+      });
+      vm.runInContext(workspace.slice(workspace.indexOf('const SHA256_K ='), workspace.indexOf('async function sha256HexForChunk')), context);
+      for (const name of ['uploadBrowserFileResumable', 'advanceHasherOverFileRange', 'reconcileHasherToOffset',
+        'sha256HexForChunk', 'readLocalResumeIndex', 'writeLocalResumeIndex', 'saveLocalResumeState',
+        'clearLocalResumeByClientItem', 'readLocalResumeState', 'markLocalResumePaused']) {
+        vm.runInContext(functionSource(workspace, name), context);
+      }
+      vm.runInContext(`
+        const RESUMABLE_STORAGE_PREFIX = 'test:', RESUMABLE_ITEM_INDEX_KEY = 'index';
+        const transferStripItems = new Map(), localBrowserUploads = new Map();
+        let pendingFileUploads = 0;
+        resumableUploadConfig = {thresholdBytes: 131072, chunkBytes: 65536, maxFileBytes: 262144};
+      `, context);
+      const result = vm.runInContext('saveBrowserForm(form, kind)', context);
+      if (reselect) {
+        await assert.rejects(result, error => error.cancelled && error.superseded);
+        assert.deepStrictEqual(requests.map(([method]) => method), ['POST', 'POST']);
+        assert.strictEqual(JSON.parse(storage.get('index'))[id].activeTabBeatAt, 0);
+        // A freshly opened form has a new ID and an empty optional context.
+        form.entries = form.entries.filter(([key]) => key !== 'setting' && key !== 'client_item_id');
+        form.append('client_item_id', 'fresh-selection');
+        vm.runInContext("localBrowserUploads.clear(); transferStripItems.clear(); importDraft[kind + 'ClientItemId'] = 'fresh-selection';", context);
+        const recovered = await vm.runInContext('saveBrowserForm(form, kind)', context);
+        assert.strictEqual(recovered.data.status, 'staged');
+        assert.strictEqual(requests.filter(([, path]) => path.endsWith('/save')).length, 1);
+        assert.strictEqual(requests.filter(([, path]) => path.endsWith('/commit')).length, 1);
+        assert.deepStrictEqual(Buffer.concat(payload), content);
+        assert.deepStrictEqual(Object.keys(JSON.parse(storage.get('index'))), ['other-item']);
+      } else {
+        assert.strictEqual((await result).data.status, 'staged');
+        assert.deepStrictEqual(requests.map(([method]) => method), ['POST', 'POST', 'PUT', 'PUT', 'POST']);
+        assert.deepStrictEqual(Buffer.concat(payload), content);
+      }
+      assert.ok(storage.has(legacyKey));
+      cases++;
+    }
+  }
 }
 
 async function runQuickSaveFailureReadsOnce() {
@@ -4950,6 +5047,7 @@ Promise.resolve()
   .then(runPreviewEditRequiresNewPreview)
   .then(runPreviewWithOnlyMovesCanStartAndSaysHowMany)
   .then(runThinkingRefreshKeepsControlsAndFocus)
+  .then(runRefusedFileRetry)
   .then(runQuickSubmit)
   .then(runQuickSaveFailureReadsOnce)
   .then(runGuidedSubmit)

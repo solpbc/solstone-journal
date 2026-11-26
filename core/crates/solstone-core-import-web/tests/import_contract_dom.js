@@ -851,6 +851,7 @@ function makePage(env, address = '/app/import/', { answers, folders = false, loc
   };
 
   class FormData {
+    get(key) { return this.entries.find(([name]) => name === key)?.[1] ?? null; }
     constructor() { this.entries = []; }
     append(key, value) { this.entries.push([key, value]); }
   }
