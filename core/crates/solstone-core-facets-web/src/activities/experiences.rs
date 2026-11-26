@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use solstone_core_facets::{
     ActivityRef, ExperienceActivitiesMutation, ExperienceDirectPatch, ExperienceMoment,
     ExperienceStoreError, ShareDetailPolicy, create_owner_experience, get_experience,
-    hydrate_experience, list_declared_facet_names, list_experience_day_stems,
+    hydrate_experience, hydrate_experiences, list_declared_facet_names, list_experience_day_stems,
     list_experiences_in_range, load_activity_records, load_experiences,
     load_experiences_overlapping_day, mutate_experience_activities, observe_facet_declaration,
     project_experience_for_share, set_experience_hidden, update_experience_direct,
@@ -396,10 +396,7 @@ pub(super) async fn list_range(
             all.truncate(take_n);
         }
     }
-    let hydrated: Vec<_> = all
-        .into_iter()
-        .map(|rec| hydrate_experience(&root, rec, None))
-        .collect();
+    let hydrated = hydrate_experiences(&root, all);
     Json(json!({
         "from": from,
         "to": to,
@@ -477,17 +474,14 @@ pub(super) async fn list_day(
             Err(error) => return internal(error.to_string()),
         },
     };
-    let mut experiences = Vec::new();
+    let mut records = Vec::new();
     for f in facets {
         match load_experiences_overlapping_day(&root, &f, &day, include_hidden) {
-            Ok(rows) => {
-                for row in rows {
-                    experiences.push(hydrate_experience(&root, row, None));
-                }
-            }
+            Ok(rows) => records.extend(rows),
             Err(error) => return map_store_error(error),
         }
     }
+    let mut experiences = hydrate_experiences(&root, records);
     experiences.sort_by(|a, b| {
         a.experience
             .started_at

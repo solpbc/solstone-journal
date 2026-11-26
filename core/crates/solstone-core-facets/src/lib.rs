@@ -34,10 +34,11 @@ pub use body_facet::{
     body_facet_offer, default_for_unattended,
 };
 pub use experiences::{
-    HydratedActivity, HydratedExperience, HydratedMedia, HydratedPerson, HydratedRefs,
-    HydratedSegmentEvidence, NearbyCandidateActivity, ShareProjectedExperience,
-    ShareProjectedMoment, extract_compact_image_caption, hydrate_experience,
-    nearby_candidate_activities, project_experience_for_share,
+    ExperienceHydrationContext, HydratedActivity, HydratedExperience, HydratedMedia,
+    HydratedPerson, HydratedRefs, HydratedSegmentEvidence, NearbyCandidateActivity,
+    ShareProjectedExperience, ShareProjectedMoment, extract_compact_image_caption,
+    hydrate_experience, hydrate_experience_with, hydrate_experiences, nearby_candidate_activities,
+    project_experience_for_share,
 };
 pub use link_heal::{FacetLinkHealError, FacetLinkHealReport, self_heal_facet_links};
 pub use moment_copies::{Moment, merge_moment_copies, moment_key};

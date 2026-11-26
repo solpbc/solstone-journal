@@ -10,7 +10,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_entity::{
-    hidden_participation_entity_ids, live_merge_successor, load_all_journal_entities,
+    EntityIdentityMap, hidden_participation_entity_ids, live_merge_successor_in,
+    load_all_journal_entities, read_identity_map,
 };
 use solstone_core_format::content::experiences::{
     ActivityRef, ExperienceMoment, ExperienceRecord, ShareDetailPolicy,
@@ -171,9 +172,24 @@ pub fn hydrate_experience(
     experience: ExperienceRecord,
     include_nearby: Option<bool>,
 ) -> HydratedExperience {
-    let hidden_ids = hidden_participation_entity_ids(journal_root);
-    let entities_by_id: BTreeMap<String, (String, String)> =
-        load_all_journal_entities(journal_root)
+    let context = ExperienceHydrationContext::load(journal_root);
+    hydrate_experience_with(journal_root, experience, include_nearby, &context)
+}
+
+/// The journal's entity state an Experience hydration reads: hidden ids, live
+/// names and types, and the identity map merges are followed through. Each load
+/// reads every entity, so a caller hydrating many Experiences loads it once.
+pub struct ExperienceHydrationContext {
+    hidden_ids: BTreeSet<String>,
+    entities_by_id: BTreeMap<String, (String, String)>,
+    identity_map: Option<EntityIdentityMap>,
+}
+
+impl ExperienceHydrationContext {
+    /// Read the journal's entity state as it is now.
+    pub fn load(journal_root: &Path) -> Self {
+        let hidden_ids = hidden_participation_entity_ids(journal_root);
+        let entities_by_id = load_all_journal_entities(journal_root)
             .unwrap_or_default()
             .into_iter()
             .filter(|e| !e.is_blocked())
@@ -189,12 +205,55 @@ pub fn hydrate_experience(
                 (e.id, (name, etype))
             })
             .collect();
+        Self {
+            hidden_ids,
+            entities_by_id,
+            identity_map: read_identity_map(journal_root).ok(),
+        }
+    }
+
+    /// `hidden_participation_entity_ids` as read by [`Self::load`].
+    #[must_use]
+    pub fn hidden_ids(&self) -> &BTreeSet<String> {
+        &self.hidden_ids
+    }
+}
+
+/// Hydrate a list of Experiences from one read of the journal's entity state
+/// (none for an empty list), each exactly as [`hydrate_experience`] would.
+pub fn hydrate_experiences(
+    journal_root: &Path,
+    experiences: Vec<ExperienceRecord>,
+) -> Vec<HydratedExperience> {
+    if experiences.is_empty() {
+        return Vec::new();
+    }
+    let context = ExperienceHydrationContext::load(journal_root);
+    experiences
+        .into_iter()
+        .map(|experience| hydrate_experience_with(journal_root, experience, None, &context))
+        .collect()
+}
+
+/// [`hydrate_experience`] against entity state already read with
+/// [`ExperienceHydrationContext::load`].
+pub fn hydrate_experience_with(
+    journal_root: &Path,
+    experience: ExperienceRecord,
+    include_nearby: Option<bool>,
+    context: &ExperienceHydrationContext,
+) -> HydratedExperience {
+    let hidden_ids = &context.hidden_ids;
+    let entities_by_id = &context.entities_by_id;
 
     let mut seen_people = BTreeSet::new();
     let mut people = Vec::new();
     for raw_eid in &experience.entity_refs {
-        let resolved_id =
-            live_merge_successor(journal_root, raw_eid).unwrap_or_else(|| raw_eid.clone());
+        let resolved_id = context
+            .identity_map
+            .as_ref()
+            .and_then(|map| live_merge_successor_in(journal_root, map, raw_eid))
+            .unwrap_or_else(|| raw_eid.clone());
         if hidden_ids.contains(&resolved_id) || hidden_ids.contains(raw_eid) {
             continue;
         }

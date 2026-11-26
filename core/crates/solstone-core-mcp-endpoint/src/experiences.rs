@@ -10,8 +10,8 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::hidden_participation_entity_ids;
 use solstone_core_facets::{
-    ExperienceRecord, HydratedExperience, get_experience, hydrate_experience,
-    list_experiences_in_range,
+    ExperienceHydrationContext, ExperienceRecord, HydratedExperience, get_experience,
+    hydrate_experience_with, list_experiences_in_range,
 };
 use solstone_core_indexer_query::AdmittedCategory;
 use solstone_core_journal_io::is_day_key;
@@ -158,8 +158,28 @@ pub(crate) fn filter_hydrated_experience(
     facet_title: &str,
     reference: Option<String>,
 ) -> Value {
-    let exp = &hydrated.experience;
     let hidden_entities = hidden_participation_entity_ids(journal);
+    filter_hydrated_experience_with(
+        snapshot,
+        admitted_facet_dirs,
+        hydrated,
+        facet_title,
+        reference,
+        &hidden_entities,
+    )
+}
+
+/// [`filter_hydrated_experience`] against `hidden_participation_entity_ids`
+/// already read, so a list of Experiences reads the journal's entities once.
+fn filter_hydrated_experience_with(
+    snapshot: &ConnectionReadSnapshot,
+    admitted_facet_dirs: &BTreeSet<String>,
+    hydrated: &HydratedExperience,
+    facet_title: &str,
+    reference: Option<String>,
+    hidden_entities: &BTreeSet<String>,
+) -> Value {
+    let exp = &hydrated.experience;
     let allow_entities = snapshot.categories.contains(&AdmittedCategory::Entities);
     let places_precision = snapshot
         .categories
@@ -346,6 +366,11 @@ pub(crate) fn collect_range_experiences(
             .then_with(|| a.0.id.cmp(&b.0.id))
     });
 
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    // Read the journal's entities once for the whole list, not per Experience.
+    let context = ExperienceHydrationContext::load(journal);
     let mut out = Vec::with_capacity(rows.len());
     for (rec, facet_id, facet_dir, facet_title) in rows {
         let reference = codec()
@@ -360,14 +385,14 @@ pub(crate) fn collect_range_experiences(
                 }),
             )
             .ok();
-        let hydrated = hydrate_experience(journal, rec, None);
-        out.push(filter_hydrated_experience(
-            journal,
+        let hydrated = hydrate_experience_with(journal, rec, None, &context);
+        out.push(filter_hydrated_experience_with(
             snapshot,
             &admitted_dirs,
             &hydrated,
             &facet_title,
             reference,
+            context.hidden_ids(),
         ));
     }
     out
@@ -641,5 +666,154 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    fn seed_experience(root: &Path, day: &str, segment: &str, people: &[&str]) {
+        let id = format!("social_{segment}");
+        let mut act = Map::new();
+        act.insert("id".to_owned(), json!(id));
+        act.insert("stream".to_owned(), json!("watch"));
+        act.insert("activity".to_owned(), json!("social"));
+        act.insert("description".to_owned(), json!("Dinner"));
+        act.insert("segments".to_owned(), json!([segment]));
+        let _ = append_activity_record(root, "personal", day, act).unwrap();
+        let aref = ActivityRef {
+            day: day.to_owned(),
+            stream: "watch".to_owned(),
+            id,
+            facet: None,
+        };
+        let created = create_owner_experience(
+            root,
+            "personal",
+            vec![aref.clone()],
+            Some("Dinner".to_owned()),
+            Some("Alex had dinner.".to_owned()),
+            "owner",
+            "2026-03-04T20:00:00Z",
+        )
+        .unwrap();
+        apply_composed_experience(
+            root,
+            "personal",
+            day,
+            &created.id,
+            ComposedExperienceUpdate {
+                title: format!("Dinner {segment}"),
+                summary: "Alex had dinner.".to_owned(),
+                locations: Vec::new(),
+                entity_refs: people.iter().map(|p| (*p).to_owned()).collect(),
+                moments: vec![ExperienceMoment {
+                    id: "m1".to_owned(),
+                    started_at: format!("{}-{}-{} 18:00", &day[..4], &day[4..6], &day[6..]),
+                    ended_at: format!("{}-{}-{} 18:10", &day[..4], &day[4..6], &day[6..]),
+                    summary: "Alex arrived.".to_owned(),
+                    activity_refs: vec![aref],
+                    segment_refs: Vec::new(),
+                    media_refs: Vec::new(),
+                }],
+                started_at: None,
+                ended_at: None,
+            },
+            "2026-03-04T20:05:00Z",
+        )
+        .unwrap();
+    }
+
+    /// A week's Experiences hydrate from one read of the journal's entities (a
+    /// read per Experience made `get_week` take ~50 s on a journal with ~24k
+    /// entities) and come out exactly as hydrating and filtering each one on its
+    /// own does, merged, hidden and unknown people included.
+    #[test]
+    fn range_experiences_from_one_entity_read_match_per_experience_hydration() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        create_facet(root, "personal", "Personal", "", "#6366f1", "✨", None).unwrap();
+        seed_person(root, "maya", "Maya Lin", false);
+        seed_person(root, "secret_person", "Hidden Guest", true);
+        std::fs::write(
+            root.join("entities").join("retired.json"),
+            json!({"ids": {"maya_old": {"state": "merged", "dir": "maya_old", "successor": "maya"}}})
+                .to_string(),
+        )
+        .unwrap();
+        seed_experience(root, "20260304", "180000_600", &["maya", "secret_person"]);
+        seed_experience(
+            root,
+            "20260305",
+            "190000_600",
+            &["maya_old", "unknown_slug"],
+        );
+        seed_experience(root, "20260306", "200000_600", &[]);
+
+        let principal = DispatchPrincipal {
+            connection: "bearer:test",
+            agent_identity: "test-agent",
+        };
+        let personal_id =
+            solstone_core_facets::observe_facet_write_identity(root, "personal").unwrap();
+        let facets = vec![(personal_id, "personal".to_owned(), "Personal".to_owned())];
+        let snapshot = snapshot_with(
+            &[AdmittedCategory::Facets, AdmittedCategory::Entities],
+            None,
+            ConnectionScope::WholeJournal,
+        );
+        let admitted: BTreeSet<String> = ["personal".to_owned()].into_iter().collect();
+        let strip = |mut v: Value| {
+            v.as_object_mut().unwrap().remove("reference");
+            v
+        };
+
+        let list =
+            collect_range_experiences(root, principal, &snapshot, &facets, "20260301", "20260307");
+        assert_eq!(list.len(), 3);
+        let merged: Vec<&str> = list[1]["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["entity_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(merged, ["maya", "unknown_slug"]);
+        let mut records =
+            list_experiences_in_range(root, "personal", "20260301", "20260307", false).unwrap();
+        records.sort_by(|a, b| {
+            a.started_at
+                .cmp(&b.started_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        assert_eq!(records.len(), 3);
+        for (row, rec) in list.into_iter().zip(records) {
+            let one_by_one = filter_hydrated_experience(
+                root,
+                &snapshot,
+                &admitted,
+                &solstone_core_facets::hydrate_experience(root, rec, None),
+                "Personal",
+                None,
+            );
+            assert_eq!(strip(row), strip(one_by_one));
+        }
+        let records =
+            list_experiences_in_range(root, "personal", "20260301", "20260307", false).unwrap();
+        let listed = solstone_core_facets::hydrate_experiences(root, records.clone());
+        for (from_list, rec) in listed.iter().zip(records) {
+            let alone = solstone_core_facets::hydrate_experience(root, rec, None);
+            assert_eq!(from_list.hydrated.people, alone.hydrated.people);
+        }
+        assert!(solstone_core_facets::hydrate_experiences(root, Vec::new()).is_empty());
+
+        // The list hydrates from one read of the entities: a change after that
+        // read is not seen, so nothing re-reads them per Experience.
+        let context = ExperienceHydrationContext::load(root);
+        seed_person(root, "maya", "Maya Lin", true);
+        let rec = list_experiences_in_range(root, "personal", "20260304", "20260304", false)
+            .unwrap()
+            .remove(0);
+        let held = hydrate_experience_with(root, rec.clone(), None, &context);
+        assert_eq!(held.hydrated.people.len(), 1);
+        assert_eq!(held.hydrated.people[0].entity_id, "maya");
+        assert!(!context.hidden_ids().contains("maya"));
+        let fresh = solstone_core_facets::hydrate_experience(root, rec, None);
+        assert!(fresh.hydrated.people.is_empty());
     }
 }
