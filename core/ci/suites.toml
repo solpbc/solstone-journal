@@ -1520,6 +1520,17 @@ runtime = "none"
 features = ["dev-command"]
 
 [[package_suites]]
+id = "package::solstone-core-email"
+package = "solstone-core-email"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-dns"
 package = "solstone-core-dns"
 set = "component"

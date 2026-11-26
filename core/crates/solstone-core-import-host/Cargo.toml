@@ -40,6 +40,7 @@ sha2 = { workspace = true }
 log.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-cli-copy.workspace = true
+solstone-core-email.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format = { workspace = true }

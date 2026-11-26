@@ -53,8 +53,14 @@ target = "x86_64-pc-windows-msvc"
 # adds one member and one library (147/140 -> 148/141). It is cross-platform
 # Rust over hickory-resolver, with a cfg(windows) adapter read through
 # ipconfig; it does not depend on ring.
-workspace_packages = 148
-library_packages = 141
+# Re-derived on 2026-11-25 with the same metadata join:
+# solstone-core-photos-library and solstone-core-email add two members and two
+# libraries (148/141 -> 150/143). solstone-core-email is cross-platform Rust
+# over rustls/ring, rusqlite, mail-parser, html2text, html5ever, similar,
+# jiff, and journal-io with no cfg(target_os) gate; because it depends on ring
+# and rusqlite, the Linux cross-check leaves it to native Windows CI.
+workspace_packages = 150
+library_packages = 143
 
 [[exclusions]]
 package = "ring"

@@ -13,6 +13,7 @@ mod body_facet_question;
 pub mod body_segments;
 pub mod call;
 pub mod cli_argv;
+pub mod email_sync;
 pub mod garmin_sync;
 pub mod import_publication;
 mod oura_app_question;

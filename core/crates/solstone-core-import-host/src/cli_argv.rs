@@ -754,6 +754,12 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
                 Err(error) => failure("", &format!("{error}\n"), 1),
             }
         }
+        "email" => crate::email_sync::run_cli_sync(
+            journal_path,
+            options.save,
+            options.dry_run,
+            options.scheduled,
+        ),
         _ => {
             let locale = solstone_core_cli_copy::cli_locale();
             let backends = cli_render::sync_backends().collect::<Vec<_>>().join(", ");
