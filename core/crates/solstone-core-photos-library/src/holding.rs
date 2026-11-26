@@ -1,0 +1,1591 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Private Photos Library holding area (`config/photos-library/`), rebuildable
+//! SQLite query cache, lease-based wanted list, range estimates, and dashboard
+//! state snapshot builder.
+//!
+//! Durability & privacy contract:
+//! - Plain JSON files under `config/photos-library/` are the sole durable
+//!   authority for scanned metadata, selection decisions, left-out counts,
+//!   moments, learned routine places, and wanted-list progress.
+//! - `config/photos-library/selection/selection_cache.sqlite` is a pure cache:
+//!   deleting and rebuilding it produces identical decisions and SHA-256 digest.
+//! - Never indexed, searched, shown, or offered to agents.
+//! - `turn_off()` removes `config/photos-library/` completely while keeping all
+//!   landed `chronicle/` photos and `config/photos/received/` suppression intact.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use jiff::{SignedDuration, Timestamp};
+use rusqlite::{Connection, params};
+use serde::{Deserialize, Serialize};
+use solstone_core_entity::faceprints;
+use solstone_core_journal_io::locking::{FileLock, LockOptions, hold_lock};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, create_directory_with_mode};
+use solstone_core_segment::photo_observation::read_or_project_photo_observation;
+
+use crate::geo::{GeoResolver, parse_utc_ts};
+use crate::received::{PhotoReceipt, is_segment_live, lookup_received};
+use crate::selection::{aggregate_left_out_buckets, run_selection};
+use crate::types::{
+    AssetDecision, ChoiceView, DecisionKind, DeviceState, LandedPhotoItem, LandedPhotosPage,
+    LeftOutBreakdown, OwnerCorrections, PhotosDashboardState, ProgressView, RangeEstimate,
+    RangeSpec, SMART_HIDDEN, ScanAssetRow, ScanProgressView, SelectionConfig, SelectionOutput,
+    SelectionSummary, SmartAlbumCatalogEntry, WantedItem, WantedResponse,
+};
+
+pub const HOLDING_DIR_REL: &str = "config/photos-library";
+const LOCK_NAME: &str = ".photos-library.lock";
+const PRIVATE_DIR_MODE: u32 = 0o700;
+const PRIVATE_FILE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
+const DEFAULT_LEASE_SECONDS: i64 = 300;
+const MAX_BATCH_ROWS: usize = 5_000;
+const MAX_WANTED_LIMIT: usize = 100;
+const PHOTOS_PAGE_SIZE: usize = 60;
+
+/// Feature flag in `config/journal.json` (`photos_library.enabled == Some(true)`).
+/// Strictly OFF by default until screens and voice-checked copy land.
+#[must_use]
+pub fn photos_library_enabled(journal: &Path) -> bool {
+    let Ok(bytes) = fs::read(journal.join("config/journal.json")) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    val.get("photos_library")
+        .and_then(|s| s.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+}
+
+#[must_use]
+pub fn holding_root(journal: &Path) -> PathBuf {
+    journal.join(HOLDING_DIR_REL)
+}
+
+#[must_use]
+pub fn sqlite_cache_path(journal: &Path) -> PathBuf {
+    holding_root(journal).join("selection/selection_cache.sqlite")
+}
+
+fn ensure_holding_dirs(journal: &Path) -> Result<PathBuf, String> {
+    let config_dir = journal.join("config");
+    create_directory_with_mode(&config_dir, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    let root = holding_root(journal);
+    create_directory_with_mode(&root, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    for sub in ["scan", "selection", "wanted"] {
+        create_directory_with_mode(&root.join(sub), PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    }
+    Ok(root)
+}
+
+pub(crate) fn lock_holding(journal: &Path) -> Result<FileLock, String> {
+    let root = ensure_holding_dirs(journal)?;
+    let lock_path = root.join(LOCK_NAME);
+    hold_lock(
+        &lock_path,
+        LockOptions {
+            timeout: Duration::from_secs(15),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn write_json_private<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        create_directory_with_mode(parent, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    }
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    atomic_replace(path, &bytes, PRIVATE_FILE).map_err(|e| e.to_string())
+}
+
+fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| format!("corrupt {}: {e}", path.display())),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(format!("read {}: {err}", path.display())),
+    }
+}
+
+/// Durable holding-area lifecycle state (`config/photos-library/state.json`).
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct HoldingState {
+    pub schema: u32,
+    pub scan_active: bool,
+    pub scan_complete: bool,
+    pub scan_paused: bool,
+    pub scan_items_checked: usize,
+    pub scan_items_total: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan_earliest_item_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_scan_at: Option<String>,
+    /// Selected lookback range (`"30d"`, `"6m"`, `"1y"`, `"all"`, `"none"`, or `"custom:..."`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chosen_range: Option<String>,
+    /// Inclusive UTC RFC 3339 lower bound for the chosen range (`None` for `"all"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_start_at: Option<String>,
+    /// Optional inclusive UTC RFC 3339 upper bound for custom ranges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_end_at: Option<String>,
+    /// UTC timestamp when the owner confirmed their choice (used as forward-only floor for `"none"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chosen_at: Option<String>,
+    pub paused: bool,
+    /// `"access_limited"`, `"access_off"`, `"smart_album_contract_failed"`, etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attention_detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Durable per-asset wanted/arrival tracking (`config/photos-library/wanted/state.json`).
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WantedAssetStatus {
+    Leased {
+        cid: String,
+        leased_at: String,
+        expires_at: String,
+    },
+    Landed {
+        day: String,
+        stream: String,
+        segment: String,
+        at: String,
+    },
+    NoiseDropped {
+        at: String,
+    },
+    OthersNoFaceMatch {
+        at: String,
+    },
+    Gone {
+        at: String,
+    },
+    IcloudWaiting {
+        cid: String,
+        at: String,
+    },
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct WantedStateFile {
+    pub schema: u32,
+    pub assets: BTreeMap<String, WantedAssetStatus>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct DevicesFile {
+    schema: u32,
+    devices: BTreeMap<String, DeviceState>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ScanBatchFile {
+    batch_index: u32,
+    rows: Vec<ScanAssetRow>,
+}
+
+fn filter_non_hidden(rows: Vec<ScanAssetRow>) -> Vec<ScanAssetRow> {
+    rows.into_iter()
+        .filter(|r| {
+            !r.hidden
+                && !r
+                    .albums
+                    .iter()
+                    .any(|a| a.kind == "smart" && a.subtype == SMART_HIDDEN)
+        })
+        .collect()
+}
+
+/// Rebuild the fast SQLite query cache from plain JSON scan & decision files.
+/// Safe to delete and call at any time; never owns authoritative state.
+pub fn rebuild_sqlite_index(
+    db_path: &Path,
+    rows: &[ScanAssetRow],
+    decisions: &[AssetDecision],
+) -> Result<(), String> {
+    if let Some(parent) = db_path.parent() {
+        create_directory_with_mode(parent, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    }
+    let tmp_path = db_path.with_extension("sqlite.tmp");
+    let _ = fs::remove_file(&tmp_path);
+
+    let mut conn = Connection::open(&tmp_path).map_err(|e| e.to_string())?;
+    conn.execute_batch(
+        "CREATE TABLE assets (
+            id TEXT PRIMARY KEY,
+            cloud_id TEXT,
+            captured_at_utc TEXT,
+            captured_ts REAL,
+            local_date TEXT,
+            local_iso TEXT,
+            timezone TEXT,
+            coarse_place TEXT,
+            away_from_routine INTEGER,
+            media_type TEXT,
+            in_cbm INTEGER,
+            in_saved INTEGER,
+            screenshot INTEGER,
+            owner_marked INTEGER,
+            marks_json TEXT,
+            decision TEXT,
+            reason TEXT,
+            moment_id TEXT,
+            collapsed_into TEXT,
+            near_moment_id TEXT
+        );
+        CREATE INDEX idx_assets_local_date ON assets(local_date);
+        CREATE INDEX idx_assets_decision ON assets(decision, reason);
+        CREATE INDEX idx_assets_moment ON assets(moment_id);",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let by_id: BTreeMap<&str, &ScanAssetRow> = rows.iter().map(|r| (r.id.as_str(), r)).collect();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO assets VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+            )
+            .map_err(|e| e.to_string())?;
+        for d in decisions {
+            let cap_utc = by_id
+                .get(d.id.as_str())
+                .and_then(|r| r.captured_at.as_deref())
+                .or(d.captured_at.as_deref());
+            let away_i: Option<i64> = d.away_from_routine.map(i64::from);
+            let marks_json =
+                serde_json::to_string(&d.owner_marks).unwrap_or_else(|_| "[]".to_owned());
+            let dec_str = match d.decision {
+                DecisionKind::Keep => "keep",
+                DecisionKind::StageOthersFaceCheck => "stage_others_face_check",
+                DecisionKind::LeftOut => "left_out",
+            };
+            stmt.execute(params![
+                d.id,
+                d.cloud_id,
+                cap_utc,
+                d.captured_ts,
+                d.local_date,
+                d.local_iso,
+                d.timezone,
+                d.coarse_place,
+                away_i,
+                d.media_type,
+                i64::from(d.in_cbm),
+                i64::from(d.in_saved),
+                i64::from(d.screenshot),
+                i64::from(d.owner_marked),
+                marks_json,
+                dec_str,
+                d.reason,
+                d.moment_id,
+                d.collapsed_into,
+                d.near_moment_id,
+            ])
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(conn);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600));
+    }
+    fs::rename(&tmp_path, db_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Load all persisted metadata scan rows from `config/photos-library/scan/batch-*.json`.
+pub fn load_scan_rows(journal: &Path) -> Result<Vec<ScanAssetRow>, String> {
+    let scan_dir = holding_root(journal).join("scan");
+    if !scan_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut batch_files: Vec<PathBuf> = fs::read_dir(&scan_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("batch-") && n.ends_with(".json"))
+        })
+        .collect();
+    batch_files.sort();
+
+    let mut by_id: BTreeMap<String, ScanAssetRow> = BTreeMap::new();
+    for path in batch_files {
+        let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+        let batch: ScanBatchFile = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("corrupt scan batch {}: {e}", path.display()))?;
+        for row in filter_non_hidden(batch.rows) {
+            by_id.insert(row.id.clone(), row);
+        }
+    }
+    Ok(by_id.into_values().collect())
+}
+
+fn load_smart_catalog(journal: &Path) -> Result<Option<Vec<SmartAlbumCatalogEntry>>, String> {
+    read_json_optional(&holding_root(journal).join("scan/smart_albums.json"))
+}
+
+fn load_corrections(journal: &Path) -> Result<OwnerCorrections, String> {
+    Ok(
+        read_json_optional(&holding_root(journal).join("selection/corrections.json"))?
+            .unwrap_or_else(|| OwnerCorrections {
+                version: 1,
+                ..OwnerCorrections::default()
+            }),
+    )
+}
+
+pub(crate) fn load_holding_state(journal: &Path) -> Result<HoldingState, String> {
+    Ok(
+        read_json_optional(&holding_root(journal).join("state.json"))?.unwrap_or(HoldingState {
+            schema: 1,
+            ..HoldingState::default()
+        }),
+    )
+}
+
+fn save_holding_state(journal: &Path, state: &HoldingState) -> Result<(), String> {
+    write_json_private(&holding_root(journal).join("state.json"), state)
+}
+
+fn load_devices(journal: &Path) -> Result<DevicesFile, String> {
+    Ok(
+        read_json_optional(&holding_root(journal).join("devices.json"))?.unwrap_or(DevicesFile {
+            schema: 1,
+            devices: BTreeMap::new(),
+        }),
+    )
+}
+
+fn save_devices(journal: &Path, devices: &DevicesFile) -> Result<(), String> {
+    write_json_private(&holding_root(journal).join("devices.json"), devices)
+}
+
+pub(crate) fn load_wanted_state(journal: &Path) -> Result<WantedStateFile, String> {
+    Ok(
+        read_json_optional(&holding_root(journal).join("wanted/state.json"))?.unwrap_or(
+            WantedStateFile {
+                schema: 1,
+                assets: BTreeMap::new(),
+            },
+        ),
+    )
+}
+
+pub(crate) fn save_wanted_state(journal: &Path, state: &WantedStateFile) -> Result<(), String> {
+    write_json_private(&holding_root(journal).join("wanted/state.json"), state)
+}
+
+pub fn load_decisions(journal: &Path) -> Result<Vec<AssetDecision>, String> {
+    Ok(
+        read_json_optional(&holding_root(journal).join("selection/decisions.json"))?
+            .unwrap_or_default(),
+    )
+}
+
+pub fn load_summary(journal: &Path) -> Result<Option<SelectionSummary>, String> {
+    read_json_optional(&holding_root(journal).join("selection/summary.json"))
+}
+
+fn write_selection_outputs(
+    journal: &Path,
+    rows: &[ScanAssetRow],
+    out: &SelectionOutput,
+) -> Result<(), String> {
+    let sel_dir = holding_root(journal).join("selection");
+    create_directory_with_mode(&sel_dir, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    write_json_private(&sel_dir.join("summary.json"), &out.summary)?;
+    write_json_private(&sel_dir.join("decisions.json"), &out.decisions)?;
+    write_json_private(&sel_dir.join("left_out.json"), &out.left_out)?;
+    write_json_private(&sel_dir.join("moments.json"), &out.moments)?;
+    write_json_private(&sel_dir.join("routine_places.json"), &out.routine_places)?;
+    rebuild_sqlite_index(&sqlite_cache_path(journal), rows, &out.decisions)?;
+    Ok(())
+}
+
+/// Re-run deterministic selection from the persisted plain-JSON scan batches and
+/// rebuild the SQLite cache. Proves zero reliance on SQLite as durable state.
+pub fn rebuild_from_plain_json(journal: &Path) -> Result<SelectionOutput, String> {
+    let _lock = lock_holding(journal)?;
+    rebuild_locked(journal, &SelectionConfig::v2())
+}
+
+fn rebuild_locked(journal: &Path, config: &SelectionConfig) -> Result<SelectionOutput, String> {
+    let rows = load_scan_rows(journal)?;
+    let smart_catalog = load_smart_catalog(journal)?;
+    let corrections = load_corrections(journal)?;
+    let mut state = load_holding_state(journal)?;
+
+    match run_selection(
+        &rows,
+        config,
+        &corrections,
+        smart_catalog.as_deref(),
+        GeoResolver::shared(),
+    ) {
+        Ok(out) => {
+            write_selection_outputs(journal, &rows, &out)?;
+            if state.attention_reason.as_deref() == Some("smart_album_contract_failed") {
+                state.attention_reason = None;
+                state.attention_detail = None;
+            }
+            state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+            save_holding_state(journal, &state)?;
+            Ok(out)
+        }
+        Err(contract_err) => {
+            state.attention_reason = Some("smart_album_contract_failed".to_owned());
+            state.attention_detail = Some(contract_err.0.clone());
+            state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+            save_holding_state(journal, &state)?;
+            Err(contract_err.0)
+        }
+    }
+}
+
+/// Begin a fresh full metadata-only scan from a paired device.
+pub fn scan_start(
+    journal: &Path,
+    cid: &str,
+    device_name: &str,
+    device_kind: &str,
+    access_state: &str,
+    total_items: usize,
+    smart_albums: Vec<SmartAlbumCatalogEntry>,
+) -> Result<(), String> {
+    let _lock = lock_holding(journal)?;
+    let root = ensure_holding_dirs(journal)?;
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+
+    // Clear stale batch files from any prior incomplete scan.
+    let scan_dir = root.join("scan");
+    if let Ok(entries) = fs::read_dir(&scan_dir) {
+        for entry in entries.filter_map(Result::ok) {
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with("batch-") && n.ends_with(".json"))
+            {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+    write_json_private(&scan_dir.join("smart_albums.json"), &smart_albums)?;
+
+    let mut devices = load_devices(journal)?;
+    let dev = devices.devices.entry(cid.to_owned()).or_default();
+    dev.cid = cid.to_owned();
+    dev.name = device_name.to_owned();
+    dev.kind = if device_kind.is_empty() {
+        "iphone".to_owned()
+    } else {
+        device_kind.to_owned()
+    };
+    dev.connected = true;
+    dev.access_state = access_state.to_owned();
+    save_devices(journal, &devices)?;
+
+    let mut state = load_holding_state(journal)?;
+    state.schema = 1;
+    state.scan_active = true;
+    state.scan_paused = false;
+    state.scan_items_checked = 0;
+    state.scan_items_total = total_items;
+    state.attention_reason = attention_for_access(access_state);
+    state.attention_detail = None;
+    state.updated_at = Some(now);
+    save_holding_state(journal, &state)?;
+    Ok(())
+}
+
+/// Append one metadata-only scan batch (zero pixel bytes; hidden assets filtered out).
+pub fn scan_batch(
+    journal: &Path,
+    cid: &str,
+    batch_index: u32,
+    rows: Vec<ScanAssetRow>,
+    items_checked: Option<usize>,
+) -> Result<usize, String> {
+    if rows.len() > MAX_BATCH_ROWS {
+        return Err(format!(
+            "scan batch exceeds {MAX_BATCH_ROWS} rows ({})",
+            rows.len()
+        ));
+    }
+    let _lock = lock_holding(journal)?;
+    let root = ensure_holding_dirs(journal)?;
+    let filtered = filter_non_hidden(rows);
+    let kept_len = filtered.len();
+
+    let mut earliest: Option<String> = None;
+    for r in &filtered {
+        if let Some(cap) = r.captured_at.as_deref()
+            && !cap.trim().is_empty()
+            && earliest.as_deref().is_none_or(|e| cap < e)
+        {
+            earliest = Some(cap.to_owned());
+        }
+    }
+
+    let batch_path = root.join(format!("scan/batch-{batch_index:06}.json"));
+    write_json_private(
+        &batch_path,
+        &ScanBatchFile {
+            batch_index,
+            rows: filtered,
+        },
+    )?;
+
+    let mut state = load_holding_state(journal)?;
+    state.scan_active = true;
+    state.scan_paused = false;
+    state.scan_items_checked = items_checked.unwrap_or(state.scan_items_checked + kept_len);
+    if state.scan_items_total < state.scan_items_checked {
+        state.scan_items_total = state.scan_items_checked;
+    }
+    if let Some(e) = earliest
+        && state
+            .scan_earliest_item_at
+            .as_deref()
+            .is_none_or(|cur| e.as_str() < cur)
+    {
+        state.scan_earliest_item_at = Some(e);
+    }
+    state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+    save_holding_state(journal, &state)?;
+
+    let mut devices = load_devices(journal)?;
+    if let Some(dev) = devices.devices.get_mut(cid) {
+        dev.connected = true;
+        save_devices(journal, &devices)?;
+    }
+
+    Ok(kept_len)
+}
+
+/// Complete a metadata scan, run Rules v2 + smart-album contract check, and
+/// write durable JSON outputs + SQLite query cache.
+pub fn scan_finish(
+    journal: &Path,
+    cid: &str,
+    items_checked: Option<usize>,
+    earliest_item_at: Option<String>,
+    access_state: Option<&str>,
+    icloud_waiting_count: Option<u64>,
+) -> Result<SelectionSummary, String> {
+    let _lock = lock_holding(journal)?;
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+    let mut state = load_holding_state(journal)?;
+    state.scan_active = false;
+    state.scan_complete = true;
+    state.scan_paused = false;
+    if let Some(checked) = items_checked {
+        state.scan_items_checked = checked;
+        if state.scan_items_total < checked {
+            state.scan_items_total = checked;
+        }
+    }
+    if let Some(earliest) = earliest_item_at
+        && state
+            .scan_earliest_item_at
+            .as_deref()
+            .is_none_or(|cur| earliest.as_str() < cur)
+    {
+        state.scan_earliest_item_at = Some(earliest);
+    }
+    state.last_scan_at = Some(now.clone());
+    if let Some(acc) = access_state {
+        state.attention_reason = attention_for_access(acc);
+    }
+    state.updated_at = Some(now.clone());
+    save_holding_state(journal, &state)?;
+
+    let mut devices = load_devices(journal)?;
+    if let Some(dev) = devices.devices.get_mut(cid) {
+        dev.connected = true;
+        dev.last_scan_at = Some(now);
+        if let Some(acc) = access_state {
+            dev.access_state = acc.to_owned();
+        }
+        if let Some(cnt) = icloud_waiting_count {
+            dev.icloud_waiting_count = cnt;
+        }
+        save_devices(journal, &devices)?;
+    }
+
+    let out = rebuild_locked(journal, &SelectionConfig::v2())?;
+    Ok(out.summary)
+}
+
+/// Apply incremental PhotoKit metadata changes (added/updated/removed assets)
+/// and recompute selection deterministically.
+pub fn scan_changes(
+    journal: &Path,
+    cid: &str,
+    added_or_updated: Vec<ScanAssetRow>,
+    removed_ids: Vec<String>,
+    smart_albums: Option<Vec<SmartAlbumCatalogEntry>>,
+    access_state: Option<&str>,
+    icloud_waiting_count: Option<u64>,
+) -> Result<SelectionSummary, String> {
+    let _lock = lock_holding(journal)?;
+    let root = ensure_holding_dirs(journal)?;
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+
+    if let Some(catalog) = smart_albums {
+        write_json_private(&root.join("scan/smart_albums.json"), &catalog)?;
+    }
+
+    let mut by_id: BTreeMap<String, ScanAssetRow> = load_scan_rows(journal)?
+        .into_iter()
+        .map(|r| (r.id.clone(), r))
+        .collect();
+    for rid in &removed_ids {
+        by_id.remove(rid);
+    }
+    for row in filter_non_hidden(added_or_updated) {
+        by_id.insert(row.id.clone(), row);
+    }
+
+    // Rewrite compact canonical batch files so plain JSON stays authoritative.
+    let scan_dir = root.join("scan");
+    if let Ok(entries) = fs::read_dir(&scan_dir) {
+        for entry in entries.filter_map(Result::ok) {
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with("batch-") && n.ends_with(".json"))
+            {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+    let all_rows: Vec<ScanAssetRow> = by_id.into_values().collect();
+    let total_rows = all_rows.len();
+    for (idx, chunk) in all_rows.chunks(1_000).enumerate() {
+        let batch_path = scan_dir.join(format!("batch-{idx:06}.json"));
+        write_json_private(
+            &batch_path,
+            &ScanBatchFile {
+                batch_index: idx as u32,
+                rows: chunk.to_vec(),
+            },
+        )?;
+    }
+
+    // Mark removed IDs as Gone in wanted state if they had not landed yet.
+    if !removed_ids.is_empty() {
+        let mut wanted = load_wanted_state(journal)?;
+        for rid in &removed_ids {
+            if !matches!(
+                wanted.assets.get(rid),
+                Some(WantedAssetStatus::Landed { .. })
+            ) {
+                wanted
+                    .assets
+                    .insert(rid.clone(), WantedAssetStatus::Gone { at: now.clone() });
+            }
+        }
+        save_wanted_state(journal, &wanted)?;
+    }
+
+    let mut state = load_holding_state(journal)?;
+    state.scan_active = false;
+    state.scan_complete = true;
+    state.scan_items_checked = total_rows;
+    state.scan_items_total = total_rows;
+    state.last_scan_at = Some(now.clone());
+    if let Some(acc) = access_state {
+        state.attention_reason = attention_for_access(acc);
+    }
+    state.updated_at = Some(now.clone());
+    save_holding_state(journal, &state)?;
+
+    let mut devices = load_devices(journal)?;
+    if let Some(dev) = devices.devices.get_mut(cid) {
+        dev.connected = true;
+        dev.last_scan_at = Some(now);
+        if let Some(acc) = access_state {
+            dev.access_state = acc.to_owned();
+        }
+        if let Some(cnt) = icloud_waiting_count {
+            dev.icloud_waiting_count = cnt;
+        }
+        save_devices(journal, &devices)?;
+    }
+
+    let out = rebuild_locked(journal, &SelectionConfig::v2())?;
+    Ok(out.summary)
+}
+
+/// Update paired device status (access state, iCloud waiting count, scan pause).
+pub fn update_device_status(
+    journal: &Path,
+    cid: &str,
+    device_name: Option<&str>,
+    device_kind: Option<&str>,
+    access_state: Option<&str>,
+    icloud_waiting_count: Option<u64>,
+    scan_paused: Option<bool>,
+) -> Result<(), String> {
+    let _lock = lock_holding(journal)?;
+    let _ = ensure_holding_dirs(journal)?;
+    let mut devices = load_devices(journal)?;
+    let dev = devices.devices.entry(cid.to_owned()).or_default();
+    dev.cid = cid.to_owned();
+    if let Some(n) = device_name
+        && !n.trim().is_empty()
+    {
+        dev.name = n.to_owned();
+    }
+    if let Some(k) = device_kind
+        && !k.trim().is_empty()
+    {
+        dev.kind = k.to_owned();
+    } else if dev.kind.is_empty() {
+        dev.kind = "iphone".to_owned();
+    }
+    dev.connected = true;
+    if let Some(acc) = access_state {
+        dev.access_state = acc.to_owned();
+    }
+    if let Some(cnt) = icloud_waiting_count {
+        dev.icloud_waiting_count = cnt;
+    }
+    save_devices(journal, &devices)?;
+
+    let mut state = load_holding_state(journal)?;
+    if let Some(sp) = scan_paused {
+        state.scan_paused = sp;
+    }
+    if let Some(acc) = access_state {
+        // Keep smart-album contract failure sticky until a clean scan succeeds.
+        if state.attention_reason.as_deref() != Some("smart_album_contract_failed") {
+            state.attention_reason = attention_for_access(acc);
+        }
+    }
+    state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+    save_holding_state(journal, &state)?;
+    Ok(())
+}
+
+fn attention_for_access(access_state: &str) -> Option<String> {
+    match access_state {
+        "limited" => Some("access_limited".to_owned()),
+        "denied" | "restricted" => Some("access_off".to_owned()),
+        _ => None,
+    }
+}
+
+/// Resolve a `RangeSpec` into `(canonical_key, range_start_at_utc, range_end_at_utc)`.
+fn resolve_range_bounds(
+    spec: &RangeSpec,
+    now: Timestamp,
+) -> Result<(String, Option<String>, Option<String>), String> {
+    match spec {
+        RangeSpec::Preset(raw) => {
+            let key = raw.trim().to_ascii_lowercase();
+            let start = match key.as_str() {
+                "30d" => Some(
+                    now.checked_sub(SignedDuration::from_hours(30 * 24))
+                        .unwrap_or(Timestamp::UNIX_EPOCH),
+                ),
+                "6m" => Some(
+                    now.checked_sub(SignedDuration::from_hours(183 * 24))
+                        .unwrap_or(Timestamp::UNIX_EPOCH),
+                ),
+                "1y" => Some(
+                    now.checked_sub(SignedDuration::from_hours(365 * 24))
+                        .unwrap_or(Timestamp::UNIX_EPOCH),
+                ),
+                "all" => None,
+                "none" => Some(now),
+                _ => return Err(format!("unsupported range preset: {raw}")),
+            };
+            Ok((key, start.map(solstone_core_time::utc_rfc3339), None))
+        }
+        RangeSpec::Custom { since, until } => {
+            let start_ts = parse_date_or_rfc3339(since, false)
+                .ok_or_else(|| format!("invalid range start: {since}"))?;
+            let end_ts = match until.as_deref() {
+                Some(u) => Some(
+                    parse_date_or_rfc3339(u, true)
+                        .ok_or_else(|| format!("invalid range end: {u}"))?,
+                ),
+                None => None,
+            };
+            Ok((
+                spec.canonical_key(),
+                Some(solstone_core_time::utc_rfc3339(start_ts)),
+                end_ts.map(solstone_core_time::utc_rfc3339),
+            ))
+        }
+    }
+}
+
+fn parse_date_or_rfc3339(raw: &str, end_of_day: bool) -> Option<Timestamp> {
+    let trimmed = raw.trim();
+    if let Ok(ts) = trimmed.parse::<Timestamp>() {
+        return Some(ts);
+    }
+    if let Ok(z) = solstone_core_time::parse_rfc3339(trimmed) {
+        return Some(z.timestamp());
+    }
+    if let Ok(date) = trimmed.parse::<jiff::civil::Date>() {
+        let dt = if end_of_day {
+            date.at(23, 59, 59, 0)
+        } else {
+            date.at(0, 0, 0, 0)
+        };
+        return jiff::tz::Offset::UTC.to_timestamp(dt).ok();
+    }
+    None
+}
+
+/// Save the owner's initial range choice and publish the wanted list.
+pub fn choose_range(journal: &Path, spec: &RangeSpec) -> Result<PhotosDashboardState, String> {
+    let _lock = lock_holding(journal)?;
+    let now = Timestamp::now();
+    let (key, start_at, end_at) = resolve_range_bounds(spec, now)?;
+    let mut state = load_holding_state(journal)?;
+    state.chosen_range = Some(key);
+    state.range_start_at = start_at;
+    state.range_end_at = end_at;
+    state.chosen_at = Some(solstone_core_time::utc_rfc3339(now));
+    state.paused = false;
+    state.updated_at = Some(solstone_core_time::utc_rfc3339(now));
+    save_holding_state(journal, &state)?;
+    drop(_lock);
+    dashboard_state(journal)
+}
+
+/// Widen the owner's lookback range without re-requesting already-received photos.
+pub fn widen_range(journal: &Path, spec: &RangeSpec) -> Result<PhotosDashboardState, String> {
+    let _lock = lock_holding(journal)?;
+    let now = Timestamp::now();
+    let (key, new_start_at, new_end_at) = resolve_range_bounds(spec, now)?;
+    let mut state = load_holding_state(journal)?;
+    // Only move range_start_at earlier (or to None for "all").
+    let effective_start = match (&state.range_start_at, &new_start_at) {
+        (_, None) => None,
+        (None, Some(_)) => None,
+        (Some(cur), Some(cand)) => {
+            if parse_utc_ts(Some(cand)) < parse_utc_ts(Some(cur)) {
+                Some(cand.clone())
+            } else {
+                Some(cur.clone())
+            }
+        }
+    };
+    state.chosen_range = Some(key);
+    state.range_start_at = effective_start;
+    if new_end_at.is_some() {
+        state.range_end_at = new_end_at;
+    }
+    if state.chosen_at.is_none() {
+        state.chosen_at = Some(solstone_core_time::utc_rfc3339(now));
+    }
+    state.paused = false;
+    state.updated_at = Some(solstone_core_time::utc_rfc3339(now));
+    save_holding_state(journal, &state)?;
+    drop(_lock);
+    dashboard_state(journal)
+}
+
+/// Pause source arrival (stops asking paired devices for 512 px copies and new photos).
+pub fn set_paused(journal: &Path, paused: bool) -> Result<PhotosDashboardState, String> {
+    let _lock = lock_holding(journal)?;
+    let mut state = load_holding_state(journal)?;
+    state.paused = paused;
+    state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+    save_holding_state(journal, &state)?;
+    drop(_lock);
+    dashboard_state(journal)
+}
+
+/// Turn off the Photos Library source and delete the private holding area
+/// (`config/photos-library/`). Landed `chronicle/` photos and durable
+/// `config/photos/received/` suppression stay untouched.
+pub fn turn_off(journal: &Path) -> Result<PhotosDashboardState, String> {
+    let root = holding_root(journal);
+    if root.exists() {
+        let lock = lock_holding(journal)?;
+        drop(lock);
+        fs::remove_dir_all(&root).map_err(|e| format!("remove holding area: {e}"))?;
+    }
+    dashboard_state(journal)
+}
+
+/// Whether an asset decision falls within `[start_ts, end_ts]` bounds.
+fn decision_in_window(d: &AssetDecision, start_ts: Option<f64>, end_ts: Option<f64>) -> bool {
+    if let Some(s) = start_ts
+        && d.captured_ts < s
+    {
+        return false;
+    }
+    if let Some(e) = end_ts
+        && d.captured_ts > e
+    {
+        return false;
+    }
+    true
+}
+
+/// Whether the journal can currently run face matching for the others'-photos rung.
+fn can_run_others_face_check(journal: &Path) -> bool {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return false;
+    }
+    if !faceprints::enabled(journal).unwrap_or(false) {
+        return false;
+    }
+    faceprints::photo_match::load_meeting_face_index(journal)
+        .map(|idx| !idx.is_empty())
+        .unwrap_or(false)
+}
+
+/// Lease up to `limit` wanted photos for paired device `cid` (sorted newest-first).
+///
+/// Guarantees:
+/// - Nothing is leased before the owner chooses a range, while paused, or while
+///   `attention_reason` is active (such as a smart-album contract failure).
+/// - Assets already in `config/photos/received/` (live OR owner-trashed) are
+///   never asked for again.
+/// - One device answers each ask via a 5-minute lease that automatically expires
+///   if the device goes offline.
+pub fn lease_wanted(
+    journal: &Path,
+    cid: &str,
+    limit: usize,
+    lease_seconds: Option<i64>,
+) -> Result<WantedResponse, String> {
+    let _lock = lock_holding(journal)?;
+    let state = load_holding_state(journal)?;
+    let range = state.chosen_range.clone();
+
+    if state.paused || state.attention_reason.is_some() || !state.scan_complete || range.is_none() {
+        return Ok(WantedResponse {
+            paused: state.paused,
+            range,
+            wanted: Vec::new(),
+            remaining: 0,
+        });
+    }
+
+    let start_ts = state
+        .range_start_at
+        .as_deref()
+        .map(|s| parse_utc_ts(Some(s)));
+    let end_ts = state.range_end_at.as_deref().map(|s| parse_utc_ts(Some(s)));
+    let decisions = load_decisions(journal)?;
+    let mut wanted_state = load_wanted_state(journal)?;
+    let others_enabled = can_run_others_face_check(journal);
+
+    let now = Timestamp::now();
+    let now_ts = now.as_second() as f64;
+    let lease_secs = lease_seconds.unwrap_or(DEFAULT_LEASE_SECONDS).max(30);
+    let now_iso = solstone_core_time::utc_rfc3339(now);
+    let expires_iso = solstone_core_time::utc_rfc3339(
+        now.checked_add(SignedDuration::from_secs(lease_secs))
+            .unwrap_or(now),
+    );
+
+    // Collect eligible uncompleted candidates in chosen range, sorted newest-first.
+    let mut candidates: Vec<&AssetDecision> = Vec::new();
+    for d in &decisions {
+        if !decision_in_window(d, start_ts, end_ts) {
+            continue;
+        }
+        let wanted_kind = match d.decision {
+            DecisionKind::Keep => true,
+            DecisionKind::StageOthersFaceCheck => others_enabled,
+            DecisionKind::LeftOut => false,
+        };
+        if !wanted_kind {
+            continue;
+        }
+        // Fail-closed durable suppression check (survives trash erase & turn-off).
+        if lookup_received(journal, &d.id, d.cloud_id.as_deref())
+            .map_err(|e| format!("failed reading photos received ledger: {e}"))?
+            .is_some()
+        {
+            continue;
+        }
+        // Skip terminal or actively leased states.
+        match wanted_state.assets.get(&d.id) {
+            Some(
+                WantedAssetStatus::Landed { .. }
+                | WantedAssetStatus::NoiseDropped { .. }
+                | WantedAssetStatus::OthersNoFaceMatch { .. }
+                | WantedAssetStatus::Gone { .. },
+            ) => continue,
+            Some(WantedAssetStatus::Leased {
+                cid: lease_cid,
+                expires_at,
+                ..
+            }) => {
+                let exp_ts = parse_utc_ts(Some(expires_at));
+                if lease_cid != cid && exp_ts > now_ts {
+                    continue;
+                }
+            }
+            Some(WantedAssetStatus::IcloudWaiting { .. }) | None => {}
+        }
+        candidates.push(d);
+    }
+
+    // Newest first (deterministic tie-break by id).
+    candidates.sort_by(|a, b| {
+        b.captured_ts
+            .total_cmp(&a.captured_ts)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    let take_n = limit.clamp(1, MAX_WANTED_LIMIT);
+    let total_candidates = candidates.len();
+    let mut leased = Vec::with_capacity(take_n.min(total_candidates));
+    for d in candidates.into_iter().take(take_n) {
+        wanted_state.assets.insert(
+            d.id.clone(),
+            WantedAssetStatus::Leased {
+                cid: cid.to_owned(),
+                leased_at: now_iso.clone(),
+                expires_at: expires_iso.clone(),
+            },
+        );
+        leased.push(WantedItem {
+            asset_id: d.id.clone(),
+            cloud_id: d.cloud_id.clone(),
+            max_edge: 512,
+            captured_at: d.captured_at.clone(),
+            reason_kind: match d.decision {
+                DecisionKind::StageOthersFaceCheck => "others_face_check".to_owned(),
+                _ => "keep".to_owned(),
+            },
+        });
+    }
+    if !leased.is_empty() {
+        save_wanted_state(journal, &wanted_state)?;
+    }
+
+    Ok(WantedResponse {
+        paused: false,
+        range,
+        remaining: total_candidates.saturating_sub(leased.len()),
+        wanted: leased,
+    })
+}
+
+/// Record that a wanted asset has left the device library (`"gone"`) or is
+/// waiting on iCloud download (`"icloud_waiting"`).
+pub fn mark_wanted_non_copy(
+    journal: &Path,
+    cid: &str,
+    asset_id: &str,
+    status: &str,
+) -> Result<(), String> {
+    let _lock = lock_holding(journal)?;
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+    let mut wanted = load_wanted_state(journal)?;
+    match status {
+        "gone" => {
+            wanted
+                .assets
+                .insert(asset_id.to_owned(), WantedAssetStatus::Gone { at: now });
+        }
+        "icloud_waiting" => {
+            wanted.assets.insert(
+                asset_id.to_owned(),
+                WantedAssetStatus::IcloudWaiting {
+                    cid: cid.to_owned(),
+                    at: now,
+                },
+            );
+        }
+        other => return Err(format!("unsupported non-copy status: {other}")),
+    }
+    save_wanted_state(journal, &wanted)?;
+    Ok(())
+}
+
+/// Count all live landed library photos in `chronicle/*/photos/`.
+fn count_live_photos_in_journal(journal: &Path) -> usize {
+    let chronicle = journal.join("chronicle");
+    let Ok(days) = fs::read_dir(&chronicle) else {
+        return 0;
+    };
+    let mut count = 0usize;
+    for day_entry in days.filter_map(Result::ok) {
+        let photos_dir = day_entry.path().join("photos");
+        let Ok(segs) = fs::read_dir(&photos_dir) else {
+            continue;
+        };
+        for seg_entry in segs.filter_map(Result::ok) {
+            let p = seg_entry.path();
+            if p.is_dir() && !p.join("tombstone.json").is_file() {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+fn estimate_range(
+    decisions: &[AssetDecision],
+    start_ts: Option<f64>,
+    current_start_ts: Option<f64>,
+    has_active_choice: bool,
+    current_range_is_all: bool,
+    journal: &Path,
+    wanted_assets: &BTreeMap<String, WantedAssetStatus>,
+) -> RangeEstimate {
+    let mut photos = 0usize;
+    let mut days: BTreeSet<&str> = BTreeSet::new();
+    let mut delta_photos = 0usize;
+    let mut delta_days: BTreeSet<&str> = BTreeSet::new();
+    let mut earliest_date: Option<&str> = None;
+    let mut left_out_reasons: Vec<&str> = Vec::new();
+
+    for d in decisions {
+        if !decision_in_window(d, start_ts, None) {
+            continue;
+        }
+        if let Some(ld) = d.local_date.as_deref()
+            && earliest_date.is_none_or(|e| ld < e)
+        {
+            earliest_date = Some(ld);
+        }
+        match d.decision {
+            DecisionKind::Keep => {
+                photos += 1;
+                if let Some(ld) = d.local_date.as_deref() {
+                    days.insert(ld);
+                }
+                let already_covered = current_range_is_all
+                    || (has_active_choice
+                        && current_start_ts.is_some_and(|cs| d.captured_ts >= cs))
+                    || lookup_received(journal, &d.id, d.cloud_id.as_deref())
+                        .ok()
+                        .flatten()
+                        .is_some();
+                if !already_covered {
+                    delta_photos += 1;
+                    if let Some(ld) = d.local_date.as_deref() {
+                        delta_days.insert(ld);
+                    }
+                }
+                if matches!(
+                    wanted_assets.get(&d.id),
+                    Some(WantedAssetStatus::NoiseDropped { .. })
+                ) {
+                    left_out_reasons.push("read_as_noise");
+                }
+            }
+            DecisionKind::StageOthersFaceCheck => {
+                if matches!(
+                    wanted_assets.get(&d.id),
+                    Some(WantedAssetStatus::OthersNoFaceMatch { .. })
+                ) {
+                    left_out_reasons.push("others_no_face_match");
+                } else {
+                    left_out_reasons.push(d.reason.as_str());
+                }
+            }
+            DecisionKind::LeftOut => {
+                left_out_reasons.push(d.reason.as_str());
+            }
+        }
+    }
+
+    let covered = has_active_choice
+        && (current_range_is_all
+            || match (current_start_ts, start_ts) {
+                (Some(cur), Some(cand)) => cur <= cand,
+                _ => false,
+            });
+
+    RangeEstimate {
+        photos,
+        days: days.len(),
+        thoughts: photos,
+        delta_photos: if covered { 0 } else { delta_photos },
+        delta_days: if covered { 0 } else { delta_days.len() },
+        delta_thoughts: if covered { 0 } else { delta_photos },
+        covered,
+        earliest_date: earliest_date.map(str::to_owned),
+        left_out: aggregate_left_out_buckets(left_out_reasons),
+    }
+}
+
+fn read_thinking_and_band4(journal: &Path) -> (bool, bool) {
+    let policy = solstone_core_system::work_policy::WorkPolicy::read(journal).ok();
+    let band4_paused = policy.as_ref().is_some_and(|p| p.backfill_paused);
+    let thinking_ready = policy.as_ref().is_some_and(|p| {
+        !matches!(
+            p.lane,
+            solstone_core_system::work_policy::ThinkingLane::Unavailable
+        )
+    });
+    (thinking_ready, band4_paused)
+}
+
+/// Build the complete dashboard state snapshot for `GET /app/sources/photos/api/state`.
+pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
+    let root = holding_root(journal);
+    let (thinking_ready, band4_paused) = read_thinking_and_band4(journal);
+    let profile_pics_enabled = !cfg!(any(target_os = "ios", target_os = "android"))
+        && faceprints::enabled(journal).unwrap_or(false);
+    let live_in_journal = count_live_photos_in_journal(journal);
+
+    if !root.is_dir() {
+        let is_off = live_in_journal > 0 || journal.join("config/photos/received").is_dir();
+        return Ok(PhotosDashboardState {
+            source: "photos".to_owned(),
+            state: if is_off {
+                "off".to_owned()
+            } else {
+                "ready_to_set_up".to_owned()
+            },
+            substate: if is_off {
+                "off".to_owned()
+            } else {
+                "never_set_up".to_owned()
+            },
+            attention_reason: None,
+            devices: Vec::new(),
+            scan: ScanProgressView::default(),
+            choice: ChoiceView::default(),
+            ranges: BTreeMap::new(),
+            left_out: LeftOutBreakdown::default(),
+            progress: ProgressView {
+                in_journal: live_in_journal,
+                ..ProgressView::default()
+            },
+            band4_paused,
+            thinking_ready,
+            profile_pics_enabled,
+        });
+    }
+
+    let state = load_holding_state(journal)?;
+    let devices_file = load_devices(journal)?;
+    let decisions = load_decisions(journal)?;
+    let wanted = load_wanted_state(journal)?;
+    let now = Timestamp::now();
+
+    let has_active_choice = state.chosen_range.is_some();
+    let current_range_is_all = state.chosen_range.as_deref() == Some("all");
+    let current_start_ts = state
+        .range_start_at
+        .as_deref()
+        .map(|s| parse_utc_ts(Some(s)));
+    let current_end_ts = state.range_end_at.as_deref().map(|s| parse_utc_ts(Some(s)));
+
+    // Precompute standard 5-choice ranges (zero money figures).
+    let mut ranges = BTreeMap::new();
+    for preset in ["30d", "6m", "1y", "all", "none"] {
+        if preset == "none" {
+            ranges.insert(
+                "none".to_owned(),
+                RangeEstimate {
+                    covered: state.chosen_range.as_deref() == Some("none"),
+                    ..RangeEstimate::default()
+                },
+            );
+            continue;
+        }
+        let (_, bound_iso, _) = resolve_range_bounds(&RangeSpec::Preset(preset.to_owned()), now)?;
+        let bound_ts = bound_iso.as_deref().map(|s| parse_utc_ts(Some(s)));
+        ranges.insert(
+            preset.to_owned(),
+            estimate_range(
+                &decisions,
+                bound_ts,
+                current_start_ts,
+                has_active_choice,
+                current_range_is_all,
+                journal,
+                &wanted.assets,
+            ),
+        );
+    }
+
+    // Compute active-range progress and left-out breakdown.
+    let mut chosen_total = 0usize;
+    let mut arrived = 0usize;
+    let mut in_journal_in_range = 0usize;
+    let mut moved_to_trash = 0usize;
+    let mut waiting_on_phone = 0usize;
+    let mut active_left_out_reasons: Vec<&str> = Vec::new();
+
+    for d in &decisions {
+        if has_active_choice && !decision_in_window(d, current_start_ts, current_end_ts) {
+            continue;
+        }
+        match d.decision {
+            DecisionKind::Keep => {
+                if has_active_choice {
+                    chosen_total += 1;
+                    let receipt: Option<PhotoReceipt> =
+                        lookup_received(journal, &d.id, d.cloud_id.as_deref())
+                            .ok()
+                            .flatten();
+                    match (receipt, wanted.assets.get(&d.id)) {
+                        (Some(rec), _) => {
+                            arrived += 1;
+                            if is_segment_live(journal, &rec) {
+                                in_journal_in_range += 1;
+                            } else {
+                                moved_to_trash += 1;
+                            }
+                        }
+                        (None, Some(WantedAssetStatus::NoiseDropped { .. })) => {
+                            arrived += 1;
+                            active_left_out_reasons.push("read_as_noise");
+                        }
+                        (None, Some(WantedAssetStatus::Gone { .. })) => {
+                            arrived += 1;
+                        }
+                        (None, _) => {
+                            waiting_on_phone += 1;
+                        }
+                    }
+                }
+            }
+            DecisionKind::StageOthersFaceCheck => {
+                let receipt = lookup_received(journal, &d.id, d.cloud_id.as_deref())
+                    .ok()
+                    .flatten();
+                if let Some(rec) = receipt {
+                    if has_active_choice {
+                        chosen_total += 1;
+                        arrived += 1;
+                        if is_segment_live(journal, &rec) {
+                            in_journal_in_range += 1;
+                        } else {
+                            moved_to_trash += 1;
+                        }
+                    }
+                } else if matches!(
+                    wanted.assets.get(&d.id),
+                    Some(WantedAssetStatus::NoiseDropped { .. })
+                ) {
+                    active_left_out_reasons.push("read_as_noise");
+                } else {
+                    active_left_out_reasons.push("others_no_face_match");
+                }
+            }
+            DecisionKind::LeftOut => {
+                active_left_out_reasons.push(d.reason.as_str());
+            }
+        }
+    }
+
+    let left_out = aggregate_left_out_buckets(active_left_out_reasons);
+
+    let (top_state, substate) = if let Some(reason) = state.attention_reason.as_deref() {
+        let sub = match reason {
+            "access_limited" => "access_limited",
+            "access_off" => "access_off",
+            "smart_album_contract_failed" => "album_contract_error",
+            _ => "access_off",
+        };
+        ("needs_attention", sub)
+    } else if state.scan_active {
+        (
+            "setting_up",
+            if state.scan_paused {
+                "scan_paused"
+            } else {
+                "scanning"
+            },
+        )
+    } else if !state.scan_complete {
+        ("ready_to_set_up", "never_set_up")
+    } else if !has_active_choice {
+        ("setting_up", "choose")
+    } else if state.paused {
+        ("paused", "paused")
+    } else if waiting_on_phone > 0 {
+        ("on", "bringing_in")
+    } else {
+        ("on", "steady")
+    };
+
+    let mut devices: Vec<DeviceState> = devices_file.devices.into_values().collect();
+    devices.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.cid.cmp(&b.cid)));
+
+    let in_journal_display = if has_active_choice {
+        in_journal_in_range.max(live_in_journal)
+    } else {
+        live_in_journal
+    };
+
+    Ok(PhotosDashboardState {
+        source: "photos".to_owned(),
+        state: top_state.to_owned(),
+        substate: substate.to_owned(),
+        attention_reason: state.attention_reason,
+        devices,
+        scan: ScanProgressView {
+            items_checked: state.scan_items_checked,
+            items_total: state.scan_items_total,
+            earliest_item_at: state.scan_earliest_item_at,
+            photos_brought_in_so_far: if has_active_choice { arrived } else { 0 },
+            paused: state.scan_paused,
+        },
+        choice: ChoiceView {
+            range: state.chosen_range.clone(),
+            range_start_at: state.range_start_at.clone(),
+            can_widen: state.chosen_range.as_deref() != Some("all"),
+        },
+        ranges,
+        left_out,
+        progress: ProgressView {
+            chosen_total,
+            arrived,
+            in_journal: in_journal_display,
+            waiting_on_phone,
+            moved_to_trash_by_owner: moved_to_trash,
+        },
+        band4_paused,
+        thinking_ready,
+        profile_pics_enabled,
+    })
+}
+
+/// Paginated list of landed `photos` segments for `GET /app/sources/photos/api/photos`.
+pub fn list_landed_photos(
+    journal: &Path,
+    month_filter: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<usize>,
+) -> Result<LandedPhotosPage, String> {
+    let chronicle = journal.join("chronicle");
+    if !chronicle.is_dir() {
+        return Ok(LandedPhotosPage::default());
+    }
+    let mut months_set: BTreeSet<String> = BTreeSet::new();
+    let mut all_items: Vec<(String, LandedPhotoItem)> = Vec::new();
+
+    let day_entries = fs::read_dir(&chronicle).map_err(|e| e.to_string())?;
+    for day_entry in day_entries.filter_map(Result::ok) {
+        let Some(day) = day_entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if day.len() != 8 || !day.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let photos_dir = day_entry.path().join("photos");
+        if !photos_dir.is_dir() {
+            continue;
+        }
+        let month_key = format!("{}-{}", &day[0..4], &day[4..6]);
+        let seg_entries = match fs::read_dir(&photos_dir) {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        for seg_entry in seg_entries.filter_map(Result::ok) {
+            let seg_path = seg_entry.path();
+            if !seg_path.is_dir() || seg_path.join("tombstone.json").is_file() {
+                continue;
+            }
+            let Some(segment) = seg_entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            months_set.insert(month_key.clone());
+            if let Some(mf) = month_filter
+                && !mf.trim().is_empty()
+                && mf.trim() != month_key
+            {
+                continue;
+            }
+
+            let obs = read_or_project_photo_observation(&seg_path, &day, "photos", &segment);
+            let meta_json: Option<serde_json::Value> = fs::read(seg_path.join("image_meta.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok());
+            let device_name = meta_json
+                .as_ref()
+                .and_then(|v| v.get("device_name").and_then(serde_json::Value::as_str))
+                .map(str::to_owned);
+            let original_file = obs
+                .as_ref()
+                .map(|o| o.source.artifact_selector.clone())
+                .unwrap_or_else(|| "original.jpg".to_owned());
+            let captured_at = obs.as_ref().and_then(|o| o.time.captured_at.clone());
+            let caption = obs.as_ref().and_then(|o| {
+                o.owner_caption
+                    .as_ref()
+                    .map(|c| c.text.clone())
+                    .or_else(|| o.description.as_ref().map(|d| d.text.clone()))
+            });
+            let has_location = seg_path.join("location.jsonl").is_file();
+            let day_dashed = format!("{}-{}-{}", &day[0..4], &day[4..6], &day[6..8]);
+            let sort_key = format!(
+                "{}|{}|{}",
+                captured_at.as_deref().unwrap_or(&day_dashed),
+                day,
+                segment
+            );
+            all_items.push((
+                sort_key,
+                LandedPhotoItem {
+                    day: day.clone(),
+                    stream: "photos".to_owned(),
+                    segment: segment.clone(),
+                    captured_at,
+                    thumb_url: format!(
+                        "/app/transcripts/api/media/{day}/photos/{segment}/{original_file}"
+                    ),
+                    caption,
+                    has_location,
+                    device_name,
+                },
+            ));
+        }
+    }
+
+    // Newest first.
+    all_items.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let page_size = limit.unwrap_or(PHOTOS_PAGE_SIZE).clamp(1, 200);
+    let offset: usize = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
+    let total = all_items.len();
+    let items: Vec<LandedPhotoItem> = all_items
+        .into_iter()
+        .skip(offset)
+        .take(page_size)
+        .map(|(_, item)| item)
+        .collect();
+    let next_cursor = (offset + items.len() < total).then(|| (offset + items.len()).to_string());
+    let months: Vec<String> = months_set.into_iter().rev().collect();
+
+    Ok(LandedPhotosPage {
+        months,
+        items,
+        next_cursor,
+    })
+}

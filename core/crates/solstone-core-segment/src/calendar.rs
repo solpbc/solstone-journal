@@ -43,7 +43,7 @@ pub fn is_syncing_source_stream(journal: &Path, stream: &str) -> bool {
     if !is_safe_stream_component(stream) {
         return false;
     }
-    if stream.starts_with("import.granola.") {
+    if stream.starts_with("import.granola.") || stream == PHOTOS_SOURCE {
         return true;
     }
     matches!(

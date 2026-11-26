@@ -165,11 +165,16 @@ fn status_body(
     capture: Value,
     rev: Option<String>,
     integrity: solstone_core_system_health::IntegritySummary,
+    photos_library_enabled: bool,
 ) -> Value {
+    let mut capabilities: Vec<&'static str> = CAPABILITIES.to_vec();
+    if photos_library_enabled {
+        capabilities.push("photos_library");
+    }
     let mut body = json!({
         "version": version,
         "capture": capture,
-        "capabilities": CAPABILITIES,
+        "capabilities": capabilities,
         "sources_rev": rev,
         "integrity": integrity,
         "ok": true,
@@ -205,6 +210,7 @@ pub async fn status(
         disk_low: false,
         checked_at_ms: None,
     });
+    let photos_library = solstone_core_photos_library::photos_library_enabled(&journal_root);
     let context = HomeContext::new(journal_root, Timestamp::now());
     let capture = get_capture_health(&context);
     #[cfg(target_os = "linux")]
@@ -243,7 +249,14 @@ pub async fn status(
         })
         .await
         .unwrap_or_else(|_| json!({"current": env!("CARGO_PKG_VERSION")}));
-        return Json(status_body(version, json!(capture), rev, integrity)).into_response();
+        return Json(status_body(
+            version,
+            json!(capture),
+            rev,
+            integrity,
+            photos_library,
+        ))
+        .into_response();
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -257,6 +270,7 @@ pub async fn status(
             json!(capture),
             rev,
             integrity,
+            photos_library,
         ))
         .into_response();
     }
@@ -901,9 +915,25 @@ mod tests {
                 version.clone(),
                 capture.clone(),
                 Some("1".into()),
-                integrity,
+                integrity.clone(),
+                false,
             );
             let capabilities = body["capabilities"].as_array().unwrap();
+            assert!(!capabilities.iter().any(|value| value == "photos_library"));
+            let enabled_body = status_body(
+                version.clone(),
+                capture.clone(),
+                Some("1".into()),
+                integrity,
+                true,
+            );
+            assert!(
+                enabled_body["capabilities"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|value| value == "photos_library")
+            );
             for capability in [
                 "calendar_notes",
                 "obsidian_notes",

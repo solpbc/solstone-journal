@@ -129,6 +129,7 @@ members = [
     "crates/solstone-core-import-host",
     "crates/solstone-core-import-sources",
     "crates/solstone-core-import-web",
+    "crates/solstone-core-photos-library",
     "crates/solstone-core-segment-cli",
     "crates/solstone-core-talent-config",
     "crates/solstone-core-journal-stats-cli",
@@ -276,6 +277,7 @@ solstone-core-import = { path = "crates/solstone-core-import" }
 solstone-core-import-host = { path = "crates/solstone-core-import-host" }
 solstone-core-import-sources = { path = "crates/solstone-core-import-sources" }
 solstone-core-import-web = { path = "crates/solstone-core-import-web" }
+solstone-core-photos-library = { path = "crates/solstone-core-photos-library" }
 solstone-core-segment-cli = { path = "crates/solstone-core-segment-cli" }
 solstone-core-journal-stats-cli = { path = "crates/solstone-core-journal-stats-cli" }
 solstone-core-talent-cli = { path = "crates/solstone-core-talent-cli" }

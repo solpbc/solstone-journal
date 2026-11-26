@@ -70,6 +70,12 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "config/**/*.lock",
     "config/**/*.tmp",
     "config/**/.tmp*",
+    // Rebuildable SQLite query cache inside the Photos Library holding area.
+    // The plain JSON files beside it are the durable authority.
+    "config/photos-library/selection/selection_cache.sqlite",
+    "config/photos-library/selection/selection_cache.sqlite-wal",
+    "config/photos-library/selection/selection_cache.sqlite-shm",
+    "config/photos-library/selection/selection_cache.sqlite-journal",
     "link/**/*.lock",
     "link/**/*.tmp",
     "link/**/.tmp*",

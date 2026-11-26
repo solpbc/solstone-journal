@@ -5585,6 +5585,7 @@ dependencies = [
  "solstone-core-location",
  "solstone-core-map-web",
  "solstone-core-npy",
+ "solstone-core-photos-library",
  "solstone-core-profile-web",
  "solstone-core-push",
  "solstone-core-records-web",
@@ -6816,6 +6817,34 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "solstone-core-photos-library"
+version = "2.0.91"
+dependencies = [
+ "base64 0.22.1",
+ "image",
+ "jiff 1.0.0",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-entity",
+ "solstone-core-format",
+ "solstone-core-generate",
+ "solstone-core-import",
+ "solstone-core-import-sources",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-location",
+ "solstone-core-removals",
+ "solstone-core-retention",
+ "solstone-core-segment",
+ "solstone-core-system",
+ "solstone-core-time",
+ "solstone-core-trash",
 ]
 
 [[package]]

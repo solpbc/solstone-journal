@@ -432,6 +432,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "photos_library",
+        include_str!("../../../solstone-core-convey-shell/src/photos_library.rs"),
+    ),
+    (
+        "convey",
         "pinned",
         include_str!("../../../solstone-core-convey-shell/src/pinned.rs"),
     ),

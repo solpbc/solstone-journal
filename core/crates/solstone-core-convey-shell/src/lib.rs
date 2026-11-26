@@ -183,6 +183,7 @@ mod setup_host;
 mod year;
 pub use setup_host::PackagedSpeechSetup;
 pub mod open_link;
+mod photos_library;
 mod shared_sources;
 #[cfg(test)]
 mod shell_bundle_tests;
@@ -1873,6 +1874,7 @@ fn router_with_roots(
         .route("/app/sources/", get(sources_shell))
         .route("/app/sources/workspace", get(sources_workspace))
         .route("/app/sources/static/{*rest}", get(sources_static))
+        .merge(photos_library::router())
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
         .merge(solstone_core_health_web::routes(journal_root.clone()))

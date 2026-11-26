@@ -243,6 +243,7 @@ solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-settings-web.workspace = true
 solstone-core-import-web.workspace = true
+solstone-core-photos-library.workspace = true
 solstone-core-ingest.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-push.workspace = true
