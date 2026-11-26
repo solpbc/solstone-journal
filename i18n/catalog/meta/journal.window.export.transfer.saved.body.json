@@ -1,0 +1,21 @@
+{
+  "description": "Confirmation line after verified native save.",
+  "context": "journal-window. Confirmation line after verified native save.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5059f4110eb1e47f7a537818b7dd4735562418834876ea4a9ad6992e1959b321",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

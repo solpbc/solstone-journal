@@ -1,0 +1,16 @@
+{
+  "description": "Export workspace page subtitle.",
+  "context": "journal-window. Export workspace page subtitle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a190653795796ff7a4673ab8dae31c8d72cc47b3adbebdfdef8613ccea0063ac",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

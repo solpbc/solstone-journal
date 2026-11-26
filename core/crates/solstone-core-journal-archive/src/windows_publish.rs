@@ -15,7 +15,9 @@ use std::fmt::{Display, Formatter};
 
 use solstone_core_journal_io::{AtomicWriteOptions, ExclusiveWriteError, write_file_exclusive};
 
-use crate::encode::{EncodeArchiveError, EncodeArchiveRequest, encode_archive};
+use crate::encode::{
+    EncodeArchiveError, EncodeArchiveRequest, EncodeOptions, encode_archive_with_options,
+};
 use crate::windows_target::{ArchiveOutputTarget, ExplicitTargetError};
 
 /// Failure while encoding and create-only publishing an archive.
@@ -59,13 +61,26 @@ pub fn publish_archive(
     target: &ArchiveOutputTarget,
     request: &EncodeArchiveRequest<'_>,
 ) -> Result<(), ArchivePublicationError> {
+    publish_archive_with_options(target, request, EncodeOptions::default())
+}
+
+/// Encode with options and atomically create the final archive through the
+/// Windows single-stage create-only publication protocol.
+pub fn publish_archive_with_options(
+    target: &ArchiveOutputTarget,
+    request: &EncodeArchiveRequest<'_>,
+    options: EncodeOptions<'_>,
+) -> Result<(), ArchivePublicationError> {
     target
         .revalidate()
         .map_err(ArchivePublicationError::Target)?;
     match write_file_exclusive(
         target.final_path(),
         AtomicWriteOptions { mode: Some(0o600) },
-        |stage| encode_archive(request, stage).map_err(ArchivePublicationError::Encode),
+        |stage| {
+            encode_archive_with_options(request, stage, options)
+                .map_err(ArchivePublicationError::Encode)
+        },
         || target.revalidate().map_err(ArchivePublicationError::Target),
     ) {
         Ok(()) => Ok(()),

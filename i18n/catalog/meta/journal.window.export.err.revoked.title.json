@@ -1,0 +1,16 @@
+{
+  "description": "Error heading when paired device access was revoked mid-transfer.",
+  "context": "journal-window. Error heading when paired device access was revoked mid-transfer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ac2f4d46b5c00ba9073f7c98921d1e930491a170b147fbceb21d827075fbd53e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

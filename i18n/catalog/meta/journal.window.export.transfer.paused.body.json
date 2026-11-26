@@ -1,0 +1,25 @@
+{
+  "description": "Body when native transfer is paused.",
+  "context": "journal-window. Body when native transfer is paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9eb896fc7f99577a8d69396c0aaac9a4165d0f90df1c9c12ba7036934693c5cc",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

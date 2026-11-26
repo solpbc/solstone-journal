@@ -1,0 +1,21 @@
+{
+  "description": "Warning heading when full copy does not fit on journal drive.",
+  "context": "journal-window. Warning heading when full copy does not fit on journal drive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b88edb2514da6105562c181c24d20128ff72796f164e121486de12c721fdb158",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

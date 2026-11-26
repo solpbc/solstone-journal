@@ -1,0 +1,16 @@
+{
+  "description": "Import journal step 3 guidance pointing to export.",
+  "context": "journal-window. Import journal step 3 guidance pointing to export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84414fcbd940d9079b700fba10a7191579e4743fd846bd505eb79e8cd8c33092",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

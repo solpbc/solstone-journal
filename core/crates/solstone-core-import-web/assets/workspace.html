@@ -3650,9 +3650,9 @@ async function loadGuidedFlow(sourceName) {
           <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.preview.then.merge.your.archive')}</h4>
           <div class="import-action-row">
             <button id="guidedStartBtn" class="import-primary-btn" type="button">${window.JournalI18n.renderHtml('journal.window.import.button.label.preview.import')}</button>
-            <a class="import-secondary-btn" href="/app/import/api/journal-archive/export">${window.JournalI18n.renderHtml('journal.window.import.link.label.download.this.journal')}</a>
+            <a class="import-secondary-btn" href="/app/export/">${window.JournalI18n.renderHtml('journal.window.import.link.label.open.export')}</a>
           </div>
-          <p class="import-field-hint">${window.JournalI18n.renderHtml('journal.window.import.visible.text.the.zip.includes.your.settings.and')}</p>
+          <p class="import-field-hint">${window.JournalI18n.renderHtml('journal.window.import.visible.text.to.take.a.copy.out.of.this.journal')}</p>
 
         ` : source.name === 'audio_archive' ? `
           <h4>${window.JournalI18n.renderHtml('journal.window.import.visible.text.preview.your.recordings')}</h4>

@@ -1,0 +1,16 @@
+{
+  "description": "Body when offload ledger cannot be read cleanly.",
+  "context": "journal-window. Body when offload ledger cannot be read cleanly.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a4cfdc5babe671324ab9e72d3f281cdc2b436fce71bd3440bef63261d69667e",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

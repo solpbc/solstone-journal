@@ -662,6 +662,22 @@ fn strip_permanent_experiences_addition_from_actual(actual: &mut Value) {
     apps.retain(|app| app["name"] != "experiences");
 }
 
+/// Permanent documented divergence, introduced 2026-11-26, with no expiry
+/// condition: `export` is served with the shell and is not in the frozen
+/// corpus. As with `experiences`, this is keyed to that one name and removes
+/// exactly that element after its metadata has been validated.
+fn strip_permanent_export_addition_from_actual(actual: &mut Value) {
+    let apps = actual["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "export").count(),
+        1,
+        "the live shell contains exactly one export app"
+    );
+    apps.retain(|app| app["name"] != "export");
+}
+
 fn strip_permanent_pinned_from_actual(actual: &mut Value) {
     let pinned = actual
         .get("pinned")
@@ -1125,6 +1141,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     strip_permanent_sources_addition_from_actual(&mut actual);
                     strip_permanent_year_addition_from_actual(&mut actual);
                     strip_permanent_experiences_addition_from_actual(&mut actual);
+                    strip_permanent_export_addition_from_actual(&mut actual);
                     strip_permanent_pinned_from_actual(&mut actual);
                     strip_permanent_pin_offers_seen_from_actual(&mut actual);
                     actual.as_object_mut().unwrap().remove("clock");
@@ -1273,7 +1290,7 @@ async fn registry_contract_is_stable() {
     assert!(shell.get("chat_bar").is_none());
     // `/api/shell` names the served apps; their definitions ship with the code.
     let names = shell["app_names"].as_array().expect("app names");
-    assert_eq!(names.len(), 21);
+    assert_eq!(names.len(), 22);
     let apps = solstone_core_convey_shell::registry::shell_payload().apps;
     assert_eq!(
         names

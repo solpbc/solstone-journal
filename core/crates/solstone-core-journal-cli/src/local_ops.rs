@@ -45,8 +45,9 @@ use solstone_core_indexer_store::{
     apply_classification_batch, drain_classifications, inspect_classifications,
 };
 use solstone_core_journal_archive::{
-    ArchiveSource, DayWindow, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
-    acquire_explicit_output_target, publish_archive,
+    ArchiveSource, DayWindow, EncodeArchiveRequest, EncodeOptions, ExplicitArchiveOutputRequest,
+    acquire_explicit_output_target, evaluate_lighter_export, publish_archive_with_options,
+    summarize_offload_catalog,
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, write_bytes_exclusive};
@@ -1373,6 +1374,7 @@ mod archive_copy;
 fn archive_export(args: &[OsString]) -> Outcome {
     let locale = crate::terminal_language();
     let mut output: Option<PathBuf> = None;
+    let mut without_processed_media = false;
     let mut quiet = false;
     let mut day: Option<String> = None;
     let mut from: Option<String> = None;
@@ -1393,6 +1395,10 @@ fn archive_export(args: &[OsString]) -> Outcome {
                 };
                 output = Some(PathBuf::from(value));
                 index += 2;
+            }
+            Some("--without-processed-media") if !without_processed_media => {
+                without_processed_media = true;
+                index += 1;
             }
             Some("--quiet") if !quiet => {
                 quiet = true;
@@ -1478,7 +1484,7 @@ fn archive_export(args: &[OsString]) -> Outcome {
                     "{}\n",
                     solstone_core_cli_copy::render_for(
                         locale,
-                        "journal.cli.journal.archive.export.help",
+                        "journal.cli.journal.archive.export.help.v2",
                         &[]
                     )
                 ));
@@ -1526,7 +1532,43 @@ fn archive_export(args: &[OsString]) -> Outcome {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
-    let source = match ArchiveSource::open(&journal) {
+    archive_export_for_journal(
+        locale,
+        &journal,
+        output,
+        without_processed_media,
+        quiet,
+        day_window,
+    )
+}
+
+fn format_export_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1000 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64;
+    let mut unit = 0usize;
+    while value >= 1000.0 && unit + 1 < UNITS.len() {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if value >= 100.0 {
+        format!("{value:.0} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+fn archive_export_for_journal(
+    locale: &str,
+    journal: &Path,
+    output: Option<PathBuf>,
+    without_processed_media: bool,
+    quiet: bool,
+    day_window: Option<DayWindow>,
+) -> Outcome {
+    let source = match ArchiveSource::open(journal) {
         Ok(source) => source,
         Err(error) => return archive_error(&error, archive_copy::source(locale, &error)),
     };
@@ -1559,32 +1601,115 @@ fn archive_export(args: &[OsString]) -> Outcome {
             }
         };
     let final_path = target.final_path().to_owned();
+
+    let (omitted_members, omitted_files, omitted_bytes, offload) = if without_processed_media {
+        match evaluate_lighter_export(
+            journal,
+            source.inventory(),
+            day_window.as_ref(),
+            None,
+            |_| {},
+        ) {
+            Ok(plan) => (
+                Some(plan.omitted_members),
+                plan.breakdown.processed_media_omitted.files,
+                plan.breakdown.processed_media_omitted.bytes,
+                plan.breakdown.already_offloaded,
+            ),
+            Err(_) => {
+                return failure("archive export", "export cancelled", EXIT_FAILED);
+            }
+        }
+    } else {
+        let local_members: std::collections::BTreeSet<&str> = source
+            .inventory()
+            .entries()
+            .iter()
+            .map(|entry| entry.member_name().as_str())
+            .collect();
+        (
+            None,
+            0,
+            0,
+            summarize_offload_catalog(journal, &local_members, day_window.as_ref()),
+        )
+    };
+
     let request = EncodeArchiveRequest {
         source: &source,
         solstone_version: env!("CARGO_PKG_VERSION"),
         exported_at: &exported_at,
         day_window,
     };
-    if let Err(error) = publish_archive(&target, &request) {
+    let options = EncodeOptions {
+        omitted_members: omitted_members.as_ref(),
+        cancel: None,
+        on_progress: None,
+        check_abort: None,
+    };
+    if let Err(error) = publish_archive_with_options(&target, &request, options) {
         return archive_error(&error, archive_copy::publication(locale, &error));
     }
+
     let mut stderr = String::new();
-    if !quiet && !source.inventory().skipped_root_names().is_empty() {
-        let skipped = source
-            .inventory()
-            .skipped_root_names()
-            .iter()
-            .map(|name| name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        stderr = format!(
-            "{}\n",
-            solstone_core_cli_copy::display_for(
+    if !quiet {
+        if offload.degraded {
+            stderr.push_str(&solstone_core_cli_copy::render_for(
+                locale,
+                "journal.cli.journal.archive.offload.degraded",
+                &[],
+            ));
+            stderr.push('\n');
+        } else if offload.days > 0 {
+            let size = format_export_bytes(offload.bytes);
+            let days = i64::try_from(offload.days).unwrap_or(i64::MAX);
+            stderr.push_str(
+                &solstone_core_cli_copy::MessageDetail::cardinal(
+                    "journal.cli.journal.archive.offload.note",
+                    [("days", days)],
+                    format!(
+                        "note: {} {} ({size}) of older recordings live only in your backup and are not in this ZIP.",
+                        offload.days,
+                        if offload.days == 1 { "day" } else { "days" }
+                    ),
+                    [("size", &size)],
+                )
+                .render(locale),
+            );
+            stderr.push('\n');
+        }
+        if without_processed_media && omitted_files > 0 {
+            let size = format_export_bytes(omitted_bytes);
+            let files = i64::try_from(omitted_files).unwrap_or(i64::MAX);
+            stderr.push_str(
+                &solstone_core_cli_copy::MessageDetail::cardinal(
+                    "journal.cli.journal.archive.omitted.media",
+                    [("files", files)],
+                    format!(
+                        "left out {size} of processed audio and video ({omitted_files} {})",
+                        if omitted_files == 1 { "file" } else { "files" }
+                    ),
+                    [("size", &size)],
+                )
+                .render(locale),
+            );
+            stderr.push('\n');
+        }
+        if !source.inventory().skipped_root_names().is_empty() {
+            let skipped = source
+                .inventory()
+                .skipped_root_names()
+                .iter()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            stderr.push_str(&solstone_core_cli_copy::display_for(
                 locale,
                 "journal.cli.journal.archive.skipped",
-                [("skipped", &(skipped))]
-            )
-        );
+                [("skipped", &(skipped))],
+            ));
+            stderr.push('\n');
+        }
     }
     Outcome::LocalSuccess {
         stdout: if quiet {
@@ -5968,7 +6093,7 @@ mod tests {
             base.to_path_buf(),
         ))
         .unwrap();
-        publish_archive(
+        solstone_core_journal_archive::publish_archive(
             &output,
             &EncodeArchiveRequest {
                 source: &archive_source,
@@ -6120,5 +6245,117 @@ mod tests {
         assert_eq!(paths, [new_path]);
         drop(reader);
         fs::remove_dir_all(journal.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn archive_export_without_processed_media_and_offload_stderr_honesty() {
+        let (journal, _) = make_test_journal();
+        let base = journal.parent().unwrap();
+        let write = |rel: &str, bytes: &[u8]| {
+            let path = journal.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        };
+        write("config/journal.json", br#"{"schema":1}"#);
+        write(
+            "chronicle/20260811/mic/090000_60/audio.flac",
+            &vec![b'A'; 4096],
+        );
+        write(
+            "chronicle/20260811/mic/090000_60/audio.jsonl",
+            format!(
+                "{}\n{}\n",
+                json!({
+                    "_solstone_processing": {
+                        "schema": "solstone.processing.v1",
+                        "handler": "transcribe",
+                        "state": "analyzed",
+                        "input_size": 4096,
+                        "attempted_at": "2026-08-11T10:00:00Z"
+                    }
+                }),
+                json!({"start": 0.0, "end": 1.0, "text": "hello"})
+            )
+            .as_bytes(),
+        );
+        write(
+            "chronicle/20260811/photos/100000_0/photo.jpg",
+            b"photo-bytes",
+        );
+        write(
+            "health/offload/20260801.jsonl",
+            format!(
+                "{}\n",
+                json!({
+                    "schema": "solstone.offload.v2",
+                    "day": "20260801",
+                    "path": "chronicle/20260801/mic/080000_60/audio.flac",
+                    "size_bytes": 2_000_000,
+                    "sha256": "a".repeat(64),
+                    "offloaded_at": "2026-08-02T00:00:00Z",
+                    "backup_snapshot_id": "snap-1"
+                })
+            )
+            .as_bytes(),
+        );
+
+        let full_zip = base.join("full.zip");
+        let Outcome::LocalSuccess {
+            stdout: full_out,
+            stderr: full_err,
+        } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(full_zip.clone()),
+            false,
+            false,
+            None,
+        )
+        else {
+            panic!("full export failed");
+        };
+        assert_eq!(full_out.trim(), full_zip.display().to_string());
+        assert!(full_err.contains("only in your backup"), "{full_err}");
+
+        let light_zip = base.join("light.zip");
+        let Outcome::LocalSuccess {
+            stdout: light_out,
+            stderr: light_err,
+        } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(light_zip.clone()),
+            true,
+            false,
+            None,
+        )
+        else {
+            panic!("lighter export failed");
+        };
+        assert_eq!(light_out.trim(), light_zip.display().to_string());
+        assert!(light_err.contains("only in your backup"), "{light_err}");
+        assert!(
+            light_err.contains("left out") && light_err.contains("processed audio and video"),
+            "{light_err}"
+        );
+        // Lighter ZIP must be strictly smaller than full ZIP because processed audio.flac is omitted.
+        assert!(fs::metadata(&light_zip).unwrap().len() < fs::metadata(&full_zip).unwrap().len());
+
+        // --quiet silences BOTH stdout and stderr even with offloaded days + omitted media.
+        let quiet_zip = base.join("quiet.zip");
+        let Outcome::LocalSuccess { stdout, stderr } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(quiet_zip),
+            true,
+            true,
+            None,
+        ) else {
+            panic!("quiet export failed");
+        };
+        assert!(stdout.is_empty(), "quiet stdout must be empty: {stdout}");
+        assert!(stderr.is_empty(), "quiet stderr must be empty: {stderr}");
+
+        fs::remove_dir_all(base).unwrap();
     }
 }

@@ -1,0 +1,37 @@
+{
+  "description": "Journal command-line stderr note disclosing offloaded backup-only recordings during archive export.",
+  "context": "journal-cli. Journal command-line stderr note disclosing offloaded backup-only recordings during archive export.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "fb3a73c952ba9dd36315f30c8b8fd6f968c40e2f3fca7ed8f7f44b9fa60b8347",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "days",
+    "type": "cardinal"
+  },
+  "protected_slots": [
+    {
+      "name": "token_zip",
+      "kind": "accepted-input",
+      "value": "ZIP"
+    }
+  ]
+}

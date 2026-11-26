@@ -1,0 +1,25 @@
+{
+  "description": "Fresh estimate timestamp line.",
+  "context": "journal-window. Fresh estimate timestamp line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e7bb1caf4493d4b2cffb7711ce62eca66197a302562e4841d9aa15e95269c727",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

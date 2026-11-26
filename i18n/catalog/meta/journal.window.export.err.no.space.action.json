@@ -1,0 +1,16 @@
+{
+  "description": "Action button switching to lighter copy after out-of-space error.",
+  "context": "journal-window. Action button switching to lighter copy after out-of-space error.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "277bc92b1d4e05851c7e3f051c597126ab23f433d1ce51e3b239ecdcbd683d43",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

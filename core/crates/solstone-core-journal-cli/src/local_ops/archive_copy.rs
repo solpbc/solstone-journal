@@ -1011,6 +1011,7 @@ fn encode(locale: &str, error: &EncodeArchiveError) -> String {
             "journal.cli.journal.archive.encode.finish.finalize",
             [("detail", &(io_detail(locale, source)))],
         ),
+        E::Cancelled | E::Aborted(_) => error.to_string(),
     }
 }
 

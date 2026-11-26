@@ -1,0 +1,16 @@
+{
+  "description": "Reveal saved file button on Windows.",
+  "context": "journal-window. Reveal saved file button on Windows.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e59e417e77dc97b9bddae7f5a6e9f8701e251f4090afbcb0729577a7562055f5",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

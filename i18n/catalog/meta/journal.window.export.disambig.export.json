@@ -1,0 +1,16 @@
+{
+  "description": "Disambiguation bullet explaining export.",
+  "context": "journal-window. Disambiguation bullet explaining export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d428c6e917a83d3e383ac5ff6fd57e5f0bd3e062928ddebaf31f281ad8823b1e",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

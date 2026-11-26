@@ -1,0 +1,29 @@
+{
+  "description": "Disk space summary when journal drive has enough room.",
+  "context": "journal-window. Disk space summary when journal drive has enough room.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "needed",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "9d25a00d985a22f3b91fb205e432b91d654028eabfbd13a9fa7b46b78e226bc9",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

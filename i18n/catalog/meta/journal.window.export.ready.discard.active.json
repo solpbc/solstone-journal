@@ -1,0 +1,16 @@
+{
+  "description": "Notice when trying to discard while a download is active.",
+  "context": "journal-window. Notice when trying to discard while a download is active.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "284c5334db666acb4661c1a604bfb9ab2f02b6f8f508e98817d3bd2057e226e5",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

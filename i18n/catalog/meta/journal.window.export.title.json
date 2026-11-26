@@ -1,0 +1,16 @@
+{
+  "description": "Export workspace page heading.",
+  "context": "journal-window. Export workspace page heading.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4077529e13bd29eaa130eca2b8338ed6029a3d8817c604784a7cd7d0dde2b67",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Action button to reopen destination picker.",
+  "context": "journal-window. Action button to reopen destination picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec229dda4f84993a517dfa1215bd42445c14c1c0a7ed668a25051cb1ae2038d8",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

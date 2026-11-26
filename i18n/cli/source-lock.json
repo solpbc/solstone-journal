@@ -86931,6 +86931,13 @@
       ]
     },
     {
+      "id": "journal.cli.journal.archive.export.help.v2",
+      "source": "88d0f794a954fb26f54936f04e9c41821dc4d1a99eee9caa42639673eb765497",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "4d8396819b3d96d173fdefda7f645b200c1ce8ea9786ac20fc211513b1a33d85",
+      "locales": []
+    },
+    {
       "id": "journal.cli.journal.archive.exports.unsafe",
       "source": "f2660a98538371e879e06b7137e2da5081594d0bdeb026ffc4f70461189abb0e",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",
@@ -90321,6 +90328,27 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.cli.journal.archive.offload.degraded",
+      "source": "0fb8234f1faa281a405eedf747e16329006ffe6f9eff342d3ab3da044e24eb9b",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "b8ce7ba013026d709d56d85c5b9d61f6cdf934e7ad857d1a628b72ef287bd5a4",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.journal.archive.offload.note",
+      "source": "fb3a73c952ba9dd36315f30c8b8fd6f968c40e2f3fca7ed8f7f44b9fa60b8347",
+      "contract": "62af719307d86193492c7d985ada5872dc89234490c8f70f75e05682bd0295d8",
+      "protected": "b8ce7ba013026d709d56d85c5b9d61f6cdf934e7ad857d1a628b72ef287bd5a4",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.journal.archive.omitted.media",
+      "source": "88e89f275431b67d857f96845e641c10a500302c7d89586b1bc82c88b1a29442",
+      "contract": "151e00bd59c093eed25a90c19677349ed871c6264b7b67ef5594bb347cc5e0a8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.cli.journal.archive.out.required",

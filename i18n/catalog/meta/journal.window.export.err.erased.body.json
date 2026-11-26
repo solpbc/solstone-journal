@@ -1,0 +1,16 @@
+{
+  "description": "Error body when permanent trash erasure invalidated a prepared copy.",
+  "context": "journal-window. Error body when permanent trash erasure invalidated a prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "253dd3c72529aadcbc71ac66484fabfacc7978cbe32bbd9583fb1b32df3c213e",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

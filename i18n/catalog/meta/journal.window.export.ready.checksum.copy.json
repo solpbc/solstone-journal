@@ -1,0 +1,16 @@
+{
+  "description": "Button label to copy SHA-256 checksum.",
+  "context": "journal-window. Button label to copy SHA-256 checksum.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7920248a8859a5af7e7fa8019495acfcdc7bfe70b9156f42c76e648e4b64ce7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

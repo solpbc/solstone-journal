@@ -1,0 +1,16 @@
+{
+  "description": "Breakdown table size column header.",
+  "context": "journal-window. Breakdown table size column header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4fe51ee3c1e86502d2a950565fd2b60ada060a566217af0f78805ae0352a3ac9",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Button to defer discarding prepared copy.",
+  "context": "journal-window. Button to defer discarding prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f5f20eb6ee31a11f05777d5efb9216e075ebaf938b24ad4889f82de1fe2952c0",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

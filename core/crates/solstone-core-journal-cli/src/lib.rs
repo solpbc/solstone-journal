@@ -1004,7 +1004,7 @@ mod tests {
                 &spawner,
             ),
             Outcome::LocalSuccess {
-                stdout: "Usage: solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n\ncreate a ZIP of your journal, including settings and credentials.\nprocessing logs, rebuildable indexes and caches, locks and temporary files are left out.\nwith a date filter, only the selected days are included.\n".to_owned(),
+                stdout: "usage: solstone journal archive export [--out PATH] [--without-processed-media] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n\ncreate a portable ZIP of your journal, including settings and credentials.\nprocessing logs, rebuildable search indexes, caches, lock files and temporary files are left out.\nwith --without-processed-media, processed audio and video (including imported audio) are left out while transcripts, summaries, photos, non-media imports, kept import originals and unprocessed or failed media stay in.\nwith a date filter, only the selected days are included (not settings, credentials, entities, facets, or imports).\n".to_owned(),
                 stderr: String::new(),
             }
         );

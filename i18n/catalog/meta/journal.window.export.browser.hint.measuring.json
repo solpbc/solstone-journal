@@ -1,0 +1,16 @@
+{
+  "description": "Honest local browser destination space note while measuring.",
+  "context": "journal-window. Honest local browser destination space note while measuring.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5c16a99bc192a70d5487222c2c96d1383703f5545e1bde65d357276ea5ae586c",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

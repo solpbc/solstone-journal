@@ -1,0 +1,16 @@
+{
+  "description": "Step 3 of moving a journal to a new computer.",
+  "context": "journal-window. Step 3 of moving a journal to a new computer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d5501b577baf44d399e71712eb30c540685a47664b5790860dff035f3b977afe",
+  "max_length": 280,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

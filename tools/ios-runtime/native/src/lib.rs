@@ -711,9 +711,10 @@ fn run(v: Value) -> Result<Value, String> {
             if report.failed != 0 {
                 return Err(format!("index scan failed: {:?}", report.failures));
             }
+            let warnings: Vec<String> = report.warnings.iter().map(ToString::to_string).collect();
             Ok(
                 json!({"indexed":report.indexed,"removed":report.removed,"skipped":report.skipped,
-                "failed":report.failed,"warnings":report.warnings}),
+                "failed":report.failed,"warnings":warnings}),
             )
         }
         #[cfg(unix)]
@@ -900,9 +901,8 @@ fn run(v: Value) -> Result<Value, String> {
         "index" => {
             let r = solstone_core_indexer_store::scan::scan_journal(p, true)
                 .map_err(|e| e.to_string())?;
-            Ok(
-                json!({"indexed":r.indexed,"failed":r.failed,"warnings":r.warnings,"query":query(p)?}),
-            )
+            let warnings: Vec<String> = r.warnings.iter().map(ToString::to_string).collect();
+            Ok(json!({"indexed":r.indexed,"failed":r.failed,"warnings":warnings,"query":query(p)?}))
         }
         "query" => query(p),
         "inventory" => inventory(p),
@@ -1001,8 +1001,9 @@ fn run(v: Value) -> Result<Value, String> {
             )?;
             let r = solstone_core_indexer_store::scan::scan_journal(p, true)
                 .map_err(|e| e.to_string())?;
+            let warnings: Vec<String> = r.warnings.iter().map(ToString::to_string).collect();
             Ok(
-                json!({"revision":revision,"failed":r.failed,"warnings":r.warnings,"query":query_limit(p,8)?}),
+                json!({"revision":revision,"failed":r.failed,"warnings":warnings,"query":query_limit(p,8)?}),
             )
         }
         _ => Err(format!("unknown operation {op}")),

@@ -461,13 +461,34 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/app/year/api/view",
             RouteClassification::Moved(OwnerReadRole::YearView),
         ),
+        ("/app/export/", RouteClassification::NoQualifyingWork),
+        (
+            "/app/export/workspace",
+            RouteClassification::NoQualifyingWork,
+        ),
+        (
+            "/app/export/static/{*rest}",
+            RouteClassification::NoQualifyingWork,
+        ),
+        (
+            "/app/export/api/estimate",
+            RouteClassification::NoQualifyingWork,
+        ),
+        (
+            "/app/export/api/state",
+            RouteClassification::NoQualifyingWork,
+        ),
+        (
+            "/app/export/api/ready/{id}/download",
+            RouteClassification::NoQualifyingWork,
+        ),
         (
             "/api/shell/badges",
             RouteClassification::Moved(OwnerReadRole::ShellBadges),
         ),
     ];
 
-    assert_eq!(table.len(), 106, "Must classify all 106 live GET routes");
+    assert_eq!(table.len(), 112, "Must classify all 112 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -533,8 +554,8 @@ fn owner_read_role_classification_table_exhaustiveness() {
         .collect();
     assert_eq!(
         no_qualifying.len(),
-        38,
-        "NoQualifyingWork must have exactly 38 routes"
+        44,
+        "NoQualifyingWork must have exactly 44 routes"
     );
 }
 

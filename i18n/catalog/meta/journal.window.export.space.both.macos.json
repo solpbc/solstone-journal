@@ -1,0 +1,29 @@
+{
+  "description": "Both-tight guidance for macOS journal hosts.",
+  "context": "journal-window. Both-tight guidance for macOS journal hosts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "light",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "af1ad54d2c73392a43ad5f4e34d6fdbefa9b5cb62332022cff8030bed949ce36",
+  "max_length": 380,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

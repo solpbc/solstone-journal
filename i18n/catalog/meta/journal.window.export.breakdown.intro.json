@@ -1,0 +1,16 @@
+{
+  "description": "Introductory sentence in export breakdown disclosure.",
+  "context": "journal-window. Introductory sentence in export breakdown disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0353920cd302f788a0aa389e7b01f53e4ea68394274463151ea88e20264fd057",
+  "max_length": 360,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

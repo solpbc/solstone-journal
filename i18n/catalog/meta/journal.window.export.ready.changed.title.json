@@ -1,0 +1,16 @@
+{
+  "description": "Banner heading when journal entries arrived after prepare.",
+  "context": "journal-window. Banner heading when journal entries arrived after prepare.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "60a188cac89c3674111ad03ab7b4427a3b1f9a57b9909bf2aa782d51dd3b4cb0",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

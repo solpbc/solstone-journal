@@ -17,6 +17,9 @@ public class AlertDialog { public boolean dismissed; public void dismiss(){dismi
  public AlertDialog show(){return new AlertDialog();}}}''',
 'android/R.java': 'package android; public class R {public static class string {public static final int cancel=0;}}',
 'android/net/Uri.java': 'package android.net; public class Uri {}',
+'android/provider/DocumentsContract.java': '''package android.provider; import android.net.Uri;
+public class DocumentsContract { public static int deletes;
+ public static boolean deleteDocument(Object r, Uri u){ deletes++; return true; } }''',
 'android/content/Intent.java': '''package android.content; import android.net.Uri;
 public class Intent {public static final String ACTION_CREATE_DOCUMENT="create",CATEGORY_OPENABLE="open",EXTRA_TITLE="title";
  public Intent(String a){} public Intent addCategory(String c){return this;} public Intent setType(String t){return this;}
@@ -37,10 +40,10 @@ class OwnerActivity {String pageToken="page";boolean ownerStopped,destroyed;Owne
 ''',
 'app/solstone/development/journal/OwnerTransport.java': '''package app.solstone.development.journal;
 import java.io.*;import java.util.*;import org.json.JSONArray;
-class OwnerTransport {byte[] bytes=new byte[]{0,1,2,3};String length="4";int status=200;
+class OwnerTransport {byte[] bytes=new byte[]{0,1,2,3};String length="4";String sha256=null;int status=200;ArrayList<String> methods=new ArrayList<>();
  class Cancellation {void cancel(){}}class Stream extends ByteArrayInputStream {int status;Map<String,String> headers=new HashMap<>();
- Stream(){super(bytes);status=OwnerTransport.this.status;if(length!=null)headers.put("content-length",length);}}
- Stream follow(String m,String u,String b,JSONArray h,Cancellation c){return new Stream();}}
+ Stream(String method){super("HEAD".equals(method)?new byte[0]:bytes);status=OwnerTransport.this.status;if(length!=null)headers.put("content-length",length);if(sha256!=null)headers.put("x-solstone-export-sha256",sha256);}}
+ Stream follow(String m,String u,String b,JSONArray h,Cancellation c){methods.add(m);return new Stream(m);}}
 ''',
 'app/solstone/development/journal/OwnerDownloadsTest.java': '''package app.solstone.development.journal;
 import java.io.*;import java.nio.file.*;import java.util.*;import android.content.Intent;
@@ -69,7 +72,20 @@ public class OwnerDownloadsTest {
   for(String length:new String[]{"5","3",null}) {picks=a.pickerCalls;a.transport.length=length;d.receive("https://journal.invalid/export","","application/zip");a.jobs.drain();a.ui.drain();check(a.pickerCalls==picks);check(d.active==null);a.notices.clear();}
   a.transport.length="4";a.transport.status=500;picks=a.pickerCalls;d.receive("https://journal.invalid/export","","application/zip");a.jobs.drain();a.ui.drain();check(a.pickerCalls==picks);a.notices.clear();
   a.transport.status=200;d.receive("https://journal.invalid/export","","application/zip");a.jobs.drain();a.ui.drain();check(a.pickerCalls==picks+1);output=new ByteArrayOutputStream();a.output=output;result(d);a.jobs.drain();a.ui.drain();check(Arrays.equals(output.toByteArray(),a.transport.bytes));
-  check(cache.list().length==0);System.out.println("native downloads: byte fidelity, incomplete source, picker ownership, close failure and cancellation pass");
+  // Prepared exports pick SAF first with zero cache staging, stream once, and verify SHA-256.
+  a.notices.clear();a.transport.methods.clear();
+  a.transport.sha256="054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8"; // sha256({0,1,2,3})
+  picks=a.pickerCalls;d.receive("https://journal.invalid/app/export/api/ready/exp_1/download","","application/zip");
+  a.jobs.drain();a.ui.drain();check(a.pickerCalls==picks+1);check(cache.list().length==0);check(a.transport.methods.equals(List.of("HEAD")));
+  output=new ByteArrayOutputStream();a.output=output;result(d);a.jobs.drain();a.ui.drain();
+  check(Arrays.equals(output.toByteArray(),a.transport.bytes));check(a.transport.methods.equals(List.of("HEAD","GET")));check(a.notices.size()==1 && a.notices.get(0).contains("copy saved"));
+  // Checksum mismatch deletes the partial SAF document and refuses success.
+  a.notices.clear();int prevDeletes=android.provider.DocumentsContract.deletes;
+  a.transport.sha256="0000000000000000000000000000000000000000000000000000000000000000";
+  d.receive("https://journal.invalid/app/export/api/ready/exp_1/download","","application/zip");a.jobs.drain();a.ui.drain();
+  output=new ByteArrayOutputStream();a.output=output;result(d);a.jobs.drain();a.ui.drain();
+  check(android.provider.DocumentsContract.deletes==prevDeletes+1);check(a.notices.size()==1 && !a.notices.get(0).contains("copy saved"));
+  check(cache.list().length==0);System.out.println("native downloads: byte fidelity, incomplete source, picker ownership, close failure, zero-cache SAF export and cancellation pass");
  }}'''
 }
 

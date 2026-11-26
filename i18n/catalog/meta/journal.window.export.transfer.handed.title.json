@@ -1,0 +1,16 @@
+{
+  "description": "Heading after iOS phone-host hands copy to Files.",
+  "context": "journal-window. Heading after iOS phone-host hands copy to Files.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0d6a621c44f5f05451990a661a208509a1faf74429dfc7fc715b2f693da032cb",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

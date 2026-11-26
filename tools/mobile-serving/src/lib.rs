@@ -186,6 +186,10 @@ impl MobileServing {
         self.stop.clone()
     }
 
+    pub fn prepared_export_path(&self, export_id: &str) -> Option<(PathBuf, String)> {
+        solstone_core_convey_shell::prepared_export_path(self.root.canonical_path(), export_id)
+    }
+
     /// Share the backup operation ownership the embedded routes already hold.
     pub fn backup_dependencies(&self) -> solstone_core_backup_web::BackupWebDeps {
         self.handle.backup_dependencies()

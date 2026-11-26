@@ -1,0 +1,33 @@
+{
+  "description": "Live preparation progress line.",
+  "context": "journal-window. Live preparation progress line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "files_done",
+      "type": "string"
+    },
+    {
+      "name": "files_total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a114ab148463c49e2a1ef6b3612b253362a2237c8c8dedda94d719b5035e9711",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

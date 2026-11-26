@@ -1,0 +1,16 @@
+{
+  "description": "Paused reason when connection dropped.",
+  "context": "journal-window. Paused reason when connection dropped.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9a0c48654a682d44b9fdc45eb56133433d0e134ff7b82d0b7fb4774ee7026d46",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

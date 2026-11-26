@@ -1,0 +1,16 @@
+{
+  "description": "Settings guide signpost description for export.",
+  "context": "journal-window. Settings guide signpost description for export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b27e4d01d8dd631be5444246b2a39d2919fcd07a00b78012732eb02c6eeffa4",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

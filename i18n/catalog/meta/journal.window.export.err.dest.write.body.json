@@ -1,0 +1,16 @@
+{
+  "description": "Error body when destination write failed.",
+  "context": "journal-window. Error body when destination write failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d75ae0067030bd59426bfdc3f942827ed5b7ad0f60ee869cc4ab133e2c8e7e9b",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Summary of included items in a prepared full copy.",
+  "context": "journal-window. Summary of included items in a prepared full copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "692eb90ca21f02a89ef59c7f23d29d9cbc59c469a81238ef13bd5d11f9d4796a",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -98,6 +98,10 @@ name = "year_dom"
 path = "tests/year_dom.rs"
 
 [[test]]
+name = "export_workspace_dom"
+path = "tests/export_workspace_dom.rs"
+
+[[test]]
 name = "shell_dialogs_dom"
 path = "tests/shell_dialogs_dom.rs"
 
@@ -210,6 +214,7 @@ solstone-core-removals.workspace = true
 solstone-core-about.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 futures-core = "0.3.33"
+getrandom.workspace = true
 jiff.workspace = true
 log.workspace = true
 ndarray = "=0.17.2"
@@ -220,6 +225,7 @@ sha2.workspace = true
 socket2 = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 solstone-core-callosum = { workspace = true, optional = true }
+solstone-core-backup.workspace = true
 solstone-core-backup-web.workspace = true
 solstone-core-brain = { workspace = true, optional = true }
 solstone-core-convey-body.workspace = true
@@ -231,6 +237,7 @@ solstone-core-facets.workspace = true
 solstone-core-facets-web.workspace = true
 solstone-core-location.workspace = true
 solstone-core-format.workspace = true
+solstone-core-journal-archive.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-journal-link.workspace = true
 solstone-core-journal.workspace = true
@@ -268,7 +275,8 @@ solstone-core-talent-config.workspace = true
 solstone-core-journal-cli.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
-tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
+solstone-core-trash.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "net", "rt-multi-thread", "sync", "time"] }
 time = { version = "0.3.54", optional = true }
 tower.workspace = true
 ureq = { workspace = true, features = ["rustls"] }

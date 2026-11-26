@@ -1,0 +1,13 @@
+{
+  "cancel": "export.cancel",
+  "capability": "solstoneJournalHost",
+  "deviceSpace": "export.device_space",
+  "event": "solstone-journal-export-status",
+  "pause": "export.pause",
+  "resume": "export.resume",
+  "reveal": "export.reveal",
+  "start": "export.start",
+  "status": "export.status",
+  "unsupported": "unsupported",
+  "version": 2
+}

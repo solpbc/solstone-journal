@@ -1,0 +1,16 @@
+{
+  "description": "Full copy mode title.",
+  "context": "journal-window. Full copy mode title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4ab356dd0f3069bf9190980fbfea34438246cd75a65efe990acdcbffd7d859ae",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

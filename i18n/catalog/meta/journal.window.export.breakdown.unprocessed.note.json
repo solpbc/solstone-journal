@@ -1,0 +1,21 @@
+{
+  "description": "Breakdown row note for unprocessed or failed media.",
+  "context": "journal-window. Breakdown row note for unprocessed or failed media.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "97c409eb33414eda8443bf0909b5b9ca3c43281ef19adf5561ebf26fbfa33ec7",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

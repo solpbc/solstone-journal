@@ -99,6 +99,7 @@ pub mod backup_erase;
     reason = "test code"
 )]
 mod backup_erase_tests;
+pub mod erasure_epoch;
 mod linked;
 #[cfg(test)]
 #[allow(
@@ -108,6 +109,7 @@ mod linked;
     reason = "test code"
 )]
 mod needs_tests;
+pub use erasure_epoch::{ErasureEpoch, read_erasure_epoch};
 pub use linked::{Linked, detach_linked, finish_linked};
 
 /// Where an item stands.
@@ -2409,6 +2411,12 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
         io.remove_contained_tree(&files)
     })
     .map_err(|error| TrashError::Io(error.to_string()))?;
+    if let Err(error) = erasure_epoch::bump_erasure_epoch(journal) {
+        log::warn!(
+            "trash item {}: erased, but failed to advance erasure epoch: {error}",
+            item.id
+        );
+    }
     remove_item_dir(journal, item)
 }
 
@@ -4723,5 +4731,32 @@ mod tests {
         erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
         assert_eq!(kind.erased.get(), 1);
         assert!(read_item(&root, &item.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn permanent_erase_advances_erasure_epoch_while_trash_and_recover_do_not() {
+        let (_dir, root) = journal();
+        let kind = Erasing::default();
+        let initial = read_erasure_epoch(&root).unwrap();
+        assert_eq!(initial.epoch, 0);
+
+        let item = trashed_person(&root, &kind);
+        assert_eq!(read_erasure_epoch(&root).unwrap(), initial);
+
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        assert_eq!(read_erasure_epoch(&root).unwrap(), initial);
+
+        let item = trashed_person(&root, &kind);
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
+        let after_erase = read_erasure_epoch(&root).unwrap();
+        assert_eq!(after_erase.epoch, 1);
+        assert!(!after_erase.token.is_empty());
+
+        let item = trashed_person(&root, &kind);
+        let due = item.erase_at().unwrap() + SignedDuration::from_hours(1);
+        sweep(&root, &[&kind], due);
+        let after_sweep = read_erasure_epoch(&root).unwrap();
+        assert_eq!(after_sweep.epoch, 2);
+        assert_ne!(after_sweep.token, after_erase.token);
     }
 }

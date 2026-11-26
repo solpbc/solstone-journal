@@ -1,0 +1,16 @@
+{
+  "description": "Error body when prepared copy expired after 24h idle.",
+  "context": "journal-window. Error body when prepared copy expired after 24h idle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c5d0face3b934bceec577fb3cbc68ee96c05a01833430ef56cca348b9876d925",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

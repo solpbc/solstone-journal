@@ -1,0 +1,16 @@
+{
+  "description": "Error heading when journal changed unexpectedly mid-prepare.",
+  "context": "journal-window. Error heading when journal changed unexpectedly mid-prepare.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7e5b66a5d4633cd912e68161a7139a25cae2f43103a2b760eb87bb0bc5e05896",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

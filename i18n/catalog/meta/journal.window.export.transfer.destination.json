@@ -1,0 +1,21 @@
+{
+  "description": "Destination display line during native transfer.",
+  "context": "journal-window. Destination display line during native transfer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "dest",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "76e8038b831737965b629b37f712e5e96a6bd1ca883e2cabc35fcbc9e615b72e",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

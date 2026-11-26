@@ -1,0 +1,16 @@
+{
+  "description": "Heading while preparing a copy without processed media.",
+  "context": "journal-window. Heading while preparing a copy without processed media.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "320435c52c912ac4b30996967dd302d76fd32b542d13dcbac50273d061c6475d",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

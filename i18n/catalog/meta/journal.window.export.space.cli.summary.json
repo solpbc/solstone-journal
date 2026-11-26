@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure summary for direct CLI external-drive export.",
+  "context": "journal-window. Disclosure summary for direct CLI external-drive export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8ef23424394cb8ffb2eabd80ad2ae3daa7426eeeb082104fcfcd37ea883759e",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

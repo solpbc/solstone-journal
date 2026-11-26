@@ -1,0 +1,16 @@
+{
+  "description": "Short tag when mode exceeds available journal drive space.",
+  "context": "journal-window. Short tag when mode exceeds available journal drive space.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ff8fb4f240019733ea871adc1662b626d0ae5668932d86b259cbcddd3a3cb9a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

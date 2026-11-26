@@ -1,0 +1,16 @@
+{
+  "description": "Lighter copy mode title.",
+  "context": "journal-window. Lighter copy mode title.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a76e9d6fcc1f8e45775d557c063974a3e2bd56e663cb174336596c36be55918e",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

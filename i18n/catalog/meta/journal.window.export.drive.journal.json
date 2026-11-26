@@ -1,0 +1,16 @@
+{
+  "description": "Staging drive phrase when staging shares the journal's volume.",
+  "context": "journal-window. Staging drive phrase when staging shares the journal's volume.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "55931bf84dba602ed33699023d7e59faf229a69f7230ea8c050ad8a4480b09ea",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

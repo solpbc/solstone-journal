@@ -1,0 +1,16 @@
+{
+  "description": "Disambiguation bullet explaining merge.",
+  "context": "journal-window. Disambiguation bullet explaining merge.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "35ea71186ff6847a01d51355bafd039924409a1e26f527ea5afbbce2bc62b435",
+  "max_length": 320,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

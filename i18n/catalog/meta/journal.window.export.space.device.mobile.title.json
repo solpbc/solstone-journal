@@ -1,0 +1,16 @@
+{
+  "description": "Warning heading when paired phone or tablet lacks free space.",
+  "context": "journal-window. Warning heading when paired phone or tablet lacks free space.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ec965a0136cdad361083ab3d0ac470319fd6a19df2e6365e6d3dae3a59141012",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

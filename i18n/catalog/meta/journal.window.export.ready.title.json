@@ -1,0 +1,16 @@
+{
+  "description": "Heading when a prepared copy is ready.",
+  "context": "journal-window. Heading when a prepared copy is ready.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ae58f1c0442806c300786d316aea816efd5b88413c9a5d7ca0e9b1d1f86d1ed5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

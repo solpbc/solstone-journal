@@ -1,0 +1,16 @@
+{
+  "description": "Mode size readout while measuring.",
+  "context": "journal-window. Mode size readout while measuring.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ecb46300adad9883ed0724d342b195f2a45eedb1e0590ae09da825bf6e1b9444",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Heading after native save passes length and checksum verification.",
+  "context": "journal-window. Heading after native save passes length and checksum verification.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a9745be7c29e6b67fc7919676984f478f2fa04dd2395651793916a3ed87d48b2",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

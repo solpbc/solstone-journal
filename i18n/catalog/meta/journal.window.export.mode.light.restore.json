@@ -1,0 +1,16 @@
+{
+  "description": "Lighter copy restore note.",
+  "context": "journal-window. Lighter copy restore note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c99b26670b205d85349a82d6be8d7e45e700373e815f469c854e6c3a2f514f49",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

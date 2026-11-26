@@ -1,0 +1,16 @@
+{
+  "description": "Linux and Windows external-drive CLI instructions.",
+  "context": "journal-window. Linux and Windows external-drive CLI instructions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fea3987a45d9baa5b0efbb00ea97cfcff817d2ac25c7ee0dd1c59e9175a25ad3",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

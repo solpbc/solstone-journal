@@ -1,0 +1,16 @@
+{
+  "description": "Breakdown status label when media is in backup only.",
+  "context": "journal-window. Breakdown status label when media is in backup only.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4643bcb6f80709cf5ecc544228568b586269c5091dd0618e4569dd6f03696b77",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

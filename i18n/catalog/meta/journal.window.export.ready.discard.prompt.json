@@ -1,0 +1,25 @@
+{
+  "description": "Inline confirmation prompt before discarding prepared copy.",
+  "context": "journal-window. Inline confirmation prompt before discarding prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7ddbc28f0845c7188bd4b44e136542210c1e3bd71385aa5e2284c26bd1ed4c23",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

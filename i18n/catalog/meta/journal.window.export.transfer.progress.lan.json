@@ -1,0 +1,29 @@
+{
+  "description": "Live transfer progress over local network.",
+  "context": "journal-window. Live transfer progress over local network.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "rate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5955af5771463024d98cb631d1bfc0b6284ba9e2cafa9e20cd2e93313b1cb2e6",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

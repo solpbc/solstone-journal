@@ -1,0 +1,16 @@
+{
+  "description": "Sleep-prevention note on desktop apps.",
+  "context": "journal-window. Sleep-prevention note on desktop apps.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "76fc67271840a005b0e7b5d1f3b31ce234a970877e23f47699b2b68b11bfa878",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

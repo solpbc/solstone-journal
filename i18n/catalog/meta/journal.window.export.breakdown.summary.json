@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure summary for 4-population export breakdown.",
+  "context": "journal-window. Disclosure summary for 4-population export breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d3702f7f7d62c5100e4d16aea20aa1d711935806a364a4e661610498ef04377",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

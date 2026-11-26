@@ -1,0 +1,16 @@
+{
+  "description": "Full copy restore note.",
+  "context": "journal-window. Full copy restore note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ca8911836c6e9640501125f67708a1a6e715e317fd737a7c1623c9ec4ddf12b8",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

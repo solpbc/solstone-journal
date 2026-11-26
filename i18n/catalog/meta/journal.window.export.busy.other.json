@@ -1,0 +1,16 @@
+{
+  "description": "Status note when single export slot is held by another requester.",
+  "context": "journal-window. Status note when single export slot is held by another requester.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f26c9225e5cec0d0c08e757323b8da38a99176e92f2853e655552c474570c973",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

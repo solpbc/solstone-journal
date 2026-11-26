@@ -1,0 +1,16 @@
+{
+  "description": "More card description for the journal's export view.",
+  "context": "journal-window. More card description for the journal's export view.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff2cef61d7aa4e0dccf941290b277e7b178c38d507fb2bbcd70377afef52b963",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

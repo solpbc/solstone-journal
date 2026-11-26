@@ -1,0 +1,21 @@
+{
+  "description": "Heading when offloaded media exists and backup is unreachable.",
+  "context": "journal-window. Heading when offloaded media exists and backup is unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d1fdb4330fa4cfffa9181c1dd2e0b547c065cfe081adaed48d96d092305a0cb9",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

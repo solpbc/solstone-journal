@@ -1,0 +1,16 @@
+{
+  "description": "Backup page cross-link prompt to export.",
+  "context": "journal-window. Backup page cross-link prompt to export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bd618cc3377d73ea18ebaa55a4b1d0fab6903387d3c8abd233ac16c2ef8484e0",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

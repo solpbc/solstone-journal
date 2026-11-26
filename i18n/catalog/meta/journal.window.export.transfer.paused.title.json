@@ -1,0 +1,16 @@
+{
+  "description": "Heading when native transfer is paused.",
+  "context": "journal-window. Heading when native transfer is paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ee2903f4a8e7f65f492ecf1441ac5a0d078a3309312f8b383a17cb8e0801163",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

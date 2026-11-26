@@ -1,0 +1,16 @@
+{
+  "description": "Confirmation heading after discarding prepared copy.",
+  "context": "journal-window. Confirmation heading after discarding prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f6d223171789b2c7d48b8e017a4b547ef1d6c200058e901106b23919a3575cb8",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

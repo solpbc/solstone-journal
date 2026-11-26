@@ -1,0 +1,16 @@
+{
+  "description": "Fallback error heading when preparation failed.",
+  "context": "journal-window. Fallback error heading when preparation failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2670f26f81e777379df5aadb644284ac505ebc6af4cba4c9aa3a3dbd6e3325bc",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

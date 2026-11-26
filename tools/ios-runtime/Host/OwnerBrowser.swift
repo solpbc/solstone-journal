@@ -50,7 +50,7 @@ final class OwnerRead: @unchecked Sendable {
       throw URLError(.dataLengthExceedsMaximum)
     }
     var bodyText = text
-    let allowed = Set(["accept", "content-type", "range", "if-none-match", "if-modified-since", "last-event-id", "x-solstone-actor"])
+    let allowed = Set(["accept", "content-type", "range", "if-range", "if-none-match", "if-modified-since", "last-event-id", "x-solstone-actor"])
     var headers = request.allHTTPHeaderFields?.compactMap { key, value -> [String]? in
       allowed.contains(key.lowercased()) ? [key.lowercased(), value] : nil
     } ?? []
@@ -140,6 +140,17 @@ final class OwnerRead: @unchecked Sendable {
   private lazy var downloads = OwnerDownloads(presenter: { [weak self] in self?.topController() },
     failed: { [weak self] in
       self?.alert("couldn't save this file. try again from its page.", confirm: false) { _ in }
+    },
+    handedOff: { [weak self] exportID in
+      guard let web = self?.web else { return }
+      let payload = try? JSONSerialization.data(withJSONObject: [
+        "phase": "handed_off",
+        "export_id": exportID,
+        "platform": "ios_host",
+      ])
+      guard let payload, let json = String(data: payload, encoding: .utf8) else { return }
+      let script = "window.dispatchEvent(new CustomEvent('solstone-journal-export-status', { detail: \(json) }));"
+      web.evaluateJavaScript(script, completionHandler: nil)
     })
   private var requests: [ObjectIdentifier: Slot] = [:]
   private weak var web: WKWebView?

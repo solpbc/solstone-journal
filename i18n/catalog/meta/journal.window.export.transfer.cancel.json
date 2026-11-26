@@ -1,0 +1,16 @@
+{
+  "description": "Cancel transfer button label.",
+  "context": "journal-window. Cancel transfer button label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4aaa5ef175d22c62e22179ca94755d690bf42b375765dccd37baf1fa0f996661",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

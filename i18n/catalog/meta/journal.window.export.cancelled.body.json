@@ -1,0 +1,21 @@
+{
+  "description": "Status detail after preparation is cancelled.",
+  "context": "journal-window. Status detail after preparation is cancelled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "a2387c9fe27ee928aa1486e5810aea8cf1fd7dad581820408745ddfc4005329c",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

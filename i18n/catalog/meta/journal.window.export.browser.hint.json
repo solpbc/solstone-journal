@@ -1,0 +1,21 @@
+{
+  "description": "Honest local browser destination space note.",
+  "context": "journal-window. Honest local browser destination space note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "063e4d3316beaadad56074c0e2355108cb59ba903f1f87d569baf4df4a7f2747",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

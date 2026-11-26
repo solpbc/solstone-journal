@@ -1,0 +1,21 @@
+{
+  "description": "Body when offloaded media exists and backup is unreachable.",
+  "context": "journal-window. Body when offloaded media exists and backup is unreachable.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "58c1311d2c14726b3232ebb204f4ca24b385bb7c63fea32fd6c5eeddeb0317cd",
+  "max_length": 320,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

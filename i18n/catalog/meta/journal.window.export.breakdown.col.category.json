@@ -1,0 +1,16 @@
+{
+  "description": "Breakdown table category column header.",
+  "context": "journal-window. Breakdown table category column header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "dc9c5418040a36bf5052b169237e4378818b46a7058864d4c5581794ca6581a6",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

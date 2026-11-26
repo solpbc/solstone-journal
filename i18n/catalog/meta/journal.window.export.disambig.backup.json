@@ -1,0 +1,16 @@
+{
+  "description": "Disambiguation bullet explaining backup.",
+  "context": "journal-window. Disambiguation bullet explaining backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f307b4b3d5d66b368455bcabebe36b642a52a7432dd098c8e2a3908900476a2e",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

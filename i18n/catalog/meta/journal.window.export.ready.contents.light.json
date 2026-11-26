@@ -1,0 +1,33 @@
+{
+  "description": "Summary of included and omitted items in a prepared lighter copy.",
+  "context": "journal-window. Summary of included and omitted items in a prepared lighter copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    },
+    {
+      "name": "omitted_size",
+      "type": "string"
+    },
+    {
+      "name": "omitted_files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "423e976909ee8fb15a9fa64791550ec0f4e3b2527a4564d847c09ec80ec0340d",
+  "max_length": 360,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

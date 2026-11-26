@@ -1,0 +1,16 @@
+{
+  "description": "Cancel button in inline discard confirmation.",
+  "context": "journal-window. Cancel button in inline discard confirmation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "677a77df3318593f7eb6608b079bf57c4792da71c7a973f399738b45270f35d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

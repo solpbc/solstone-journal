@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure summary for ready copy contents and checksum.",
+  "context": "journal-window. Disclosure summary for ready copy contents and checksum.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe3c4b3e5592b1c728491fd894e68566e99a033af6071ce3d92720772602ee3b",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

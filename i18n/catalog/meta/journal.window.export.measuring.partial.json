@@ -1,0 +1,25 @@
+{
+  "description": "Partial sizing progress line.",
+  "context": "journal-window. Partial sizing progress line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6d0a2c65c4c0e18255123987c7890f43ce6659d7f669a0ff038fcaff86df85b6",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

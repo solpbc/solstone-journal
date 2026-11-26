@@ -1,0 +1,16 @@
+{
+  "description": "Breakdown table inclusion column header.",
+  "context": "journal-window. Breakdown table inclusion column header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "28da7cd455788b091d2149f9c564ec72c6dd5dc1bc86be43a21af8d98d71b099",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

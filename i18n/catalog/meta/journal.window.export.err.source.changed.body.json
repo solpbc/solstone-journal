@@ -1,0 +1,16 @@
+{
+  "description": "Error body when journal changed unexpectedly mid-prepare.",
+  "context": "journal-window. Error body when journal changed unexpectedly mid-prepare.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9d1004baeb9719daa0135a3677f9a74279722fde39e65905dbb6d941f912822a",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

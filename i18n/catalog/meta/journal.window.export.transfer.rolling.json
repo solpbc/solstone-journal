@@ -1,0 +1,16 @@
+{
+  "description": "Rolling retention reassurance during active transfer.",
+  "context": "journal-window. Rolling retention reassurance during active transfer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "914683d4593857336768ce1f3eacbf1633fb6cf4fdd829ad033815619b460296",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

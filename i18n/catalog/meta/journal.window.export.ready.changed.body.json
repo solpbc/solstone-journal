@@ -1,0 +1,16 @@
+{
+  "description": "Banner body when journal entries arrived after prepare.",
+  "context": "journal-window. Banner body when journal entries arrived after prepare.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ee723b5a6077416547976f526efaa564e97259c344705a469e45e88c24916fc",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

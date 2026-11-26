@@ -1,0 +1,16 @@
+{
+  "description": "Summary for export vs backup vs merge disclosure.",
+  "context": "journal-window. Summary for export vs backup vs merge disclosure.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4e7ed7c30f993d1ff9d7f67bfb6c24d7bbd48065ae8b0e695bdaa0c2e5324ca9",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Out-of-space recovery copy for lighter export on Linux and Windows journal hosts.",
+  "context": "journal-window. Out-of-space recovery copy for lighter export on Linux and Windows journal hosts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "48144f9499ac5aeed5065767dc1c950e268354c30f72620c593283fc355f969e",
+  "max_length": 300,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

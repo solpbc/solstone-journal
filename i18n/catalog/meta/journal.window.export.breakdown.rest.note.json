@@ -1,0 +1,21 @@
+{
+  "description": "Breakdown row note for non-media files.",
+  "context": "journal-window. Breakdown row note for non-media files.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5069b9b733ac586c477361fbbf7bad65557105eab11d412dcefba73536f9dcf8",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

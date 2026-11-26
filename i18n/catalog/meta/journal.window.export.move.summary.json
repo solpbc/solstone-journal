@@ -1,0 +1,16 @@
+{
+  "description": "Disclosure summary for moving a journal to a new computer.",
+  "context": "journal-window. Disclosure summary for moving a journal to a new computer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "77f17f2d9511e1aa0db4d85d273eff17f72abbfe9a35b696875ac7fae4ef5d87",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

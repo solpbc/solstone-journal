@@ -4,6 +4,38 @@
 use super::*;
 use std::os::fd::FromRawFd;
 
+/// Resolve the immutable local prepared export path for on-device Files handoff
+/// without creating a second full-size temporary copy.
+///
+/// # Safety
+/// `export_id` is a valid NUL-terminated UTF-8 string (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn journal_ios_owner_prepared_export_path(
+    export_id: *const c_char,
+) -> *mut c_char {
+    let result = std::panic::catch_unwind(|| -> Result<Value, String> {
+        if export_id.is_null() {
+            return Err("export id required".into());
+        }
+        let id = unsafe { std::ffi::CStr::from_ptr(export_id) }
+            .to_str()
+            .map_err(|_| "invalid export id")?;
+        let serving = SERVING.lock().map_err(|_| "serving owner unavailable")?;
+        let current = serving.as_ref().ok_or("journal is stopped")?;
+        let (path, filename) = current
+            .serving
+            .prepared_export_path(id)
+            .ok_or("prepared export unavailable")?;
+        Ok(json!({ "path": path.to_string_lossy(), "filename": filename }))
+    });
+    let value = match result {
+        Ok(Ok(value)) => json!({"ok": true, "value": value}),
+        Ok(Err(error)) => json!({"ok": false, "error": error}),
+        Err(_) => json!({"ok": false, "error": "prepared export lookup failed"}),
+    };
+    CString::new(value.to_string()).unwrap().into_raw()
+}
+
 /// Private in-process owner route. No address, journal path or access credential
 /// can be supplied by the web document. The caller owns the response reader.
 ///

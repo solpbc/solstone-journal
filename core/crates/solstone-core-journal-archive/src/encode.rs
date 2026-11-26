@@ -2,10 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(unix)]
 use nix::fcntl::{FcntlArg, OFlag, fcntl};
@@ -47,6 +49,25 @@ fn chronicle_day(member: &str) -> Option<&str> {
     (day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())).then_some(day)
 }
 
+/// Progress reported while packing a portable archive.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EncodeProgress {
+    pub files_done: u64,
+    pub files_total: u64,
+    pub bytes_read: u64,
+    pub bytes_total: u64,
+}
+
+/// Optional controls for lighter export, cooperative cancellation, progress,
+/// and external abort checks (such as Trash permanent-erasure invalidation).
+#[derive(Default)]
+pub struct EncodeOptions<'a> {
+    pub omitted_members: Option<&'a BTreeSet<String>>,
+    pub cancel: Option<&'a AtomicBool>,
+    pub on_progress: Option<&'a mut dyn FnMut(EncodeProgress)>,
+    pub check_abort: Option<&'a mut dyn FnMut() -> Result<(), String>>,
+}
+
 /// The frozen source and metadata to encode into a portable archive.
 pub struct EncodeArchiveRequest<'a> {
     pub source: &'a ArchiveSource,
@@ -71,6 +92,8 @@ pub enum EncodeArchiveFollowOn {
         member: Option<ArchiveMemberName>,
         source: io::Error,
     },
+    Cancelled,
+    Aborted(String),
 }
 
 impl fmt::Display for EncodingPhase {
@@ -104,6 +127,8 @@ pub enum EncodeArchiveError {
         source: io::Error,
         followed: Option<EncodeArchiveFollowOn>,
     },
+    Cancelled,
+    Aborted(String),
 }
 
 impl fmt::Display for EncodeArchiveError {
@@ -132,6 +157,8 @@ impl fmt::Display for EncodeArchiveError {
             Self::ArchiveFinish { phase, source, .. } => {
                 write!(formatter, "archive finish {phase}: {source}")
             }
+            Self::Cancelled => formatter.write_str("archive export cancelled"),
+            Self::Aborted(reason) => write!(formatter, "archive export aborted: {reason}"),
         }
     }
 }
@@ -141,7 +168,10 @@ impl Error for EncodeArchiveError {
         match self {
             Self::Source(source) => Some(source),
             Self::ArchiveWrite { source, .. } | Self::ArchiveFinish { source, .. } => Some(source),
-            Self::InvalidWriter { .. } | Self::InvalidMetadata { .. } => None,
+            Self::InvalidWriter { .. }
+            | Self::InvalidMetadata { .. }
+            | Self::Cancelled
+            | Self::Aborted(_) => None,
         }
     }
 }
@@ -655,7 +685,28 @@ pub fn encode_archive(
     request: &EncodeArchiveRequest<'_>,
     file: &mut File,
 ) -> Result<(), EncodeArchiveError> {
+    encode_archive_with_options(request, file, EncodeOptions::default())
+}
+
+/// Encode a portable archive with optional omission set, cancellation,
+/// progress callback, and external abort predicate.
+pub fn encode_archive_with_options(
+    request: &EncodeArchiveRequest<'_>,
+    file: &mut File,
+    mut options: EncodeOptions<'_>,
+) -> Result<(), EncodeArchiveError> {
     preflight_writer(file)?;
+    if options
+        .cancel
+        .is_some_and(|flag| flag.load(Ordering::Acquire))
+    {
+        return Err(EncodeArchiveError::Cancelled);
+    }
+    if let Some(check) = options.check_abort.as_deref_mut()
+        && let Err(reason) = check()
+    {
+        return Err(EncodeArchiveError::Aborted(reason));
+    }
     for entry in request.source.inventory().entries() {
         validate_member_name_length(entry.member_name())?;
     }
@@ -683,6 +734,9 @@ pub fn encode_archive(
             for entry in inventory.entries() {
                 if let Some(day) = chronicle_day(entry.member_name().as_str())
                     && window.contains_day(day)
+                    && !options
+                        .omitted_members
+                        .is_some_and(|set| set.contains(entry.member_name().as_str()))
                 {
                     days.insert(day);
                 }
@@ -717,6 +771,7 @@ pub fn encode_archive(
         request.source,
         &manifest,
         request.day_window.as_ref(),
+        &mut options,
     )
     .err()
     .map(PendingFailure::from_encoding_error);
@@ -727,6 +782,18 @@ pub fn encode_archive(
             .revalidate()
             .err()
             .map(PendingFailure::Source);
+    }
+    if pending.is_none() {
+        if options
+            .cancel
+            .is_some_and(|flag| flag.load(Ordering::Acquire))
+        {
+            pending = Some(PendingFailure::Cancelled);
+        } else if let Some(check) = options.check_abort.as_deref_mut()
+            && let Err(reason) = check()
+        {
+            pending = Some(PendingFailure::Aborted(reason));
+        }
     }
 
     state.borrow_mut().phase = EncodingPhase::Finalize;
@@ -787,6 +854,8 @@ enum PendingFailure {
         member: Option<ArchiveMemberName>,
         source: io::Error,
     },
+    Cancelled,
+    Aborted(String),
 }
 
 impl PendingFailure {
@@ -800,6 +869,8 @@ impl PendingFailure {
                     WriteFailure::Zip(error) => io::Error::other(error),
                 },
             },
+            ArchiveEncodingError::Cancelled => Self::Cancelled,
+            ArchiveEncodingError::Aborted(reason) => Self::Aborted(reason),
         }
     }
 
@@ -811,6 +882,8 @@ impl PendingFailure {
                 source,
                 followed: None,
             },
+            Self::Cancelled => EncodeArchiveError::Cancelled,
+            Self::Aborted(reason) => EncodeArchiveError::Aborted(reason),
         }
     }
 
@@ -820,6 +893,8 @@ impl PendingFailure {
             Self::ArchiveWrite { member, source } => {
                 EncodeArchiveFollowOn::ArchiveWrite { member, source }
             }
+            Self::Cancelled => EncodeArchiveFollowOn::Cancelled,
+            Self::Aborted(reason) => EncodeArchiveFollowOn::Aborted(reason),
         }
     }
 }

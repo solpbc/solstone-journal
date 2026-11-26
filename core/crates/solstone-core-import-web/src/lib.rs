@@ -23,7 +23,7 @@ mod delete;
 mod embedded_route;
 mod http;
 mod imports;
-mod journal_archive;
+pub mod journal_archive;
 mod lifecycle;
 #[cfg(unix)]
 pub use lifecycle::register_admitted_folder;
@@ -56,19 +56,37 @@ pub(crate) struct AppState {
 }
 
 pub fn routes(journal_root: PathBuf) -> Router {
-    router(journal_root, None)
+    router(journal_root, None, true)
 }
 
 /// The same import paths as [`routes`], with a retained route installed.
 pub fn routes_with_embedded(journal_root: PathBuf, route: Arc<ImportRouteSlot>) -> Router {
-    router(journal_root, Some(route))
+    router(journal_root, Some(route), true)
 }
 
-fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router {
+/// Import routes omitting `/app/import/api/journal-archive/export` when the
+/// enclosing shell mounts a prepared-export-aware handler on that path.
+pub fn routes_without_archive_export(journal_root: PathBuf) -> Router {
+    router(journal_root, None, false)
+}
+
+/// Embedded import routes omitting `/app/import/api/journal-archive/export`.
+pub fn routes_with_embedded_without_archive_export(
+    journal_root: PathBuf,
+    route: Arc<ImportRouteSlot>,
+) -> Router {
+    router(journal_root, Some(route), false)
+}
+
+fn router(
+    journal_root: PathBuf,
+    route: Option<Arc<ImportRouteSlot>>,
+    include_archive_export: bool,
+) -> Router {
     uploads::sweep_startup_once(&journal_root);
     lifecycle::sweep_abandoned_strava_uploads(&journal_root);
     solstone_core_facets::queue_body_entries_once(&journal_root);
-    Router::new()
+    let mut r = Router::new()
         .route("/app/import/", get(assets::shell))
         .route("/app/import/workspace", get(assets::workspace))
         .route("/app/import/background", get(assets::background_not_found))
@@ -79,70 +97,72 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
             get(originals::read).put(originals::write),
         )
         .route("/app/import/api/list", get(imports::list))
-        .route("/app/import/api/guide/{source}", get(assets::guide))
-        .route(
+        .route("/app/import/api/guide/{source}", get(assets::guide));
+    if include_archive_export {
+        r = r.route(
             "/app/import/api/journal-archive/export",
             get(journal_archive::export),
-        )
-        .route(
-            "/app/import/api/journal-archive/preview",
-            post(journal_archive::preview),
-        )
-        .route(
-            mobile_import_contract::SAVE_PATH,
-            post(lifecycle::save).layer(DefaultBodyLimit::max(
-                solstone_core_convey_http::serve::REQUEST_BODY_LIMIT,
-            )),
-        )
-        .route(
-            uploads::UPLOAD_COLLECTION_PATH,
-            get(uploads::list_active)
-                .post(uploads::create)
-                .layer(DefaultBodyLimit::max(uploads::MAX_JSON_CONTROL_BYTES)),
-        )
-        .route(
-            uploads::UPLOAD_ITEM_PATH,
-            get(uploads::status)
-                .put(uploads::put_chunk)
-                .delete(uploads::abort)
-                .layer(DefaultBodyLimit::max(uploads::BRIDGE_DRAIN_CEILING_BYTES)),
-        )
-        .route(
-            uploads::UPLOAD_COMMIT_PATH,
-            post(uploads::commit).layer(DefaultBodyLimit::max(uploads::MAX_JSON_CONTROL_BYTES)),
-        )
-        .route("/app/import/api/save-path", post(lifecycle::save_path))
-        .route("/app/import/api/meta", post(lifecycle::meta))
-        .route(
-            "/app/import/api/body-facet",
-            get(body_facet::offer).post(body_facet::answer),
-        )
-        .route("/app/import/api/preview", post(preview::preview))
-        .route(mobile_import_contract::START_PATH, post(lifecycle::start))
-        .route(
-            "/app/import/api/{timestamp}/content/{item_id}",
-            get(content::detail),
-        )
-        .route("/app/import/api/{timestamp}/content", get(content::list))
-        .route("/app/import/api/imports/delete", post(delete::delete_set))
-        .route(
-            "/app/import/api/imports/{timestamp}/delete",
-            get(delete::preview),
-        )
-        .route(
-            "/app/import/api/imports/{timestamp}",
-            axum::routing::delete(delete::delete),
-        )
-        .route(
-            "/app/import/api/{timestamp}/discard",
-            post(lifecycle::discard),
-        )
-        .route("/app/import/api/{timestamp}", get(imports::detail))
-        .route("/app/import/{timestamp}", get(assets::shell))
-        .layer(axum::middleware::from_fn(http::render_refusal))
-        .layer(DefaultBodyLimit::max(multipart::MAX_BODY_BYTES))
-        .with_state(AppState {
-            root: journal_root,
-            route,
-        })
+        );
+    }
+    r.route(
+        "/app/import/api/journal-archive/preview",
+        post(journal_archive::preview),
+    )
+    .route(
+        mobile_import_contract::SAVE_PATH,
+        post(lifecycle::save).layer(DefaultBodyLimit::max(
+            solstone_core_convey_http::serve::REQUEST_BODY_LIMIT,
+        )),
+    )
+    .route(
+        uploads::UPLOAD_COLLECTION_PATH,
+        get(uploads::list_active)
+            .post(uploads::create)
+            .layer(DefaultBodyLimit::max(uploads::MAX_JSON_CONTROL_BYTES)),
+    )
+    .route(
+        uploads::UPLOAD_ITEM_PATH,
+        get(uploads::status)
+            .put(uploads::put_chunk)
+            .delete(uploads::abort)
+            .layer(DefaultBodyLimit::max(uploads::BRIDGE_DRAIN_CEILING_BYTES)),
+    )
+    .route(
+        uploads::UPLOAD_COMMIT_PATH,
+        post(uploads::commit).layer(DefaultBodyLimit::max(uploads::MAX_JSON_CONTROL_BYTES)),
+    )
+    .route("/app/import/api/save-path", post(lifecycle::save_path))
+    .route("/app/import/api/meta", post(lifecycle::meta))
+    .route(
+        "/app/import/api/body-facet",
+        get(body_facet::offer).post(body_facet::answer),
+    )
+    .route("/app/import/api/preview", post(preview::preview))
+    .route(mobile_import_contract::START_PATH, post(lifecycle::start))
+    .route(
+        "/app/import/api/{timestamp}/content/{item_id}",
+        get(content::detail),
+    )
+    .route("/app/import/api/{timestamp}/content", get(content::list))
+    .route("/app/import/api/imports/delete", post(delete::delete_set))
+    .route(
+        "/app/import/api/imports/{timestamp}/delete",
+        get(delete::preview),
+    )
+    .route(
+        "/app/import/api/imports/{timestamp}",
+        axum::routing::delete(delete::delete),
+    )
+    .route(
+        "/app/import/api/{timestamp}/discard",
+        post(lifecycle::discard),
+    )
+    .route("/app/import/api/{timestamp}", get(imports::detail))
+    .route("/app/import/{timestamp}", get(assets::shell))
+    .layer(axum::middleware::from_fn(http::render_refusal))
+    .layer(DefaultBodyLimit::max(multipart::MAX_BODY_BYTES))
+    .with_state(AppState {
+        root: journal_root,
+        route,
+    })
 }

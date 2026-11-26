@@ -2722,6 +2722,15 @@ button:focus:not(:focus-visible) {
         <span class="sapp-open">{{journal.window.settings.visible.text.open}}</span>
       </a>
 
+      <a class="sapp" href="/app/export/">
+        <span class="sapp-ic">⬇</span>
+        <span class="sapp-b">
+          <span class="sapp-title">{{journal.window.settings.visible.text.export}}</span>
+          <span class="sapp-desc">{{journal.window.settings.visible.text.take.a.portable.copy.of.your.journal}}</span>
+        </span>
+        <span class="sapp-open">{{journal.window.settings.visible.text.open}}</span>
+      </a>
+
       <a class="sapp" href="/app/health/#quiet-notifs-section" style="margin-top: 1.5rem;">
         <span class="sapp-ic">◔</span>
         <span class="sapp-b">
@@ -3359,6 +3368,7 @@ button:focus:not(:focus-visible) {
         <button type="button" id="cleanupNowBtn" class="action-button-danger">{{journal.window.settings.button.label.build.the.list}}</button>
         <small style="display: block; margin-top: 0.5em; color: var(--ink-soft);">{{journal.window.settings.visible.text.build.the.list.of.original.media}}</small>
       </div>
+      <p style="margin-top: 1.25rem; color: var(--ink-soft); font-size: 0.92em;">{{journal.window.settings.visible.text.want.a.copy.before.trimming.original.media}} <a href="/app/export/" style="color: var(--orange-text-aa); text-decoration: underline;">{{journal.window.settings.link.label.open.export}}</a></p>
       </form>
 
     </section>

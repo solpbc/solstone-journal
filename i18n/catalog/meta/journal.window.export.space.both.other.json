@@ -1,0 +1,29 @@
+{
+  "description": "Both-tight guidance for Linux and Windows journal hosts.",
+  "context": "journal-window. Both-tight guidance for Linux and Windows journal hosts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "light",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "71af5fc64cc03d1b669ad406173c0e1987475f7797234d5ff3b587f3c2894564",
+  "max_length": 380,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

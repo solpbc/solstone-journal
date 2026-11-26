@@ -1,0 +1,16 @@
+{
+  "description": "Error body when paired device access was revoked mid-transfer.",
+  "context": "journal-window. Error body when paired device access was revoked mid-transfer.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "74d525bb9314d23a07e8479a3a0611e86be50ef4cfef952d643b4efcdc58ec9b",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

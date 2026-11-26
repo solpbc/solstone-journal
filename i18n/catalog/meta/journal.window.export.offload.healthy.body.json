@@ -1,0 +1,21 @@
+{
+  "description": "Body when offloaded media exists and backup is healthy.",
+  "context": "journal-window. Body when offloaded media exists and backup is healthy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3074f9857382e2666b8f399dff9a3642d853c10db946a9cc99934b401b67a9e1",
+  "max_length": 360,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

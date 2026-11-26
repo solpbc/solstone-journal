@@ -720,6 +720,151 @@ pub fn open_windows_inventory_file_reader<'root>(
     }
 }
 
+/// A live-journal retained-handle streaming reader for one observed Windows file.
+///
+/// Re-verifies every ancestor directory identity and leaf identity without
+/// arming a whole-root recursive namespace watch, so normal live segment
+/// creation and `.jsonl` appends outside this entry do not abort an export.
+pub struct WindowsLiveFileReader<'root> {
+    file: std::fs::File,
+    before: WindowsFileMetadata,
+    expected_size: u64,
+    allow_append_only: bool,
+    relative_path: PathBuf,
+    root: &'root JournalRoot,
+}
+
+impl Read for WindowsLiveFileReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.file.read(buf)
+    }
+}
+
+impl Seek for WindowsLiveFileReader<'_> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.file.seek(pos)
+    }
+}
+
+impl WindowsLiveFileReader<'_> {
+    /// Return the regular-file size observed when the handle was opened.
+    pub fn observed_size(&self) -> u64 {
+        self.before.size
+    }
+
+    /// Complete the live-journal verified read.
+    pub fn finish(self) -> Result<(), WindowsInventoryError> {
+        let after = file_metadata_raw(self.file.as_raw_handle(), &self.relative_path)?;
+        let intact = if self.allow_append_only {
+            after.identity == self.before.identity && after.size >= self.expected_size
+        } else {
+            after == self.before
+        };
+        if !intact {
+            return Err(WindowsInventoryError::IdentityChanged {
+                path: self.relative_path,
+            });
+        }
+        self.root.revalidate().map_err(WindowsInventoryError::Root)
+    }
+}
+
+/// Open one observed regular entry for live-journal streaming without a
+/// whole-root recursive namespace watch.
+pub fn open_windows_inventory_file_reader_live<'root>(
+    root: &'root JournalRoot,
+    entry: &WindowsInventoryEntry,
+    allow_append_only: bool,
+) -> Result<WindowsLiveFileReader<'root>, WindowsInventoryError> {
+    if entry.kind != JournalEntryKind::RegularFile {
+        return Err(WindowsInventoryError::NotRegular {
+            path: entry.relative_path.clone(),
+        });
+    }
+    root.revalidate().map_err(WindowsInventoryError::Root)?;
+    let handle = reopen_verified_route(root, entry, FILE_READ_DATA | FILE_READ_ATTRIBUTES)?;
+    let before = file_metadata(&handle, &entry.relative_path)?;
+    let intact = if allow_append_only {
+        before.identity == entry.identity && before.size >= entry.size
+    } else {
+        before.identity == entry.identity
+            && before.size == entry.size
+            && before.last_write_time == entry.last_write_time
+    };
+    if !intact {
+        return Err(WindowsInventoryError::IdentityChanged {
+            path: entry.relative_path.clone(),
+        });
+    }
+    Ok(WindowsLiveFileReader {
+        file: std::fs::File::from(handle),
+        before,
+        expected_size: entry.size,
+        allow_append_only,
+        relative_path: entry.relative_path.clone(),
+        root,
+    })
+}
+
+/// Revalidate one directory or regular-file entry under live-journal rules.
+pub fn revalidate_windows_live_entry(
+    root: &JournalRoot,
+    entry: &WindowsInventoryEntry,
+    allow_append_only: bool,
+) -> Result<(), WindowsInventoryError> {
+    match entry.kind {
+        JournalEntryKind::Directory => {
+            let _handle = reopen_verified_route(root, entry, FILE_READ_ATTRIBUTES | FILE_TRAVERSE)?;
+            Ok(())
+        }
+        JournalEntryKind::RegularFile => {
+            let handle = reopen_verified_route(root, entry, FILE_READ_ATTRIBUTES)?;
+            let after = file_metadata(&handle, &entry.relative_path)?;
+            let intact = if allow_append_only {
+                after.identity == entry.identity && after.size >= entry.size
+            } else {
+                after.identity == entry.identity
+                    && after.size == entry.size
+                    && after.last_write_time == entry.last_write_time
+            };
+            if !intact {
+                return Err(WindowsInventoryError::IdentityChanged {
+                    path: entry.relative_path.clone(),
+                });
+            }
+            Ok(())
+        }
+        _ => Err(WindowsInventoryError::NotRegular {
+            path: entry.relative_path.clone(),
+        }),
+    }
+}
+
+/// Snapshot one small live-updated metadata file at `t=0` within `max_bytes`.
+pub fn read_windows_inventory_live_snapshot(
+    root: &JournalRoot,
+    entry: &WindowsInventoryEntry,
+    max_bytes: u64,
+) -> Result<Vec<u8>, WindowsInventoryError> {
+    if entry.size > max_bytes {
+        return Err(WindowsInventoryError::BudgetExceeded {
+            limit: InventoryBudgetLimit::CheckedReadBytes,
+        });
+    }
+    let mut reader = open_windows_inventory_file_reader_live(root, entry, false)?;
+    let size = usize::try_from(entry.size).map_err(|_| WindowsInventoryError::BudgetExceeded {
+        limit: InventoryBudgetLimit::CheckedReadBytes,
+    })?;
+    let mut bytes = vec![0u8; size];
+    read_exact(&mut reader, &mut bytes).map_err(|source| WindowsInventoryError::Io {
+        operation: "read live metadata snapshot",
+        path: entry.relative_path.clone(),
+        source,
+    })?;
+    reader.finish()?;
+    Ok(bytes)
+}
+
 fn with_witness<'root, T>(
     root: &'root JournalRoot,
     operation: impl FnOnce(&mut NamespaceWitness<'root>) -> Result<T, WindowsInventoryError>,

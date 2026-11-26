@@ -28,7 +28,13 @@ const EXPORT_FILENAME: &str = "journal-export.zip";
 
 /// Stream a portable archive without leaving an export artifact in the journal.
 pub(crate) async fn export(State(state): State<AppState>) -> Response {
-    match export_file(&state.root).await {
+    legacy_export(&state.root).await
+}
+
+/// Legacy synchronous streaming export for older paired clients calling
+/// `/app/import/api/journal-archive/export` without a prepared `?id=`.
+pub async fn legacy_export(root: &Path) -> Response {
+    match export_file(root).await {
         Ok((file, length)) => Response::builder()
             .header(header::CONTENT_LENGTH, length)
             .header(header::CONTENT_TYPE, "application/zip")

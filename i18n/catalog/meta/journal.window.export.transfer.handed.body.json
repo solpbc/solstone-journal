@@ -1,0 +1,16 @@
+{
+  "description": "Honest boundary body after iOS phone-host hands copy to Files.",
+  "context": "journal-window. Honest boundary body after iOS phone-host hands copy to Files.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "691fdeb4dce7e72039637ccd81cac3ef48a69723e130bccf30f7fa43850a6431",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -59993,6 +59993,39 @@
       "selector": null
     },
     {
+      "id": "journal.cli.journal.archive.export.help.v2",
+      "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c702e7632",
+      "namespace": "journal.cli.journal.archive.export.help",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "syntax",
+          "kind": "command",
+          "value": "solstone journal archive export [--out PATH] [--without-processed-media] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]"
+        },
+        {
+          "name": "token_zip",
+          "kind": "accepted-input",
+          "value": "ZIP"
+        },
+        {
+          "name": "flag_without_processed_media",
+          "kind": "flag",
+          "value": "--without-processed-media"
+        },
+        {
+          "name": "line_break",
+          "kind": "whitespace",
+          "value": "\n"
+        }
+      ],
+      "selector": null
+    },
+    {
       "id": "journal.cli.journal.archive.exports.unsafe",
       "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f7274732e756e73616665",
       "namespace": "journal.cli.journal.archive.exports",
@@ -61916,6 +61949,94 @@
       "arguments": [],
       "protected_slots": [],
       "selector": null
+    },
+    {
+      "id": "journal.cli.journal.archive.offload.degraded",
+      "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6465677261646564",
+      "namespace": "journal.cli.journal.archive.offload",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [
+        {
+          "name": "token_zip",
+          "kind": "accepted-input",
+          "value": "ZIP"
+        }
+      ],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.journal.archive.offload.note",
+      "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6e6f7465",
+      "namespace": "journal.cli.journal.archive.offload",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "days",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "size",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [
+        {
+          "name": "token_zip",
+          "kind": "accepted-input",
+          "value": "ZIP"
+        }
+      ],
+      "selector": {
+        "name": "days",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.journal.archive.omitted.media",
+      "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f6d69747465642e6d65646961",
+      "namespace": "journal.cli.journal.archive.omitted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "size",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "files",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "files",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
     },
     {
       "id": "journal.cli.journal.archive.out.required",

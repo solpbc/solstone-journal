@@ -1,0 +1,16 @@
+{
+  "description": "Secondary button label to discard prepared copy.",
+  "context": "journal-window. Secondary button label to discard prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7614bbce50620c5869979010af5ea4fc542189e06846c13827feca16c07492a8",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Initial sizing state before first partial count.",
+  "context": "journal-window. Initial sizing state before first partial count.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "12caedc75a7b4fff83c11ee4ab7239786e2c23c712f12d2ba4943952bf5461ec",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

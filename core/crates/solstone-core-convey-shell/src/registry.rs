@@ -232,6 +232,22 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         None,
     ),
     view(
+        "export",
+        "⬇",
+        "journal.window.view.export.label",
+        "download",
+        true,
+        focus(FocusGroup::Runs, 7),
+        "journal.window.view.export.description",
+        "journal.window.view.export.source",
+        &[
+            "export", "takeout", "zip", "download", "move", "portable", "copy",
+        ],
+        None,
+        0,
+        None,
+    ),
+    view(
         "health",
         "🩺",
         "journal.window.view.status.label",
@@ -350,7 +366,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "journal.window.view.settings.label",
         "settings",
         false,
-        focus(FocusGroup::Runs, 8),
+        focus(FocusGroup::Runs, 9),
         "journal.window.view.settings.description",
         "",
         &[
@@ -403,7 +419,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "journal.window.view.stats.label",
         "chart-column",
         true,
-        focus(FocusGroup::Runs, 7),
+        focus(FocusGroup::Runs, 8),
         "journal.window.view.stats.description",
         "journal.window.view.stats.source",
         &["usage", "tokens", "disk", "hours", "numbers"],
@@ -417,7 +433,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "journal.window.view.support.label",
         "life-buoy",
         true,
-        focus(FocusGroup::Runs, 9),
+        focus(FocusGroup::Runs, 10),
         "journal.window.view.support.description",
         "",
         &["help", "report", "bug", "problem"],
@@ -783,7 +799,7 @@ mod tests {
                 "runs",
                 &[
                     "thinking", "health", "network", "sources", "agents", "backup", "import",
-                    "stats", "settings", "support",
+                    "export", "stats", "settings", "support",
                 ][..],
             ),
         ] {

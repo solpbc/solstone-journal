@@ -142,6 +142,8 @@ fn main() {
     let sources_photos_static = manifest.join("assets/sources/photos_source.js");
     let year_workspace = manifest.join("assets/year/workspace.html");
     let year_static = manifest.join("assets/year/year.js");
+    let export_workspace = manifest.join("assets/export/workspace.html");
+    let export_static = manifest.join("assets/export/export.js");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
@@ -168,6 +170,8 @@ fn main() {
         &sources_photos_static,
         &year_workspace,
         &year_static,
+        &export_workspace,
+        &export_static,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -232,6 +236,8 @@ fn main() {
     ));
     assets.push(("/app/year/workspace".to_owned(), year_workspace));
     assets.push(("/app/year/static/year.js".to_owned(), year_static));
+    assets.push(("/app/export/workspace".to_owned(), export_workspace));
+    assets.push(("/app/export/static/export.js".to_owned(), export_static));
     for (route, filename) in [
         ("/static/journal-catalog.js", "api.js"),
         ("/static/LICENSE.fluent", "LICENSE.fluent"),

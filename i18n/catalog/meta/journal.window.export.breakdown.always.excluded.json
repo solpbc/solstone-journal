@@ -1,0 +1,16 @@
+{
+  "description": "Always-excluded files note in breakdown and ready details.",
+  "context": "journal-window. Always-excluded files note in breakdown and ready details.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e46de125d9c6764b9bc85f1240a481c3a65ed2d9793985fff1a79d6f86d59931",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

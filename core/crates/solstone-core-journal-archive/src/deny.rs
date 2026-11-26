@@ -27,11 +27,26 @@ const EXTRA_PREFIXES: &[&str] = &[
 ];
 
 const OMITTED_REGULAR_FILES: &[&str] = &[
+    "backup-activity.lock",
     "mcp-endpoint/local-door-state.json",
     "mcp-endpoint/lan-door-state.json",
     "mcp-endpoint/byo-door-state.json",
     "awareness/discovery_clusters.json",
     "awareness/activity_state.json",
+    "awareness/speaker_candidates.json.lock",
+    "awareness/speaker_candidates_backfill.json.lock",
+    "solstone/apps/map/places.json.lock",
+    "solstone/apps/body/hidden-days.json.lock",
+    "imports/.lock",
+    "imports/folder-attempts.lock",
+    "imports/.strava.lock",
+    "imports/.oura.lock",
+    "imports/.apple_health.lock",
+    "imports/.garmin.lock",
+    "imports/.granola.lock",
+    "imports/plaud.json.lock",
+    "imports/oura.json.lock",
+    "streams/.registry.lock",
     "health/heartbeat.log",
     "health/steward.log",
     "health/service.log",
@@ -113,10 +128,59 @@ pub(crate) fn deny_member(member: &str, regular_file: bool) -> bool {
     if is_generated_leaf(member) {
         return true;
     }
+    if is_identified_runtime_lock(member) {
+        return true;
+    }
     if is_canonical_oplog_log(original_member) {
         return true;
     }
     false
+}
+
+/// Identified writer-owned runtime `.lock` sidecars outside `health/`, `config/`,
+/// `link/`, `backup/`, and `mcp-endpoint/`.
+///
+/// Arbitrary owner files whose names happen to end in `.lock` (such as
+/// `notes/contract.lock` or `imports/<id>/original.lock`) remain included.
+fn is_identified_runtime_lock(member: &str) -> bool {
+    let parts: Vec<&str> = member.split('/').collect();
+    match parts.as_slice() {
+        // Per-stream metadata lock sidecars: `streams/<name>.json.lock`.
+        ["streams", leaf] if leaf.ends_with(".json.lock") && leaf.len() > ".json.lock".len() => {
+            true
+        }
+        // Per-import runtime locks directly inside an import folder.
+        ["imports", id, leaf]
+            if !id.is_empty()
+                && matches!(
+                    *leaf,
+                    ".lock" | ".lock.lock" | "thinking.lock" | "import.json.lock"
+                ) =>
+        {
+            true
+        }
+        // Per-entity voiceprint writer lock sidecar.
+        ["entities", id, "voiceprints.npz.lock"] if !id.is_empty() => true,
+        // Per-facet activity folder lock.
+        ["facets", id, "activities", ".lock"] if !id.is_empty() => true,
+        // Per-day location reconciliation & accuracy worker locks under `chronicle/<day>/health/`.
+        ["chronicle", day, "health", ".location-publication.lock"] if is_eight_digit_day(day) => {
+            true
+        }
+        ["chronicle", day, "health", "accuracy", leaf]
+            if is_eight_digit_day(day)
+                && matches!(
+                    *leaf,
+                    ".worker.lock"
+                        | ".worker.lock.lock"
+                        | ".publication.lock"
+                        | ".publication.lock.lock"
+                ) =>
+        {
+            true
+        }
+        _ => false,
+    }
 }
 
 // These shared backup exclusions protect installation credentials. A full
@@ -363,5 +427,63 @@ mod tests {
         assert!(!deny_member("link/client-descriptions.json", false));
         assert!(!deny_member("supervisor.log", false));
         assert!(!deny_member(&canonical_log_path, false));
+    }
+
+    #[test]
+    fn identified_runtime_locks_are_omitted_while_owner_dot_lock_files_survive() {
+        let omitted_locks = [
+            "backup-activity.lock",
+            "health/trash-erasure-epoch.json",
+            "imports/.lock",
+            "imports/folder-attempts.lock",
+            "imports/.strava.lock",
+            "imports/.oura.lock",
+            "imports/.apple_health.lock",
+            "imports/.garmin.lock",
+            "imports/.granola.lock",
+            "imports/plaud.json.lock",
+            "imports/oura.json.lock",
+            "imports/20261126_120000/.lock",
+            "imports/20261126_120000/.lock.lock",
+            "imports/20261126_120000/thinking.lock",
+            "imports/20261126_120000/import.json.lock",
+            "solstone/apps/map/places.json.lock",
+            "solstone/apps/body/hidden-days.json.lock",
+            "awareness/speaker_candidates.json.lock",
+            "awareness/speaker_candidates_backfill.json.lock",
+            "streams/.registry.lock",
+            "streams/mic.json.lock",
+            "entities/alice/voiceprints.npz.lock",
+            "facets/work/activities/.lock",
+            "chronicle/20261126/health/.location-publication.lock",
+            "chronicle/20261126/health/accuracy/.worker.lock",
+            "chronicle/20261126/health/accuracy/.publication.lock",
+        ];
+        for path in omitted_locks {
+            assert!(
+                deny_member(path, true),
+                "expected omitted runtime lock: {path}"
+            );
+        }
+
+        let owner_locks = [
+            "notes/contract.lock",
+            "imports/20261126_120000/original.lock",
+            "imports/20261126_120000/nested/.lock",
+            "chronicle/20260101/source/120000_60/audio.jsonl.lock",
+            "solstone/apps/owner/custom.lock",
+            "streams/notes.lock",
+            "entities/alice/notes.lock",
+            "facets/work/custom.lock",
+        ];
+        for path in owner_locks {
+            assert!(
+                !deny_member(path, true),
+                "expected owner .lock kept: {path}"
+            );
+        }
+        // Never treat a directory with a runtime-lock name as a regular-file lock.
+        assert!(!deny_member("imports/.strava.lock", false));
+        assert!(!deny_member("solstone/apps/map/places.json.lock", false));
     }
 }

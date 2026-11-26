@@ -1,0 +1,16 @@
+{
+  "description": "Honest status body explaining browser download boundary.",
+  "context": "journal-window. Honest status body explaining browser download boundary.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3d113df95411869bcab91676fdcfc920f5a04a0f78a9a20a04a53582158f2a9",
+  "max_length": 280,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

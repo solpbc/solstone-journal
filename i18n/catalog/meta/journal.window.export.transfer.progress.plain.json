@@ -1,0 +1,25 @@
+{
+  "description": "Live transfer progress without rate or route.",
+  "context": "journal-window. Live transfer progress without rate or route.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d67645f6768c373104f5126e88d71e20bae2126d34ff7d6c15d3c24dd45548d2",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

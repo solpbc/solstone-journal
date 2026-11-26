@@ -1,0 +1,21 @@
+{
+  "description": "Error heading when journal drive ran out of space mid-prepare.",
+  "context": "journal-window. Error heading when journal drive ran out of space mid-prepare.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "940e46e4fd1df1712591be40b7cff85edd2b6da7d2c83ef654c727e54ddc7d73",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

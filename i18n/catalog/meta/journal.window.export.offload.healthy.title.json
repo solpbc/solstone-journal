@@ -1,0 +1,21 @@
+{
+  "description": "Heading when offloaded media exists and backup is healthy.",
+  "context": "journal-window. Heading when offloaded media exists and backup is healthy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b1ab22effdf3d550a73c7e553bc63256729cf92e5cb0564e136bc61c4418e4a6",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

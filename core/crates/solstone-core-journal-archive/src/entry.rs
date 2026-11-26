@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 #[cfg(unix)]
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
 #[cfg(unix)]
 use std::marker::PhantomData;
 
@@ -74,6 +74,10 @@ pub(crate) struct DirectoryProof {
 pub(crate) struct FileProof {
     pub(crate) identity: ProofIdentity,
     pub(crate) size: u64,
+    #[cfg(unix)]
+    pub(crate) mtime_sec: i64,
+    #[cfg(unix)]
+    pub(crate) mtime_nsec: i64,
     #[cfg(windows)]
     pub(crate) observed: solstone_core_journal_io::WindowsInventoryEntry,
 }
@@ -122,6 +126,10 @@ impl InventoryEntry {
     pub(crate) fn proof(&self) -> &EntryProof {
         &self.proof
     }
+
+    pub(crate) fn set_live_snapshot_size(&mut self, size: u64) {
+        self.proof.file.size = size;
+    }
 }
 
 /// A frozen archive-source inventory.
@@ -168,26 +176,60 @@ impl Inventory {
     }
 }
 
+enum OpenedBacking<'a> {
+    #[cfg(unix)]
+    Unix {
+        file: File,
+        expected_identity: ProofIdentity,
+        expected_mtime: Option<(i64, i64)>,
+        allow_append_only: bool,
+        member: ArchiveMemberName,
+        _source: PhantomData<&'a ()>,
+    },
+    #[cfg(windows)]
+    WindowsStrict {
+        reader: solstone_core_journal_io::WindowsCheckedFileReader<'a>,
+        root: &'a solstone_core_journal_io::JournalRoot,
+    },
+    #[cfg(windows)]
+    WindowsLive {
+        reader: solstone_core_journal_io::WindowsLiveFileReader<'a>,
+        root: &'a solstone_core_journal_io::JournalRoot,
+    },
+    Snapshot(Cursor<&'a [u8]>),
+}
+
 /// A verified regular file opened from an inventory entry.
 pub struct OpenedInventoryFile<'a> {
-    #[cfg(unix)]
-    file: File,
-    #[cfg(unix)]
-    _source: PhantomData<&'a ()>,
-    #[cfg(windows)]
-    reader: solstone_core_journal_io::WindowsCheckedFileReader<'a>,
-    #[cfg(windows)]
-    root: &'a solstone_core_journal_io::JournalRoot,
+    backing: OpenedBacking<'a>,
     inventoried_size: u64,
+    observed_size_at_open: u64,
+    allow_append_only: bool,
 }
 
 impl<'a> OpenedInventoryFile<'a> {
     #[cfg(unix)]
-    pub(crate) fn new(file: File, inventoried_size: u64) -> Self {
+    pub(crate) fn new(
+        file: File,
+        inventoried_size: u64,
+        observed_size_at_open: u64,
+        expected_identity: ProofIdentity,
+        expected_mtime: Option<(i64, i64)>,
+        allow_append_only: bool,
+        member: ArchiveMemberName,
+    ) -> Self {
         Self {
-            file,
-            _source: PhantomData,
+            backing: OpenedBacking::Unix {
+                file,
+                expected_identity,
+                expected_mtime,
+                allow_append_only,
+                member,
+                _source: PhantomData,
+            },
             inventoried_size,
+            observed_size_at_open,
+            allow_append_only,
         }
     }
 
@@ -198,9 +240,36 @@ impl<'a> OpenedInventoryFile<'a> {
         inventoried_size: u64,
     ) -> Self {
         Self {
-            reader,
-            root,
+            backing: OpenedBacking::WindowsStrict { reader, root },
             inventoried_size,
+            observed_size_at_open: inventoried_size,
+            allow_append_only: false,
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn new_windows_live(
+        reader: solstone_core_journal_io::WindowsLiveFileReader<'a>,
+        root: &'a solstone_core_journal_io::JournalRoot,
+        inventoried_size: u64,
+        allow_append_only: bool,
+    ) -> Self {
+        let observed_size_at_open = reader.observed_size();
+        Self {
+            backing: OpenedBacking::WindowsLive { reader, root },
+            inventoried_size,
+            observed_size_at_open,
+            allow_append_only,
+        }
+    }
+
+    pub(crate) fn from_snapshot(bytes: &'a [u8]) -> Self {
+        let size = bytes.len() as u64;
+        Self {
+            backing: OpenedBacking::Snapshot(Cursor::new(bytes)),
+            inventoried_size: size,
+            observed_size_at_open: size,
+            allow_append_only: false,
         }
     }
 
@@ -209,25 +278,110 @@ impl<'a> OpenedInventoryFile<'a> {
         self.inventoried_size
     }
 
+    /// Whether an append-only file may legally have bytes past `inventoried_size`.
+    pub(crate) fn allow_append_only(&self) -> bool {
+        self.allow_append_only
+    }
+
+    /// Whether an append-only file was observed larger than its `t=0` prefix.
+    pub(crate) fn grew_since_inventory(&self) -> bool {
+        self.allow_append_only && self.observed_size_at_open > self.inventoried_size
+    }
+
     /// Consume this wrapper and return its already-verified file descriptor.
     #[cfg(unix)]
     pub fn into_file(self) -> File {
-        self.file
+        match self.backing {
+            OpenedBacking::Unix { file, .. } => file,
+            OpenedBacking::Snapshot(_) => {
+                panic!("into_file cannot be called on an in-memory live metadata snapshot")
+            }
+        }
     }
 
     /// Complete the verified read. On Windows this rechecks leaf metadata,
-    /// retained root identity, and the recursive namespace witness before
-    /// releasing the stream.
+    /// retained root identity, and (in strict mode) the recursive namespace
+    /// witness before releasing the stream. On Unix in live mode this rechecks
+    /// identity and size/mtime bounds on the opened descriptor.
     pub fn finish(self) -> Result<(), crate::ArchiveError> {
-        #[cfg(unix)]
-        {
-            Ok(())
-        }
-        #[cfg(windows)]
-        {
-            self.reader
+        match self.backing {
+            #[cfg(unix)]
+            OpenedBacking::Unix {
+                file,
+                expected_identity,
+                expected_mtime,
+                allow_append_only,
+                member,
+                ..
+            } => {
+                if !allow_append_only && expected_mtime.is_none() {
+                    return Ok(());
+                }
+                let stat = nix::sys::stat::fstat(&file).map_err(|error| {
+                    crate::ArchiveError::SourceIo {
+                        operation: "stat opened journal file after read",
+                        member: Some(member.clone()),
+                        source: io::Error::from_raw_os_error(error as i32),
+                    }
+                })?;
+                #[allow(
+                    clippy::useless_conversion,
+                    reason = "st_dev and st_ino are signed or narrower on macOS and some Unix targets"
+                )]
+                let dev =
+                    u64::try_from(stat.st_dev).map_err(|_| crate::ArchiveError::SourceChanged {
+                        member: Some(member.clone()),
+                    })?;
+                #[allow(
+                    clippy::useless_conversion,
+                    reason = "st_dev and st_ino are signed or narrower on macOS and some Unix targets"
+                )]
+                let ino =
+                    u64::try_from(stat.st_ino).map_err(|_| crate::ArchiveError::SourceChanged {
+                        member: Some(member.clone()),
+                    })?;
+                let size = u64::try_from(stat.st_size).map_err(|_| {
+                    crate::ArchiveError::SourceChanged {
+                        member: Some(member.clone()),
+                    }
+                })?;
+                let identity = ProofIdentity::Unix {
+                    device: dev,
+                    inode: ino,
+                };
+                if identity != expected_identity {
+                    return Err(crate::ArchiveError::SourceChanged {
+                        member: Some(member),
+                    });
+                }
+                if allow_append_only {
+                    if size < self.inventoried_size {
+                        return Err(crate::ArchiveError::SourceChanged {
+                            member: Some(member),
+                        });
+                    }
+                } else {
+                    #[allow(clippy::unnecessary_cast)]
+                    let mtime_changed = expected_mtime.is_some_and(|(sec, nsec)| {
+                        stat.st_mtime as i64 != sec || stat.st_mtime_nsec as i64 != nsec
+                    });
+                    if size != self.inventoried_size || mtime_changed {
+                        return Err(crate::ArchiveError::SourceChanged {
+                            member: Some(member),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            #[cfg(windows)]
+            OpenedBacking::WindowsStrict { reader, root } => reader
                 .finish()
-                .map_err(|error| crate::windows_source::map_windows_error(self.root, error, true))
+                .map_err(|error| crate::windows_source::map_windows_error(root, error, true)),
+            #[cfg(windows)]
+            OpenedBacking::WindowsLive { reader, root } => reader
+                .finish()
+                .map_err(|error| crate::windows_source::map_windows_error(root, error, true)),
+            OpenedBacking::Snapshot(_) => Ok(()),
         }
     }
 
@@ -247,26 +401,28 @@ impl<'a> OpenedInventoryFile<'a> {
 
 impl Read for OpenedInventoryFile<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        #[cfg(unix)]
-        {
-            self.file.read(buf)
-        }
-        #[cfg(windows)]
-        {
-            self.reader.read(buf)
+        match &mut self.backing {
+            #[cfg(unix)]
+            OpenedBacking::Unix { file, .. } => file.read(buf),
+            #[cfg(windows)]
+            OpenedBacking::WindowsStrict { reader, .. } => reader.read(buf),
+            #[cfg(windows)]
+            OpenedBacking::WindowsLive { reader, .. } => reader.read(buf),
+            OpenedBacking::Snapshot(cursor) => cursor.read(buf),
         }
     }
 }
 
 impl Seek for OpenedInventoryFile<'_> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        #[cfg(unix)]
-        {
-            self.file.seek(pos)
-        }
-        #[cfg(windows)]
-        {
-            self.reader.seek(pos)
+        match &mut self.backing {
+            #[cfg(unix)]
+            OpenedBacking::Unix { file, .. } => file.seek(pos),
+            #[cfg(windows)]
+            OpenedBacking::WindowsStrict { reader, .. } => reader.seek(pos),
+            #[cfg(windows)]
+            OpenedBacking::WindowsLive { reader, .. } => reader.seek(pos),
+            OpenedBacking::Snapshot(cursor) => cursor.seek(pos),
         }
     }
 }

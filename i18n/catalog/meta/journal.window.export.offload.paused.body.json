@@ -1,0 +1,21 @@
+{
+  "description": "Body when offloaded media exists and backup is paused.",
+  "context": "journal-window. Body when offloaded media exists and backup is paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "66881b8db194a86425dea27b99ef660b54ad92932aba95e1df1ca17d27878980",
+  "max_length": 320,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

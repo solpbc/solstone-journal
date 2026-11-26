@@ -1,0 +1,38 @@
+{
+  "description": "Journal command-line text for archive export help with lighter export option.",
+  "context": "journal-cli. Journal command-line text for archive export help with lighter export option.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88d0f794a954fb26f54936f04e9c41821dc4d1a99eee9caa42639673eb765497",
+  "max_length": 700,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "syntax",
+      "kind": "command",
+      "value": "solstone journal archive export [--out PATH] [--without-processed-media] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]"
+    },
+    {
+      "name": "token_zip",
+      "kind": "accepted-input",
+      "value": "ZIP"
+    },
+    {
+      "name": "flag_without_processed_media",
+      "kind": "flag",
+      "value": "--without-processed-media"
+    },
+    {
+      "name": "line_break",
+      "kind": "whitespace",
+      "value": "\n"
+    }
+  ]
+}

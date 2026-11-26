@@ -16,12 +16,14 @@ compile_error!(
 );
 
 mod deny;
+mod eligibility;
 mod encode;
 mod entry;
 #[cfg(any(unix, windows))]
 mod error;
 #[cfg(unix)]
 mod inventory;
+mod live;
 mod manifest;
 #[cfg(unix)]
 mod publish;
@@ -39,9 +41,13 @@ mod windows_source;
 mod windows_target;
 mod writer;
 
+pub use eligibility::{
+    EligibilityError, EstimateProgress, ExportBreakdown, ExportMode, LighterExportPlan,
+    OffloadCatalogCounts, PopulationBucket, evaluate_lighter_export, summarize_offload_catalog,
+};
 pub use encode::{
-    DayWindow, EncodeArchiveError, EncodeArchiveFollowOn, EncodeArchiveRequest, EncodingPhase,
-    encode_archive,
+    DayWindow, EncodeArchiveError, EncodeArchiveFollowOn, EncodeArchiveRequest, EncodeOptions,
+    EncodeProgress, EncodingPhase, encode_archive, encode_archive_with_options,
 };
 pub use entry::{
     ArchiveMemberName, IncludedRootName, Inventory, InventoryEntry, OpenedInventoryFile,
@@ -49,8 +55,9 @@ pub use entry::{
 };
 #[cfg(any(unix, windows))]
 pub use error::ArchiveError;
+pub use live::SnapshotMode;
 #[cfg(unix)]
-pub use publish::{ArchivePublicationError, publish_archive};
+pub use publish::{ArchivePublicationError, publish_archive, publish_archive_with_options};
 #[cfg(any(unix, windows))]
 pub use solstone_core_journal_io::JournalEntryKind;
 #[cfg(unix)]
@@ -67,7 +74,7 @@ pub use test_hooks::{
     run_with_encode_control,
 };
 #[cfg(windows)]
-pub use windows_publish::{ArchivePublicationError, publish_archive};
+pub use windows_publish::{ArchivePublicationError, publish_archive, publish_archive_with_options};
 #[cfg(windows)]
 pub use windows_source::ArchiveSource;
 #[cfg(windows)]

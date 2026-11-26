@@ -1,0 +1,16 @@
+{
+  "description": "Paused reason when route switched from LAN to relay.",
+  "context": "journal-window. Paused reason when route switched from LAN to relay.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "caa8cb6982975b1fd7bb02226f7d03b191f73579b23c7b4d70553e75c8d8ef58",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

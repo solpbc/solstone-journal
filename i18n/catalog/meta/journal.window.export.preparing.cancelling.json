@@ -1,0 +1,16 @@
+{
+  "description": "Button label while cancellation is completing.",
+  "context": "journal-window. Button label while cancellation is completing.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9db138a3ac71b2c4055e382c7afdbac095706bb89ed610cb8130b840c62d8216",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

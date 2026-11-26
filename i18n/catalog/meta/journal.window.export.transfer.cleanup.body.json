@@ -1,0 +1,16 @@
+{
+  "description": "Cleanup prompt explanation after verified save.",
+  "context": "journal-window. Cleanup prompt explanation after verified save.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0666ee2e264096502e41faec62390acbc9314425031aacf337f9da6cb3f59c10",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

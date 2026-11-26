@@ -104,14 +104,16 @@ window.solstoneJournalWebHost = {{\n\
 
     let import = import_contract();
     let auth = auth_contract();
+    let export = export_contract();
     let js_text = format!(
-        "{js_text}\nwindow.solstoneImportContract = Object.freeze({import});\nwindow.solstoneAuthContract = Object.freeze({auth});\n"
+        "{js_text}\nwindow.solstoneImportContract = Object.freeze({import});\nwindow.solstoneAuthContract = Object.freeze({auth});\nwindow.solstoneExportContract = Object.freeze({export});\n"
     );
     (host_bytes, js_text.into_bytes())
 }
 
 const IMPORT_CONTRACT: &str = "contracts/journal-web-host/import-host-contract.json";
 const AUTH_CONTRACT: &str = "contracts/journal-web-host/auth-host-contract.json";
+const EXPORT_CONTRACT: &str = "contracts/journal-web-host/export-host-contract.json";
 
 fn import_contract() -> Value {
     let mut contract: Value = serde_json::from_str(include_str!(
@@ -169,6 +171,51 @@ fn auth_bytes() -> Vec<u8> {
     bytes
 }
 
+fn export_contract() -> Value {
+    let mut contract: Value = serde_json::from_str(include_str!(
+        "../../../../../contracts/journal-web-host/export.json"
+    ))
+    .expect("parse export definition");
+    assert_eq!(
+        contract.get("version").and_then(Value::as_i64),
+        Some(2),
+        "export contract must target version 2"
+    );
+    assert_eq!(
+        contract.get("capability").and_then(Value::as_str),
+        Some("solstoneJournalHost"),
+        "export contract must ride on solstoneJournalHost"
+    );
+    for key in [
+        "start",
+        "status",
+        "pause",
+        "resume",
+        "cancel",
+        "reveal",
+        "deviceSpace",
+        "event",
+        "unsupported",
+    ] {
+        assert!(
+            contract
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty()),
+            "export contract missing string token for {key}"
+        );
+    }
+    contract.sort_all_objects();
+    contract
+}
+
+fn export_bytes() -> Vec<u8> {
+    let mut bytes =
+        serde_json::to_vec_pretty(&export_contract()).expect("serialize export definition");
+    bytes.push(b'\n');
+    bytes
+}
+
 #[test]
 fn generated_journal_web_host_artifacts_match_committed() {
     let root = repository_root();
@@ -180,6 +227,11 @@ fn generated_journal_web_host_artifacts_match_committed() {
         fs::read(root.join(AUTH_CONTRACT)).unwrap(),
         auth_bytes(),
         "committed {AUTH_CONTRACT} differs from generated"
+    );
+    assert_eq!(
+        fs::read(root.join(EXPORT_CONTRACT)).unwrap(),
+        export_bytes(),
+        "committed {EXPORT_CONTRACT} differs from generated"
     );
     let (expected_host_json, expected_client_js) = generate_artifacts(SOURCE_JSON_STR);
 
@@ -259,6 +311,7 @@ fn regenerate_journal_web_host_contract() {
     let root = repository_root();
     fs::write(root.join(IMPORT_CONTRACT), import_bytes()).unwrap();
     fs::write(root.join(AUTH_CONTRACT), auth_bytes()).unwrap();
+    fs::write(root.join(EXPORT_CONTRACT), export_bytes()).unwrap();
     let (host_json, client_js) = generate_artifacts(SOURCE_JSON_STR);
 
     let host_path = root.join(HOST_CONTRACT_REL_PATH);

@@ -1,0 +1,29 @@
+{
+  "description": "Live transfer progress over relay.",
+  "context": "journal-window. Live transfer progress over relay.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "rate",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "c8027f100ce1e2be6e046d1237fff939d11f3c80a809a4221ea7ee647281e0b9",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

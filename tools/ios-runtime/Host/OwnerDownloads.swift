@@ -5,22 +5,56 @@ import UIKit
 @preconcurrency import WebKit
 
 /// Temporary export copies live until the system destination choice finishes.
-@MainActor final class OwnerDownloads: NSObject, WKDownloadDelegate {
+/// Prepared journal exports are handed straight to Files without staging a second copy.
+@MainActor final class OwnerDownloads: NSObject, WKDownloadDelegate, UIDocumentPickerDelegate {
   private struct Transfer { let download: WKDownload; let directory: URL; var file: URL? }
   private var transfers: [ObjectIdentifier: Transfer] = [:]
   private var shares: [UUID: (UIActivityViewController, URL)] = [:]
+  private var activeExportPicker: (UIDocumentPickerViewController, String, URL?)?
   private var nativeRead: OwnerRead?
   private var progress: UIAlertController?
   private let presenter: () -> UIViewController?
   private let failed: () -> Void
+  private let handedOff: ((String) -> Void)?
   private var closed = false
 
-  init(presenter: @escaping () -> UIViewController?, failed: @escaping () -> Void) {
+  init(
+    presenter: @escaping () -> UIViewController?,
+    failed: @escaping () -> Void,
+    handedOff: ((String) -> Void)? = nil
+  ) {
     self.presenter = presenter
     self.failed = failed
+    self.handedOff = handedOff
   }
 
-  private var available: Bool { !closed && nativeRead == nil && transfers.isEmpty && shares.isEmpty }
+  private var available: Bool {
+    !closed && nativeRead == nil && transfers.isEmpty && shares.isEmpty && activeExportPicker == nil
+  }
+
+  private static func preparedExportID(from url: URL) -> String? {
+    let parts = url.pathComponents
+    // Matches /app/export/api/ready/<export_id>/download
+    guard parts.count == 7,
+          parts[0] == "/", parts[1] == "app", parts[2] == "export",
+          parts[3] == "api", parts[4] == "ready", parts[6] == "download",
+          !parts[5].isEmpty else { return nil }
+    return parts[5]
+  }
+
+  private static func resolvePreparedExport(_ exportID: String) -> (URL, String)? {
+    let pointer = exportID.withCString { journal_ios_owner_prepared_export_path($0) }
+    guard let pointer else { return nil }
+    defer { journal_runtime_free(pointer) }
+    let data = Data(String(cString: pointer).utf8)
+    guard let reply = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          reply["ok"] as? Bool == true,
+          let value = reply["value"] as? [String: Any],
+          let path = value["path"] as? String,
+          FileManager.default.fileExists(atPath: path) else { return nil }
+    let name = Self.filename((value["filename"] as? String) ?? "solstone-journal.zip")
+    return (URL(fileURLWithPath: path), name)
+  }
 
   private func directory() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
@@ -54,10 +88,32 @@ import UIKit
 
   /// Private scheme resources never enter WebKit's network process. Read them
   /// through the admitted owner boundary, writing bounded chunks to disk.
+  /// Prepared journal exports bypass temporary re-copying and hand directly to Files.
   func receive(_ request: URLRequest) {
     guard available, (request.httpMethod ?? "GET") == "GET", let url = request.url,
           (try? OwnerOrigin.admit(url)) != nil, let top = presenter() else {
       if !closed { failed() }
+      return
+    }
+    if let exportID = Self.preparedExportID(from: url),
+       let (preparedURL, suggestedName) = Self.resolvePreparedExport(exportID) {
+      // Hard-link the immutable prepared ZIP under its owner-facing filename in a
+      // private temporary directory so Files exports zero extra staging bytes.
+      var exportURL = preparedURL
+      var linkDir: URL?
+      if let dir = try? self.directory() {
+        let linked = dir.appendingPathComponent(suggestedName)
+        if (try? FileManager.default.linkItem(at: preparedURL, to: linked)) != nil {
+          exportURL = linked
+          linkDir = dir
+        } else {
+          try? FileManager.default.removeItem(at: dir)
+        }
+      }
+      let picker = UIDocumentPickerViewController(forExporting: [exportURL], asCopy: true)
+      picker.delegate = self
+      activeExportPicker = (picker, exportID, linkDir)
+      top.present(picker, animated: true)
       return
     }
     let directory: URL
@@ -167,11 +223,29 @@ import UIKit
     if !closed && (error as NSError).code != NSURLErrorCancelled { failed() }
   }
 
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    guard let (picker, exportID, linkDir) = activeExportPicker, picker === controller else { return }
+    activeExportPicker = nil
+    if let linkDir { try? FileManager.default.removeItem(at: linkDir) }
+    if !closed { handedOff?(exportID) }
+  }
+
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    guard let (picker, _, linkDir) = activeExportPicker, picker === controller else { return }
+    activeExportPicker = nil
+    if let linkDir { try? FileManager.default.removeItem(at: linkDir) }
+  }
+
   func close() {
     closed = true
     nativeRead?.cancel()
     progress?.dismiss(animated: false)
     progress = nil
+    if let (picker, _, linkDir) = activeExportPicker {
+      picker.dismiss(animated: false)
+      if let linkDir { try? FileManager.default.removeItem(at: linkDir) }
+      activeExportPicker = nil
+    }
     let current = transfers.values
     transfers.removeAll()
     for transfer in current {

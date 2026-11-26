@@ -1,0 +1,29 @@
+{
+  "description": "Metadata line on the ready copy card.",
+  "context": "journal-window. Metadata line on the ready copy card.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "mode",
+      "type": "string"
+    },
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "38cbe35cec668689fcb75a898e82eecdc8537cd8340b2fe9716785f55d909657",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

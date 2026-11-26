@@ -1,0 +1,25 @@
+{
+  "description": "Breakdown row size and day count for offloaded media.",
+  "context": "journal-window. Breakdown row size and day count for offloaded media.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b356bbf7e319bc9c7dae542948c514ea3dd0b9291e0d204ee67d7437dafab7a3",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

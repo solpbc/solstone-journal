@@ -1,0 +1,16 @@
+{
+  "description": "Primary button label to prepare a full copy.",
+  "context": "journal-window. Primary button label to prepare a full copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "beecb409586b9ad55a8e9ebcc351fe6c41eac23fc5b31ff1d6d2d801216d94a5",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

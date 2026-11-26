@@ -25,7 +25,7 @@ use nix::unistd::linkat;
 use nix::unistd::{UnlinkatFlags, fsync, unlinkat};
 
 use crate::target::{ArchiveOutputTarget, ExplicitTargetError};
-use crate::{EncodeArchiveError, EncodeArchiveRequest, encode_archive};
+use crate::{EncodeArchiveError, EncodeArchiveRequest, EncodeOptions, encode_archive_with_options};
 
 const TEMP_FILE_FLAGS: OFlag = OFlag::O_WRONLY
     .union(OFlag::O_CREAT)
@@ -67,12 +67,22 @@ pub fn publish_archive(
     target: &ArchiveOutputTarget,
     request: &EncodeArchiveRequest<'_>,
 ) -> Result<(), ArchivePublicationError> {
-    publish_archive_with(target, request, publish_temp)
+    publish_archive_with_options(target, request, EncodeOptions::default())
+}
+
+/// Encode with options and atomically create the final archive through the retained parent.
+pub fn publish_archive_with_options(
+    target: &ArchiveOutputTarget,
+    request: &EncodeArchiveRequest<'_>,
+    options: EncodeOptions<'_>,
+) -> Result<(), ArchivePublicationError> {
+    publish_archive_with(target, request, options, publish_temp)
 }
 
 fn publish_archive_with(
     target: &ArchiveOutputTarget,
     request: &EncodeArchiveRequest<'_>,
+    options: EncodeOptions<'_>,
     publish: impl FnOnce(&ArchiveOutputTarget, &OsStr) -> Result<bool, Error>,
 ) -> Result<(), ArchivePublicationError> {
     target
@@ -80,7 +90,7 @@ fn publish_archive_with(
         .map_err(ArchivePublicationError::Target)?;
     let (temp_name, temp_fd) = create_temp(target)?;
     let mut file = File::from(temp_fd);
-    if let Err(error) = encode_archive(request, &mut file) {
+    if let Err(error) = encode_archive_with_options(request, &mut file, options) {
         drop(file);
         cleanup_temp(target, &temp_name)?;
         return Err(ArchivePublicationError::Encode(error));
@@ -229,7 +239,13 @@ mod tests {
             OsStr::new("archive.zip"),
         )
         .unwrap();
-        publish_archive_with(&target, &request, publish_temp_by_rename).unwrap();
+        publish_archive_with(
+            &target,
+            &request,
+            EncodeOptions::default(),
+            publish_temp_by_rename,
+        )
+        .unwrap();
         // Success includes parent synchronization, with no unlink of the consumed name.
         assert_eq!(fs::read_dir(&output_path).unwrap().count(), 1);
         let mut zip =
@@ -247,11 +263,16 @@ mod tests {
             OsStr::new("collision.zip"),
         )
         .unwrap();
-        let result = publish_archive_with(&target, &request, |target, temp_name| {
-            // Race the final target check so the actual syscall must refuse replacement.
-            fs::write(&collision, b"keep existing destination").unwrap();
-            publish_temp_by_rename(target, temp_name)
-        });
+        let result = publish_archive_with(
+            &target,
+            &request,
+            EncodeOptions::default(),
+            |target, temp_name| {
+                // Race the final target check so the actual syscall must refuse replacement.
+                fs::write(&collision, b"keep existing destination").unwrap();
+                publish_temp_by_rename(target, temp_name)
+            },
+        );
         assert!(matches!(
             result,
             Err(ArchivePublicationError::Publish(ref error))

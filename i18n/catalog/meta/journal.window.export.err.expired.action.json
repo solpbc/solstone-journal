@@ -1,0 +1,16 @@
+{
+  "description": "Action button after copy expired or invalidated.",
+  "context": "journal-window. Action button after copy expired or invalidated.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3ff2956b642018bfe177712d34874d44e6c29dbb0fafc36986f0ba2e5ce063ab",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "External source originals note in breakdown.",
+  "context": "journal-window. External source originals note in breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63ca9bda13f9149415b19904b93e3235cf6aafcc3708be2c6caa25a7efbd8765",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

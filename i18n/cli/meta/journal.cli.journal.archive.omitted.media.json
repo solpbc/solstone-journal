@@ -1,0 +1,30 @@
+{
+  "description": "Journal command-line stderr summary of processed audio and video omitted by --without-processed-media.",
+  "context": "journal-cli. Journal command-line stderr summary of processed audio and video omitted by --without-processed-media.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "88e89f275431b67d857f96845e641c10a500302c7d89586b1bc82c88b1a29442",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "files",
+    "type": "cardinal"
+  }
+}

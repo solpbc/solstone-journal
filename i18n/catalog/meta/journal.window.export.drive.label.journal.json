@@ -1,0 +1,16 @@
+{
+  "description": "Short staging drive label when staging shares the journal's volume.",
+  "context": "journal-window. Short staging drive label when staging shares the journal's volume.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66f0ffcd1cb4e871ff5109da02529202133cd24ca71c0893e12df2d047efb46a",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

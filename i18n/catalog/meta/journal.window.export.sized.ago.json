@@ -1,0 +1,29 @@
+{
+  "description": "Aged estimate timestamp line.",
+  "context": "journal-window. Aged estimate timestamp line.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "minutes",
+      "type": "string"
+    },
+    {
+      "name": "days",
+      "type": "string"
+    },
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3b63b8a80aa09360e9ce3e33aa5b5cda03d6a9b060b2a7754b92eab130725fe5",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

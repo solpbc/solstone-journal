@@ -1,0 +1,16 @@
+{
+  "description": "Placeholder cell while breakdown is measuring.",
+  "context": "journal-window. Placeholder cell while breakdown is measuring.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "52affa100a79436c38fb4e097de81a33bc56086bf39020a3e7f5dbe2768504cc",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

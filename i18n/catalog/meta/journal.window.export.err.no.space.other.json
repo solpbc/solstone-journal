@@ -1,0 +1,16 @@
+{
+  "description": "Out-of-space recovery copy for Linux and Windows journal hosts.",
+  "context": "journal-window. Out-of-space recovery copy for Linux and Windows journal hosts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7eb91d6bb2bbc6eb68f29f4f99bedd9b6044af504d54a74129b30368f7cb63b6",
+  "max_length": 320,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

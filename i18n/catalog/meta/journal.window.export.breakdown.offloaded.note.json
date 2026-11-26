@@ -1,0 +1,16 @@
+{
+  "description": "Breakdown row note for media already offloaded to backup.",
+  "context": "journal-window. Breakdown row note for media already offloaded to backup.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9223a7672781a3fec05a3ba5a65f214fe0fcd71d3b5e9cc4df8b66ea118e6722",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

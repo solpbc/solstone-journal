@@ -4,13 +4,14 @@
 use std::error::Error;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, System, ZipWriter};
 
-use crate::encode::DayWindow;
+use crate::encode::{DayWindow, EncodeOptions, EncodeProgress};
 use crate::manifest::Manifest;
 use crate::{ArchiveError, ArchiveMemberName, ArchiveSource};
 
@@ -34,6 +35,8 @@ pub(crate) enum ArchiveEncodingError {
         member: Option<ArchiveMemberName>,
         source: WriteFailure,
     },
+    Cancelled,
+    Aborted(String),
 }
 
 /// The underlying failure from the ZIP writer or its byte sink.
@@ -62,6 +65,8 @@ impl fmt::Display for ArchiveEncodingError {
                 member: None,
                 source,
             } => write!(formatter, "archive write: {source}"),
+            Self::Cancelled => formatter.write_str("archive export cancelled"),
+            Self::Aborted(reason) => write!(formatter, "archive export aborted: {reason}"),
         }
     }
 }
@@ -71,6 +76,7 @@ impl Error for ArchiveEncodingError {
         match self {
             Self::Source { source, .. } => Some(source),
             Self::Write { source, .. } => Some(source),
+            Self::Cancelled | Self::Aborted(_) => None,
         }
     }
 }
@@ -99,13 +105,20 @@ pub(crate) fn write_archive<W: Write + Seek>(
     source: &ArchiveSource,
     manifest: &Manifest,
     day_window: Option<&DayWindow>,
+    options: &mut EncodeOptions<'_>,
 ) -> Result<(), ArchiveEncodingError> {
-    let sliced_chronicle = day_window.is_some_and(|window| {
+    let omitted = options.omitted_members;
+    let included_entry = |name: &str| {
+        !day_window.is_some_and(|window| !window.contains_member(name))
+            && !omitted.is_some_and(|set| set.contains(name))
+    };
+
+    let sliced_chronicle = day_window.is_some_and(|_| {
         source
             .inventory()
             .entries()
             .iter()
-            .any(|entry| window.contains_member(entry.member_name().as_str()))
+            .any(|entry| included_entry(entry.member_name().as_str()))
     });
     let included: Vec<&str> = match day_window {
         Some(_) if sliced_chronicle => vec!["chronicle"],
@@ -128,12 +141,33 @@ pub(crate) fn write_archive<W: Write + Seek>(
             .map_err(|source| zip_error(None, source))?;
     }
 
+    let mut files_total = 0u64;
+    let mut bytes_total = 0u64;
+    for entry in source.inventory().entries() {
+        if included_entry(entry.member_name().as_str()) {
+            files_total = files_total.saturating_add(1);
+            bytes_total = bytes_total.saturating_add(entry.size());
+        }
+    }
+    let mut files_done = 0u64;
+    let mut bytes_read = 0u64;
+
+    if let Some(callback) = options.on_progress.as_deref_mut() {
+        callback(EncodeProgress {
+            files_done: 0,
+            files_total,
+            bytes_read: 0,
+            bytes_total,
+        });
+    }
+
     #[cfg(all(unix, any(test, feature = "test-hooks")))]
     let mut test_first_entry = true;
     for entry in source.inventory().entries() {
-        if day_window.is_some_and(|window| !window.contains_member(entry.member_name().as_str())) {
+        if !included_entry(entry.member_name().as_str()) {
             continue;
         }
+        check_cancel_or_abort(options.cancel, &mut options.check_abort)?;
         let member = entry.member_name();
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_before_source_open(member);
@@ -141,6 +175,8 @@ pub(crate) fn write_archive<W: Write + Seek>(
             .open_file(entry)
             .map_err(|source| source_error(Some(member), source))?;
         let expected_size = opened.inventoried_size();
+        let allow_append_only = opened.allow_append_only();
+        let grew_since_inventory = opened.grew_since_inventory();
         let compression = choose_member_compression(&mut opened, expected_size, member)?;
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_set_boundary(if test_first_entry {
@@ -157,10 +193,39 @@ pub(crate) fn write_archive<W: Write + Seek>(
             file_options(manifest.timestamp, compression),
         )
         .map_err(|source| zip_error(Some(member), source))?;
-        copy_inventoried(&mut opened, zip, expected_size, member)?;
+        copy_inventoried_with_options(
+            &mut opened,
+            zip,
+            expected_size,
+            allow_append_only,
+            grew_since_inventory,
+            member,
+            options.cancel,
+            &mut options.check_abort,
+            &mut |delta| {
+                bytes_read = bytes_read.saturating_add(delta);
+                if let Some(callback) = options.on_progress.as_deref_mut() {
+                    callback(EncodeProgress {
+                        files_done,
+                        files_total,
+                        bytes_read,
+                        bytes_total,
+                    });
+                }
+            },
+        )?;
         opened
             .finish()
             .map_err(|source| source_error(Some(member), source))?;
+        files_done = files_done.saturating_add(1);
+        if let Some(callback) = options.on_progress.as_deref_mut() {
+            callback(EncodeProgress {
+                files_done,
+                files_total,
+                bytes_read,
+                bytes_total,
+            });
+        }
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         if crate::encode::test_take_body_write_failure(member) {
             return Err(io_error(
@@ -169,6 +234,8 @@ pub(crate) fn write_archive<W: Write + Seek>(
             ));
         }
     }
+
+    check_cancel_or_abort(options.cancel, &mut options.check_abort)?;
 
     let manifest_member = ArchiveMemberName::new(EXPORT_MANIFEST.to_owned());
     #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -182,6 +249,21 @@ pub(crate) fn write_archive<W: Write + Seek>(
     crate::encode::test_set_boundary(crate::encode::TestBoundary::ManifestPayload);
     zip.write_all(&manifest.json)
         .map_err(|source| io_error(Some(&manifest_member), source))?;
+    Ok(())
+}
+
+fn check_cancel_or_abort(
+    cancel: Option<&AtomicBool>,
+    check_abort: &mut Option<&mut dyn FnMut() -> Result<(), String>>,
+) -> Result<(), ArchiveEncodingError> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+        return Err(ArchiveEncodingError::Cancelled);
+    }
+    if let Some(check) = check_abort.as_deref_mut()
+        && let Err(reason) = check()
+    {
+        return Err(ArchiveEncodingError::Aborted(reason));
+    }
     Ok(())
 }
 
@@ -271,15 +353,51 @@ fn probe_png_compression<R: Read + Seek>(
     }
 }
 
+#[cfg(test)]
 fn copy_inventoried<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
     expected_size: u64,
     member: &ArchiveMemberName,
 ) -> Result<(), ArchiveEncodingError> {
+    let mut no_abort: Option<&mut dyn FnMut() -> Result<(), String>> = None;
+    copy_inventoried_with_options(
+        reader,
+        writer,
+        expected_size,
+        false,
+        false,
+        member,
+        None,
+        &mut no_abort,
+        &mut |_| {},
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "streaming archive copy tracks cancel, abort, progress, and append-only invariants"
+)]
+fn copy_inventoried_with_options<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    expected_size: u64,
+    allow_append_only: bool,
+    grew_since_inventory: bool,
+    member: &ArchiveMemberName,
+    cancel: Option<&AtomicBool>,
+    check_abort: &mut Option<&mut dyn FnMut() -> Result<(), String>>,
+    on_chunk: &mut impl FnMut(u64),
+) -> Result<(), ArchiveEncodingError> {
     let mut copied = 0_u64;
+    let mut last_byte: Option<u8> = None;
     let mut buffer = [0_u8; COPY_BUFFER_SIZE];
+    let mut chunks_since_check = 0u32;
     while copied < expected_size {
+        if chunks_since_check >= 16 {
+            check_cancel_or_abort(cancel, check_abort)?;
+            chunks_since_check = 0;
+        }
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_before_source_read(member, copied);
         let remaining = expected_size - copied;
@@ -294,12 +412,16 @@ fn copy_inventoried<R: Read, W: Write>(
         if count == 0 {
             return Err(changed_error(member));
         }
+        last_byte = Some(buffer[count - 1]);
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_set_boundary(crate::encode::TestBoundary::SourcePayload);
         writer
             .write_all(&buffer[..count])
             .map_err(|source| io_error(Some(member), source))?;
-        copied += count as u64;
+        let count_u64 = count as u64;
+        copied += count_u64;
+        chunks_since_check = chunks_since_check.saturating_add(1);
+        on_chunk(count_u64);
     }
 
     let mut probe = [0_u8; 1];
@@ -309,6 +431,16 @@ fn copy_inventoried<R: Read, W: Write>(
         .read(&mut probe)
         .map_err(|source| read_error(member, source))?;
     if count != 0 {
+        if allow_append_only {
+            // Require a complete line terminator at the t=0 boundary whenever
+            // an append-only JSONL file grew, so we never pack a torn half-line.
+            if expected_size > 0 && last_byte != Some(b'\n') {
+                return Err(changed_error(member));
+            }
+        } else {
+            return Err(changed_error(member));
+        }
+    } else if grew_since_inventory && expected_size > 0 && last_byte != Some(b'\n') {
         return Err(changed_error(member));
     }
     Ok(())
@@ -412,7 +544,14 @@ mod tests {
     ) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(source, solstone_version, exported_at);
-        write_archive(&mut writer, source, &manifest, None).expect("write archive");
+        write_archive(
+            &mut writer,
+            source,
+            &manifest,
+            None,
+            &mut EncodeOptions::default(),
+        )
+        .expect("write archive");
         writer.finish().expect("finish archive").into_inner()
     }
 
@@ -662,8 +801,14 @@ mod tests {
         fs::remove_file(root.join(member)).expect("remove inventoried member");
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(&source, "0.9.0", "2026-08-07T21:22:22Z");
-        let error = write_archive(&mut writer, &source, &manifest, None)
-            .expect_err("stale source must fail");
+        let error = write_archive(
+            &mut writer,
+            &source,
+            &manifest,
+            None,
+            &mut EncodeOptions::default(),
+        )
+        .expect_err("stale source must fail");
         assert!(matches!(
             error,
             ArchiveEncodingError::Source {
@@ -683,8 +828,14 @@ mod tests {
         fs::write(root.join(member), b"x").expect("truncate inventoried member");
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(&source, "0.9.0", "2026-08-07T21:22:22Z");
-        let error = write_archive(&mut writer, &source, &manifest, None)
-            .expect_err("truncated source must fail");
+        let error = write_archive(
+            &mut writer,
+            &source,
+            &manifest,
+            None,
+            &mut EncodeOptions::default(),
+        )
+        .expect_err("truncated source must fail");
         assert!(matches!(
             error,
             ArchiveEncodingError::Source {
@@ -919,8 +1070,14 @@ mod tests {
         };
         let mut sliced_writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(&source, "0.9.0", "2026-11-26T00:00:00Z");
-        write_archive(&mut sliced_writer, &source, &manifest, Some(&window))
-            .expect("write sliced archive");
+        write_archive(
+            &mut sliced_writer,
+            &source,
+            &manifest,
+            Some(&window),
+            &mut EncodeOptions::default(),
+        )
+        .expect("write sliced archive");
         let sliced_bytes = sliced_writer.finish().expect("finish sliced").into_inner();
         let mut sliced = ZipArchive::new(Cursor::new(sliced_bytes)).expect("open sliced");
         assert!(sliced.by_name("imports/m1/image.dat").is_err());

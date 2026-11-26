@@ -1,0 +1,16 @@
+{
+  "description": "Status heading after preparation is cancelled.",
+  "context": "journal-window. Status heading after preparation is cancelled.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "acfe22eb7cd091f29f16ebe026db74c47a021ce1bb1f2116ca40d2f18a869965",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

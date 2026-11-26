@@ -1,0 +1,16 @@
+{
+  "description": "Transfer heading on paired phone or tablet app.",
+  "context": "journal-window. Transfer heading on paired phone or tablet app.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a054ef3b507979dd511b1c27af54baecf313ded1ed2d477de6dee681afa95e67",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

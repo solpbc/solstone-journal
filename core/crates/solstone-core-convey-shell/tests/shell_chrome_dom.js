@@ -947,7 +947,7 @@ asyncCase('more page groups every served view except more', async () => {
     .map((card) => card.getAttribute('data-app-name'));
   assert.deepStrictEqual(groupNames('keeps'), ['home', 'experiences', 'activities', 'transcripts', 'map', 'body', 'year', 'search']);
   assert.deepStrictEqual(groupNames('shape'), ['entities', 'speakers', 'curation']);
-  assert.deepStrictEqual(groupNames('runs'), ['thinking', 'health', 'network', 'sources', 'agents', 'backup', 'import', 'stats', 'settings', 'support']);
+  assert.deepStrictEqual(groupNames('runs'), ['thinking', 'health', 'network', 'sources', 'agents', 'backup', 'import', 'export', 'stats', 'settings', 'support']);
   const names = root.querySelectorAll('.more-card').map((card) => card.getAttribute('data-app-name'));
   assert.strictEqual(new Set(names).size, names.length);
   assert.ok(!names.includes('more'));

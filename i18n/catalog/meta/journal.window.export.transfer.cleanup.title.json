@@ -1,0 +1,25 @@
+{
+  "description": "Cleanup prompt heading after verified save.",
+  "context": "journal-window. Cleanup prompt heading after verified save.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "90dc242c559f18badbc12b02d7d9fa765c84180c23b2f24130f670ed28498ac0",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

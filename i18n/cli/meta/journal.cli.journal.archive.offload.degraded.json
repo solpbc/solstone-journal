@@ -1,0 +1,23 @@
+{
+  "description": "Journal command-line stderr warning when the offload record cannot be read during archive export.",
+  "context": "journal-cli. Journal command-line stderr warning when the offload record cannot be read during archive export.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0fb8234f1faa281a405eedf747e16329006ffe6f9eff342d3ab3da044e24eb9b",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "protected_slots": [
+    {
+      "name": "token_zip",
+      "kind": "accepted-input",
+      "value": "ZIP"
+    }
+  ]
+}

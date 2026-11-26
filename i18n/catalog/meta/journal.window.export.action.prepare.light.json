@@ -1,0 +1,16 @@
+{
+  "description": "Primary button label to prepare a copy without processed media.",
+  "context": "journal-window. Primary button label to prepare a copy without processed media.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8d7b97f40882bd0e4ebff118f21df42be06278f244a75b7e54c77b45ae3e473",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link to backup page when offloaded media exists.",
+  "context": "journal-window. Link to backup page when offloaded media exists.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e0cd381c361754c80e7fc4900f6201e27eb773bb151fcfe5dd94a129bef2b5f",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

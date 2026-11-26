@@ -1,0 +1,21 @@
+{
+  "description": "Heading when offloaded media exists and backup is paused.",
+  "context": "journal-window. Heading when offloaded media exists and backup is paused.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "days",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "03f9cb626fc63c940f2f44eeb7df08dcb2fccda131362f77a5b784e801edfa8d",
+  "max_length": 160,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

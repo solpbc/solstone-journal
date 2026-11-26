@@ -1,0 +1,16 @@
+{
+  "description": "Background limitation note on mobile apps.",
+  "context": "journal-window. Background limitation note on mobile apps.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "829b0682dae291a4423d2609d20bf3596b54b267121c6518abb69fa30a484eaa",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Error body when downloaded file checksum did not match.",
+  "context": "journal-window. Error body when downloaded file checksum did not match.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "66d326fbcdb2bc0c6efadadeadf60628102e2ee4e7e2849455b43f878a0862ec",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

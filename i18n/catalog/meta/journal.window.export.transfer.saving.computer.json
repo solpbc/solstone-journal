@@ -1,0 +1,16 @@
+{
+  "description": "Transfer heading on paired Windows or Linux app.",
+  "context": "journal-window. Transfer heading on paired Windows or Linux app.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "620f32f561850ababc1e0ec1ffc450ec00712d78ba14bdd051aa86c246c8420f",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

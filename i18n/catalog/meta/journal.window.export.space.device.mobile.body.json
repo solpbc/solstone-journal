@@ -1,0 +1,29 @@
+{
+  "description": "Warning body when paired phone or tablet lacks free space.",
+  "context": "journal-window. Warning body when paired phone or tablet lacks free space.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "needed",
+      "type": "string"
+    },
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "light",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8882c8a1d5b22aa62b84fca5af522dc04e6b0d60a0f578ff83289bbce32051a0",
+  "max_length": 320,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

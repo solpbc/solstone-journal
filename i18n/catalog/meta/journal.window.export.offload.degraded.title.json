@@ -1,0 +1,16 @@
+{
+  "description": "Heading when offload ledger cannot be read cleanly.",
+  "context": "journal-window. Heading when offload ledger cannot be read cleanly.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0289f05ee4d7d28073c14aad2199c261efdf6c0587f6349d4b0bee4886e84a77",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

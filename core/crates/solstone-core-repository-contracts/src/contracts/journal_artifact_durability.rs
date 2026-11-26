@@ -10,7 +10,7 @@ use solstone_core_journal_io::durability::{ArtifactId, DurabilityClass, artifact
 /// Journal files read under their owning module's policy instead of the
 /// shared durable readers. Other crates may observe these paths without
 /// performing a durable read or repair.
-const OWNER_MANAGED_PATHS: [&str; 3] = [
+const OWNER_MANAGED_PATHS: [&str; 4] = [
     // Provider install status: the installer reads it strictly and leaves a
     // damaged record in place; the thinking status reads it only to tell
     // whether a local model download is under way, and an unreadable record
@@ -25,6 +25,10 @@ const OWNER_MANAGED_PATHS: [&str; 3] = [
     // the next daily fetch replaces it. Losing it flags nothing for a while;
     // no owner intent or journal content is lost.
     "health/security-advisory.json",
+    // Monotonic local counter bumped on permanent Trash erasure to invalidate
+    // staged export copies. Export reads fail closed on unreadable or damaged
+    // records; no owner intent or journal content is lost.
+    "health/trash-erasure-epoch.json",
 ];
 
 const NO_SEMANTIC_VARIANTS: [ArtifactId; 13] = [

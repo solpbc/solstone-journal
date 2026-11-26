@@ -98783,6 +98783,36 @@
     {
       "bundle": "journal-cli",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.journal.archive.export.help.v2\u0004m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c702e7632",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c702e7632_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.journal.archive.export.help.v2",
+        "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c702e7632",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "usage: solstone journal archive export [--out PATH] [--without-processed-media] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n\ncreate a portable ZIP of your journal, including settings and credentials.\nprocessing logs, rebuildable search indexes, caches, lock files and temporary files are left out.\nwith --without-processed-media, processed audio and video (including imported audio) are left out while transcripts, summaries, photos, non-media imports, kept import originals and unprocessed or failed media stay in.\nwith a date filter, only the selected days are included (not settings, credentials, entities, facets, or imports).",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "usage: solstone journal archive export [--out PATH] [--without-processed-media] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n\ncreate a portable ZIP of your journal, including settings and credentials.\nprocessing logs, rebuildable search indexes, caches, lock files and temporary files are left out.\nwith --without-processed-media, processed audio and video (including imported audio) are left out while transcripts, summaries, photos, non-media imports, kept import originals and unprocessed or failed media stay in.\nwith a date filter, only the selected days are included (not settings, credentials, entities, facets, or imports).",
+      "message_id": "journal.cli.journal.archive.export.help.v2",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.export.help.v2\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c702e7632",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
         "arguments": [
           {
             "name": "path",
@@ -102464,6 +102494,124 @@
       "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.negative.size\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6e656761746976652e73697a65",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.journal.archive.offload.degraded\u0004m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6465677261646564",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6465677261646564_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.cli.journal.archive.offload.degraded",
+        "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6465677261646564",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "warning: couldn't read the full offload record; some older recordings may live only in your backup and may not be in this ZIP.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "warning: couldn't read the full offload record; some older recordings may live only in your backup and may not be in this ZIP.",
+      "message_id": "journal.cli.journal.archive.offload.degraded",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.offload.degraded\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6465677261646564",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "days",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "size",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.journal.archive.offload.note\u0004m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6e6f7465",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6e6f7465_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.journal.archive.offload.note",
+        "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6e6f7465",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "note: ⁨0⁩ days (⁨sample⁩) of older recordings live only in your backup and are not in this ZIP.",
+      "folder": null,
+      "inputs": {
+        "days": 0,
+        "size": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "note: ⁨0⁩ days (⁨sample⁩) of older recordings live only in your backup and are not in this ZIP.",
+      "message_id": "journal.cli.journal.archive.offload.note",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.offload.note\", &[(\"days\", Value::Cardinal(0)), (\"size\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6e6f7465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "size",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "files",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.journal.archive.omitted.media\u0004m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f6d69747465642e6d65646961",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f6d69747465642e6d65646961_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.journal.archive.omitted.media",
+        "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f6d69747465642e6d65646961",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "left out ⁨sample⁩ of processed audio and video (⁨0⁩ files)",
+      "folder": null,
+      "inputs": {
+        "files": 0,
+        "size": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "left out ⁨sample⁩ of processed audio and video (⁨0⁩ files)",
+      "message_id": "journal.cli.journal.archive.omitted.media",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.omitted.media\", &[(\"files\", Value::Cardinal(0)), (\"size\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f6d69747465642e6d65646961",
       "target": "rust"
     },
     {

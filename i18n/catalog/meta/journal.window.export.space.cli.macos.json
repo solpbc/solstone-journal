@@ -1,0 +1,16 @@
+{
+  "description": "macOS external-drive CLI instructions.",
+  "context": "journal-window. macOS external-drive CLI instructions.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "549386d620cd51607214097be15882059fe73cac70dcd3c7cc6f73b405b3e46c",
+  "max_length": 340,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "Warning body when chosen desktop destination drive lacks free space for a lighter copy.",
+  "context": "journal-window. Warning body when chosen desktop destination drive lacks free space for a lighter copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "needed",
+      "type": "string"
+    },
+    {
+      "name": "free",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b6979e1bae8f4b66f136f9c87206bc8cbc39da9da6da95bdf94718c7f41b3464",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

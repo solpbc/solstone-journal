@@ -1,0 +1,16 @@
+{
+  "description": "Error heading when downloaded file checksum did not match.",
+  "context": "journal-window. Error heading when downloaded file checksum did not match.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9e30605968d26dbb71eddaccfcddbe19827090190ca0fc650c967385e036d44e",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

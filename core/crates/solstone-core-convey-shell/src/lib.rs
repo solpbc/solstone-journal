@@ -145,6 +145,8 @@ mod door;
 #[cfg(all(test, feature = "full-tests"))]
 mod embedded_producer_tests;
 mod entities;
+mod export;
+pub use export::prepared_export_path;
 mod form_body_guard;
 #[cfg(feature = "host")]
 mod link_health_cache;
@@ -1899,11 +1901,16 @@ fn router_with_roots(
         .route("/app/body/background", get(body::background))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
         .merge(year::router(journal_root.clone()))
+        .merge(export::router(
+            journal_root.clone(),
+            export::ExportService::new(journal_root.clone()),
+        ))
         .merge(match import_route {
-            Some(route) => {
-                solstone_core_import_web::routes_with_embedded(journal_root.clone(), route)
-            }
-            None => solstone_core_import_web::routes(journal_root.clone()),
+            Some(route) => solstone_core_import_web::routes_with_embedded_without_archive_export(
+                journal_root.clone(),
+                route,
+            ),
+            None => solstone_core_import_web::routes_without_archive_export(journal_root.clone()),
         })
         .merge(solstone_core_transcripts_web::router(
             journal_root.clone(),

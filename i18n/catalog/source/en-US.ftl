@@ -25050,3 +25050,380 @@ journal.window.sources.photos.scan.note.rescan = hidden photos are never read. y
 journal.window.sources.photos.scan.paused.empty = scan paused. reopen the solstone app on { $device } to scan your library again.
 
 journal.window.sources.photos.scan.paused.empty.nodevice = scan paused. reopen the solstone app on your iphone or ipad to scan your library again.
+
+journal.window.view.export.label = export
+
+journal.window.view.export.description = prepare a portable ZIP of your journal to keep or move to another computer
+
+journal.window.view.export.source = everything currently in this journal
+
+journal.window.settings.visible.text.export = export
+
+journal.window.settings.visible.text.take.a.portable.copy.of.your.journal = take a portable copy of your journal, or move it to another computer
+
+journal.window.settings.visible.text.want.a.copy.before.trimming.original.media = want a copy before trimming original media?
+
+journal.window.settings.link.label.open.export = open export
+
+journal.window.backup.visible.text.need.a.one.time.portable.zip = need a one-time portable ZIP instead of ongoing backup?
+
+journal.window.backup.link.label.open.export = open export
+
+journal.window.import.visible.text.to.take.a.copy.out.of.this.journal = to take a copy out of this journal, prepare it on the export page.
+
+journal.window.import.link.label.open.export = open export
+
+journal.window.export.title = export
+
+journal.window.export.subtitle = prepare a portable ZIP of your journal to keep or move to another computer.
+
+journal.window.export.disambig.summary = export, backup, or merge?
+
+journal.window.export.disambig.export = export: a one-time portable ZIP of this journal, including your settings and credentials.
+
+journal.window.export.disambig.backup = backup: ongoing encrypted copies on a schedule. set up or restore on the backup page.
+
+journal.window.export.disambig.merge = merge: combine days, entities, facets and imports from another journal into this one without changing this journal's settings and connections. start on the import page.
+
+journal.window.export.measuring.initial = measuring your journal…
+
+journal.window.export.measuring.partial = measuring your journal: { $size } counted so far across { $days }…
+
+journal.window.export.sized.just.now = sized just now · { $days } · { $files }
+
+journal.window.export.sized.ago = sized { $minutes } min ago · { $days } · { $files }
+
+journal.window.export.check.again = check again
+
+journal.window.export.measure.failed = couldn't finish measuring your journal. try checking again before preparing a copy.
+
+journal.window.export.try.again = try again
+
+journal.window.export.days.count =
+    { $count ->
+        [one] { $count } day
+       *[other] { $count } days
+    }
+
+journal.window.export.files.count =
+    { $count ->
+        [one] { $count } file
+       *[other] { $count } files
+    }
+
+journal.window.export.mode.group.label = copy mode
+
+journal.window.export.mode.full.label = full copy
+
+journal.window.export.mode.full.summary = everything currently in this journal: your days, summaries, entities, facets, transcripts, original audio and video, photos, imports, settings and credentials.
+
+journal.window.export.mode.full.restore = restoring this copy brings back your journal as it is now, including playback and reprocessing for recordings in this journal.
+
+journal.window.export.mode.light.label = without processed media
+
+journal.window.export.mode.light.summary = keeps every transcript, summary, entity, facet, photo, kept import original, non-media import, unprocessed or failed recording, and your settings and credentials.
+
+journal.window.export.mode.light.restore = you won't be able to play back or reprocess the omitted audio and video unless you also have them in your backup.
+
+journal.window.export.mode.measuring = measuring…
+
+journal.window.export.mode.measuring.plus = about { $size }
+
+journal.window.export.mode.savings = leaves out { $size } of processed audio and video
+
+journal.window.export.mode.needs.space = needs more space
+
+journal.window.export.breakdown.summary = what's included and left out
+
+journal.window.export.breakdown.intro = this breakdown uses the same processing checks as media offload. nothing still processing, failed, or without a confirmed processing result (a transcript, description, or confirmed empty recording) is left out.
+
+journal.window.export.breakdown.col.category = category
+
+journal.window.export.breakdown.col.size = size
+
+journal.window.export.breakdown.col.status = in this copy
+
+journal.window.export.breakdown.counting = counting…
+
+journal.window.export.breakdown.processed.title = processed audio and video (including imported audio)
+
+journal.window.export.breakdown.processed.note = { $files } · transcripts and descriptions always stay
+
+journal.window.export.breakdown.offloaded.title = already in backup only
+
+journal.window.export.breakdown.offloaded.note = not stored in this journal; offload record and backup settings stay in the ZIP
+
+journal.window.export.breakdown.offloaded.amount = { $size } · { $days }
+
+journal.window.export.breakdown.unprocessed.title = unprocessed, failed, or held media
+
+journal.window.export.breakdown.unprocessed.note = { $files } · still processing, failed, or kept by your journal's checks
+
+journal.window.export.breakdown.rest.title = everything else: transcripts, summaries, photos, kept import originals, settings and credentials
+
+journal.window.export.breakdown.rest.note = { $files } · never left out
+
+journal.window.export.breakdown.status.included = included
+
+journal.window.export.breakdown.status.omitted = left out
+
+journal.window.export.breakdown.status.backup = in backup only
+
+journal.window.export.breakdown.status.unreadable = record unreadable
+
+journal.window.export.breakdown.status.none = none
+
+journal.window.export.breakdown.unknown = unknown
+
+journal.window.export.breakdown.always.excluded = processing logs, rebuildable search indexes, caches, lock files and temporary files are left out.
+
+journal.window.export.breakdown.external.note = sources where you chose not to keep originals contain what your journal extracted along with references.
+
+journal.window.export.offload.healthy.title = { $days } of older recordings live only in your backup
+
+journal.window.export.offload.healthy.body = { $size } of offloaded recordings aren't in this journal and won't be in this ZIP. your backup settings and offload record are included, so a restored journal can still pull those days back if you have your backup and recovery key.
+
+journal.window.export.offload.healthy.link = restore days from backup first
+
+journal.window.export.offload.paused.title = { $days } of older recordings live only in your paused backup
+
+journal.window.export.offload.paused.body = { $size } of offloaded recordings aren't in this journal and won't be in this ZIP. your backup is paused right now, so resume or check backup before retiring this journal.
+
+journal.window.export.offload.unreachable.title = { $days } of older recordings live only in your unreachable backup
+
+journal.window.export.offload.unreachable.body = { $size } of offloaded recordings aren't in this journal and won't be in this ZIP. because your backup isn't reachable right now, check backup before retiring this journal.
+
+journal.window.export.offload.degraded.title = couldn't read the full offload record
+
+journal.window.export.offload.degraded.body = some older recordings may live only in your backup and may not be in this ZIP. check backup before moving or retiring this journal.
+
+journal.window.export.open.backup = open backup
+
+journal.window.export.space.ok = { $drive }: { $free } free · needs about { $needed } to prepare this copy
+
+journal.window.export.space.tight.title = not enough free space on { $drive } for a full copy
+
+journal.window.export.space.tight.macos = preparing a full copy needs about { $needed } on { $drive }, and { $free } is free. you can prepare a copy without processed media ({ $light }) here, or write a full copy straight to an external drive from the journal app's admin terminal on your mac.
+
+journal.window.export.space.tight.other = preparing a full copy needs about { $needed } on { $drive }, and { $free } is free. you can prepare a copy without processed media ({ $light }) here, or write a full copy straight to an external drive from a terminal on your journal's computer.
+
+journal.window.export.space.switch.light = switch to without processed media
+
+journal.window.export.space.cli.summary = export straight to an external drive
+
+journal.window.export.space.cli.macos = in the journal app's journal menu on the mac your journal runs on, choose open admin terminal, and run (this writes straight to the external drive without staging a second copy on your journal's computer):
+
+journal.window.export.space.cli.other = from a terminal on the computer your journal runs on, run (this writes straight to the external drive without staging a second copy on your journal's computer):
+
+journal.window.export.space.both.title = not enough free space on { $drive }
+
+journal.window.export.space.both.macos = { $drive } has { $free } free. preparing even the smaller copy needs about { $light }. free up space on { $drive }, or export straight to an external drive from the journal app's admin terminal on your mac.
+
+journal.window.export.space.both.other = { $drive } has { $free } free. preparing even the smaller copy needs about { $light }. free up space on { $drive }, or export straight to an external drive from a terminal on your journal's computer.
+
+journal.window.export.space.device.mobile.title = not enough free space on this device
+
+journal.window.export.space.device.mobile.body = this copy is { $needed }, and this device has { $free } free. choose a copy without processed media ({ $light }), save to an external drive, or download from a computer.
+
+journal.window.export.space.device.desktop.title = not enough free space on the chosen drive
+
+journal.window.export.space.device.desktop.body = this copy is { $needed }, and that drive has { $free } free. choose another drive, or prepare a copy without processed media ({ $light }).
+
+journal.window.export.space.choose.another = choose another location
+
+journal.window.export.browser.hint = you'll need about { $size } free wherever you save this copy.
+
+journal.window.export.browser.hint.measuring = you'll need about the copy size free wherever you save this copy.
+
+journal.window.export.action.prepare.full = prepare full copy
+
+journal.window.export.action.prepare.light = prepare copy without processed media
+
+journal.window.export.preparing.full = preparing your full copy
+
+journal.window.export.preparing.light = preparing your copy without processed media
+
+journal.window.export.preparing.scanning = checking your journal before packing…
+
+journal.window.export.preparing.verifying = checking the prepared copy…
+
+journal.window.export.preparing.progress = { $done } of { $total } packed · { $files_done } of { $files_total }
+
+journal.window.export.preparing.background = your journal prepares this in the background. you can close this window or leave this page and come back when it's ready.
+
+journal.window.export.preparing.cancel = cancel preparation
+
+journal.window.export.preparing.cancelling = cancelling and freeing space…
+
+journal.window.export.cancelled.title = preparation cancelled
+
+journal.window.export.cancelled.body = the partial copy was removed and space was freed on { $drive }.
+
+journal.window.export.busy.other = another device is currently preparing or downloading a copy of your journal. try again once it finishes.
+
+journal.window.export.ready.title = copy ready
+
+journal.window.export.ready.meta = { $mode } · { $size } · prepared { $when }
+
+journal.window.export.ready.credentials = this copy includes your settings and credentials. treat the saved file like a private key, and discard the prepared copy once you've saved it. an unused copy is removed automatically after 24 hours of inactivity.
+
+journal.window.export.ready.changed.title = your journal has changed since this copy was prepared
+
+journal.window.export.ready.changed.body = you can still download this copy, or discard it to prepare a fresh one.
+
+journal.window.export.ready.contents.summary = check what's in this copy
+
+journal.window.export.ready.contents.full = included: { $days }, { $files }, original audio and video in this journal, photos, kept imports, settings and credentials.
+
+journal.window.export.ready.contents.light = included: { $days }, { $files }, transcripts, summaries, photos, kept imports, unprocessed media, settings and credentials. left out: { $omitted_size } of processed audio and video ({ $omitted_files }).
+
+journal.window.export.ready.checksum.copy = copy checksum
+
+journal.window.export.ready.checksum.copied = copied
+
+journal.window.export.ready.download = download copy
+
+journal.window.export.ready.save = save copy…
+
+journal.window.export.ready.discard = discard copy
+
+journal.window.export.ready.discard.prompt = discard this prepared copy and free { $size } on { $drive }?
+
+journal.window.export.ready.discard.keep = keep
+
+journal.window.export.ready.discarded.title = prepared copy discarded
+
+journal.window.export.ready.discarded.body = { $size } was freed on { $drive }.
+
+journal.window.export.ready.discard.active = a download is currently in progress. stop the transfer first, or wait for it to finish before discarding.
+
+journal.window.export.browser.started.title = download started
+
+journal.window.export.browser.started.body = your browser or app handles where the file is saved and when it finishes. if it stops, resume it there or select download copy again while this copy stays ready.
+
+journal.window.export.transfer.saving.mac = saving to this mac
+
+journal.window.export.transfer.saving.computer = saving to this computer
+
+journal.window.export.transfer.saving.device = saving to this device
+
+journal.window.export.transfer.destination = destination: { $dest }
+
+journal.window.export.transfer.progress.lan = { $done } of { $total } · { $rate } · over local network
+
+journal.window.export.transfer.progress.relay = { $done } of { $total } · { $rate } · over relay
+
+journal.window.export.transfer.progress.plain = { $done } of { $total }
+
+journal.window.export.transfer.rolling = this copy stays ready while your transfer is active.
+
+journal.window.export.transfer.awake = keeping this computer awake while saving.
+
+journal.window.export.transfer.mobile.keep.open = keep the solstone app open while large transfers run, or pause and resume later.
+
+journal.window.export.transfer.pause = pause
+
+journal.window.export.transfer.resume = resume transfer
+
+journal.window.export.transfer.cancel = cancel save
+
+journal.window.export.transfer.paused.title = transfer paused
+
+journal.window.export.transfer.paused.body = { $done } of { $total } saved so far. your progress is kept on this device and will pick up where it left off.
+
+journal.window.export.transfer.paused.disconnected = lost connection to your journal. resuming as soon as it reconnects.
+
+journal.window.export.transfer.paused.relay = switched to relay. large transfers take longer away from your local network.
+
+journal.window.export.transfer.verifying = checking saved file…
+
+journal.window.export.transfer.saved.title = copy saved and verified
+
+journal.window.export.transfer.saved.body = { $size } saved and verified against your journal's checksum.
+
+journal.window.export.transfer.handed.title = copy handed to Files
+
+journal.window.export.transfer.handed.body = check the Files app to confirm it finished saving, then discard the prepared copy here to free space.
+
+journal.window.export.transfer.reveal.finder = show in Finder
+
+journal.window.export.transfer.reveal.explorer = show in File Explorer
+
+journal.window.export.transfer.reveal.files = show in Files
+
+journal.window.export.transfer.cleanup.title = free { $size } on { $drive } now?
+
+journal.window.export.transfer.cleanup.body = your saved copy is verified. removing the prepared copy frees disk space and removes the extra copy of your credentials.
+
+journal.window.export.transfer.cleanup.discard = discard prepared copy
+
+journal.window.export.transfer.cleanup.keep = keep for 24 hours
+
+journal.window.export.move.summary = moving your journal to a new computer?
+
+journal.window.export.move.step1 = save or download this copy and confirm it finished (updated solstone apps verify it when you use save copy; otherwise, check the SHA-256 checksum).
+
+journal.window.export.move.step2 = stop your old journal before starting the new one. don't run both at the same time.
+
+journal.window.export.move.step3 = extract the ZIP on your new computer, choose that folder when setting up your journal, and check a few recent days along with network and backup status.
+
+journal.window.export.move.step4 = once the new journal is running cleanly, delete the temporary ZIP and retire the old copy.
+
+journal.window.export.err.source.changed.title = your journal changed while packing
+
+journal.window.export.err.source.changed.body = something in your journal changed before packing finished, so no partial ZIP was kept. try preparing again.
+
+journal.window.export.err.source.changed.action = prepare again
+
+journal.window.export.err.no.space.title = { $drive } ran out of space
+
+journal.window.export.err.no.space.macos = the incomplete copy was removed and space was freed. try a copy without processed media, or export straight to an external drive from the journal app's admin terminal on your mac.
+
+journal.window.export.err.no.space.other = the incomplete copy was removed and space was freed. try a copy without processed media, or export straight to an external drive from a terminal on your journal's computer.
+
+journal.window.export.err.no.space.action = choose without processed media
+
+journal.window.export.err.expired.title = prepared copy expired
+
+journal.window.export.err.expired.body = this copy sat unused for 24 hours and was removed to free space. prepare a new copy when you're ready.
+
+journal.window.export.err.expired.action = prepare a new copy
+
+journal.window.export.err.erased.title = prepared copy removed after trash erasure
+
+journal.window.export.err.erased.body = items were permanently erased from trash, so the earlier prepared copy was removed. prepare a new copy when you're ready.
+
+journal.window.export.err.checksum.title = saved file didn't match your journal
+
+journal.window.export.err.checksum.body = the downloaded file failed verification, so any existing file at that location was left untouched. try saving again.
+
+journal.window.export.err.checksum.action = try saving again
+
+journal.window.export.err.revoked.title = this device can't reach your journal
+
+journal.window.export.err.revoked.body = your journal stopped accepting this device, so the transfer stopped and the prepared copy was removed. pair this device again, then prepare a new copy.
+
+
+journal.window.export.err.dest.write.title = couldn't finish writing to the chosen drive
+
+journal.window.export.err.dest.write.body = the drive disconnected or rejected the write. your progress couldn't be saved there. reconnect the drive or choose another location.
+
+journal.window.export.err.generic.title = couldn't prepare this copy
+
+journal.window.export.err.generic.body = something interrupted preparation, so no partial ZIP was kept. try preparing again.
+
+journal.window.export.space.device.mobile.body.light = this copy is { $needed }, and this device has { $free } free. free up space, save to an external drive, or download from a computer.
+
+journal.window.export.space.device.desktop.body.light = this copy is { $needed }, and that drive has { $free } free. choose another drive with more free space.
+
+journal.window.export.err.no.space.macos.light = the incomplete copy was removed and space was freed. free up space on { $drive }, or export straight to an external drive from the journal app's admin terminal on your mac.
+
+journal.window.export.err.no.space.other.light = the incomplete copy was removed and space was freed. free up space on { $drive }, or export straight to an external drive from a terminal on your journal's computer.
+
+journal.window.export.drive.journal = your journal's drive
+
+journal.window.export.drive.temp = your journal's temporary drive
+
+journal.window.export.drive.label.journal = journal drive
+
+journal.window.export.drive.label.temp = journal's temporary drive

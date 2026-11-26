@@ -1,0 +1,25 @@
+{
+  "description": "Confirmation body after discarding prepared copy.",
+  "context": "journal-window. Confirmation body after discarding prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "10299a236da68001a1e52cf7df15524eb29b0034511fb039650bd4ba2adc5de9",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

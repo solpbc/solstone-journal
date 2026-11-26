@@ -1,0 +1,16 @@
+{
+  "description": "Heading while preparing a full copy.",
+  "context": "journal-window. Heading while preparing a full copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7fe48bc36e6f6015f9d8ee21c0f43081c26f5fd4d61af05928e716b206b769b9",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Reveal saved file button on macOS.",
+  "context": "journal-window. Reveal saved file button on macOS.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0ec70cf3e577f5c51b284dde5194d89f10f626a91fc30cdc0fe50e5191ac4113",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

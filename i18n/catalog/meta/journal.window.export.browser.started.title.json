@@ -1,0 +1,16 @@
+{
+  "description": "Honest status heading after browser download starts.",
+  "context": "journal-window. Honest status heading after browser download starts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d9c1fb00992be51a488f06201e2df0ae1e1fccb863b34720bdb1d879fc155ad",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

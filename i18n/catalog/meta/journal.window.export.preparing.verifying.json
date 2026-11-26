@@ -1,0 +1,16 @@
+{
+  "description": "Status line while computing final checksum of prepared copy.",
+  "context": "journal-window. Status line while computing final checksum of prepared copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "69c8d512fef579d4d093379537f55faafb15f753259d482975165c2d6e4c7c63",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

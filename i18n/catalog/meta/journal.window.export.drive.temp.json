@@ -1,0 +1,16 @@
+{
+  "description": "Staging drive phrase when staging falls back to the OS temporary volume.",
+  "context": "journal-window. Staging drive phrase when staging falls back to the OS temporary volume.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "91030c703ab0c531e4d740cb92c1e14742406df2ba7c40cf7de6f02399af20b1",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

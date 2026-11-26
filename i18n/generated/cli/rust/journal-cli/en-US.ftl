@@ -6140,6 +6140,8 @@ m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e656e636f64652e777269746
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c70 = Usage: { "solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]" }{ "\u000a" }{ "\u000a" }create a { "ZIP" } of your journal, including settings and credentials.{ "\u000a" }processing logs, rebuildable indexes and caches, locks and temporary files are left out.{ "\u000a" }with a date filter, only the selected days are included.
 
+m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f72742e68656c702e7632 = usage: { "solstone journal archive export [--out PATH] [--without-processed-media] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]" }{ "\u000a" }{ "\u000a" }create a portable { "ZIP" } of your journal, including settings and credentials.{ "\u000a" }processing logs, rebuildable search indexes, caches, lock files and temporary files are left out.{ "\u000a" }with { "--without-processed-media" }, processed audio and video (including imported audio) are left out while transcripts, summaries, photos, non-media imports, kept import originals and unprocessed or failed media stay in.{ "\u000a" }with a date filter, only the selected days are included (not settings, credentials, entities, facets, or imports).
+
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6578706f7274732e756e73616665 = unsafe exports directory: { $path }
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e666163742e617263686976652e6f75747075742e636f6e7461696e732e612e6e756c6c2e62797465 = archive output contains a null byte
@@ -6360,6 +6362,18 @@ m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6d657461646174612e72656
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6e656761746976652e6964656e74697479 = source identity is negative
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6e656761746976652e73697a65 = regular-file size is negative
+
+m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6465677261646564 = warning: couldn't read the full offload record; some older recordings may live only in your backup and may not be in this { "ZIP" }.
+
+m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f66666c6f61642e6e6f7465 = { $i18nCategory ->
+    [one] note: { NUMBER($days, useGrouping: 0) } day ({ $size }) of older recordings lives only in your backup and is not in this { "ZIP" }.
+   *[other] note: { NUMBER($days, useGrouping: 0) } days ({ $size }) of older recordings live only in your backup and are not in this { "ZIP" }.
+}
+
+m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f6d69747465642e6d65646961 = { $i18nCategory ->
+    [one] left out { $size } of processed audio and video ({ NUMBER($files, useGrouping: 0) } file)
+   *[other] left out { $size } of processed audio and video ({ NUMBER($files, useGrouping: 0) } files)
+}
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e6f75742e7265717569726564 = { "--out" } requires { "PATH" }
 

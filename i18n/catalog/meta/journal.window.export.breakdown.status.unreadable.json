@@ -1,0 +1,16 @@
+{
+  "description": "Breakdown status label when offload record cannot be read.",
+  "context": "journal-window. Breakdown status label when offload record cannot be read.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "95802076116d13d15dc49e4b74d1180695930bc4bdb02728157b1d25740fcf15",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

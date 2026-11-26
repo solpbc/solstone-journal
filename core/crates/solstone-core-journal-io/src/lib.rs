@@ -307,8 +307,10 @@ pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
 #[cfg(windows)]
 pub use windows_inventory::{
     WindowsCheckedFileReader, WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry,
-    WindowsInventoryError, enumerate_windows_inventory, enumerate_windows_inventory_pruned,
-    open_windows_inventory_file_reader, read_windows_inventory_file,
+    WindowsInventoryError, WindowsLiveFileReader, enumerate_windows_inventory,
+    enumerate_windows_inventory_pruned, open_windows_inventory_file_reader,
+    open_windows_inventory_file_reader_live, read_windows_inventory_file,
+    read_windows_inventory_live_snapshot, revalidate_windows_live_entry,
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_inventory::{

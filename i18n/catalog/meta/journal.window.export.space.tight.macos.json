@@ -1,0 +1,33 @@
+{
+  "description": "Tight-space guidance for macOS journal hosts.",
+  "context": "journal-window. Tight-space guidance for macOS journal hosts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "needed",
+      "type": "string"
+    },
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "light",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d28d4eb4cf6a6b2c96d1156ffa6bb962f5592d9d69b36192aef1ba5ed3fe3cd7",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

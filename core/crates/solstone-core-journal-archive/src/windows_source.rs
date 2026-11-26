@@ -10,10 +10,16 @@ use std::path::{Component, Path, PathBuf};
 use solstone_core_journal_io::{
     InventoryBudget, JournalEntryKind, JournalRoot, WindowsInventoryEntry, WindowsInventoryError,
     enumerate_windows_inventory_pruned, open_windows_inventory_file_reader,
+    open_windows_inventory_file_reader_live, read_windows_inventory_live_snapshot,
+    revalidate_windows_live_entry,
 };
 
 use crate::deny::{DenyAction, deny_member, deny_top_level};
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof, ProofIdentity};
+use crate::live::{
+    LIVE_METADATA_MAX_FILE_BYTES, LIVE_METADATA_TOTAL_BUDGET_BYTES, SnapshotMode,
+    is_live_append_only_jsonl, is_live_snapshottable_metadata,
+};
 use crate::{
     ArchiveError, ArchiveMemberName, IncludedRootName, Inventory, InventoryEntry,
     OpenedInventoryFile, SkippedRootName,
@@ -38,27 +44,78 @@ pub struct ArchiveSource {
     inventory: Inventory,
     observed: Vec<WindowsInventoryEntry>,
     budget: InventoryBudget,
+    snapshot_mode: SnapshotMode,
+    live_snapshots: BTreeMap<String, Vec<u8>>,
 }
 
 impl ArchiveSource {
     /// Acquire `root` once and immediately freeze its portable archive inventory.
     pub fn open(root: &Path) -> Result<Self, ArchiveError> {
-        Self::open_with_budget(root, ARCHIVE_INVENTORY_BUDGET)
+        Self::open_with_budget_and_mode(root, ARCHIVE_INVENTORY_BUDGET, SnapshotMode::Strict)
     }
 
+    /// Acquire `root` for live-journal preparation on Windows.
+    pub fn open_live(root: &Path) -> Result<Self, ArchiveError> {
+        Self::open_with_budget_and_mode(root, ARCHIVE_INVENTORY_BUDGET, SnapshotMode::LiveJournal)
+    }
+
+    #[cfg(test)]
     fn open_with_budget(root: &Path, budget: InventoryBudget) -> Result<Self, ArchiveError> {
+        Self::open_with_budget_and_mode(root, budget, SnapshotMode::Strict)
+    }
+
+    fn open_with_budget_and_mode(
+        root: &Path,
+        budget: InventoryBudget,
+        snapshot_mode: SnapshotMode,
+    ) -> Result<Self, ArchiveError> {
         let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
         let observed =
             enumerate_windows_inventory_pruned(&retained_root, budget, should_prune_directory)
                 .map_err(|error| map_windows_error(&retained_root, error, false))?
                 .into_entries();
-        let (inventory, observed) = build_inventory(&observed)?;
+        let (mut inventory, observed) = build_inventory(&observed)?;
+        let mut live_snapshots = BTreeMap::new();
+        if snapshot_mode == SnapshotMode::LiveJournal {
+            let mut snapshotted_total = 0u64;
+            for entry in &mut inventory.entries {
+                let member = entry.member_name().as_str();
+                if !is_live_snapshottable_metadata(member) {
+                    continue;
+                }
+                if entry.size() > LIVE_METADATA_MAX_FILE_BYTES
+                    || snapshotted_total.saturating_add(entry.size())
+                        > LIVE_METADATA_TOTAL_BUDGET_BYTES
+                {
+                    continue;
+                }
+                let budget_left = LIVE_METADATA_MAX_FILE_BYTES
+                    .min(LIVE_METADATA_TOTAL_BUDGET_BYTES.saturating_sub(snapshotted_total));
+                let bytes = read_windows_inventory_live_snapshot(
+                    &retained_root,
+                    &entry.proof().file.observed,
+                    budget_left,
+                )
+                .map_err(|error| map_windows_error(&retained_root, error, true))?;
+                let len = bytes.len() as u64;
+                entry.set_live_snapshot_size(len);
+                snapshotted_total = snapshotted_total.saturating_add(len);
+                live_snapshots.insert(member.to_owned(), bytes);
+            }
+        }
         Ok(Self {
             root: retained_root,
             inventory,
             observed,
             budget,
+            snapshot_mode,
+            live_snapshots,
         })
+    }
+
+    /// Return the snapshot concurrency mode for this source.
+    pub fn snapshot_mode(&self) -> SnapshotMode {
+        self.snapshot_mode
     }
 
     /// Return the inventory frozen when this source was opened.
@@ -76,22 +133,79 @@ impl ArchiveSource {
         &self,
         entry: &InventoryEntry,
     ) -> Result<OpenedInventoryFile<'_>, ArchiveError> {
-        let reader = open_windows_inventory_file_reader(&self.root, &entry.proof().file.observed)
-            .map_err(|error| map_windows_error(&self.root, error, true))?;
-        Ok(OpenedInventoryFile::new(reader, &self.root, entry.size()))
+        if let Some(bytes) = self.live_snapshots.get(entry.member_name().as_str()) {
+            return Ok(OpenedInventoryFile::from_snapshot(bytes.as_slice()));
+        }
+        match self.snapshot_mode {
+            SnapshotMode::Strict => {
+                let reader =
+                    open_windows_inventory_file_reader(&self.root, &entry.proof().file.observed)
+                        .map_err(|error| map_windows_error(&self.root, error, true))?;
+                Ok(OpenedInventoryFile::new(reader, &self.root, entry.size()))
+            }
+            SnapshotMode::LiveJournal => {
+                let allow_append_only = is_live_append_only_jsonl(entry.member_name().as_str());
+                let reader = open_windows_inventory_file_reader_live(
+                    &self.root,
+                    &entry.proof().file.observed,
+                    allow_append_only,
+                )
+                .map_err(|error| map_windows_error(&self.root, error, true))?;
+                Ok(OpenedInventoryFile::new_windows_live(
+                    reader,
+                    &self.root,
+                    entry.size(),
+                    allow_append_only,
+                ))
+            }
+        }
     }
 
     /// Confirm the complete frozen observed inventory remains unchanged.
     pub fn revalidate(&self) -> Result<(), ArchiveError> {
-        let observed =
-            enumerate_windows_inventory_pruned(&self.root, self.budget, should_prune_directory)
+        match self.snapshot_mode {
+            SnapshotMode::Strict => {
+                let observed = enumerate_windows_inventory_pruned(
+                    &self.root,
+                    self.budget,
+                    should_prune_directory,
+                )
                 .map_err(|error| map_windows_error(&self.root, error, true))?
                 .into_entries();
-        let (_, observed) = build_inventory(&observed)?;
-        if observed != self.observed {
-            return Err(ArchiveError::SourceChanged { member: None });
+                let (_, observed) = build_inventory(&observed)?;
+                if observed != self.observed {
+                    return Err(ArchiveError::SourceChanged { member: None });
+                }
+                Ok(())
+            }
+            SnapshotMode::LiveJournal => {
+                self.root
+                    .revalidate()
+                    .map_err(crate::error::map_root_error)?;
+                for observed in &self.observed {
+                    if observed.kind() == JournalEntryKind::Directory {
+                        revalidate_windows_live_entry(&self.root, observed, false)
+                            .map_err(|error| map_windows_error(&self.root, error, true))?;
+                    }
+                }
+                for entry in &self.inventory.entries {
+                    if self
+                        .live_snapshots
+                        .contains_key(entry.member_name().as_str())
+                    {
+                        continue;
+                    }
+                    let allow_append_only = is_live_append_only_jsonl(entry.member_name().as_str());
+                    revalidate_windows_live_entry(
+                        &self.root,
+                        &entry.proof().file.observed,
+                        allow_append_only,
+                    )
+                    .map_err(|error| map_windows_error(&self.root, error, true))?;
+                }
+                Ok(())
+            }
         }
-        Ok(())
     }
 }
 

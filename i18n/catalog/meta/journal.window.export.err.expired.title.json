@@ -1,0 +1,16 @@
+{
+  "description": "Error heading when prepared copy expired after 24h idle.",
+  "context": "journal-window. Error heading when prepared copy expired after 24h idle.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8068de6f0060e536f5b85db90c47faeedf1f343c7913daf92cf41577f95e77b6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

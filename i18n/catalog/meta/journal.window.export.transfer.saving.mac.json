@@ -1,0 +1,16 @@
+{
+  "description": "Transfer heading on paired macOS app.",
+  "context": "journal-window. Transfer heading on paired macOS app.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d7e5abffb19318e8850444aa264387e0fd2e0191e3e5d9cd7fdf448eb8a607ed",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

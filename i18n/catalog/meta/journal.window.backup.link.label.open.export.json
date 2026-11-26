@@ -1,0 +1,16 @@
+{
+  "description": "Backup page link label to open export.",
+  "context": "journal-window. Backup page link label to open export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e132a7612686aa11ecc2dbb7cb815f99f0431774a907b2c5bf985a5505dcd78c",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fallback error body when preparation failed.",
+  "context": "journal-window. Fallback error body when preparation failed.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b39ca1103b5fe75d161ca4b91c5f93f4e2873fbc532f31a92606b6b910654c56",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

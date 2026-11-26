@@ -1,0 +1,33 @@
+{
+  "description": "Tight-space guidance for Linux and Windows journal hosts.",
+  "context": "journal-window. Tight-space guidance for Linux and Windows journal hosts.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "needed",
+      "type": "string"
+    },
+    {
+      "name": "free",
+      "type": "string"
+    },
+    {
+      "name": "light",
+      "type": "string"
+    },
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b51983b23f7fac2f404766acd19a3c33fe81068d2293c852b847a64da0ef4823",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

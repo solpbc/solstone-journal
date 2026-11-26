@@ -1,0 +1,21 @@
+{
+  "description": "Partial mode size readout while measuring.",
+  "context": "journal-window. Partial mode size readout while measuring.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "67d4ac8986a16b5452340970aef9d851f0b08f8e2a0a024cfd476aa71d4eece1",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Breakdown row note for eligible processed media.",
+  "context": "journal-window. Breakdown row note for eligible processed media.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "files",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "fcc4e254a91e6ba02afa9b2af6f6c48e550ea76064ee9a54be2193c878f943f6",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

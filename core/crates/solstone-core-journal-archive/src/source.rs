@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io;
+use std::io::{self, Read};
 use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::Path;
@@ -14,6 +15,10 @@ use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 use solstone_core_journal_io::JournalRoot;
 
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof, ProofIdentity};
+use crate::live::{
+    LIVE_METADATA_MAX_FILE_BYTES, LIVE_METADATA_TOTAL_BUDGET_BYTES, SnapshotMode,
+    is_live_append_only_jsonl, is_live_snapshottable_metadata,
+};
 use crate::{
     ArchiveError, ArchiveMemberName, Inventory, InventoryEntry, JournalEntryKind,
     OpenedInventoryFile,
@@ -314,6 +319,8 @@ fn substitute_descendant_fstat_type(
 pub struct ArchiveSource {
     root: JournalRoot,
     inventory: Inventory,
+    snapshot_mode: SnapshotMode,
+    live_snapshots: BTreeMap<String, Vec<u8>>,
 }
 
 impl ArchiveSource {
@@ -324,7 +331,55 @@ impl ArchiveSource {
         Ok(Self {
             root: retained_root,
             inventory,
+            snapshot_mode: SnapshotMode::Strict,
+            live_snapshots: BTreeMap::new(),
         })
+    }
+
+    /// Acquire `root` for live-journal preparation, snapshotting small
+    /// live-updated metadata files at `t=0` and tolerating append-only `.jsonl`
+    /// growth and newly created sibling segments.
+    pub fn open_live(root: &Path) -> Result<Self, ArchiveError> {
+        let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
+        let mut inventory = crate::inventory::build(&retained_root)?;
+        let mut live_snapshots = BTreeMap::new();
+        let mut snapshotted_total = 0u64;
+
+        for entry in &mut inventory.entries {
+            let member = entry.member_name().clone();
+            if !is_live_snapshottable_metadata(member.as_str()) {
+                continue;
+            }
+            if entry.size() > LIVE_METADATA_MAX_FILE_BYTES
+                || snapshotted_total.saturating_add(entry.size()) > LIVE_METADATA_TOTAL_BUDGET_BYTES
+            {
+                continue;
+            }
+            if let Some(bytes) = snapshot_live_metadata_file(
+                &retained_root,
+                &member,
+                entry.proof(),
+                LIVE_METADATA_MAX_FILE_BYTES
+                    .min(LIVE_METADATA_TOTAL_BUDGET_BYTES.saturating_sub(snapshotted_total)),
+            )? {
+                let len = bytes.len() as u64;
+                entry.set_live_snapshot_size(len);
+                snapshotted_total = snapshotted_total.saturating_add(len);
+                live_snapshots.insert(member.as_str().to_owned(), bytes);
+            }
+        }
+
+        Ok(Self {
+            root: retained_root,
+            inventory,
+            snapshot_mode: SnapshotMode::LiveJournal,
+            live_snapshots,
+        })
+    }
+
+    /// Return the snapshot concurrency mode for this source.
+    pub fn snapshot_mode(&self) -> SnapshotMode {
+        self.snapshot_mode
     }
 
     /// Return the inventory frozen when this source was opened.
@@ -342,8 +397,30 @@ impl ArchiveSource {
         &self,
         entry: &InventoryEntry,
     ) -> Result<OpenedInventoryFile<'_>, ArchiveError> {
-        let (file, proof) = open_verified_file(&self.root, entry.member_name(), entry.proof())?;
-        Ok(OpenedInventoryFile::new(File::from(file), proof.size))
+        if let Some(bytes) = self.live_snapshots.get(entry.member_name().as_str()) {
+            return Ok(OpenedInventoryFile::from_snapshot(bytes.as_slice()));
+        }
+        let allow_append_only = self.snapshot_mode == SnapshotMode::LiveJournal
+            && is_live_append_only_jsonl(entry.member_name().as_str());
+        let check_mtime = self.snapshot_mode == SnapshotMode::LiveJournal && !allow_append_only;
+        let (file, observed_size) = open_verified_file(
+            &self.root,
+            entry.member_name(),
+            entry.proof(),
+            allow_append_only,
+            check_mtime,
+        )?;
+        let expected_mtime =
+            check_mtime.then_some((entry.proof().file.mtime_sec, entry.proof().file.mtime_nsec));
+        Ok(OpenedInventoryFile::new(
+            File::from(file),
+            entry.size(),
+            observed_size,
+            entry.proof().file.identity,
+            expected_mtime,
+            allow_append_only,
+            entry.member_name().clone(),
+        ))
     }
 
     /// Confirm every directory and regular-file identity in the frozen inventory.
@@ -355,7 +432,16 @@ impl ArchiveSource {
             revalidate_directory(&self.root, proof)?;
         }
         for entry in &self.inventory.entries {
-            revalidate_file(&self.root, entry)?;
+            if self
+                .live_snapshots
+                .contains_key(entry.member_name().as_str())
+            {
+                continue;
+            }
+            let allow_append_only = self.snapshot_mode == SnapshotMode::LiveJournal
+                && is_live_append_only_jsonl(entry.member_name().as_str());
+            let check_mtime = self.snapshot_mode == SnapshotMode::LiveJournal && !allow_append_only;
+            revalidate_file(&self.root, entry, allow_append_only, check_mtime)?;
         }
         Ok(())
     }
@@ -473,30 +559,99 @@ pub(crate) fn classify_mode(mode: SFlag) -> JournalEntryKind {
     JournalEntryKind::from_mode(mode)
 }
 
+fn file_matches_proof(
+    observed: &FileProof,
+    expected: &FileProof,
+    allow_append_only: bool,
+    check_mtime: bool,
+) -> bool {
+    if observed.identity != expected.identity {
+        return false;
+    }
+    if allow_append_only {
+        observed.size >= expected.size
+    } else if check_mtime {
+        observed.size == expected.size
+            && observed.mtime_sec == expected.mtime_sec
+            && observed.mtime_nsec == expected.mtime_nsec
+    } else {
+        observed.size == expected.size
+    }
+}
+
 fn open_verified_file(
     root: &impl AsFd,
     member: &ArchiveMemberName,
     proof: &EntryProof,
-) -> Result<(OwnedFd, FileProof), ArchiveError> {
+    allow_append_only: bool,
+    check_mtime: bool,
+) -> Result<(OwnedFd, u64), ArchiveError> {
     let mut current = open_verified_route(root, member, proof)?;
     let Some(name) = proof.components.last() else {
         return Err(changed(Some(member)));
     };
     let before = stat_entry(&current, name, Some(member), "stat inventoried file")
         .map_err(|error| revalidation_error(error, member))?;
-    if !is_regular(&before) || file_proof(&before)? != proof.file {
+    let before_proof = file_proof(&before)?;
+    if !is_regular(&before)
+        || !file_matches_proof(&before_proof, &proof.file, allow_append_only, check_mtime)
+    {
         return Err(changed(Some(member)));
     }
     let opened = open_regular_file(&current, name, Some(member), true)?;
     let after = stat_fd(&opened, Some(member), "stat opened inventoried file")?;
+    let after_proof = file_proof(&after)?;
     if !is_regular(&after)
-        || file_proof(&after)? != proof.file
-        || file_proof(&after)? != file_proof(&before)?
+        || !file_matches_proof(&after_proof, &proof.file, allow_append_only, check_mtime)
+        || after_proof.identity != before_proof.identity
     {
         return Err(changed(Some(member)));
     }
     current = opened;
-    Ok((current, proof.file.clone()))
+    Ok((current, after_proof.size))
+}
+
+fn snapshot_live_metadata_file(
+    root: &impl AsFd,
+    member: &ArchiveMemberName,
+    proof: &EntryProof,
+    max_bytes: u64,
+) -> Result<Option<Vec<u8>>, ArchiveError> {
+    let Some(name) = proof.components.last() else {
+        return Err(changed(Some(member)));
+    };
+    for _attempt in 0..3 {
+        let dir = open_verified_route(root, member, proof)?;
+        let before = stat_entry(&dir, name, Some(member), "stat live metadata file")
+            .map_err(|error| revalidation_error(error, member))?;
+        if !is_regular(&before) {
+            return Err(changed(Some(member)));
+        }
+        let before_proof = file_proof(&before)?;
+        if before_proof.size > max_bytes {
+            return Ok(None);
+        }
+        let opened = open_regular_file(&dir, name, Some(member), true)?;
+        let opened_stat = stat_fd(&opened, Some(member), "stat opened live metadata file")?;
+        let opened_proof = file_proof(&opened_stat)?;
+        if !is_regular(&opened_stat) || opened_proof != before_proof {
+            continue;
+        }
+        let mut file = File::from(opened);
+        let mut bytes = Vec::with_capacity(opened_proof.size as usize);
+        file.read_to_end(&mut bytes)
+            .map_err(|source| ArchiveError::SourceIo {
+                operation: "read live metadata snapshot",
+                member: Some(member.clone()),
+                source,
+            })?;
+        let after = stat_fd(&file, Some(member), "stat live metadata after read")?;
+        let after_proof = file_proof(&after)?;
+        if after_proof == opened_proof && bytes.len() as u64 == opened_proof.size {
+            return Ok(Some(bytes));
+        }
+    }
+    Err(changed(Some(member)))
 }
 
 fn open_verified_route(
@@ -553,8 +708,20 @@ fn revalidate_directory(root: &impl AsFd, proof: &DirectoryEntryProof) -> Result
     Ok(())
 }
 
-fn revalidate_file(root: &impl AsFd, entry: &InventoryEntry) -> Result<(), ArchiveError> {
-    let file = open_verified_file(root, entry.member_name(), entry.proof())?.0;
+fn revalidate_file(
+    root: &impl AsFd,
+    entry: &InventoryEntry,
+    allow_append_only: bool,
+    check_mtime: bool,
+) -> Result<(), ArchiveError> {
+    let file = open_verified_file(
+        root,
+        entry.member_name(),
+        entry.proof(),
+        allow_append_only,
+        check_mtime,
+    )?
+    .0;
     drop(file);
     Ok(())
 }
@@ -643,12 +810,18 @@ fn file_proof(stat: &FileStat) -> Result<FileProof, ArchiveError> {
             ),
         ),
     })?;
+    #[allow(clippy::unnecessary_cast)]
+    let mtime_sec = stat.st_mtime as i64;
+    #[allow(clippy::unnecessary_cast)]
+    let mtime_nsec = stat.st_mtime_nsec as i64;
     Ok(FileProof {
         identity: ProofIdentity::Unix {
             device: stat_identifier(stat.st_dev)?,
             inode: stat_identifier(stat.st_ino)?,
         },
         size,
+        mtime_sec,
+        mtime_nsec,
     })
 }
 

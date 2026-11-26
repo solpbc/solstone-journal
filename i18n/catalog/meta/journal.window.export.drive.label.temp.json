@@ -1,0 +1,16 @@
+{
+  "description": "Short staging drive label when staging falls back to the OS temporary volume.",
+  "context": "journal-window. Short staging drive label when staging falls back to the OS temporary volume.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3f0d1bbbb511a1334e83a7ac8f52b7be8d216715af17332a6e10f358caf7d155",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

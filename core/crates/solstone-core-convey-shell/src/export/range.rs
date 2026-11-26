@@ -1,0 +1,305 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! RFC 9110 byte-range parsing (`u64`), `If-Range` strong-ETag matching, and
+//! bounded-memory streaming over a prepared immutable ZIP file.
+
+use std::io::SeekFrom;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+
+use axum::body::Bytes;
+use axum::http::HeaderMap;
+use futures_core::Stream;
+use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
+
+/// Chunk size read per poll from the staged export file.
+const STREAM_CHUNK_BYTES: usize = 64 * 1024;
+
+/// Touch rolling activity timestamp every 1 MiB delivered on a long stream so
+/// a single continuous response lasting > 24 hours stays alive throughout.
+const ACTIVITY_TOUCH_INTERVAL_BYTES: u64 = 1024 * 1024;
+
+/// Result of evaluating `Range` + `If-Range` against a fixed `total_len`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RangeDecision {
+    /// Serve the entire file (`200 OK`, `0..total_len`).
+    Full,
+    /// Serve an inclusive byte range (`206 Partial Content`, `start..=end`).
+    Partial { start: u64, end: u64 },
+    /// Range cannot be satisfied (`416 Range Not Satisfiable`, `Content-Range: bytes */total_len`).
+    Unsatisfiable,
+}
+
+/// Evaluate RFC 9110 `Range` and `If-Range` headers against `total_len` and `strong_etag`.
+///
+/// Only strong quoted entity-tags (`"..."`) are matched for `If-Range` (weak
+/// tags `W/"..."` and HTTP-dates never satisfy a strong validator match, falling
+/// back to `200 OK` full representation per RFC 9110 §13.1.5).
+pub(crate) fn evaluate_range(
+    headers: &HeaderMap,
+    total_len: u64,
+    strong_etag: &str,
+) -> RangeDecision {
+    let Some(range_header) = headers.get(axum::http::header::RANGE) else {
+        return RangeDecision::Full;
+    };
+    let Ok(range_str) = range_header.to_str() else {
+        return RangeDecision::Full;
+    };
+    if let Some(if_range) = headers.get(axum::http::header::IF_RANGE) {
+        let matches = if_range
+            .to_str()
+            .ok()
+            .map(str::trim)
+            .is_some_and(|val| !val.starts_with("W/") && val == strong_etag);
+        if !matches {
+            return RangeDecision::Full;
+        }
+    }
+    parse_single_byte_range(range_str.trim(), total_len)
+}
+
+/// Parse a single `bytes=...` range spec with 64-bit offsets.
+///
+/// Multiple comma-separated ranges fall back to `Full` (RFC 9110 §14.2 allows
+/// ignoring multi-range requests and returning `200 OK`, avoiding multipart
+/// framing complexity). Malformed syntax falls back to `Full`; syntactically
+/// valid out-of-bounds ranges return `Unsatisfiable` (`416`).
+pub(crate) fn parse_single_byte_range(spec: &str, total_len: u64) -> RangeDecision {
+    let Some(rest) = spec.strip_prefix("bytes=") else {
+        return RangeDecision::Full;
+    };
+    let rest = rest.trim();
+    if rest.is_empty() || rest.contains(',') {
+        return RangeDecision::Full;
+    }
+    let Some((start_raw, end_raw)) = rest.split_once('-') else {
+        return RangeDecision::Full;
+    };
+    let start_raw = start_raw.trim();
+    let end_raw = end_raw.trim();
+
+    if start_raw.is_empty() {
+        // Suffix byte range: `bytes=-N`
+        let Ok(suffix) = end_raw.parse::<u64>() else {
+            return RangeDecision::Full;
+        };
+        if suffix == 0 || total_len == 0 {
+            return RangeDecision::Unsatisfiable;
+        }
+        let take = suffix.min(total_len);
+        return RangeDecision::Partial {
+            start: total_len - take,
+            end: total_len - 1,
+        };
+    }
+
+    let Ok(start) = start_raw.parse::<u64>() else {
+        return RangeDecision::Full;
+    };
+    if total_len == 0 || start >= total_len {
+        return RangeDecision::Unsatisfiable;
+    }
+    if end_raw.is_empty() {
+        return RangeDecision::Partial {
+            start,
+            end: total_len - 1,
+        };
+    }
+    let Ok(end) = end_raw.parse::<u64>() else {
+        return RangeDecision::Full;
+    };
+    if end < start {
+        return RangeDecision::Full;
+    }
+    RangeDecision::Partial {
+        start,
+        end: end.min(total_len - 1),
+    }
+}
+
+/// Callback interface connecting an active HTTP download stream to `ExportService`.
+pub(crate) trait ActiveTransferHooks: Send + Sync + 'static {
+    /// Refresh rolling inactivity clock during a long continuous transfer.
+    fn touch_activity(&self);
+    /// Return true when the requester's authorization was revoked mid-transfer
+    /// and the stream must stop delivering further bytes.
+    fn is_revoked(&self) -> bool;
+    /// Decrement `active_downloads`; if the copy was retired by Trash erasure
+    /// or revocation and just became idle (`active_downloads == 0`), delete its
+    /// staged files immediately.
+    fn release_active_download(&self);
+}
+
+/// RAII guard guaranteeing `release_active_download` runs on normal completion,
+/// client disconnect, error, or panic.
+pub(crate) struct ActiveDownloadGuard {
+    hooks: Arc<dyn ActiveTransferHooks>,
+}
+
+impl ActiveDownloadGuard {
+    pub(crate) fn new(hooks: Arc<dyn ActiveTransferHooks>) -> Self {
+        Self { hooks }
+    }
+}
+
+impl Drop for ActiveDownloadGuard {
+    fn drop(&mut self) {
+        self.hooks.release_active_download();
+    }
+}
+
+/// Bounded-memory byte-range stream over an already-opened immutable file.
+pub(crate) struct TrackedRangeStream {
+    file: tokio::fs::File,
+    remaining: u64,
+    since_touch: u64,
+    buffer: Vec<u8>,
+    guard: Option<ActiveDownloadGuard>,
+}
+
+impl TrackedRangeStream {
+    pub(crate) async fn open(
+        mut file: tokio::fs::File,
+        start: u64,
+        length: u64,
+        guard: ActiveDownloadGuard,
+    ) -> std::io::Result<Self> {
+        if start > 0 {
+            file.seek(SeekFrom::Start(start)).await?;
+        }
+        Ok(Self {
+            file,
+            remaining: length,
+            since_touch: 0,
+            buffer: vec![0u8; STREAM_CHUNK_BYTES],
+            guard: Some(guard),
+        })
+    }
+}
+
+impl Stream for TrackedRangeStream {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.remaining == 0 {
+            this.guard.take();
+            return Poll::Ready(None);
+        }
+        if this.guard.as_ref().is_some_and(|g| g.hooks.is_revoked()) {
+            this.guard.take();
+            return Poll::Ready(Some(Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "export requester authorization revoked",
+            ))));
+        }
+
+        let to_read = (this.remaining.min(STREAM_CHUNK_BYTES as u64)) as usize;
+        let mut read_buf = ReadBuf::new(&mut this.buffer[..to_read]);
+        match Pin::new(&mut this.file).poll_read(cx, &mut read_buf) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(error)) => {
+                this.guard.take();
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(Ok(())) => {
+                let filled = read_buf.filled();
+                if filled.is_empty() {
+                    this.guard.take();
+                    return Poll::Ready(Some(Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "staged export file ended before declared length",
+                    ))));
+                }
+                let n = filled.len() as u64;
+                this.remaining = this.remaining.saturating_sub(n);
+                this.since_touch = this.since_touch.saturating_add(n);
+                if this.since_touch >= ACTIVITY_TOUCH_INTERVAL_BYTES {
+                    this.since_touch = 0;
+                    if let Some(guard) = this.guard.as_ref() {
+                        guard.hooks.touch_activity();
+                    }
+                }
+                Poll::Ready(Some(Ok(Bytes::copy_from_slice(filled))))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{HeaderMap, HeaderValue, header};
+
+    use super::*;
+
+    #[test]
+    fn parses_64_bit_ranges_beyond_4_gib_and_enforces_strong_if_range() {
+        let total = 300_000_000_000u64; // 300 GB (> 4 GiB)
+        let etag = "\"0123456789abcdef\"";
+
+        // Open-ended range beyond 4 GiB.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::RANGE, HeaderValue::from_static("bytes=4294967296-"));
+        headers.insert(header::IF_RANGE, HeaderValue::from_static(etag));
+        assert_eq!(
+            evaluate_range(&headers, total, etag),
+            RangeDecision::Partial {
+                start: 4_294_967_296,
+                end: total - 1,
+            }
+        );
+
+        // Closed range clamping end to total - 1.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::RANGE,
+            HeaderValue::from_static("bytes=299999999990-400000000000"),
+        );
+        assert_eq!(
+            evaluate_range(&headers, total, etag),
+            RangeDecision::Partial {
+                start: 299_999_999_990,
+                end: total - 1,
+            }
+        );
+
+        // Suffix range.
+        assert_eq!(
+            parse_single_byte_range("bytes=-16", total),
+            RangeDecision::Partial {
+                start: total - 16,
+                end: total - 1,
+            }
+        );
+
+        // Unsatisfiable range at exact EOF -> 416.
+        assert_eq!(
+            parse_single_byte_range("bytes=300000000000-", total),
+            RangeDecision::Unsatisfiable
+        );
+
+        // If-Range mismatch -> 200 Full.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::RANGE,
+            HeaderValue::from_static("bytes=4294967296-4294967303"),
+        );
+        headers.insert(
+            header::IF_RANGE,
+            HeaderValue::from_static("\"different-etag\""),
+        );
+        assert_eq!(evaluate_range(&headers, total, etag), RangeDecision::Full);
+
+        // Weak If-Range -> never matches strong validator -> 200 Full.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::RANGE, HeaderValue::from_static("bytes=0-10"));
+        headers.insert(
+            header::IF_RANGE,
+            HeaderValue::from_static("W/\"0123456789abcdef\""),
+        );
+        assert_eq!(evaluate_range(&headers, total, etag), RangeDecision::Full);
+    }
+}

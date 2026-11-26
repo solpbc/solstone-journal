@@ -13,6 +13,11 @@
 /// removing what the snapshot doesn't hold. Local state: backups omit it.
 pub const INIT_RESTORE_FILE: &str = "health/init-restore.json";
 
+/// Monotonic local epoch bumped after every permanent Trash erasure so staged
+/// export copies are invalidated immediately. Local state: backups and portable
+/// copies omit it.
+pub const TRASH_ERASURE_EPOCH_FILE: &str = "health/trash-erasure-epoch.json";
+
 pub const COPY_EXCLUDES: &[&str] = &[
     "indexer",
     "cache",
@@ -25,6 +30,7 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "health/sync",
     "health/brain.json",
     "health/init-restore.json",
+    TRASH_ERASURE_EPOCH_FILE,
     // Short-lived local bearer JWT cache for Garmin Personal API.
     "health/garmin-bearer.json",
     // Local restore obligation. A snapshot must not import, overwrite, or erase it.

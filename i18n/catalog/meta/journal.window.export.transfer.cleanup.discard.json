@@ -1,0 +1,16 @@
+{
+  "description": "Button to discard prepared copy after verified save.",
+  "context": "journal-window. Button to discard prepared copy after verified save.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c41a96717fe5066e31969c91de1e893dac0a6155be801e0d702a23fd8da81ba8",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

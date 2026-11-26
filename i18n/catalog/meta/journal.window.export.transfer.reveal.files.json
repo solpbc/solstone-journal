@@ -1,0 +1,16 @@
+{
+  "description": "Reveal saved file button on Linux.",
+  "context": "journal-window. Reveal saved file button on Linux.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "afc99e6ffa0d180bf063a06378b027d5e0b744bb4ce3122a2a381d9f21ecdd42",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

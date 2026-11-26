@@ -1,0 +1,16 @@
+{
+  "description": "Secondary link to open the backup page.",
+  "context": "journal-window. Secondary link to open the backup page.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c3fe7e54ea0e771cead764ef2443bac1da49944b9ee597766d57b072080bcf14",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

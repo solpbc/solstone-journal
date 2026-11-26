@@ -1,0 +1,16 @@
+{
+  "description": "Settings storage cross-link prompt to export.",
+  "context": "journal-window. Settings storage cross-link prompt to export.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3459e6682e092c0c4cda12133a13bb2e093d4741d22b1632839157942df9a52e",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Accessible label for copy mode radio group.",
+  "context": "journal-window. Accessible label for copy mode radio group.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "845e8d6712cfb4b7e030a9fcef42b91b9f1057bf0371bacc99157bd98f26d5d5",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

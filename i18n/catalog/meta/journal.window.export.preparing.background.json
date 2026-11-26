@@ -1,0 +1,16 @@
+{
+  "description": "Note explaining preparation continues in background.",
+  "context": "journal-window. Note explaining preparation continues in background.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6a201e73aba6d6ff628043b88a84e65ccc5d49e841dd4490cb7e30a58a613f83",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

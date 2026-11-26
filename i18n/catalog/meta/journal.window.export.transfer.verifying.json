@@ -1,0 +1,16 @@
+{
+  "description": "Heading while verifying downloaded file checksum.",
+  "context": "journal-window. Heading while verifying downloaded file checksum.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75ba3be5c3787c5d8f69f3e9b70b58d417d6923b6a7e889f819c5e27478db9e4",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

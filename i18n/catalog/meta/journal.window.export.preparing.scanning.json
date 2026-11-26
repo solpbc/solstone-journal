@@ -1,0 +1,16 @@
+{
+  "description": "Status line during initial prepare scan.",
+  "context": "journal-window. Status line during initial prepare scan.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "43e85d4364176f002cdda224b9f8c50ac3bbc6b3ac30d211031b6b7c3d3ca39a",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

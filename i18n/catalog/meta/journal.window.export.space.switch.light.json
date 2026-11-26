@@ -1,0 +1,16 @@
+{
+  "description": "Action button switching selection to lighter mode.",
+  "context": "journal-window. Action button switching selection to lighter mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "bfdee179cd0838c8d3e63ddd4f6faa057be2d4a41e4a0b70f8aca8737c5e447d",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

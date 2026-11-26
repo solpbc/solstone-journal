@@ -1,0 +1,16 @@
+{
+  "description": "Action button to retry preparation.",
+  "context": "journal-window. Action button to retry preparation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b88f030a3098d44ca4167d3fdf1981daa4045c2d59f9726eafd04dc8563b80a7",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Savings note beside lighter copy mode.",
+  "context": "journal-window. Savings note beside lighter copy mode.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7e340396cbbce767df38723c2e121fd20901b64408cf66c43e560de0d88596fa",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

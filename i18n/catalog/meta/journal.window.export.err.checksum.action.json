@@ -1,0 +1,16 @@
+{
+  "description": "Action button to retry native save.",
+  "context": "journal-window. Action button to retry native save.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c421083c15c4b28815885657c4600a5d9cdcd55a17f365f73849b72ce4c282a",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

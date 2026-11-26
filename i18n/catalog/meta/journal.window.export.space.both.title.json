@@ -1,0 +1,21 @@
+{
+  "description": "Error heading when neither export mode fits on journal drive.",
+  "context": "journal-window. Error heading when neither export mode fits on journal drive.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "drive",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e2d8369eef9400cf3a783b0dddc3a83a16d72648bf02f04758d230fa26737439",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

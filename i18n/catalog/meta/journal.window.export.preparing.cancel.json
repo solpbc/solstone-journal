@@ -1,0 +1,16 @@
+{
+  "description": "Button to cancel in-flight preparation.",
+  "context": "journal-window. Button to cancel in-flight preparation.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "adf2bab8e4c069530dbf4789162ccb3ffc4043f0acc93cbc0983a511cc5023e4",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

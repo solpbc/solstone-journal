@@ -1,0 +1,16 @@
+{
+  "description": "Warning heading when chosen desktop destination drive lacks free space.",
+  "context": "journal-window. Warning heading when chosen desktop destination drive lacks free space.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "82a32b35c2874b2fe23dc3b4be64c0f1edb9442a09bbab7aa232172fd64365c7",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
