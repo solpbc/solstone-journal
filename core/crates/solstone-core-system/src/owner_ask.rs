@@ -9,6 +9,11 @@
 //! nothing here writes a daily unit record. Work discovery reads the asks,
 //! compares their creation time with timestamps already on disk, and changes
 //! an ask only by id, under the store lock, against the values it read.
+//!
+//! The store is read tolerantly: a field this version does not know, on the
+//! store or on an ask, was written by a later version. It is never interpreted
+//! here and is written back exactly as read, and an ask carrying one is kept
+//! rather than retired, since it may hold a step only that version can run.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -23,7 +28,6 @@ pub const STORE_VERSION: u32 = 1;
 
 /// One activity an ask runs again.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AskedActivity {
     pub facet: String,
     pub activity: String,
@@ -31,7 +35,6 @@ pub struct AskedActivity {
 
 /// One Experience an ask re-composes via `experience_compose`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AskedExperience {
     pub facet: String,
     pub anchor_day: String,
@@ -41,7 +44,6 @@ pub struct AskedExperience {
 /// How far an ask's week page step has come. Only attempts are counted here;
 /// whether the page is owed is read from the page itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct WeekStep {
     #[serde(default)]
     pub attempts: u32,
@@ -56,7 +58,6 @@ pub struct WeekStep {
 pub const WEEK_BUILT: &str = "built";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct OwnerAsk {
     pub id: String,
     pub day: String,
@@ -91,6 +92,9 @@ pub struct OwnerAsk {
     /// Experiences queued for `experience_compose` re-composition.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub experiences: BTreeSet<AskedExperience>,
+    /// Fields a later version wrote. Never interpreted; written back as read.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_json::Value>,
 }
 
 /// The cause prefix of an ask the trash files.
@@ -104,9 +108,11 @@ impl OwnerAsk {
             .is_some_and(|cause| cause.starts_with(TRASH_CAUSE))
     }
 
-    /// Every step this ask asked for has finished.
+    /// Every step this ask asked for has finished. An ask holding a field
+    /// from a later version never has: that version may still owe a step.
     pub fn finished(&self) -> bool {
-        self.to_seed.is_empty()
+        self.extra.is_empty()
+            && self.to_seed.is_empty()
             && self.experiences.is_empty()
             && (!self.thaw || self.thaw_done)
             && self.week.ended.is_some()
@@ -128,10 +134,12 @@ pub enum AskError {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Store {
     version: u32,
     asks: BTreeMap<String, OwnerAsk>,
+    /// Fields a later version wrote. Never interpreted; written back as read.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -164,9 +172,19 @@ fn valid_activity(day: &str, asked: &AskedActivity) -> bool {
 /// Every pending ask by id. No file is no asks; a damaged or newer store is
 /// an error and is left exactly as it is.
 pub fn read(journal: &Path) -> Result<BTreeMap<String, OwnerAsk>, String> {
+    read_store(journal).map(|store| store.asks)
+}
+
+fn read_store(journal: &Path) -> Result<Store, String> {
     let bytes = match std::fs::read(path(journal)) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Store {
+                version: STORE_VERSION,
+                asks: BTreeMap::new(),
+                extra: BTreeMap::new(),
+            });
+        }
         Err(error) => return Err(error.to_string()),
     };
     let probe: VersionProbe = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
@@ -188,7 +206,7 @@ pub fn read(journal: &Path) -> Result<BTreeMap<String, OwnerAsk>, String> {
             return Err("unrecognized owner ask".into());
         }
     }
-    Ok(store.asks)
+    Ok(store)
 }
 
 /// Whether some ask on `day` still lets its past briefing regenerate. An
@@ -209,26 +227,22 @@ fn mutate<T>(
         .map_err(|error| AskError::Write(error.to_string()))?;
     let _lock = hold_lock(path.with_extension("lock"), LockOptions::default())
         .map_err(|error| AskError::Write(error.to_string()))?;
-    let mut asks = read(journal).map_err(AskError::Unreadable)?;
-    let (result, changed) = update(&mut asks).map_err(AskError::Write)?;
+    let mut store = read_store(journal).map_err(AskError::Unreadable)?;
+    let (result, changed) = update(&mut store.asks).map_err(AskError::Write)?;
     if !changed {
         return Ok(result);
     }
-    publish(&path, asks).map_err(AskError::Write)?;
+    publish(&path, &store).map_err(AskError::Write)?;
     Ok(result)
 }
 
-fn publish(path: &Path, asks: BTreeMap<String, OwnerAsk>) -> Result<(), String> {
-    let store = Store {
-        version: STORE_VERSION,
-        asks,
-    };
+fn publish(path: &Path, store: &Store) -> Result<(), String> {
     #[cfg(unix)]
     {
         let parent = std::fs::File::open(path.parent().expect("health parent"))
             .map_err(|e| e.to_string())?;
         let bytes = solstone_core_journal_io::atomic::serialize_json_bytes(
-            &store,
+            store,
             JsonWriteOptions::default(),
         )
         .map_err(|e| e.to_string())?;
@@ -246,12 +260,9 @@ fn publish(path: &Path, asks: BTreeMap<String, OwnerAsk>) -> Result<(), String> 
         }
     }
     #[cfg(windows)]
-    solstone_core_journal_io::write_json_checked(
-        path,
-        &store,
-        JsonWriteOptions::default(),
-        &|| Ok(()),
-    )
+    solstone_core_journal_io::write_json_checked(path, store, JsonWriteOptions::default(), &|| {
+        Ok(())
+    })
     .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -290,6 +301,7 @@ pub fn record(
         cause: None,
         items: BTreeSet::new(),
         experiences: BTreeSet::new(),
+        extra: BTreeMap::new(),
     };
     let saved = ask.clone();
     mutate(journal, |asks| {
@@ -345,6 +357,7 @@ pub fn record_for_trash(
                 cause: Some(cause.clone()),
                 items: BTreeSet::from([item.to_owned()]),
                 experiences: BTreeSet::new(),
+                extra: BTreeMap::new(),
             };
             asks.insert(fresh_id.clone(), ask.clone());
             return Ok((ask, true));
@@ -477,6 +490,7 @@ pub fn record_experiences(
             cause: cause.map(str::to_owned),
             items: BTreeSet::new(),
             experiences: experiences.iter().cloned().collect(),
+            extra: BTreeMap::new(),
         };
         asks.insert(fresh_id.clone(), ask.clone());
         Ok((ask, true))
@@ -846,6 +860,73 @@ mod tests {
             assert!(update(root.path(), &ask.id, |_| Some(None)).is_err());
             assert_eq!(std::fs::read_to_string(path(root.path())).unwrap(), bytes);
         }
+    }
+
+    #[test]
+    fn fields_from_a_later_version_are_read_past_and_written_back() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+        let other = "fedcba9876543210fedcba9876543210";
+        let written = serde_json::json!({
+            "version": STORE_VERSION,
+            "later_store_field": {"kept": true},
+            "asks": {
+                id: {
+                    "id": id,
+                    "day": "20260101",
+                    "created_at_ms": 7,
+                    "to_seed": [{"facet": "work", "activity": "a", "later": 1}],
+                    "thaw": true,
+                    "week": {"attempts": 2, "later": "step"},
+                    "later_ask_field": ["kept"],
+                },
+                other: {
+                    "id": other,
+                    "day": "20260102",
+                    "created_at_ms": 8,
+                    "to_seed": [],
+                    "thaw": false,
+                    "week": {"ended": WEEK_BUILT},
+                    "later_step": {"owed": true},
+                },
+            },
+        });
+        std::fs::create_dir_all(path(root.path()).parent().unwrap()).unwrap();
+        std::fs::write(path(root.path()), written.to_string()).unwrap();
+
+        let asks = read(root.path()).unwrap();
+        let ask = &asks[id];
+        assert_eq!((ask.day.as_str(), ask.created_at_ms), ("20260101", 7));
+        assert_eq!(ask.to_seed, BTreeSet::from([asked("work", "a")]));
+        assert!(ask.thaw && !ask.thaw_done);
+        assert_eq!(ask.week.attempts, 2);
+        assert!(thawed(root.path(), "20260101"));
+        // Every step this version knows is done, but a later version's is not
+        // this version's to retire.
+        assert!(!asks[other].finished());
+
+        assert!(
+            update(root.path(), id, |current| {
+                let mut next = current.clone();
+                next.thaw_done = true;
+                Some(Some(next))
+            })
+            .unwrap()
+        );
+        record(root.path(), "20260103", &[], true, 9).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path(root.path())).unwrap()).unwrap();
+        assert_eq!(saved["later_store_field"], written["later_store_field"]);
+        assert_eq!(
+            saved["asks"][id]["later_ask_field"],
+            written["asks"][id]["later_ask_field"]
+        );
+        assert_eq!(saved["asks"][id]["thaw_done"], true);
+        assert_eq!(
+            saved["asks"][other]["later_step"],
+            written["asks"][other]["later_step"]
+        );
+        assert_eq!(saved["asks"].as_object().unwrap().len(), 3);
     }
 
     #[test]
