@@ -1400,6 +1400,7 @@ fn validate(
 mod tests {
     mod activity_lifecycle;
     mod activity_recovery;
+    mod item_grouping;
     #[cfg(all(test, feature = "full-tests"))]
     mod search_indexing_observations;
     #[cfg(all(test, feature = "full-tests"))]

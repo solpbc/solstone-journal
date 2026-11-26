@@ -292,10 +292,6 @@ pub enum CoalesceScope {
     /// Continuous live or spoken-audio stream: coalesces across segments within
     /// `GAP_THRESHOLD_SECONDS` with `END_HYSTERESIS_SEGMENTS`.
     ContinuousStream,
-    /// Multi-part item or thread sharing an explicit group key (e.g. a written
-    /// thread id or multi-tile document import): coalesces only with the same
-    /// group key on the same day, ending immediately on a different item.
-    GroupedItem(String),
     /// Standalone point-in-time item (single email, photo, screenshot, vault
     /// note, or document): never merges into a preceding or following item.
     DiscreteItem,
@@ -456,24 +452,14 @@ impl ActivityStateMachine {
         scope: &CoalesceScope,
     ) -> Vec<Value> {
         let mut changes = Vec::new();
-        let scope_boundary = self
-            .last_scope
-            .as_ref()
-            .is_some_and(|prev| match (prev, scope) {
-                (CoalesceScope::DiscreteItem, _) | (_, CoalesceScope::DiscreteItem) => true,
-                (CoalesceScope::GroupedItem(a), CoalesceScope::GroupedItem(b)) => a != b,
-                (CoalesceScope::GroupedItem(_), CoalesceScope::ContinuousStream)
-                | (CoalesceScope::ContinuousStream, CoalesceScope::GroupedItem(_)) => true,
-                (CoalesceScope::ContinuousStream, CoalesceScope::ContinuousStream) => false,
-            });
-        let same_group_same_day = matches!(
-            (&self.last_scope, scope),
-            (Some(CoalesceScope::GroupedItem(a)), CoalesceScope::GroupedItem(b))
-                if a == b && self.last_segment_day.as_deref() == Some(day)
-        );
+        // A standalone item never shares an activity with what came before
+        // it, nor with what follows.
+        let scope_boundary = self.last_scope.as_ref().is_some_and(|prev| {
+            *prev == CoalesceScope::DiscreteItem || *scope == CoalesceScope::DiscreteItem
+        });
         if scope_boundary {
             changes.extend(self.end_all(segment, "ended_item_boundary", created_at));
-        } else if !same_group_same_day && self.should_reset(segment, day, previous) {
+        } else if self.should_reset(segment, day, previous) {
             changes.extend(self.end_all(segment, "ended_gap", created_at));
         }
         self.last_scope = Some(scope.clone());
@@ -2333,7 +2319,7 @@ mod tests {
         }
 
         #[test]
-        fn discrete_items_never_merge_while_same_group_items_coalesce() {
+        fn discrete_items_never_merge_with_their_neighbours() {
             use crate::activity_state::{ActivityStateMachine, CoalesceScope};
             let mut machine = ActivityStateMachine::default();
             let sense_a = json!({
@@ -2372,16 +2358,6 @@ mod tests {
             assert_eq!(done.len(), 2);
             assert_eq!(done[0]["segments"], json!(["100000_0"]));
             assert_eq!(done[1]["segments"], json!(["100400_0"]));
-
-            // Two turns sharing a GroupedItem(thread_id) coalesce even 45 minutes apart.
-            let mut grouped = ActivityStateMachine::default();
-            let thread = CoalesceScope::GroupedItem("thread:t42".to_owned());
-            grouped.update_with_scope(&sense_a, "090000_0", "20210514", None, 1, &thread);
-            grouped.update_with_scope(&sense_b, "094500_0", "20210514", None, 2, &thread);
-            grouped.close_active("094500_0", 3);
-            let merged = grouped.completed_activities();
-            assert_eq!(merged.len(), 1);
-            assert_eq!(merged[0]["segments"], json!(["090000_0", "094500_0"]));
         }
 
         #[test]

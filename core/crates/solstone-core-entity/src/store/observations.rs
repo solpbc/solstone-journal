@@ -848,8 +848,11 @@ pub fn apply_observation_change(
                 return Ok(ObservationWriteOutcome::NoOp);
             }
 
-            let mut seen_live: std::collections::BTreeSet<(String, Option<String>)> = parsed
-                .live_rows()
+            // Retired rows count too: a note the owner removed is not written
+            // again because the same evidence was read again.
+            let mut seen: std::collections::BTreeSet<(String, Option<String>)> = parsed
+                .full_rows
+                .iter()
                 .map(|r| {
                     (
                         normalize_observation_content(&r.content),
@@ -871,7 +874,7 @@ pub fn apply_observation_change(
                     .as_deref()
                     .and_then(normalize_day)
                     .map(solstone_core_time::day_key);
-                if seen_live.insert((norm, sd_key)) {
+                if seen.insert((norm, sd_key)) {
                     deduped.push(incoming);
                 }
             }

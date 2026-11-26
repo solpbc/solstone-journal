@@ -2172,8 +2172,7 @@ fn replay_activity_state_selected(
         // A live stream's activities are written once its evidence settles,
         // from its day's capture-order rebuild; here the days are only marked.
         let published =
-            if crate::settle::defers_in(&context.journal, &routing_day, stream.as_deref(), refresh)
-            {
+            if crate::settle::defers_in(context, &routing_day, stream.as_deref(), refresh) {
                 crate::settle::note(
                     context,
                     stream.as_deref().unwrap_or(DEFAULT_STREAM),
@@ -2412,8 +2411,7 @@ fn flush_replay_machines(
             .to_owned();
         let changes = machine.close_active(&last_segment, context.now_ms);
         let published =
-            if crate::settle::defers_in(&context.journal, &routing_day, stream.as_deref(), refresh)
-            {
+            if crate::settle::defers_in(context, &routing_day, stream.as_deref(), refresh) {
                 crate::settle::note(
                     context,
                     stream.as_deref().unwrap_or(DEFAULT_STREAM),
@@ -2444,124 +2442,119 @@ fn flush_replay_machines(
     }
 }
 
-fn segment_coalesce_scope(
+/// Whether a segment file holds, or is, something that was spoken.
+pub(crate) fn is_spoken_audio_file(name: &str) -> bool {
+    name == "audio.jsonl" || name.ends_with("_audio.jsonl") || name.starts_with("audio.")
+}
+
+/// How a segment joins its stream's activities. What arrives from an import
+/// or a syncing source is one item to an activity, unless it was spoken: a
+/// recording runs on like any captured stream.
+pub(crate) fn segment_coalesce_scope(
     journal: &std::path::Path,
     segment_dir: &std::path::Path,
     stream: Option<&str>,
 ) -> solstone_core_system::activity_state::CoalesceScope {
     use solstone_core_system::activity_state::CoalesceScope;
-    let Some(stream_name) = stream else {
-        return CoalesceScope::ContinuousStream;
-    };
-    if !solstone_core_segment::is_backfill_stream(journal, stream_name) {
+    if !stream.is_some_and(|name| solstone_core_segment::is_backfill_stream(journal, name)) {
         return CoalesceScope::ContinuousStream;
     }
-    let Ok(entries) = std::fs::read_dir(segment_dir) else {
-        return CoalesceScope::DiscreteItem;
-    };
-    let mut has_spoken_audio = false;
-    let mut group_key: Option<String> = None;
-    for entry in entries.flatten() {
-        let fname_os = entry.file_name();
-        let Some(fname) = fname_os.to_str() else {
-            continue;
-        };
-        if fname == "audio.jsonl"
-            || fname.ends_with("_audio.jsonl")
-            || fname == "imported_audio.jsonl"
-            || fname.starts_with("audio.")
-        {
-            has_spoken_audio = true;
-        }
-        if (fname == "import_kind.json" || fname == "meta.json")
-            && group_key.is_none()
-            && let Ok(bytes) = std::fs::read(entry.path())
-            && let Ok(val) = serde_json::from_slice::<Value>(&bytes)
-        {
-            if let Some(tid) = val
-                .get("thread_id")
-                .or_else(|| val.get("conversation_id"))
-                .or_else(|| val.get("group_id"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                group_key = Some(format!("thread:{tid}"));
-            } else if val
-                .get("tile_count")
-                .and_then(Value::as_u64)
-                .is_some_and(|n| n > 1)
-                && let Some(imp) = val.get("import_id").and_then(Value::as_str)
-            {
-                let src = val
-                    .get("source_path")
-                    .or_else(|| val.get("original_name"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                group_key = Some(format!("tile:{imp}:{src}"));
-            }
-        }
-        if fname == "conversation_transcript.jsonl"
-            && group_key.is_none()
-            && let Ok(text) = std::fs::read_to_string(entry.path())
-            && let Some(first_line) = text.lines().find(|l| !l.trim().is_empty())
-            && let Ok(val) = serde_json::from_str::<Value>(first_line)
-            && let Some(cid) = val
-                .get("thread_id")
-                .or_else(|| val.get("conversation_id"))
-                .or_else(|| val.get("id"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        {
-            group_key = Some(format!("conv:{cid}"));
-        }
-    }
-    if has_spoken_audio {
+    let spoken = std::fs::read_dir(segment_dir).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .any(|entry| entry.file_name().to_str().is_some_and(is_spoken_audio_file))
+    });
+    if spoken {
         CoalesceScope::ContinuousStream
-    } else if let Some(key) = group_key {
-        CoalesceScope::GroupedItem(key)
     } else {
         CoalesceScope::DiscreteItem
     }
 }
 
-fn parse_header_people(line: &str) -> Vec<(String, Option<String>)> {
-    let mut out = Vec::new();
-    for raw_part in line.split([',', ';']) {
-        let part = raw_part.trim();
-        if part.is_empty() {
+/// Whether `stream` holds the owner's email.
+fn holds_email(journal: &std::path::Path, stream: &str) -> bool {
+    stream.starts_with("import.email") || solstone_core_segment::is_email_stream(journal, stream)
+}
+
+/// The people one line of a written exchange names as taking part, each with
+/// the address the line gives for them and how the line places them: who
+/// wrote it and, in email, who it was written to and whose message it
+/// answers. Copied (`cc`) recipients are bystanders and are left out.
+fn written_line_people(line: &Value, email: bool) -> Vec<(String, Option<String>, &'static str)> {
+    let text = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+    let address = |value: Option<&Value>| {
+        text(value)
+            .map(|s| s.to_lowercase())
+            .filter(|s| s.contains('@'))
+    };
+    let mut people = Vec::new();
+    if let Some(sender) = text(
+        line.get("sender")
+            .or_else(|| line.get("author"))
+            .or_else(|| line.get("speaker")),
+    ) {
+        let from = line.get("email");
+        let from = address(from).or_else(|| address(from.and_then(|v| v.get("from"))));
+        people.push((
+            sender,
+            from,
+            solstone_core_talent_runtime::participation::EXCHANGE_SENDER_CONTEXT,
+        ));
+    }
+    if !email {
+        return people;
+    }
+    let addresses = line
+        .get("email")
+        .and_then(|e| e.get("to_addresses"))
+        .and_then(Value::as_array);
+    for (index, label) in line
+        .get("to")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let Some(label) = text(Some(label)) else {
             continue;
-        }
-        if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>'))
-            && lt < gt
-        {
-            let name_part = part[..lt].trim().trim_matches('"').trim();
-            let email_part = part[lt + 1..gt].trim().to_lowercase();
-            let display = if !name_part.is_empty() {
-                name_part.to_owned()
-            } else {
-                email_part.clone()
-            };
-            if !display.is_empty() {
-                out.push((
-                    display,
-                    (!email_part.is_empty() && email_part.contains('@')).then_some(email_part),
-                ));
-            }
-        } else if part.contains('@') && !part.contains(' ') {
-            let email_part = part.trim_matches(['<', '>', '"']).to_lowercase();
-            if !email_part.is_empty() {
-                out.push((email_part.clone(), Some(email_part)));
-            }
-        } else {
-            let clean = part.trim_matches('"').trim();
-            if !clean.is_empty() && clean.chars().any(char::is_alphabetic) {
-                out.push((clean.to_owned(), None));
-            }
+        };
+        let to = address(addresses.and_then(|list| list.get(index)))
+            .or_else(|| address(Some(&Value::String(label.clone()))));
+        people.push((
+            label,
+            to,
+            solstone_core_talent_runtime::participation::EXCHANGE_RECIPIENT_CONTEXT,
+        ));
+    }
+    if let Some(reply) = line.get("reply_to").filter(|v| v.is_object()) {
+        let from = address(reply.get("from"));
+        if let Some(name) = text(reply.get("author")).or_else(|| from.clone()) {
+            people.push((
+                name,
+                from,
+                solstone_core_talent_runtime::participation::EXCHANGE_ANSWERED_CONTEXT,
+            ));
         }
     }
-    out
+    people
+}
+
+/// Every line of a segment's written exchange, without its header.
+fn written_exchange_lines(segment_dir: &std::path::Path) -> Vec<Value> {
+    std::fs::read_to_string(segment_dir.join("conversation_transcript.jsonl"))
+        .map(|text| {
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter(|line| line.get("schema").is_none())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn populate_backfill_activity_defaults(
@@ -2613,6 +2606,19 @@ fn populate_backfill_activity_defaults(
     owner_names.insert("assistant".to_owned());
     owner_names.insert("system".to_owned());
     owner_names.insert("your agent".to_owned());
+    // The name the owner gave the journal counts before the journal has made
+    // an entity of them.
+    if let Ok(bytes) = std::fs::read(journal.join("config/journal.json"))
+        && let Ok(config) = serde_json::from_slice::<Value>(&bytes)
+        && let Some(name) = config
+            .get("identity")
+            .and_then(|identity| identity.get("name"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+    {
+        owner_names.insert(name.to_lowercase());
+    }
     if let Ok(Some(principal)) = solstone_core_entity::read_journal_principal(journal) {
         if let Some(name) = principal.get("name").and_then(Value::as_str) {
             owner_names.insert(name.trim().to_lowercase());
@@ -2756,11 +2762,11 @@ fn populate_backfill_activity_defaults(
         true
     };
 
-    let is_email_stream = stream == "email"
-        || stream.starts_with("import.email")
-        || stream.starts_with("import.mbox")
-        || stream.starts_with("import.eml")
-        || solstone_core_segment::is_email_stream(journal, stream);
+    let is_email_stream = holds_email(journal, stream);
+    // An assistant's side of an imported chat is not someone the owner met.
+    let is_assistant_chat = ["import.chatgpt", "import.claude", "import.gemini"]
+        .iter()
+        .any(|prefix| stream.starts_with(prefix));
 
     for seg in &segments {
         let Some(seg_dir) = find_segment_dir(journal, day, seg, Some(stream)) else {
@@ -2769,196 +2775,63 @@ fn populate_backfill_activity_defaults(
         let has_image = seg_dir.join("image_transcript.md").is_file();
         let has_screenshot = seg_dir.join("screenshot_transcript.md").is_file();
         let is_real_photo = has_image && !has_screenshot;
-        let mut is_written_exchange = is_email_stream;
         let mut is_spoken = false;
         let mut seg_has_header_corresponded = false;
 
-        if let Ok(bytes) = std::fs::read(seg_dir.join("import_kind.json"))
-            && let Ok(val) = serde_json::from_slice::<Value>(&bytes)
-            && matches!(
-                val.get("kind").and_then(Value::as_str),
-                Some("messages" | "email" | "chat")
-            )
-        {
-            is_written_exchange = true;
-        }
-
-        if let Ok(entries) = std::fs::read_dir(&seg_dir) {
-            let mut speaker_counts: BTreeMap<String, usize> = BTreeMap::new();
-            for entry in entries.flatten() {
-                let fname_os = entry.file_name();
-                let Some(fname) = fname_os.to_str() else {
-                    continue;
-                };
-                if fname == "audio.jsonl"
-                    || fname.ends_with("_audio.jsonl")
-                    || fname == "imported_audio.jsonl"
-                {
-                    is_spoken = true;
-                    if let Ok(text) = std::fs::read_to_string(entry.path()) {
-                        for line in text.lines().filter(|l| !l.trim().is_empty()) {
-                            if let Ok(val) = serde_json::from_str::<Value>(line)
-                                && let Some(spk) = val
-                                    .get("speaker")
-                                    .and_then(Value::as_str)
-                                    .map(str::trim)
-                                    .filter(|s| !s.is_empty())
-                            {
-                                *speaker_counts.entry(spk.to_owned()).or_default() += 1;
-                            }
-                        }
-                    }
-                } else if fname == "conversation_transcript.jsonl"
-                    && !stream.starts_with("import.chatgpt")
-                    && !stream.starts_with("import.claude")
-                    && !stream.starts_with("import.gemini")
-                {
-                    is_written_exchange = true;
-                    if let Ok(text) = std::fs::read_to_string(entry.path()) {
-                        for line in text.lines().filter(|l| !l.trim().is_empty()) {
-                            if let Ok(val) = serde_json::from_str::<Value>(line) {
-                                if val.get("schema").is_some() {
-                                    continue;
-                                }
-                                if let Some(sender) = val
-                                    .get("sender")
-                                    .or_else(|| val.get("author"))
-                                    .or_else(|| val.get("speaker"))
-                                    .and_then(Value::as_str)
-                                    .map(str::trim)
-                                    .filter(|s| !s.is_empty())
-                                {
-                                    let email = val
-                                        .get("email")
-                                        .and_then(|v| {
-                                            v.as_str()
-                                                .or_else(|| v.get("from").and_then(Value::as_str))
-                                        })
-                                        .map(|s| s.trim().to_lowercase());
-                                    if upsert(
-                                        sender.to_owned(),
-                                        email,
-                                        "corresponded",
-                                        "transcript",
-                                        1.0,
-                                        "Corresponded in written exchange.".to_owned(),
-                                    ) {
-                                        seg_has_header_corresponded = true;
-                                    }
-                                }
-                                // Active email correspondents: `to` recipients and answered-message
-                                // author. Passive `cc` bystanders are intentionally excluded.
-                                if is_email_stream {
-                                    let to_addrs: Vec<Option<String>> = val
-                                        .get("email")
-                                        .and_then(|e| e.get("to_addresses"))
-                                        .and_then(Value::as_array)
-                                        .into_iter()
-                                        .flatten()
-                                        .map(|v| {
-                                            v.as_str()
-                                                .map(|s| s.trim().to_lowercase())
-                                                .filter(|s| s.contains('@'))
-                                        })
-                                        .collect();
-                                    if let Some(to_list) = val.get("to").and_then(Value::as_array) {
-                                        for (idx, recipient) in to_list.iter().enumerate() {
-                                            let Some(raw) = recipient
-                                                .as_str()
-                                                .map(str::trim)
-                                                .filter(|s| !s.is_empty())
-                                            else {
-                                                continue;
-                                            };
-                                            let addr = to_addrs
-                                                .get(idx)
-                                                .cloned()
-                                                .flatten()
-                                                .or_else(|| {
-                                                    raw.contains('@').then(|| raw.to_lowercase())
-                                                });
-                                            if upsert(
-                                                raw.to_owned(),
-                                                addr,
-                                                "corresponded",
-                                                "transcript",
-                                                1.0,
-                                                "Corresponded in email.".to_owned(),
-                                            ) {
-                                                seg_has_header_corresponded = true;
-                                            }
-                                        }
-                                    }
-                                    if let Some(reply) =
-                                        val.get("reply_to").and_then(Value::as_object)
-                                    {
-                                        let r_addr = reply
-                                            .get("from")
-                                            .and_then(Value::as_str)
-                                            .map(|s| s.trim().to_lowercase())
-                                            .filter(|s| s.contains('@'));
-                                        let r_name = reply
-                                            .get("author")
-                                            .and_then(Value::as_str)
-                                            .map(str::trim)
-                                            .filter(|s| !s.is_empty())
-                                            .map(str::to_owned)
-                                            .or_else(|| r_addr.clone());
-                                        if let Some(name) = r_name
-                                            && upsert(
-                                                name,
-                                                r_addr,
-                                                "corresponded",
-                                                "transcript",
-                                                1.0,
-                                                "Corresponded in email reply.".to_owned(),
-                                            )
-                                        {
-                                            seg_has_header_corresponded = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (fname.ends_with("_transcript.md") || fname == "transcript.md")
-                    && let Ok(file) = std::fs::File::open(entry.path())
-                {
-                    use std::io::BufRead;
-                    for line in std::io::BufReader::new(file).lines().take(40).flatten() {
-                        let trimmed = line.trim();
-                        for prefix in ["From:", "To:", "**From:**", "**To:**"] {
-                            if let Some(rest) = trimmed.strip_prefix(prefix) {
-                                is_written_exchange = true;
-                                for (person_name, email) in parse_header_people(rest) {
-                                    if upsert(
-                                        person_name,
-                                        email,
-                                        "corresponded",
-                                        "transcript",
-                                        1.0,
-                                        "Corresponded in message.".to_owned(),
-                                    ) {
-                                        seg_has_header_corresponded = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
+        // Who corresponded is read from an exchange's own record of who wrote
+        // to whom, never from the text of a note or a document: a line that
+        // looks like a mail header there is something the owner kept.
+        if !is_assistant_chat {
+            for line in written_exchange_lines(&seg_dir) {
+                for (name, address, placed) in written_line_people(&line, is_email_stream) {
+                    seg_has_header_corresponded |= upsert(
+                        name,
+                        address,
+                        "corresponded",
+                        "transcript",
+                        1.0,
+                        placed.to_owned(),
+                    );
                 }
             }
-            for (spk, count) in speaker_counts {
-                let role = if count >= 2 { "attendee" } else { "heard" };
-                let conf = if count >= 2 { 0.95 } else { 0.9 };
-                let _ = upsert(
-                    spk,
-                    None,
-                    role,
-                    "speaker_label",
-                    conf,
-                    "Spoke in recorded conversation.".to_owned(),
-                );
+        }
+
+        let mut speaker_counts: BTreeMap<String, usize> = BTreeMap::new();
+        for entry in std::fs::read_dir(&seg_dir).into_iter().flatten().flatten() {
+            let fname_os = entry.file_name();
+            let Some(fname) = fname_os.to_str().filter(|name| is_spoken_audio_file(name)) else {
+                continue;
+            };
+            is_spoken = true;
+            if !fname.ends_with(".jsonl") {
+                continue;
             }
+            for line in std::fs::read_to_string(entry.path())
+                .unwrap_or_default()
+                .lines()
+            {
+                if let Ok(val) = serde_json::from_str::<Value>(line)
+                    && let Some(spk) = val
+                        .get("speaker")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                {
+                    *speaker_counts.entry(spk.to_owned()).or_default() += 1;
+                }
+            }
+        }
+        for (spk, count) in speaker_counts {
+            let role = if count >= 2 { "attendee" } else { "heard" };
+            let conf = if count >= 2 { 0.95 } else { 0.9 };
+            let _ = upsert(
+                spk,
+                None,
+                role,
+                "speaker_label",
+                conf,
+                "Spoke in recorded conversation.".to_owned(),
+            );
         }
 
         if let Ok(bytes) = std::fs::read(seg_dir.join("talents/sense.json"))
@@ -2985,11 +2858,7 @@ fn populate_backfill_activity_defaults(
                     .to_owned();
                 if is_real_photo && level != "low" {
                     let _ = upsert(name.to_owned(), None, "visible", "screen", 0.9, ctx);
-                } else if is_written_exchange
-                    && is_email_stream
-                    && level == "high"
-                    && !seg_has_header_corresponded
-                {
+                } else if is_email_stream && level == "high" && !seg_has_header_corresponded {
                     let _ = upsert(
                         name.to_owned(),
                         None,
@@ -3152,11 +3021,39 @@ pub(crate) fn ensure_historical_day_activities(
         )?;
     }
     if solstone_core_segment::day_is_backfill_only(&context.journal, &context.day) {
-        consolidate_historical_backfill_span(&context.journal);
+        consolidate_historical_backfill_span(&context.journal, context.now_ms)?;
     }
     Ok(())
 }
 
+/// Mailbox names that belong to a role or a machine, never to one person.
+const ROLE_MAILBOXES: [&str; 22] = [
+    "automated",
+    "billing",
+    "bounce",
+    "bounces",
+    "donotreply",
+    "hello",
+    "help",
+    "info",
+    "mailer",
+    "marketing",
+    "news",
+    "newsletter",
+    "noreply",
+    "notification",
+    "notifications",
+    "postmaster",
+    "receipts",
+    "reply",
+    "sales",
+    "support",
+    "team",
+    "updates",
+];
+
+/// Whether a sender is a mailing, a service or a shared mailbox rather than
+/// one person: by what it calls itself, or by the mailbox it writes from.
 fn is_bulk_or_automated_actor(name: &str, email: Option<&str>) -> bool {
     let lower_name = name.trim().to_ascii_lowercase();
     if lower_name.is_empty()
@@ -3166,34 +3063,30 @@ fn is_bulk_or_automated_actor(name: &str, email: Option<&str>) -> bool {
         )
         || lower_name.contains("newsletter")
         || lower_name.contains("do not reply")
+        // "Sarah from Acme", "Sam via LinkedIn": a service signing as a person.
+        || lower_name.contains(" from ")
+        || lower_name.contains(" via ")
     {
         return true;
     }
-    if let Some(em) = email.map(|e| e.trim().to_ascii_lowercase()) {
-        for needle in [
-            "noreply",
-            "no-reply",
-            "donotreply",
-            "mailer-daemon",
-            "postmaster@",
-            "notifications@",
-            "newsletter@",
-            "substack.com",
-            "receipts@",
-            "billing@",
-            "automated@",
-        ] {
-            if em.contains(needle) {
-                return true;
-            }
-        }
-    }
-    false
+    let Some(address) = email.map(|e| e.trim().to_ascii_lowercase()) else {
+        return false;
+    };
+    let (mailbox, domain) = address.split_once('@').unwrap_or((address.as_str(), ""));
+    domain.ends_with("substack.com")
+        || mailbox.contains("mailer-daemon")
+        || mailbox
+            .replace("no-reply", "noreply")
+            .replace("do-not-reply", "donotreply")
+            .split(['.', '-', '_', '+'])
+            .any(|word| ROLE_MAILBOXES.contains(&word))
 }
 
+/// What the span consolidation reads, as a cheap stamp: it runs again only
+/// when one of these files changed. The date is no part of it, so a new day
+/// alone redoes nothing.
 fn backfill_span_fingerprint(
     journal: &std::path::Path,
-    today_str: &str,
     backfill_days: &[String],
     enabled_facets: &[String],
 ) -> Value {
@@ -3209,11 +3102,10 @@ fn backfill_span_fingerprint(
             }
         }
     };
-    stat_path(&journal.join("entities/identity_map.json"));
     stat_path(&journal.join("config/journal.json"));
     for facet in enabled_facets {
         let facet_dir = journal.join("facets").join(facet);
-        stat_path(&facet_dir.join("hidden_names.json"));
+        stat_path(&facet_dir.join(solstone_core_entity::hidden_names::HIDDEN_NAMES_FILE));
         stat_path(&solstone_core_facets::facet_declaration_file(&facet_dir));
     }
     for day in backfill_days {
@@ -3236,7 +3128,6 @@ fn backfill_span_fingerprint(
         }
     }
     serde_json::json!({
-        "today": today_str,
         "day_count": backfill_days.len(),
         "first_day": backfill_days.first(),
         "last_day": backfill_days.last(),
@@ -3246,57 +3137,130 @@ fn backfill_span_fingerprint(
     })
 }
 
+/// A person is promoted once they took part on this many days of history. One
+/// day's mail is one occasion, however many messages it held.
+const SPAN_PERSON_MIN_DAYS: usize = 2;
+/// A company or project is named in passing far more often than a person
+/// takes part, so it needs more sightings, on more than one day.
+const SPAN_ORGANIZATION_MIN_EPISODES: usize = 3;
+const SPAN_ORGANIZATION_MIN_DAYS: usize = 2;
+/// A tool shows up everywhere it is used; only a lasting one is kept.
+const SPAN_TOOL_MIN_EPISODES: usize = 5;
+const SPAN_TOOL_MIN_DAYS: usize = 3;
+/// The most dated notes one consolidation gives an entity: its latest days.
+const SPAN_NOTES_PER_ENTITY: usize = 24;
+
+/// Whether a refused entity write is the store saying no (the name is taken,
+/// blocked, hidden, merged or deleted), which is an answer and not a failure.
+fn entity_write_declined(error: &solstone_core_facets::FacetEntityWriteError) -> bool {
+    use solstone_core_entity::EntityWriteError as Entity;
+    use solstone_core_facets::FacetEntityWriteError as Facet;
+    matches!(
+        error,
+        Facet::EntityExists { .. }
+            | Facet::EntityBlocked { .. }
+            | Facet::EntityNotFound { .. }
+            | Facet::AkaConflict { .. }
+            | Facet::IdentityMapLoser { .. }
+            | Facet::RelationshipOccupied { .. }
+            | Facet::EntityWrite(
+                Entity::IdentityMerged { .. }
+                    | Entity::IdentityDeleted { .. }
+                    | Entity::EntityHidden { .. }
+                    | Entity::InvalidIdentity { .. }
+            )
+    )
+}
+
+/// The address each correspondent of one activity wrote from or was written
+/// to, by name, read from the activity's own written exchanges.
+fn activity_addresses(
+    journal: &std::path::Path,
+    day: &str,
+    activity: &Map<String, Value>,
+) -> BTreeMap<String, String> {
+    let mut addresses = BTreeMap::new();
+    let Some(stream) = activity.get("stream").and_then(Value::as_str) else {
+        return addresses;
+    };
+    let email = holds_email(journal, stream);
+    for segment in activity
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let Some(dir) = find_segment_dir(journal, day, segment, Some(stream)) else {
+            continue;
+        };
+        for line in written_exchange_lines(&dir) {
+            for (name, address, _) in written_line_people(&line, email) {
+                if let Some(address) = address {
+                    addresses
+                        .entry(solstone_core_facets::hidden_names::hidden_name_key(&name))
+                        .or_insert(address);
+                }
+            }
+        }
+    }
+    addresses
+}
+
 /// Deterministic span-aware entity promotion, dated observation seeding, and
-/// speculative-facet aggregation across historical backfill days (`day < today`
-/// and `day_is_backfill_only`).
-pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
+/// speculative-facet aggregation across the days that arrived as history
+/// (`day < today` and `day_is_backfill_only`).
+///
+/// It runs only when what it reads has changed, and whatever it could not
+/// write is returned, with no stamp left, so the next call tries again.
+pub(crate) fn consolidate_historical_backfill_span(
+    journal: &std::path::Path,
+    now_ms: i64,
+) -> Result<(), String> {
     let zone = solstone_core_journal_config::owner_zone(journal);
-    let now_zdt = jiff::Timestamp::now().to_zoned_datetime(zone.clone());
-    let today_date = now_zdt.date();
+    let now = jiff::Timestamp::from_millisecond(now_ms).map_err(|error| error.to_string())?;
+    let today_date = zone.to_datetime(now).date();
     let today_str = solstone_core_time::day_key(today_date);
 
-    let Ok(all_day_dirs) = solstone_core_journal_io::day_dirs(journal) else {
-        return;
-    };
-    let backfill_days: Vec<String> = all_day_dirs
+    let mut backfill_days: Vec<String> = solstone_core_journal_io::day_dirs(journal)
+        .map_err(|error| error.to_string())?
         .into_keys()
         .filter(|day| day < &today_str && solstone_core_segment::day_is_backfill_only(journal, day))
         .collect();
+    // In day order: the listing has none, and the stamp and the notes kept
+    // for an entity both depend on it.
+    backfill_days.sort();
     if backfill_days.is_empty() {
-        return;
+        return Ok(());
     }
 
     let enabled_facets = observe_declared_facet_inventory(journal)
-        .map(|inv| inv.enabled)
-        .unwrap_or_default();
+        .map_err(|error| error.to_string())?
+        .enabled;
     let stamp_path = journal.join("awareness/backfill_span_state.json");
-    let pre_fp = backfill_span_fingerprint(journal, &today_str, &backfill_days, &enabled_facets);
+    let pre_fp = backfill_span_fingerprint(journal, &backfill_days, &enabled_facets);
     if let Ok(bytes) = std::fs::read(&stamp_path)
         && let Ok(saved) = serde_json::from_slice::<Value>(&bytes)
         && saved == pre_fp
     {
-        return;
+        return Ok(());
     }
 
-    if let Ok(candidates) = solstone_core_facets::aggregate_speculative_facets_with_backfill(
+    let mut failures: Vec<String> = Vec::new();
+    match solstone_core_facets::aggregate_speculative_facets_with_backfill(
         journal,
         today_date,
         solstone_core_facets::FACET_CANDIDATE_MIN_SEGMENTS,
-    ) && !candidates.is_empty()
-    {
-        let _ = solstone_core_facets::record_facet_candidates(journal, &today_str, &candidates);
-    }
-
-    if enabled_facets.is_empty() {
-        let post_fp =
-            backfill_span_fingerprint(journal, &today_str, &backfill_days, &enabled_facets);
-        let _ = std::fs::create_dir_all(journal.join("awareness"));
-        let _ = solstone_core_journal_io::write_text(
-            &stamp_path,
-            &serde_json::to_string(&post_fp).unwrap_or_default(),
-            solstone_core_journal_io::AtomicWriteOptions::default(),
-        );
-        return;
+    ) {
+        Ok(candidates) if candidates.is_empty() => {}
+        Ok(candidates) => {
+            if let Err(error) =
+                solstone_core_facets::record_facet_candidates(journal, &today_str, &candidates)
+            {
+                failures.push(format!("facet candidates: {error}"));
+            }
+        }
+        Err(error) => failures.push(format!("facet candidates: {error}")),
     }
 
     let mut owner_or_blocked = solstone_core_entity_matching::ExclusionKeys::default();
@@ -3321,19 +3285,26 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
             }
         }
     }
-    if let Ok(entities) = solstone_core_entity::every_journal_entity(journal) {
-        for entity in entities {
-            if entity.is_principal() || entity.is_blocked() {
-                let res = entity.resolution_entity();
-                owner_or_blocked.add_candidate(
-                    &solstone_core_entity_matching::EntityNameCandidate {
-                        id: res.id,
-                        name: res.name,
-                        aka: res.aka,
-                        emails: res.emails,
-                    },
-                );
+    if !enabled_facets.is_empty() {
+        match solstone_core_entity::every_journal_entity(journal) {
+            Ok(entities) => {
+                for entity in entities {
+                    if entity.is_principal() || entity.is_blocked() {
+                        let res = entity.resolution_entity();
+                        owner_or_blocked.add_candidate(
+                            &solstone_core_entity_matching::EntityNameCandidate {
+                                id: res.id,
+                                name: res.name,
+                                aka: res.aka,
+                                emails: res.emails,
+                            },
+                        );
+                    }
+                }
             }
+            // Without the owner and the blocked names nobody can be promoted
+            // safely, so no facet is read.
+            Err(error) => return Err(format!("entities: {error}")),
         }
     }
 
@@ -3347,91 +3318,45 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
         day_notes: BTreeMap<String, String>,
     }
 
-    let mut day_emails_by_day: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-    for day in &backfill_days {
-        let mut day_emails: BTreeMap<String, String> = BTreeMap::new();
-        if let Ok(segs) = iter_segments(journal, PathOrDay::Day(day)) {
-            for seg in segs {
-                if solstone_core_segment::is_transactions_segment(&seg)
-                    || is_deleted_segment(seg.path())
-                {
+    for facet in &enabled_facets {
+        let hides = match solstone_core_facets::hidden_names::facet_hidden_keys(journal, facet) {
+            Ok(hides) => hides,
+            Err(error) => {
+                failures.push(format!("{facet}: {error}"));
+                continue;
+            }
+        };
+        let scoped =
+            match solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true) {
+                Ok(scoped) => scoped,
+                Err(error) => {
+                    failures.push(format!("{facet}: {error}"));
                     continue;
                 }
-                if let Ok(entries) = std::fs::read_dir(seg.path()) {
-                    for entry in entries.flatten() {
-                        let fname_os = entry.file_name();
-                        let Some(fname) = fname_os.to_str() else {
-                            continue;
-                        };
-                        if (fname.ends_with("_transcript.md") || fname == "transcript.md")
-                            && let Ok(file) = std::fs::File::open(entry.path())
-                        {
-                            use std::io::BufRead;
-                            for line in std::io::BufReader::new(file).lines().take(30).flatten() {
-                                let trimmed = line.trim();
-                                for prefix in ["From:", "To:", "**From:**", "**To:**"] {
-                                    if let Some(rest) = trimmed.strip_prefix(prefix) {
-                                        for (pname, pemail) in parse_header_people(rest) {
-                                            if let Some(em) = pemail {
-                                                day_emails.insert(
-                                                    solstone_core_facets::hidden_names::hidden_name_key(&pname),
-                                                    em,
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        day_emails_by_day.insert(day.clone(), day_emails);
-    }
-
-    for facet in &enabled_facets {
-        let Ok(hides) = solstone_core_facets::hidden_names::facet_hidden_keys(journal, facet)
-        else {
-            continue;
-        };
-        let Ok(scoped) =
-            solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true)
-        else {
-            continue;
-        };
+            };
         let mut detached_or_blocked = solstone_core_entity_matching::ExclusionKeys::default();
         let mut already_attached = solstone_core_entity_matching::ExclusionKeys::default();
         for item in &scoped {
-            let name = item
-                .identity
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            let aka: Vec<String> = item
-                .identity
-                .get("aka")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect();
-            let emails: Vec<String> = item
-                .identity
-                .get("emails")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect();
+            let strings = |key: &str| -> Vec<String> {
+                item.identity
+                    .get(key)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            };
             let cand = solstone_core_entity_matching::EntityNameCandidate {
                 id: Some(item.entity_id.clone()),
-                name,
-                aka,
-                emails,
+                name: item
+                    .identity
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                aka: strings("aka"),
+                emails: strings("emails"),
             };
             if item.detached || item.blocked {
                 detached_or_blocked.add_candidate(&cand);
@@ -3440,13 +3365,40 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
             }
         }
 
-        let mut raw_groups: BTreeMap<(String, String), SpanCandidate> = BTreeMap::new();
-        let mut email_to_key: BTreeMap<String, (String, String)> = BTreeMap::new();
-        let empty_emails: BTreeMap<String, String> = BTreeMap::new();
+        // The addresses of the attached entity that goes by exactly `name`.
+        let attached_addresses = |name: &str| -> Option<BTreeSet<String>> {
+            let key = solstone_core_facets::hidden_names::hidden_name_key(name);
+            let strings = |item: &Value, field: &str| -> Vec<String> {
+                item.get(field)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|s| s.trim().to_lowercase())
+                    .collect()
+            };
+            scoped
+                .iter()
+                .filter(|item| !item.detached && !item.blocked)
+                .find(|item| {
+                    item.identity
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .into_iter()
+                        .map(str::to_owned)
+                        .chain(strings(&item.identity, "aka"))
+                        .any(|held| {
+                            solstone_core_facets::hidden_names::hidden_name_key(&held) == key
+                        })
+                })
+                .map(|item| strings(&item.identity, "emails").into_iter().collect())
+        };
+
+        // A person is one address where an exchange gives one, and one name
+        // where none does: two senders who share a display name stay two.
+        let mut groups: BTreeMap<(String, String), SpanCandidate> = BTreeMap::new();
 
         for day in &backfill_days {
-            let day_emails = day_emails_by_day.get(day).unwrap_or(&empty_emails);
-
             if let Ok(activities) =
                 solstone_core_facets::load_activity_records_readable(journal, facet, day, false)
             {
@@ -3466,6 +3418,7 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                     let Some(parts) = act.get("participation").and_then(Value::as_array) else {
                         continue;
                     };
+                    let addresses = activity_addresses(journal, day, &act);
                     for part in parts.iter().filter_map(Value::as_object) {
                         let Some(name) = part
                             .get("name")
@@ -3483,7 +3436,7 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                             continue;
                         }
                         let name_key = solstone_core_facets::hidden_names::hidden_name_key(name);
-                        let email = day_emails.get(&name_key).cloned();
+                        let email = addresses.get(&name_key).cloned();
                         if owner_or_blocked.contains(name)
                             || hides.is_hidden(name)
                             || detached_or_blocked.contains(name)
@@ -3491,34 +3444,31 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                         {
                             continue;
                         }
-                        let group_key = if let Some(ref em) = email
-                            && let Some(existing_key) = email_to_key.get(em)
-                        {
-                            existing_key.clone()
-                        } else {
-                            let gk = ("person".to_owned(), name_key.clone());
-                            if let Some(ref em) = email {
-                                email_to_key.insert(em.clone(), gk.clone());
-                            }
-                            gk
+                        let person_key = match &email {
+                            Some(address) => format!("<{address}>"),
+                            None => name_key,
                         };
-                        let entry = raw_groups
-                            .entry(group_key)
+                        let entry = groups
+                            .entry(("person".to_owned(), person_key))
                             .or_insert_with(|| SpanCandidate {
                                 entity_type: "Person".to_owned(),
                                 ..Default::default()
                             });
                         *entry.names.entry(name.to_owned()).or_default() += 1;
-                        if let Some(em) = email {
-                            entry.emails.insert(em);
-                        }
+                        entry.emails.extend(email);
                         entry.active_episodes.insert((day.clone(), act_id.clone()));
                         entry.days.insert(day.clone());
                         let note = part
                             .get("context")
                             .and_then(Value::as_str)
                             .map(str::trim)
-                            .filter(|s| !s.is_empty() && *s != "Corresponded in message.")
+                            // What the fill-in wrote for want of a context says
+                            // nothing about the person.
+                            .filter(|s| {
+                                !s.is_empty()
+                                    && !s.starts_with("Corresponded in ")
+                                    && *s != "Spoke in recorded conversation."
+                            })
                             .map(str::to_owned)
                             .unwrap_or_else(|| act_summary.clone());
                         if !note.is_empty() {
@@ -3555,39 +3505,21 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                         "Tool" => centrality == "high",
                         _ => false,
                     };
-                    let name_key = solstone_core_facets::hidden_names::hidden_name_key(name);
-                    let email = (etype == "Person")
-                        .then(|| day_emails.get(&name_key).cloned())
-                        .flatten();
                     if owner_or_blocked.contains(name)
                         || hides.is_hidden(name)
                         || detached_or_blocked.contains(name)
-                        || is_bulk_or_automated_actor(name, email.as_deref())
+                        || is_bulk_or_automated_actor(name, None)
                     {
                         continue;
                     }
-                    let type_lower = etype.to_ascii_lowercase();
-                    let group_key = if let Some(ref em) = email
-                        && let Some(existing_key) = email_to_key.get(em)
-                    {
-                        existing_key.clone()
-                    } else {
-                        let gk = (type_lower, name_key);
-                        if let Some(ref em) = email {
-                            email_to_key.insert(em.clone(), gk.clone());
-                        }
-                        gk
-                    };
-                    let entry = raw_groups
-                        .entry(group_key)
+                    let name_key = solstone_core_facets::hidden_names::hidden_name_key(name);
+                    let entry = groups
+                        .entry((etype.to_ascii_lowercase(), name_key))
                         .or_insert_with(|| SpanCandidate {
                             entity_type: etype.to_owned(),
                             ..Default::default()
                         });
                     *entry.names.entry(name.to_owned()).or_default() += 1;
-                    if let Some(em) = email {
-                        entry.emails.insert(em);
-                    }
                     if qualifies_episode {
                         entry
                             .active_episodes
@@ -3606,7 +3538,37 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
             }
         }
 
-        for cand in raw_groups.into_values() {
+        // A person seen without an address is the one addressed person of
+        // that name. Where two addresses carry the name, nothing says which
+        // of them it was, and it stays apart from both.
+        let mut addressed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for ((kind, key), cand) in &groups {
+            if kind == "person" && key.starts_with('<') {
+                for name in cand.names.keys() {
+                    addressed
+                        .entry(solstone_core_facets::hidden_names::hidden_name_key(name))
+                        .or_default()
+                        .insert(key.clone());
+                }
+            }
+        }
+        for (name_key, keys) in addressed {
+            if let (1, Some(key)) = (keys.len(), keys.first())
+                && let Some(unaddressed) = groups.remove(&("person".to_owned(), name_key))
+                && let Some(person) = groups.get_mut(&("person".to_owned(), key.clone()))
+            {
+                for (name, count) in unaddressed.names {
+                    *person.names.entry(name).or_default() += count;
+                }
+                person.active_episodes.extend(unaddressed.active_episodes);
+                person.days.extend(unaddressed.days);
+                for (day, note) in unaddressed.day_notes {
+                    person.day_notes.entry(day).or_insert(note);
+                }
+            }
+        }
+
+        for cand in groups.into_values() {
             let Some(canonical_name) = cand
                 .names
                 .iter()
@@ -3615,11 +3577,23 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
             else {
                 continue;
             };
-            let is_existing = already_attached.contains(&canonical_name);
+            // Someone the facet already holds needs no promotion, unless the
+            // one it holds writes from other addresses: then this may be
+            // another person of the same name, who has to earn it.
+            let is_existing = already_attached.contains(&canonical_name)
+                && (cand.emails.is_empty()
+                    || attached_addresses(&canonical_name)
+                        .is_none_or(|held| held.is_empty() || !held.is_disjoint(&cand.emails)));
             let meets_promotion = match cand.entity_type.as_str() {
-                "Person" => cand.active_episodes.len() >= 2,
-                "Company" | "Project" => cand.active_episodes.len() >= 3 && cand.days.len() >= 2,
-                "Tool" => cand.active_episodes.len() >= 5 && cand.days.len() >= 3,
+                "Person" => cand.days.len() >= SPAN_PERSON_MIN_DAYS,
+                "Company" | "Project" => {
+                    cand.active_episodes.len() >= SPAN_ORGANIZATION_MIN_EPISODES
+                        && cand.days.len() >= SPAN_ORGANIZATION_MIN_DAYS
+                }
+                "Tool" => {
+                    cand.active_episodes.len() >= SPAN_TOOL_MIN_EPISODES
+                        && cand.days.len() >= SPAN_TOOL_MIN_DAYS
+                }
                 _ => false,
             };
             if !is_existing && !meets_promotion {
@@ -3638,27 +3612,37 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                 });
 
             if !is_existing {
-                match solstone_core_facets::create_facet_entity_if_absent(
+                let created = match solstone_core_facets::create_facet_entity_if_absent(
                     journal,
                     facet,
                     &cand.entity_type,
                     &canonical_name,
                     &latest_desc,
                 ) {
-                    Ok(solstone_core_facets::FacetEntityCreateOutcome::Created { .. }) => {}
+                    Ok(solstone_core_facets::FacetEntityCreateOutcome::Created { .. }) => Ok(()),
                     Ok(solstone_core_facets::FacetEntityCreateOutcome::Exists)
-                    | Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }) => {
-                        if !detached_or_blocked.contains(&canonical_name) {
-                            let _ = solstone_core_facets::attach_or_reactivate_entity(
-                                journal,
-                                facet,
-                                &cand.entity_type,
-                                &canonical_name,
-                                &latest_desc,
-                            );
-                        }
+                    | Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. })
+                        if !detached_or_blocked.contains(&canonical_name) =>
+                    {
+                        solstone_core_facets::attach_or_reactivate_entity(
+                            journal,
+                            facet,
+                            &cand.entity_type,
+                            &canonical_name,
+                            &latest_desc,
+                        )
+                        .map(|_| ())
                     }
-                    Err(_) => continue,
+                    Ok(_) => Ok(()),
+                    Err(error) => Err(error),
+                };
+                match created {
+                    Ok(()) => {}
+                    Err(error) if entity_write_declined(&error) => continue,
+                    Err(error) => {
+                        failures.push(format!("{facet}: {error}"));
+                        continue;
+                    }
                 }
             }
 
@@ -3677,7 +3661,7 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                 .day_notes
                 .iter()
                 .rev()
-                .take(24)
+                .take(SPAN_NOTES_PER_ENTITY)
                 .collect::<Vec<_>>()
                 .into_iter()
                 .rev()
@@ -3685,17 +3669,17 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                 if solstone_core_facets::normalize_observation_content(note).is_empty() {
                     continue;
                 }
-                let obs_ms = solstone_core_entity::journal_day_start_ms(day, &zone)
-                    .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
                 incoming.push(solstone_core_facets::IncomingObservationRow {
                     content: note.clone(),
-                    observed_at: obs_ms,
+                    observed_at: solstone_core_entity::journal_day_start_ms(day, &zone)
+                        .unwrap_or(now_ms),
                     source_day: Some(day.clone()),
                     relation: None,
                 });
             }
             if !incoming.is_empty() {
-                let _ = solstone_core_facets::apply_observation_change(
+                use solstone_core_facets::ObservationWriteError as Refused;
+                match solstone_core_facets::apply_observation_change(
                     journal,
                     facet,
                     &entity_dir,
@@ -3703,73 +3687,110 @@ pub(crate) fn consolidate_historical_backfill_span(journal: &std::path::Path) {
                         rows: incoming,
                         actor: "model",
                     },
-                );
+                ) {
+                    // An entity merged away or deleted takes no notes.
+                    Ok(_) | Err(Refused::Retired { .. } | Refused::EmptyContent) => {}
+                    Err(error) => failures.push(format!("{facet}: {error}")),
+                }
             }
 
-            if let Ok(scoped_now) =
-                solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
-                && let Some(ent) = scoped_now.iter().find(|e| e.entity_dir == entity_dir)
-            {
-                let canonical_slug = solstone_core_entity_matching::entity_slug(&canonical_name);
-                for alias in cand.names.keys() {
-                    if alias != &canonical_name
-                        && alias.split_whitespace().count() >= 2
-                        && solstone_core_entity_matching::entity_slug(alias) != canonical_slug
-                    {
-                        let _ = solstone_core_facets::add_entity_aka(
-                            journal,
-                            facet,
-                            &ent.entity_id,
-                            alias,
-                            serde_json::json!({}),
-                            |_| Ok(()),
-                        );
-                    }
+            let ent = match solstone_core_facets::list_scoped_facet_entities(
+                journal, facet, false, false,
+            ) {
+                Ok(scoped_now) => scoped_now.into_iter().find(|e| e.entity_dir == entity_dir),
+                Err(error) => {
+                    failures.push(format!("{facet}: {error}"));
+                    None
                 }
-                if !cand.emails.is_empty()
-                    && let Ok(_entity_trust) = solstone_core_entity::hold_entity_trust_lock(journal)
-                    && let Ok(Some(snapshot)) =
-                        solstone_core_entity::read_entity_identity(journal, &ent.entity_dir)
+            };
+            let Some(ent) = ent else {
+                continue;
+            };
+            let canonical_slug = solstone_core_entity_matching::entity_slug(&canonical_name);
+            for alias in cand.names.keys() {
+                if alias != &canonical_name
+                    && alias.split_whitespace().count() >= 2
+                    && solstone_core_entity_matching::entity_slug(alias) != canonical_slug
+                    && let Err(error) = solstone_core_facets::add_entity_aka(
+                        journal,
+                        facet,
+                        &ent.entity_id,
+                        alias,
+                        serde_json::json!({}),
+                        |_| Ok(()),
+                    )
+                    && !entity_write_declined(&error)
                 {
-                    let mut updated = snapshot.value().clone();
-                    if let Some(obj) = updated.as_object_mut() {
-                        let mut emails: BTreeSet<String> = obj
-                            .get("emails")
-                            .and_then(Value::as_array)
-                            .into_iter()
-                            .flatten()
-                            .filter_map(Value::as_str)
-                            .map(|s| s.trim().to_lowercase())
-                            .collect();
-                        let before_len = emails.len();
-                        for em in &cand.emails {
-                            emails.insert(em.clone());
-                        }
-                        if emails.len() > before_len {
-                            obj.insert(
-                                "emails".to_owned(),
-                                Value::Array(emails.into_iter().map(Value::String).collect()),
-                            );
-                            let _ = solstone_core_entity::save_entity_identity(
-                                journal,
-                                &ent.entity_id,
-                                &updated,
-                                None,
-                            );
-                        }
-                    }
+                    failures.push(format!("{facet}: {error}"));
                 }
+            }
+            if cand.emails.is_empty() {
+                continue;
+            }
+            let saved = (|| -> Result<(), String> {
+                let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal)
+                    .map_err(|error| error.to_string())?;
+                let Some(snapshot) =
+                    solstone_core_entity::read_entity_identity(journal, &ent.entity_dir)
+                        .map_err(|error| error.to_string())?
+                else {
+                    return Ok(());
+                };
+                let mut updated = snapshot.value().clone();
+                let Some(obj) = updated.as_object_mut() else {
+                    return Ok(());
+                };
+                let mut emails: BTreeSet<String> = obj
+                    .get("emails")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|s| s.trim().to_lowercase())
+                    .collect();
+                let before_len = emails.len();
+                emails.extend(cand.emails.iter().cloned());
+                if emails.len() == before_len {
+                    return Ok(());
+                }
+                obj.insert(
+                    "emails".to_owned(),
+                    Value::Array(emails.into_iter().map(Value::String).collect()),
+                );
+                use solstone_core_entity::EntityWriteError as Refused;
+                match solstone_core_entity::save_entity_identity(
+                    journal,
+                    &ent.entity_id,
+                    &updated,
+                    None,
+                ) {
+                    Ok(_)
+                    | Err(
+                        Refused::EntityHidden { .. }
+                        | Refused::IdentityMerged { .. }
+                        | Refused::IdentityDeleted { .. },
+                    ) => Ok(()),
+                    Err(error) => Err(error.to_string()),
+                }
+            })();
+            if let Err(error) = saved {
+                failures.push(format!("{facet}: {error}"));
             }
         }
     }
 
-    let post_fp = backfill_span_fingerprint(journal, &today_str, &backfill_days, &enabled_facets);
-    let _ = std::fs::create_dir_all(journal.join("awareness"));
-    let _ = solstone_core_journal_io::write_text(
+    if !failures.is_empty() {
+        return Err(failures.join("; "));
+    }
+    let post_fp = backfill_span_fingerprint(journal, &backfill_days, &enabled_facets);
+    std::fs::create_dir_all(journal.join("awareness")).map_err(|error| error.to_string())?;
+    solstone_core_journal_io::write_text(
         &stamp_path,
-        &serde_json::to_string(&post_fp).unwrap_or_default(),
+        &post_fp.to_string(),
         solstone_core_journal_io::AtomicWriteOptions::default(),
-    );
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// End a stream's live activities after the supervisor's idle window.
@@ -5915,6 +5936,26 @@ fn a_held_talent_runs_only_in_its_own_retry() {
 }
 
 #[cfg(test)]
+const SPAN_NOW: i64 = 1_786_615_200_000;
+
+/// One email of the owner's, written to each `(name, address)`, the way the
+/// email source lands it.
+#[cfg(test)]
+fn span_exchange(segment_dir: &std::path::Path, to: &[(&str, &str)]) {
+    std::fs::create_dir_all(segment_dir).unwrap();
+    let (names, addresses): (Vec<&str>, Vec<&str>) = to.iter().copied().unzip();
+    let line = serde_json::json!({
+        "start": "00:00:00", "speaker": "You", "is_owner": true, "to": names, "text": "Body",
+        "email": {"provider": "gmail", "to_addresses": addresses},
+    });
+    std::fs::write(
+        segment_dir.join("conversation_transcript.jsonl"),
+        format!("{}\n{line}\n", serde_json::json!({"source": "email"})),
+    )
+    .unwrap();
+}
+
+#[cfg(test)]
 #[test]
 fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seeds_dated_observations()
  {
@@ -5949,11 +5990,7 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
             .join(day)
             .join("import.email/090000_0");
         std::fs::create_dir_all(&seg).unwrap();
-        std::fs::write(
-            seg.join("email_transcript.md"),
-            "From: Samira Patel <samira.personal@example.com>\nTo: Jordan Hale <jordan@hale.example>\n\nHi!\n",
-        )
-        .unwrap();
+        span_exchange(&seg, &[("Samira Patel", "samira.personal@example.com")]);
         let act_dir = journal.join("facets/personal/activities");
         std::fs::create_dir_all(&act_dir).unwrap();
         std::fs::write(
@@ -6007,14 +6044,10 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
             .join(day)
             .join("import.email/100000_0");
         std::fs::create_dir_all(&seg).unwrap();
-        std::fs::write(
-            seg.join("email_transcript.md"),
-            format!(
-                "From: Samira Patel <samira@acme.example>\nTo: Jordan Hale <jordan@hale.example>, {} <{}>\n\nBody\n",
-                extra_person.0, extra_person.1
-            ),
-        )
-        .unwrap();
+        span_exchange(
+            &seg,
+            &[("Samira Patel", "samira@acme.example"), extra_person],
+        );
 
         let act_dir = journal.join("facets/work/activities");
         std::fs::create_dir_all(&act_dir).unwrap();
@@ -6039,7 +6072,7 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
         .unwrap();
     }
 
-    consolidate_historical_backfill_span(journal);
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
 
     let scoped = solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false)
         .expect("scoped entities");
@@ -6060,7 +6093,7 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
     assert_eq!(scoped_personal[0].entity_id, scoped[0].entity_id);
 
     // Re-running consolidation is idempotent and hits the watermark without duplicating observations.
-    consolidate_historical_backfill_span(journal);
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
 
     let obs = solstone_core_facets::read_live_observations(
         journal,
@@ -6072,4 +6105,339 @@ fn consolidate_historical_backfill_span_promotes_multi_episode_entities_and_seed
     assert_eq!(obs.items.len(), 2);
     assert_eq!(obs.items[0].source_day.as_deref(), Some("20210819"));
     assert_eq!(obs.items[1].source_day.as_deref(), Some("20210510"));
+}
+
+#[cfg(test)]
+fn span_journal() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("config")).unwrap();
+    std::fs::write(
+        root.path().join("config/journal.json"),
+        r#"{"identity":{"name":"Jordan Hale","preferred":"Jordan","timezone":"UTC"}}"#,
+    )
+    .unwrap();
+    solstone_core_facets::create_facet(root.path(), "work", "work", "", "", "", None).unwrap();
+    root
+}
+
+/// One email of the owner's to `name` at `address`, and one activity over it
+/// that names them as corresponded.
+#[cfg(test)]
+fn span_email(
+    journal: &std::path::Path,
+    day: &str,
+    seg: &str,
+    act: &str,
+    name: &str,
+    address: &str,
+) {
+    use std::io::Write;
+    span_exchange(
+        &journal
+            .join("chronicle")
+            .join(day)
+            .join("import.email")
+            .join(seg),
+        &[(name, address)],
+    );
+    let acts = journal.join("facets/work/activities");
+    std::fs::create_dir_all(&acts).unwrap();
+    let row = serde_json::json!({
+        "id": act, "facet": "work", "activity": "email", "stream": "import.email",
+        "segments": [seg], "summary": format!("Mail {act}."),
+        "participation": [{"name": name, "role": "corresponded", "source": "transcript",
+            "confidence": 1.0, "context": "Corresponded in email."}]
+    });
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(acts.join(format!("{day}.jsonl")))
+        .unwrap();
+    writeln!(file, "{row}").unwrap();
+}
+
+/// Each entity the facet holds: its name, type and addresses.
+#[cfg(test)]
+fn span_people(journal: &std::path::Path) -> Vec<(String, String, Value)> {
+    solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false)
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e.identity["name"].as_str().unwrap_or_default().to_owned(),
+                e.identity["type"].as_str().unwrap_or_default().to_owned(),
+                e.identity.get("emails").cloned().unwrap_or(Value::Null),
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+#[test]
+fn a_note_that_quotes_a_mail_header_records_no_correspondent() {
+    let root = span_journal();
+    let journal = root.path();
+    std::fs::create_dir_all(journal.join("streams")).unwrap();
+    std::fs::write(
+        journal.join("streams/vault.json"),
+        r#"{"name":"vault","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"source":"obsidian","cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+    )
+    .unwrap();
+    let seg = journal.join("chronicle/20210510/vault/100000_60");
+    std::fs::create_dir_all(&seg).unwrap();
+    // A synced note: the owner's own text, which pastes a fare alert.
+    std::fs::write(
+        seg.join("note_transcript.md"),
+        "From: Skyline Air <deals@skyline.example>\nTo: Pat Lee <pat@example.org>\n\nTrip ideas, to read later.\n",
+    )
+    .unwrap();
+    let mut record = serde_json::json!({"id":"a","title":"Trip ideas","segments":["100000_60"]})
+        .as_object()
+        .unwrap()
+        .clone();
+    populate_backfill_activity_defaults(journal, "20210510", "work", "vault", &mut record);
+    assert!(!record.contains_key("participation"), "{record:?}");
+}
+
+#[cfg(test)]
+#[test]
+fn an_email_names_who_it_was_written_to_and_never_the_owner_or_a_copied_bystander() {
+    let root = span_journal();
+    let journal = root.path();
+    let seg = journal.join("chronicle/20210510/import.email/100000_0");
+    std::fs::create_dir_all(&seg).unwrap();
+    let line = serde_json::json!({
+        "speaker": "You", "is_owner": true, "text": "Body",
+        "to": ["Jordan Hale", "Doe, Jane"], "cc": ["Casey Bystander"],
+        "reply_to": {"author": "Sam Reyes", "from": "sam@example.com", "text": "Earlier."},
+        "email": {"from": "jordan@hale.example", "to_addresses": ["jordan@hale.example", "jane@example.com"]},
+    });
+    std::fs::write(
+        seg.join("conversation_transcript.jsonl"),
+        format!("{line}\n"),
+    )
+    .unwrap();
+    let mut record = serde_json::json!({"id":"a","title":"Mail","segments":["100000_0"]})
+        .as_object()
+        .unwrap()
+        .clone();
+    populate_backfill_activity_defaults(journal, "20210510", "work", "import.email", &mut record);
+    let rows: Vec<(&str, &str, &str)> = record["participation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["name"].as_str().unwrap(),
+                p["role"].as_str().unwrap(),
+                p["context"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    // A "Last, First" recipient is one person: names come from the exchange's
+    // own list of recipients, never from splitting a header line.
+    assert_eq!(
+        rows,
+        vec![
+            ("Doe, Jane", "corresponded", "Corresponded in email."),
+            ("Sam Reyes", "corresponded", "Corresponded in email reply."),
+        ]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn two_correspondents_who_share_a_name_are_counted_and_addressed_apart() {
+    let root = span_journal();
+    let journal = root.path();
+    let (a, b) = ("chris.a@example.com", "chris.b@example.net");
+    span_email(journal, "20210510", "100000_0", "act_1", "Chris Park", a);
+    span_email(journal, "20210510", "110000_0", "act_2", "Chris Park", b);
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    // One mail each is nobody seen twice.
+    assert_eq!(span_people(journal), vec![]);
+    // The first of them writes again on another day: that one is a person,
+    // and the other's address is no part of them.
+    span_email(journal, "20210517", "100000_0", "act_3", "Chris Park", a);
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    let one = vec![(
+        "Chris Park".to_owned(),
+        "Person".to_owned(),
+        serde_json::json!([a]),
+    )];
+    assert_eq!(span_people(journal), one);
+    // Read again now that a Chris Park exists: the other sender is still not them.
+    std::fs::remove_file(journal.join("awareness/backfill_span_state.json")).unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert_eq!(span_people(journal), one);
+}
+
+#[cfg(test)]
+#[test]
+fn a_mailing_or_one_busy_day_makes_no_person() {
+    let root = span_journal();
+    let journal = root.path();
+    // A service signing as a person, from a shared mailbox, week after week.
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        span_email(
+            journal,
+            day,
+            "100000_0",
+            act,
+            "Sarah from Acme",
+            "hello@acme.example",
+        );
+        span_email(
+            journal,
+            day,
+            "110000_0",
+            &format!("{act}b"),
+            "Lee Chen",
+            "updates@shop.example",
+        );
+    }
+    // A real person, but only ever on one day.
+    span_email(
+        journal,
+        "20210601",
+        "100000_0",
+        "act_5",
+        "Samira Patel",
+        "samira@example.com",
+    );
+    span_email(
+        journal,
+        "20210601",
+        "110000_0",
+        "act_6",
+        "Samira Patel",
+        "samira@example.com",
+    );
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert_eq!(span_people(journal), vec![]);
+    assert!(is_bulk_or_automated_actor("Dana via LinkedIn", None));
+    assert!(is_bulk_or_automated_actor(
+        "Acme",
+        Some("no-reply@acme.example")
+    ));
+    assert!(is_bulk_or_automated_actor(
+        "Acme",
+        Some("acme-notifications@mail.example")
+    ));
+    assert!(!is_bulk_or_automated_actor(
+        "Samira Patel",
+        Some("samira.patel@example.com")
+    ));
+    assert!(!is_bulk_or_automated_actor(
+        "Teamo Reyes",
+        Some("teamo@example.com")
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn a_note_the_owner_removed_is_not_written_again() {
+    let root = span_journal();
+    let journal = root.path();
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        span_email(
+            journal,
+            day,
+            "100000_0",
+            act,
+            "Samira Patel",
+            "samira@example.com",
+        );
+    }
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    let scoped =
+        solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false).unwrap();
+    let live = || {
+        solstone_core_facets::read_live_observations(
+            journal,
+            "work",
+            &scoped[0].entity_dir,
+            solstone_core_facets::ObservationReadQuery::default(),
+        )
+        .unwrap()
+        .items
+        .len()
+    };
+    assert_eq!(live(), 2);
+    // Every note is retired, the way a removal leaves it on disk.
+    let path = journal
+        .join("facets/work/entities")
+        .join(&scoped[0].entity_dir)
+        .join("observations.jsonl");
+    let retired = std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let mut row: Value = serde_json::from_str(line).unwrap();
+            row["retired"] = serde_json::json!({"at": 1, "by": "owner"});
+            format!("{row}\n")
+        })
+        .collect::<String>();
+    std::fs::write(&path, retired).unwrap();
+    assert_eq!(live(), 0);
+    // The same history read again, as after any change to it.
+    std::fs::remove_file(journal.join("awareness/backfill_span_state.json")).unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert_eq!(live(), 0);
+}
+
+#[cfg(test)]
+#[test]
+fn the_span_is_read_again_when_its_inputs_change_and_not_when_the_day_does() {
+    let root = span_journal();
+    let journal = root.path();
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        span_email(
+            journal,
+            day,
+            "100000_0",
+            act,
+            "Samira Patel",
+            "samira@example.com",
+        );
+    }
+    let stamp = journal.join("awareness/backfill_span_state.json");
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    let first = std::fs::read(&stamp).unwrap();
+    let written = std::fs::metadata(&stamp).unwrap().modified().unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW + 3 * 86_400_000).unwrap();
+    assert_eq!(std::fs::read(&stamp).unwrap(), first);
+    assert_eq!(
+        std::fs::metadata(&stamp).unwrap().modified().unwrap(),
+        written
+    );
+
+    // Hiding a name is a change to what the span may promote.
+    let days = vec!["20210510".to_owned(), "20210517".to_owned()];
+    let facets = vec!["work".to_owned()];
+    let before = backfill_span_fingerprint(journal, &days, &facets);
+    std::fs::write(
+        journal.join("facets/work/hidden-names.json"),
+        r#"{"names":["Samira Patel"]}"#,
+    )
+    .unwrap();
+    assert_ne!(backfill_span_fingerprint(journal, &days, &facets), before);
+}
+
+#[cfg(test)]
+#[test]
+fn a_span_that_could_not_be_saved_says_so() {
+    let root = span_journal();
+    let journal = root.path();
+    span_email(
+        journal,
+        "20210510",
+        "100000_0",
+        "act_1",
+        "Samira Patel",
+        "samira@example.com",
+    );
+    // Nothing can be written under a file.
+    std::fs::write(journal.join("awareness"), "").unwrap();
+    assert!(consolidate_historical_backfill_span(journal, SPAN_NOW).is_err());
 }

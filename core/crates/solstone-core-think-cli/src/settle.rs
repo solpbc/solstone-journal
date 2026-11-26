@@ -106,11 +106,17 @@ pub(crate) fn defers(stream: Option<&str>, refresh: bool) -> bool {
 
 /// Like [`defers`], also settling immediately (`0` min wait) for historical
 /// (`day < today`) syncing-source backfills.
-pub(crate) fn defers_in(journal: &Path, day: &str, stream: Option<&str>, refresh: bool) -> bool {
+pub(crate) fn defers_in(
+    context: &ThinkContext,
+    day: &str,
+    stream: Option<&str>,
+    refresh: bool,
+) -> bool {
     if !defers(stream, refresh) {
         return false;
     }
-    let today = solstone_core_system::daily_coverage::local_day(journal, jiff::Timestamp::now());
+    let journal = context.journal.as_path();
+    let today = local_day(journal, context.now_ms);
     if day < today.as_str()
         && stream.is_some_and(|name| solstone_core_segment::is_backfill_stream(journal, name))
     {
@@ -604,7 +610,11 @@ fn settle_day(
             )?;
             object.insert("facets".to_owned(), facets);
         }
-        machine.update(&filtered, &segment.key, day, None, now);
+        // The same grouping the replay gives a segment, so an item is one
+        // activity whichever of the two writes it.
+        let scope =
+            crate::segment::segment_coalesce_scope(&context.journal, &segment.dir, Some(stream));
+        machine.update_with_scope(&filtered, &segment.key, day, None, now, &scope);
     }
     let ended = machine.completed_activities().len();
     let mut open = false;

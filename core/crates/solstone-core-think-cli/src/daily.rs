@@ -40,6 +40,23 @@ fn skip_historical_entity_daily(
         )
 }
 
+/// Whether this run leaves the day's morning briefing alone: the day is one
+/// that is owed none, and nothing asked for it by name.
+fn briefing_not_owed(context: &ThinkContext, from_scratch: bool) -> bool {
+    !from_scratch
+        && !context.retry.as_ref().is_some_and(|(unit, _)| {
+            matches!(
+                unit,
+                solstone_core_system::work_retry::Unit::Daily { talent, .. }
+                    if talent == "morning_briefing"
+            )
+        })
+        && !solstone_core_system::daily_coverage::morning_briefing_applies(
+            &context.journal,
+            &context.day,
+        )
+}
+
 /// Port of `thinking.py:2086-2556`.
 pub(crate) fn run(
     context: &ThinkContext,
@@ -148,20 +165,7 @@ pub(crate) fn run(
                     }
                 }
             } else {
-                if config.key == "morning_briefing"
-                    && !from_scratch
-                    && !context.retry.as_ref().is_some_and(|(unit, _)| {
-                        matches!(
-                            unit,
-                            solstone_core_system::work_retry::Unit::Daily { talent, .. }
-                                if talent == "morning_briefing"
-                        )
-                    })
-                    && !solstone_core_system::daily_coverage::morning_briefing_applies(
-                        &context.journal,
-                        &context.day,
-                    )
-                {
+                if config.key == "morning_briefing" && briefing_not_owed(context, from_scratch) {
                     continue;
                 }
                 if config.key == "experiences_detect" && active_facets.is_empty() {
@@ -220,7 +224,16 @@ pub(crate) fn run(
                     }
                     if skip_historical_entity_daily(context, &config.key, facet, from_scratch) {
                         if !consolidated_backfill_span {
-                            crate::segment::consolidate_historical_backfill_span(&context.journal);
+                            if let Err(error) = crate::segment::consolidate_historical_backfill_span(
+                                &context.journal,
+                                context.now_ms,
+                            ) {
+                                crate::dispatch::record_followup_failure(
+                                    &mut group_result,
+                                    "history consolidation",
+                                    &error,
+                                );
+                            }
                             consolidated_backfill_span = true;
                         }
                         log_skip(
@@ -262,20 +275,7 @@ pub(crate) fn run(
                     );
                 }
             } else {
-                if config.key == "morning_briefing"
-                    && !from_scratch
-                    && !context.retry.as_ref().is_some_and(|(unit, _)| {
-                        matches!(
-                            unit,
-                            solstone_core_system::work_retry::Unit::Daily { talent, .. }
-                                if talent == "morning_briefing"
-                        )
-                    })
-                    && !solstone_core_system::daily_coverage::morning_briefing_applies(
-                        &context.journal,
-                        &context.day,
-                    )
-                {
+                if config.key == "morning_briefing" && briefing_not_owed(context, from_scratch) {
                     log_skip(log, context, &config.key, "historical_day", None);
                     continue;
                 }
