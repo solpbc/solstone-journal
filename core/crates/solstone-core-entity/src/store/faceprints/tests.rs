@@ -544,7 +544,11 @@ mod disk {
     #[test]
     fn clear_scrubs_photo_observation_faces_in_live_chronicle_and_trash() {
         struct DummyHold;
-        impl solstone_core_trash::Hold for DummyHold {}
+        impl solstone_core_trash::Hold for DummyHold {
+            fn check(&self) -> std::result::Result<(), String> {
+                Ok(())
+            }
+        }
         struct DummyKind;
         impl solstone_core_trash::Kind for DummyKind {
             fn handles(&self, _: &solstone_core_removals::Unit) -> bool {
@@ -639,12 +643,18 @@ mod disk {
                 segment: "090000_0".into(),
             },
             solstone_core_removals::Action::SegmentDelete,
-            solstone_core_removals::Surface::Web,
+            solstone_core_removals::Surface::Cli,
             vec!["chronicle/20261118/photos/090000_0".into()],
         )
         .unwrap();
 
-        let count = accumulation::clear(root, solstone_core_removals::Surface::Web).unwrap();
+        let count = accumulation::clear(
+            root,
+            solstone_core_removals::Surface::Web {
+                page: solstone_core_removals::Page::Settings,
+            },
+        )
+        .unwrap();
         assert!(
             count >= 2,
             "expected both live and trashed photo observations scrubbed, got {count}"

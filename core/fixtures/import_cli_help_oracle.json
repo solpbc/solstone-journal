@@ -7,8 +7,8 @@
       "exit": 0,
       "stderr": "",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout": "Syncable backends:\n  plaud\n  oura\n  granola\n  garmin\n",
-      "stdout_sha256": "96c0ed959f247221f8e4616c6cd6a3ed9f6a3252c78ae1dab01717e1ae6c237d",
+      "stdout": "Syncable backends:\n  plaud\n  oura\n  granola\n  garmin\n  email\n",
+      "stdout_sha256": "7ec0b61bff75a8a11c6eb624b53d6bcf78a54551d860150ce3625c383f3f96c1",
       "supervisor": "gate_passed"
     },
     "gate_passed/help_long": {
