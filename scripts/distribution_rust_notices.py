@@ -284,6 +284,14 @@ def new_registry_row(
         path for path in source.iterdir()
         if path.is_file() and path.name.upper().startswith(("LICENSE", "COPYING", "NOTICE", "COPYRIGHT"))
     )
+    # A REUSE crate (https://reuse.software/spec/) publishes its texts only in a
+    # top-level LICENSES/ directory (mail-parser, hashify): read the regular
+    # files directly inside it, nothing deeper.
+    reuse = source / REUSE_LICENSE_DIRECTORY
+    if reuse.is_dir() and not reuse.is_symlink():
+        files += sorted(
+            path for path in reuse.iterdir() if path.is_file() and not path.is_symlink()
+        )
     license_material = "license-text"
     if not files:
         manifest = source / "Cargo.toml"
@@ -315,16 +323,17 @@ def new_registry_row(
     url = f"https://static.crates.io/crates/{package['name']}/{package['name']}-{package['version']}.crate"
     with tarfile.open(archive) as source_archive:
         for path in files:
-            member = source_archive.extractfile(f"{package['name']}-{package['version']}/{path.name}")
+            name = path.relative_to(source).as_posix()
+            member = source_archive.extractfile(f"{package['name']}-{package['version']}/{name}")
             if member is None or member.read() != path.read_bytes():
-                raise RuntimeError(f"cached source does not match crate archive for {identity}: {path.name}")
+                raise RuntimeError(f"cached source does not match crate archive for {identity}: {name}")
     references = [
         {
             "sha256": digest(path.read_bytes()),
             "bytes": path.stat().st_size,
             "source": {
                 "kind": "cargo-registry-archive",
-                "member": path.name,
+                "member": path.relative_to(source).as_posix(),
                 "source_url": url,
                 "archive_sha256": locked[0]["checksum"],
             },
@@ -342,6 +351,18 @@ def new_registry_row(
     }
 
 
+REUSE_LICENSE_DIRECTORY = "LICENSES"
+
+
+def registry_notice_member(member: str) -> bool:
+    """A crate notice member is a top-level file, or a file directly inside the
+    top-level REUSE `LICENSES/` directory; never a deeper or relative path."""
+    parts = Path(member).parts
+    if len(parts) == 2 and parts[0] == REUSE_LICENSE_DIRECTORY:
+        return parts[1] not in ("", ".", "..")
+    return Path(member).name == member and member not in ("", ".", "..")
+
+
 def source_text(reference: dict, package: dict) -> bytes:
     source = reference["source"]
     if source["kind"] == "shipped-license":
@@ -351,7 +372,7 @@ def source_text(reference: dict, package: dict) -> bytes:
         data = path.read_bytes()
     elif source["kind"] == "cargo-registry-archive":
         member = source["member"]
-        if Path(member).name != member:
+        if not registry_notice_member(member):
             raise RuntimeError(f"invalid crate notice member for {package['name']}: {member}")
         data = (registry_dir(package) / member).read_bytes()
     elif source["kind"] == "cargo-git-checkout":

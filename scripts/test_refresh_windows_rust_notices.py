@@ -855,6 +855,30 @@ class InClosureNoticeTexts(unittest.TestCase):
         self.assertEqual(texts, {refresh.sha256_bytes(self.mit): self.mit})
         self.assertIn("vendor/webview-1.0.0/LICENSE-MIT", members)
 
+    def test_reuse_licenses_directory_texts_are_the_crates_own(self):
+        import tempfile
+
+        apache = b"Apache License\nVersion 2.0, January 2004\n"
+        with tempfile.TemporaryDirectory() as root:
+            vendor_root = self.vendor(root)
+            reuse = vendor_root / "webview-1.0.0" / "LICENSES"
+            (reuse / "nested").mkdir(parents=True)
+            (reuse / "Apache-2.0.txt").write_bytes(apache)
+            (reuse / "MIT.txt").write_bytes(self.mit)
+            (reuse / "nested" / "Other.txt").write_bytes(b"not read")
+            rows, members, texts = self.rows(vendor_root)
+        self.assertEqual(rows[0]["notice_status"], "texts-acquired")
+        self.assertEqual(
+            [(r["source"]["kind"], r["source"]["member"]) for r in rows[0]["notice_references"]],
+            [("cargo-registry-archive", "LICENSES/Apache-2.0.txt"),
+             ("cargo-registry-archive", "LICENSES/MIT.txt")],
+        )
+        self.assertEqual(texts, {
+            refresh.sha256_bytes(apache): apache,
+            refresh.sha256_bytes(self.mit): self.mit,
+        })
+        self.assertIn("vendor/webview-1.0.0/LICENSES/MIT.txt", members)
+
     def test_crate_without_a_licence_takes_its_pinned_upstream_text(self):
         import tempfile
 

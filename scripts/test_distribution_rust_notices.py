@@ -142,6 +142,57 @@ class ScreenOcrNoticeTests(unittest.TestCase):
             with patch.dict("os.environ", {"CARGO_HOME": str(cargo_home)}):
                 self.assertEqual(notices.registry_dir(package), second.resolve())
 
+    def test_registry_row_reads_a_reuse_licenses_directory(self):
+        import hashlib
+        import io
+        import tarfile
+
+        apache = b"Apache License\nVersion 2.0, January 2004\n"
+        mit = b"MIT License\n\nCopyright (c) upstream\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cargo_home = root / "cargo"
+            source = cargo_home / "registry/src/index-a/hashify-0.2.9"
+            (source / "LICENSES" / "nested").mkdir(parents=True)
+            manifest = source / "Cargo.toml"
+            manifest.write_text('[package]\nname="hashify"\nversion="0.2.9"\n')
+            (source / "LICENSES" / "Apache-2.0.txt").write_bytes(apache)
+            (source / "LICENSES" / "MIT.txt").write_bytes(mit)
+            (source / "LICENSES" / "nested" / "Other.txt").write_bytes(b"not read")
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+                for name, data in (("LICENSES/Apache-2.0.txt", apache), ("LICENSES/MIT.txt", mit)):
+                    info = tarfile.TarInfo(f"hashify-0.2.9/{name}")
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+            crate = buffer.getvalue()
+            cache = cargo_home / "registry/cache/index-a"
+            cache.mkdir(parents=True)
+            (cache / "hashify-0.2.9.crate").write_bytes(crate)
+            source_id = "registry+https://github.com/rust-lang/crates.io-index"
+            lock = root / "Cargo.lock"
+            lock.write_text(
+                '[[package]]\nname = "hashify"\nversion = "0.2.9"\n'
+                f'source = "{source_id}"\nchecksum = "{hashlib.sha256(crate).hexdigest()}"\n'
+            )
+            package = {
+                "name": "hashify", "version": "0.2.9", "source": source_id,
+                "license": "Apache-2.0 OR MIT", "manifest_path": str(manifest),
+            }
+            identity = f"hashify@0.2.9 ({source_id})"
+            with patch.dict("os.environ", {"CARGO_HOME": str(cargo_home)}):
+                row = notices.new_registry_row(identity, package, lock)
+                members = [r["source"]["member"] for r in row["notice_references"]]
+                self.assertEqual(members, ["LICENSES/Apache-2.0.txt", "LICENSES/MIT.txt"])
+                self.assertEqual(
+                    [notices.source_text(r, package) for r in row["notice_references"]],
+                    [apache, mit],
+                )
+        self.assertTrue(notices.registry_notice_member("LICENSE-MIT"))
+        self.assertTrue(notices.registry_notice_member("LICENSES/MIT.txt"))
+        for bad in ("LICENSES/nested/Other.txt", "../LICENSE", "src/LICENSE", "LICENSES/..", ""):
+            self.assertFalse(notices.registry_notice_member(bad), bad)
+
     def test_independent_closure_uses_helper_manifest_and_rejects_path_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
