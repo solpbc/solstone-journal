@@ -77,29 +77,64 @@ fn fill_in(context: &context::ThinkContext) {
         .unwrap();
 }
 
-#[test]
-fn an_item_is_one_activity_whether_it_settles_or_is_filled_in_later() {
-    // The settle rebuild: what writes a syncing stream's items for today and
-    // yesterday.
-    let (_journal, _roots, context) = shots();
-    crate::settle::settle_at_once(true);
-    let next_day = later(&context, NOW + 86_400_000);
-    let settled = crate::settle::run(
-        &next_day,
-        &mut test_log(&next_day, "settle"),
+/// The settle rebuild as of `now_ms`: what writes a syncing stream's items
+/// for today, yesterday and any day waiting on it.
+fn settle(context: &context::ThinkContext, now_ms: i64) {
+    let then = later(context, now_ms);
+    crate::settle::run(
+        &then,
+        &mut test_log(&then, "settle"),
         Some("shots"),
         1,
         true,
-    );
-    crate::settle::settle_at_once(false);
-    settled.unwrap();
+    )
+    .unwrap();
+}
+
+fn activities_file(context: &context::ThinkContext) -> std::path::PathBuf {
+    context
+        .journal
+        .join("facets/work/activities")
+        .join(format!("{DAY}.jsonl"))
+}
+
+#[test]
+fn an_item_is_one_activity_whether_it_settles_or_is_filled_in_later() {
+    let (_journal, _roots, context) = shots();
+    settle(&context, NOW + 86_400_000);
     assert_eq!(rows(&context), [vec!["100000_1"], vec!["100100_1"]]);
     // The fill-in replays only segments no row holds, so it adds nothing here.
     fill_in(&context);
     assert_eq!(rows(&context), [vec!["100000_1"], vec!["100100_1"]]);
 
-    // The same evidence reaching the fill-in first.
+    // The same evidence reaching the fill-in first: settle, reading the day
+    // after it, groups the items the same way and leaves the file as it is.
     let (_journal, _roots, context) = shots();
     fill_in(&context);
     assert_eq!(rows(&context), [vec!["100000_1"], vec!["100100_1"]]);
+    let written = fs::read(activities_file(&context)).unwrap();
+    settle(&context, NOW + 86_400_000);
+    assert_eq!(fs::read(activities_file(&context)).unwrap(), written);
+}
+
+#[test]
+fn an_activity_an_older_version_made_of_two_items_stays_as_written() {
+    for age_days in [1, 10] {
+        let (_journal, _roots, context) = shots();
+        fill_in(&context);
+        // What the older grouping wrote: one activity over both screenshots.
+        let path = activities_file(&context);
+        let text = fs::read_to_string(&path).unwrap();
+        let mut merged: serde_json::Value =
+            serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        merged["segments"] = serde_json::json!(["100000_1", "100100_1"]);
+        fs::write(&path, format!("{merged}\n")).unwrap();
+        let written = fs::read(&path).unwrap();
+
+        let then = later(&context, NOW + age_days * 86_400_000);
+        crate::settle::note(&then, "shots", &[DAY]).unwrap();
+        settle(&context, NOW + age_days * 86_400_000);
+        assert_eq!(fs::read(&path).unwrap(), written, "age {age_days}");
+        assert_eq!(rows(&context), [vec!["100000_1", "100100_1"]]);
+    }
 }

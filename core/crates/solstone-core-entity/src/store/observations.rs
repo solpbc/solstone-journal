@@ -848,18 +848,23 @@ pub fn apply_observation_change(
                 return Ok(ObservationWriteOutcome::NoOp);
             }
 
-            // Retired rows count too: a note the owner removed is not written
+            // Retired rows count too, and so does what a row said before it
+            // was edited: a note the owner removed or reworded is not written
             // again because the same evidence was read again.
             let mut seen: std::collections::BTreeSet<(String, Option<String>)> = parsed
                 .full_rows
                 .iter()
-                .map(|r| {
+                .flat_map(|r| {
+                    std::iter::once((r.content.as_str(), r.source_day.as_deref())).chain(
+                        r.history
+                            .iter()
+                            .map(|was| (was.content.as_str(), was.source_day.as_deref())),
+                    )
+                })
+                .map(|(content, day)| {
                     (
-                        normalize_observation_content(&r.content),
-                        r.source_day
-                            .as_deref()
-                            .and_then(normalize_day)
-                            .map(solstone_core_time::day_key),
+                        normalize_observation_content(content),
+                        day.and_then(normalize_day).map(solstone_core_time::day_key),
                     )
                 })
                 .collect();

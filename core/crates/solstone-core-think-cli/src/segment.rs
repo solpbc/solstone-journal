@@ -2545,16 +2545,28 @@ fn written_line_people(line: &Value, email: bool) -> Vec<(String, Option<String>
     people
 }
 
-/// Every line of a segment's written exchange, without its header.
+/// Every line of a segment's written exchange. Its first line is a header,
+/// which names nobody.
 fn written_exchange_lines(segment_dir: &std::path::Path) -> Vec<Value> {
     std::fs::read_to_string(segment_dir.join("conversation_transcript.jsonl"))
         .map(|text| {
             text.lines()
                 .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-                .filter(|line| line.get("schema").is_none())
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The account a synced email exchange was read from, which is the owner's
+/// own address: the email source names it in the exchange's header.
+fn exchange_account(lines: &[Value]) -> Option<String> {
+    lines
+        .first()?
+        .get("email")?
+        .get("account")?
+        .as_str()
+        .map(|account| account.trim().to_lowercase())
+        .filter(|account| account.contains('@'))
 }
 
 fn populate_backfill_activity_defaults(
@@ -2634,6 +2646,22 @@ fn populate_backfill_activity_defaults(
             }
         }
     }
+
+    // The mailbox an exchange was synced from is the owner's, whether or not
+    // the journal has that address on the owner's entity yet.
+    let exchanges: BTreeMap<&str, (std::path::PathBuf, Vec<Value>)> = segments
+        .iter()
+        .filter_map(|seg| {
+            let dir = find_segment_dir(journal, day, seg, Some(stream))?;
+            let lines = written_exchange_lines(&dir);
+            Some((seg.as_str(), (dir, lines)))
+        })
+        .collect();
+    owner_emails.extend(
+        exchanges
+            .values()
+            .filter_map(|(_, lines)| exchange_account(lines)),
+    );
 
     let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true)
         .unwrap_or_default();
@@ -2769,7 +2797,7 @@ fn populate_backfill_activity_defaults(
         .any(|prefix| stream.starts_with(prefix));
 
     for seg in &segments {
-        let Some(seg_dir) = find_segment_dir(journal, day, seg, Some(stream)) else {
+        let Some((seg_dir, exchange_lines)) = exchanges.get(seg.as_str()) else {
             continue;
         };
         let has_image = seg_dir.join("image_transcript.md").is_file();
@@ -2782,8 +2810,8 @@ fn populate_backfill_activity_defaults(
         // to whom, never from the text of a note or a document: a line that
         // looks like a mail header there is something the owner kept.
         if !is_assistant_chat {
-            for line in written_exchange_lines(&seg_dir) {
-                for (name, address, placed) in written_line_people(&line, is_email_stream) {
+            for line in exchange_lines {
+                for (name, address, placed) in written_line_people(line, is_email_stream) {
                     seg_has_header_corresponded |= upsert(
                         name,
                         address,
@@ -2797,7 +2825,7 @@ fn populate_backfill_activity_defaults(
         }
 
         let mut speaker_counts: BTreeMap<String, usize> = BTreeMap::new();
-        for entry in std::fs::read_dir(&seg_dir).into_iter().flatten().flatten() {
+        for entry in std::fs::read_dir(seg_dir).into_iter().flatten().flatten() {
             let fname_os = entry.file_name();
             let Some(fname) = fname_os.to_str().filter(|name| is_spoken_audio_file(name)) else {
                 continue;
@@ -3020,8 +3048,19 @@ pub(crate) fn ensure_historical_day_activities(
             None,
         )?;
     }
-    if solstone_core_segment::day_is_backfill_only(&context.journal, &context.day) {
-        consolidate_historical_backfill_span(&context.journal, context.now_ms)?;
+    // The span is the journal's whole history, not this day's work: what it
+    // could not write is logged here once and does not fail the day.
+    if solstone_core_segment::day_holds_only_backfill_streams(&context.journal, &context.day)
+        && let Err(error) = consolidate_historical_backfill_span(&context.journal, context.now_ms)
+    {
+        log.log(
+            "history_consolidation.failed",
+            context.now_ms,
+            Map::from_iter([
+                ("day".to_owned(), Value::String(context.day.clone())),
+                ("error".to_owned(), Value::String(error)),
+            ]),
+        );
     }
     Ok(())
 }
@@ -3063,9 +3102,6 @@ fn is_bulk_or_automated_actor(name: &str, email: Option<&str>) -> bool {
         )
         || lower_name.contains("newsletter")
         || lower_name.contains("do not reply")
-        // "Sarah from Acme", "Sam via LinkedIn": a service signing as a person.
-        || lower_name.contains(" from ")
-        || lower_name.contains(" via ")
     {
         return true;
     }
@@ -3080,6 +3116,13 @@ fn is_bulk_or_automated_actor(name: &str, email: Option<&str>) -> bool {
             .replace("do-not-reply", "donotreply")
             .split(['.', '-', '_', '+'])
             .any(|word| ROLE_MAILBOXES.contains(&word))
+}
+
+/// "Sarah from Acme", "Sam via LinkedIn": a service signing as a person. Only
+/// a person's name is read this way; a project can be "Notes from Underground".
+fn signs_as_a_service(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.contains(" from ") || lower.contains(" via ")
 }
 
 /// What the span consolidation reads, as a cheap stamp: it runs again only
@@ -3150,36 +3193,72 @@ const SPAN_TOOL_MIN_DAYS: usize = 3;
 /// The most dated notes one consolidation gives an entity: its latest days.
 const SPAN_NOTES_PER_ENTITY: usize = 24;
 
-/// Whether a refused entity write is the store saying no (the name is taken,
-/// blocked, hidden, merged or deleted), which is an answer and not a failure.
+/// Whether a refused entity write is the store saying no (the name or its
+/// place is taken, or the entity is blocked, hidden, merged or deleted), which
+/// is an answer and not a failure. Every refusal is named, so a new one has to
+/// be placed here before it compiles.
 fn entity_write_declined(error: &solstone_core_facets::FacetEntityWriteError) -> bool {
     use solstone_core_entity::EntityWriteError as Entity;
     use solstone_core_facets::FacetEntityWriteError as Facet;
-    matches!(
-        error,
+    match error {
         Facet::EntityExists { .. }
-            | Facet::EntityBlocked { .. }
-            | Facet::EntityNotFound { .. }
-            | Facet::AkaConflict { .. }
-            | Facet::IdentityMapLoser { .. }
-            | Facet::RelationshipOccupied { .. }
-            | Facet::EntityWrite(
-                Entity::IdentityMerged { .. }
-                    | Entity::IdentityDeleted { .. }
-                    | Entity::EntityHidden { .. }
-                    | Entity::InvalidIdentity { .. }
-            )
-    )
+        | Facet::EntityBlocked { .. }
+        | Facet::EntityNotFound { .. }
+        | Facet::AkaConflict { .. }
+        | Facet::IdentityMapLoser { .. }
+        | Facet::RelationshipOccupied { .. } => true,
+        Facet::EntityWrite(error) => match error {
+            Entity::IdentityMerged { .. }
+            | Entity::IdentityDeleted { .. }
+            | Entity::EntityHidden { .. }
+            | Entity::InvalidIdentity { .. }
+            | Entity::CreateDestinationOccupied { .. } => true,
+            Entity::PublicationRefused(_)
+            | Entity::TrustLock(_)
+            | Entity::Read(_)
+            | Entity::InvalidOperationContext { .. }
+            | Entity::AmbiguityRowInvalid { .. }
+            | Entity::AmbiguityCountOverflow { .. }
+            | Entity::ReconciliationRepairRequired { .. }
+            | Entity::PreparedStageCollision { .. }
+            | Entity::PreparedStage(_)
+            | Entity::IdentityWrite(_)
+            | Entity::VisibleEventWrite(_)
+            | Entity::PreparedEventRemoval(_)
+            | Entity::AmbiguityLock(_)
+            | Entity::AmbiguityWrite(_)
+            | Entity::AmbiguityChoiceNotFound { .. }
+            | Entity::AmbiguityChoiceScopeMismatch { .. }
+            | Entity::AmbiguityChoiceInvalid { .. }
+            | Entity::CensusIncomplete { .. }
+            | Entity::CacheWriteAfterCommit(_)
+            | Entity::SearchUpdateAfterCommit(_) => false,
+        },
+        Facet::TrustLock(_)
+        | Facet::EntityTrustLock(_)
+        | Facet::FacetStore(_)
+        | Facet::FacetWrite(_)
+        | Facet::EntityStore(_)
+        | Facet::EntityLifecycle(_)
+        | Facet::MoveConflict { .. }
+        | Facet::LinkFolders(_)
+        | Facet::SameFacet { .. }
+        | Facet::HiddenUndecidable(_)
+        | Facet::MutationRefused(_)
+        | Facet::Io(_) => false,
+    }
 }
 
-/// The address each correspondent of one activity wrote from or was written
-/// to, by name, read from the activity's own written exchanges.
+/// The name and address of each correspondent of one activity, read from the
+/// activity's own written exchanges. A segment is read once in a run, however
+/// many activities and facets hold it.
 fn activity_addresses(
     journal: &std::path::Path,
     day: &str,
     activity: &Map<String, Value>,
-) -> BTreeMap<String, String> {
-    let mut addresses = BTreeMap::new();
+    read: &mut BTreeMap<std::path::PathBuf, Vec<(String, String)>>,
+) -> Vec<(String, String)> {
+    let mut addresses = Vec::new();
     let Some(stream) = activity.get("stream").and_then(Value::as_str) else {
         return addresses;
     };
@@ -3194,25 +3273,51 @@ fn activity_addresses(
         let Some(dir) = find_segment_dir(journal, day, segment, Some(stream)) else {
             continue;
         };
-        for line in written_exchange_lines(&dir) {
-            for (name, address, _) in written_line_people(&line, email) {
-                if let Some(address) = address {
-                    addresses
-                        .entry(solstone_core_facets::hidden_names::hidden_name_key(&name))
-                        .or_insert(address);
-                }
-            }
-        }
+        let named = read.entry(dir).or_insert_with_key(|dir| {
+            written_exchange_lines(dir)
+                .iter()
+                .flat_map(|line| written_line_people(line, email))
+                .filter_map(|(name, address, _)| Some((name, address?)))
+                .collect()
+        });
+        addresses.extend(named.iter().cloned());
     }
     addresses
 }
 
+/// The address an activity's exchanges give for `name`: under that name, or,
+/// when a talent wrote the name another way, under the one name of the
+/// exchange that is the same person.
+fn correspondent_address(addresses: &[(String, String)], name: &str) -> Option<String> {
+    let key = solstone_core_facets::hidden_names::hidden_name_key(name);
+    if let Some((_, address)) = addresses
+        .iter()
+        .find(|(held, _)| solstone_core_facets::hidden_names::hidden_name_key(held) == key)
+    {
+        return Some(address.clone());
+    }
+    let close: BTreeSet<&String> = addresses
+        .iter()
+        .filter(|(held, _)| {
+            solstone_core_talent_runtime::participation::same_correspondent(held, name)
+        })
+        .map(|(_, address)| address)
+        .collect();
+    match (close.len(), close.first()) {
+        (1, Some(address)) => Some((*address).clone()),
+        _ => None,
+    }
+}
+
 /// Deterministic span-aware entity promotion, dated observation seeding, and
-/// speculative-facet aggregation across the days that arrived as history
-/// (`day < today` and `day_is_backfill_only`).
+/// speculative-facet aggregation across the closed days that hold only
+/// imports and synced sources (`day < today` and
+/// `day_holds_only_backfill_streams`): the days whose entity talents are
+/// skipped once they are older than a week, so none falls between the two.
 ///
-/// It runs only when what it reads has changed, and whatever it could not
-/// write is returned, with no stamp left, so the next call tries again.
+/// It runs only when what it reads has changed. Whatever it could not write
+/// is returned once and marked on the stamp, so the same refusal is not met
+/// again on every call: the span is read again when its inputs change.
 pub(crate) fn consolidate_historical_backfill_span(
     journal: &std::path::Path,
     now_ms: i64,
@@ -3225,7 +3330,9 @@ pub(crate) fn consolidate_historical_backfill_span(
     let mut backfill_days: Vec<String> = solstone_core_journal_io::day_dirs(journal)
         .map_err(|error| error.to_string())?
         .into_keys()
-        .filter(|day| day < &today_str && solstone_core_segment::day_is_backfill_only(journal, day))
+        .filter(|day| {
+            day < &today_str && solstone_core_segment::day_holds_only_backfill_streams(journal, day)
+        })
         .collect();
     // In day order: the listing has none, and the stamp and the notes kept
     // for an entity both depend on it.
@@ -3238,15 +3345,66 @@ pub(crate) fn consolidate_historical_backfill_span(
         .map_err(|error| error.to_string())?
         .enabled;
     let stamp_path = journal.join("awareness/backfill_span_state.json");
-    let pre_fp = backfill_span_fingerprint(journal, &backfill_days, &enabled_facets);
+    // Taken before anything is read, so a change that lands during the run
+    // is not stamped as read.
+    let mut stamp = backfill_span_fingerprint(journal, &backfill_days, &enabled_facets);
     if let Ok(bytes) = std::fs::read(&stamp_path)
-        && let Ok(saved) = serde_json::from_slice::<Value>(&bytes)
-        && saved == pre_fp
+        && let Ok(mut saved) = serde_json::from_slice::<Value>(&bytes)
     {
-        return Ok(());
+        if let Some(saved) = saved.as_object_mut() {
+            saved.remove(SPAN_FAILED);
+        }
+        if saved == stamp {
+            return Ok(());
+        }
     }
 
+    let failures = consolidate_span_days(
+        journal,
+        now_ms,
+        &zone,
+        today_date,
+        &today_str,
+        &backfill_days,
+        &enabled_facets,
+    );
+    if !failures.is_empty() {
+        stamp[SPAN_FAILED] = Value::String(failures.join("; "));
+    }
+    std::fs::create_dir_all(journal.join("awareness")).map_err(|error| error.to_string())?;
+    solstone_core_journal_io::write_text(
+        &stamp_path,
+        &stamp.to_string(),
+        solstone_core_journal_io::AtomicWriteOptions::default(),
+    )
+    .map_err(|error| error.to_string())?;
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+/// The context an older version gave a correspondent it read from header-like
+/// text. Nothing writes it now.
+const HEADER_SCAN_CONTEXT: &str = "Corresponded in message.";
+
+/// The stamp field that says the last read of these inputs could not write
+/// everything, and what it could not.
+const SPAN_FAILED: &str = "failed";
+
+/// Read the span and write what it earns, returning what could not be written.
+fn consolidate_span_days(
+    journal: &std::path::Path,
+    now_ms: i64,
+    zone: &jiff::tz::TimeZone,
+    today_date: jiff::civil::Date,
+    today_str: &str,
+    backfill_days: &[String],
+    enabled_facets: &[String],
+) -> Vec<String> {
     let mut failures: Vec<String> = Vec::new();
+    let mut read_addresses = BTreeMap::new();
     match solstone_core_facets::aggregate_speculative_facets_with_backfill(
         journal,
         today_date,
@@ -3255,7 +3413,7 @@ pub(crate) fn consolidate_historical_backfill_span(
         Ok(candidates) if candidates.is_empty() => {}
         Ok(candidates) => {
             if let Err(error) =
-                solstone_core_facets::record_facet_candidates(journal, &today_str, &candidates)
+                solstone_core_facets::record_facet_candidates(journal, today_str, &candidates)
             {
                 failures.push(format!("facet candidates: {error}"));
             }
@@ -3304,7 +3462,10 @@ pub(crate) fn consolidate_historical_backfill_span(
             }
             // Without the owner and the blocked names nobody can be promoted
             // safely, so no facet is read.
-            Err(error) => return Err(format!("entities: {error}")),
+            Err(error) => {
+                failures.push(format!("entities: {error}"));
+                return failures;
+            }
         }
     }
 
@@ -3318,7 +3479,7 @@ pub(crate) fn consolidate_historical_backfill_span(
         day_notes: BTreeMap<String, String>,
     }
 
-    for facet in &enabled_facets {
+    for facet in enabled_facets {
         let hides = match solstone_core_facets::hidden_names::facet_hidden_keys(journal, facet) {
             Ok(hides) => hides,
             Err(error) => {
@@ -3398,7 +3559,7 @@ pub(crate) fn consolidate_historical_backfill_span(
         // where none does: two senders who share a display name stay two.
         let mut groups: BTreeMap<(String, String), SpanCandidate> = BTreeMap::new();
 
-        for day in &backfill_days {
+        for day in backfill_days {
             if let Ok(activities) =
                 solstone_core_facets::load_activity_records_readable(journal, facet, day, false)
             {
@@ -3418,7 +3579,7 @@ pub(crate) fn consolidate_historical_backfill_span(
                     let Some(parts) = act.get("participation").and_then(Value::as_array) else {
                         continue;
                     };
-                    let addresses = activity_addresses(journal, day, &act);
+                    let addresses = activity_addresses(journal, day, &act, &mut read_addresses);
                     for part in parts.iter().filter_map(Value::as_object) {
                         let Some(name) = part
                             .get("name")
@@ -3435,11 +3596,19 @@ pub(crate) fn consolidate_historical_backfill_span(
                         if !matches!(role, "corresponded" | "attendee" | "heard" | "visible") {
                             continue;
                         }
+                        // What an older version read from a line that looked
+                        // like a mail header, in a note or a document: it was
+                        // never an exchange, and counts toward nobody.
+                        if part.get("context").and_then(Value::as_str) == Some(HEADER_SCAN_CONTEXT)
+                        {
+                            continue;
+                        }
                         let name_key = solstone_core_facets::hidden_names::hidden_name_key(name);
-                        let email = addresses.get(&name_key).cloned();
+                        let email = correspondent_address(&addresses, name);
                         if owner_or_blocked.contains(name)
                             || hides.is_hidden(name)
                             || detached_or_blocked.contains(name)
+                            || signs_as_a_service(name)
                             || is_bulk_or_automated_actor(name, email.as_deref())
                         {
                             continue;
@@ -3508,6 +3677,7 @@ pub(crate) fn consolidate_historical_backfill_span(
                     if owner_or_blocked.contains(name)
                         || hides.is_hidden(name)
                         || detached_or_blocked.contains(name)
+                        || (etype == "Person" && signs_as_a_service(name))
                         || is_bulk_or_automated_actor(name, None)
                     {
                         continue;
@@ -3568,6 +3738,8 @@ pub(crate) fn consolidate_historical_backfill_span(
             }
         }
 
+        // The addresses behind each name this pass gave an entity or added to.
+        let mut claimed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for cand in groups.into_values() {
             let Some(canonical_name) = cand
                 .names
@@ -3577,13 +3749,26 @@ pub(crate) fn consolidate_historical_backfill_span(
             else {
                 continue;
             };
-            // Someone the facet already holds needs no promotion, unless the
-            // one it holds writes from other addresses: then this may be
-            // another person of the same name, who has to earn it.
-            let is_existing = already_attached.contains(&canonical_name)
-                && (cand.emails.is_empty()
-                    || attached_addresses(&canonical_name)
-                        .is_none_or(|held| held.is_empty() || !held.is_disjoint(&cand.emails)));
+            // An entity is held by name, so the facet can hold one person of
+            // a name. Where the one it holds, from before or from this pass,
+            // writes from other addresses, this is someone else of the same
+            // name: they get no entity, and nothing of theirs is added to the
+            // other's.
+            let name_key = solstone_core_facets::hidden_names::hidden_name_key(&canonical_name);
+            let held = claimed
+                .get(&name_key)
+                .cloned()
+                .or_else(|| attached_addresses(&canonical_name));
+            if !cand.emails.is_empty()
+                && held
+                    .as_ref()
+                    .is_some_and(|held| !held.is_empty() && held.is_disjoint(&cand.emails))
+            {
+                continue;
+            }
+            // Someone the facet already holds needs no promotion.
+            let is_existing =
+                already_attached.contains(&canonical_name) || claimed.contains_key(&name_key);
             let meets_promotion = match cand.entity_type.as_str() {
                 "Person" => cand.days.len() >= SPAN_PERSON_MIN_DAYS,
                 "Company" | "Project" => {
@@ -3655,6 +3840,10 @@ pub(crate) fn consolidate_historical_backfill_span(
             else {
                 continue;
             };
+            claimed
+                .entry(name_key)
+                .or_insert_with(|| held.unwrap_or_default())
+                .extend(cand.emails.iter().cloned());
 
             let mut incoming = Vec::new();
             for (day, note) in cand
@@ -3671,7 +3860,7 @@ pub(crate) fn consolidate_historical_backfill_span(
                 }
                 incoming.push(solstone_core_facets::IncomingObservationRow {
                     content: note.clone(),
-                    observed_at: solstone_core_entity::journal_day_start_ms(day, &zone)
+                    observed_at: solstone_core_entity::journal_day_start_ms(day, zone)
                         .unwrap_or(now_ms),
                     source_day: Some(day.clone()),
                     relation: None,
@@ -3779,18 +3968,7 @@ pub(crate) fn consolidate_historical_backfill_span(
         }
     }
 
-    if !failures.is_empty() {
-        return Err(failures.join("; "));
-    }
-    let post_fp = backfill_span_fingerprint(journal, &backfill_days, &enabled_facets);
-    std::fs::create_dir_all(journal.join("awareness")).map_err(|error| error.to_string())?;
-    solstone_core_journal_io::write_text(
-        &stamp_path,
-        &post_fp.to_string(),
-        solstone_core_journal_io::AtomicWriteOptions::default(),
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(())
+    failures
 }
 
 /// End a stream's live activities after the supervisor's idle window.
@@ -6172,6 +6350,24 @@ fn span_people(journal: &std::path::Path) -> Vec<(String, String, Value)> {
         .collect()
 }
 
+/// Every note the facet's entities hold, as written on disk.
+#[cfg(test)]
+fn span_notes(journal: &std::path::Path) -> String {
+    solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false)
+        .unwrap()
+        .iter()
+        .map(|e| {
+            std::fs::read_to_string(
+                journal
+                    .join("facets/work/entities")
+                    .join(&e.entity_dir)
+                    .join("observations.jsonl"),
+            )
+            .unwrap_or_default()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[test]
 fn a_note_that_quotes_a_mail_header_records_no_correspondent() {
@@ -6270,6 +6466,49 @@ fn two_correspondents_who_share_a_name_are_counted_and_addressed_apart() {
     std::fs::remove_file(journal.join("awareness/backfill_span_state.json")).unwrap();
     consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
     assert_eq!(span_people(journal), one);
+    // The other writes again too. The facet holds one person of a name, so
+    // they get no entity, and nothing of theirs is added to the first's.
+    span_email(journal, "20210524", "100000_0", "act_4", "Chris Park", b);
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert_eq!(span_people(journal), one);
+    assert!(!span_notes(journal).contains("act_2") && !span_notes(journal).contains("act_4"));
+    // And again, now that both have earned it.
+    std::fs::remove_file(journal.join("awareness/backfill_span_state.json")).unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert_eq!(span_people(journal), one);
+    assert!(!span_notes(journal).contains("act_4"));
+}
+
+#[cfg(test)]
+#[test]
+fn two_recurring_correspondents_of_one_name_read_together_stay_apart() {
+    let root = span_journal();
+    let journal = root.path();
+    let (a, b) = ("chris.a@example.com", "chris.b@example.net");
+    span_email(journal, "20210510", "100000_0", "act_1", "Chris Park", a);
+    span_email(journal, "20210510", "110000_0", "act_2", "Chris Park", b);
+    span_email(journal, "20210517", "100000_0", "act_3", "Chris Park", a);
+    span_email(journal, "20210517", "110000_0", "act_4", "Chris Park", b);
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    // Both earned it in one reading. One of them is the Chris Park the facet
+    // holds; the other is not folded into them.
+    assert_eq!(
+        span_people(journal),
+        vec![(
+            "Chris Park".to_owned(),
+            "Person".to_owned(),
+            serde_json::json!([a]),
+        )]
+    );
+    let notes = span_notes(journal);
+    assert!(
+        notes.contains("act_1") && notes.contains("act_3"),
+        "{notes}"
+    );
+    assert!(
+        !notes.contains("act_2") && !notes.contains("act_4"),
+        "{notes}"
+    );
 }
 
 #[cfg(test)]
@@ -6315,7 +6554,8 @@ fn a_mailing_or_one_busy_day_makes_no_person() {
     );
     consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
     assert_eq!(span_people(journal), vec![]);
-    assert!(is_bulk_or_automated_actor("Dana via LinkedIn", None));
+    assert!(signs_as_a_service("Dana via LinkedIn"));
+    assert!(!is_bulk_or_automated_actor("Notes from Underground", None));
     assert!(is_bulk_or_automated_actor(
         "Acme",
         Some("no-reply@acme.example")
@@ -6388,6 +6628,57 @@ fn a_note_the_owner_removed_is_not_written_again() {
 
 #[cfg(test)]
 #[test]
+fn a_note_the_owner_reworded_is_not_written_again_as_it_was() {
+    let root = span_journal();
+    let journal = root.path();
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        span_email(
+            journal,
+            day,
+            "100000_0",
+            act,
+            "Samira Patel",
+            "samira@example.com",
+        );
+    }
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    let scoped =
+        solstone_core_facets::list_scoped_facet_entities(journal, "work", false, false).unwrap();
+    let path = journal
+        .join("facets/work/entities")
+        .join(&scoped[0].entity_dir)
+        .join("observations.jsonl");
+    // Each note reworded, the way an edit leaves it on disk: the new words,
+    // and what it said before kept as its history.
+    let reworded = std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let mut row: Value = serde_json::from_str(line).unwrap();
+            row["history"] = serde_json::json!([{
+                "content": row["content"], "observed_at": row["observed_at"],
+                "source_day": row["source_day"],
+            }]);
+            row["content"] = Value::String(format!("In my words, {}", row["id"]));
+            format!("{row}\n")
+        })
+        .collect::<String>();
+    std::fs::write(&path, reworded).unwrap();
+    std::fs::remove_file(journal.join("awareness/backfill_span_state.json")).unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    let live = solstone_core_facets::read_live_observations(
+        journal,
+        "work",
+        &scoped[0].entity_dir,
+        solstone_core_facets::ObservationReadQuery::default(),
+    )
+    .unwrap()
+    .items;
+    assert_eq!(live.len(), 2, "{live:?}");
+}
+
+#[cfg(test)]
+#[test]
 fn the_span_is_read_again_when_its_inputs_change_and_not_when_the_day_does() {
     let root = span_journal();
     let journal = root.path();
@@ -6426,18 +6717,143 @@ fn the_span_is_read_again_when_its_inputs_change_and_not_when_the_day_does() {
 
 #[cfg(test)]
 #[test]
-fn a_span_that_could_not_be_saved_says_so() {
+fn a_refusal_is_reported_once_and_the_span_is_tried_again_when_it_changes() {
     let root = span_journal();
     let journal = root.path();
-    span_email(
-        journal,
-        "20210510",
-        "100000_0",
-        "act_1",
-        "Samira Patel",
-        "samira@example.com",
-    );
-    // Nothing can be written under a file.
-    std::fs::write(journal.join("awareness"), "").unwrap();
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        span_email(
+            journal,
+            day,
+            "100000_0",
+            act,
+            "Samira Patel",
+            "samira@example.com",
+        );
+    }
+    // What the facet hides cannot be read, so nobody in it can be promoted.
+    let hides = journal.join("facets/work/hidden-names.json");
+    std::fs::write(&hides, "{").unwrap();
+    let stamp = journal.join("awareness/backfill_span_state.json");
+    let failed = || {
+        serde_json::from_slice::<Value>(&std::fs::read(&stamp).unwrap()).unwrap()["failed"].clone()
+    };
     assert!(consolidate_historical_backfill_span(journal, SPAN_NOW).is_err());
+    assert!(failed().is_string());
+    // Nothing it reads has changed: it is not read again, nor reported again.
+    let written = std::fs::metadata(&stamp).unwrap().modified().unwrap();
+    assert_eq!(
+        consolidate_historical_backfill_span(journal, SPAN_NOW),
+        Ok(())
+    );
+    assert_eq!(
+        std::fs::metadata(&stamp).unwrap().modified().unwrap(),
+        written
+    );
+    assert_eq!(span_people(journal), vec![]);
+    // The file is put right, which is a change to what the span reads.
+    std::fs::write(&hides, r#"{"names":[]}"#).unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert!(failed().is_null());
+    assert_eq!(span_people(journal).len(), 1);
+}
+
+#[cfg(test)]
+#[test]
+fn a_correspondent_an_older_version_read_from_header_like_text_counts_toward_nobody() {
+    use std::io::Write;
+    let root = span_journal();
+    let journal = root.path();
+    let acts = journal.join("facets/work/activities");
+    std::fs::create_dir_all(&acts).unwrap();
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        std::fs::create_dir_all(
+            journal
+                .join("chronicle")
+                .join(day)
+                .join("import.text/100000_0"),
+        )
+        .unwrap();
+        let row = serde_json::json!({
+            "id": act, "facet": "work", "activity": "note", "stream": "import.text",
+            "segments": ["100000_0"], "summary": "Trip ideas.",
+            "participation": [{"name": "Skyline Air", "role": "corresponded",
+                "source": "transcript", "confidence": 1.0,
+                "context": "Corresponded in message."}]
+        });
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(acts.join(format!("{day}.jsonl")))
+            .unwrap();
+        writeln!(file, "{row}").unwrap();
+    }
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    assert_eq!(span_people(journal), vec![]);
+}
+
+#[cfg(test)]
+#[test]
+fn a_name_a_talent_shortened_still_finds_its_address() {
+    let root = span_journal();
+    let journal = root.path();
+    for (day, act) in [("20210510", "act_1"), ("20210517", "act_2")] {
+        span_email(
+            journal,
+            day,
+            "100000_0",
+            act,
+            "Christopher Adams",
+            "chris@example.com",
+        );
+    }
+    // The participation talent later wrote the name its own way on one day.
+    let path = journal.join("facets/work/activities/20210517.jsonl");
+    let shortened = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("Christopher Adams", "Chris Adams");
+    std::fs::write(&path, shortened).unwrap();
+    consolidate_historical_backfill_span(journal, SPAN_NOW).unwrap();
+    // One person, seen on two days, with the address the exchanges give.
+    assert_eq!(
+        span_people(journal),
+        vec![(
+            "Christopher Adams".to_owned(),
+            "Person".to_owned(),
+            serde_json::json!(["chris@example.com"]),
+        )]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn the_mailbox_an_email_was_synced_from_is_the_owners() {
+    let root = span_journal();
+    let journal = root.path();
+    let seg = journal.join("chronicle/20210510/import.email/100000_0");
+    std::fs::create_dir_all(&seg).unwrap();
+    // A note to self: the recipient's label is the bare address, and the
+    // journal has no entity for the owner yet.
+    let header = serde_json::json!({"source": "email", "email": {"account": "Me@Hale.example"}});
+    let line = serde_json::json!({
+        "speaker": "You", "is_owner": true, "text": "Body",
+        "to": ["me@hale.example", "Sam Reyes"],
+        "email": {"from": "me@hale.example", "to_addresses": ["me@hale.example", "sam@example.com"]},
+    });
+    std::fs::write(
+        seg.join("conversation_transcript.jsonl"),
+        format!("{header}\n{line}\n"),
+    )
+    .unwrap();
+    let mut record = serde_json::json!({"id":"a","title":"Mail","segments":["100000_0"]})
+        .as_object()
+        .unwrap()
+        .clone();
+    populate_backfill_activity_defaults(journal, "20210510", "work", "import.email", &mut record);
+    let names: Vec<&str> = record["participation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["Sam Reyes"]);
 }
