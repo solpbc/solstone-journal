@@ -1247,11 +1247,26 @@ pub(crate) fn seed_activity_retries_checked(
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
     checkpoint()?;
-    use solstone_core_system_health::{
-        FilesystemHealthLogSource, TerminalEvent, read_terminal_states,
-    };
+    use solstone_core_system_health::{FilesystemHealthLogSource, read_terminal_states};
     let states = read_terminal_states(&FilesystemHealthLogSource::new(journal), day, true)
         .map_err(|e| e.to_string())?;
+    seed_activity_retries_from_states_checked(journal, day, states, now_ms, checkpoint)
+}
+
+pub(crate) fn seed_activity_retries_from_states_checked(
+    journal: &Path,
+    day: &str,
+    states: solstone_core_system_health::FoldRead<
+        BTreeMap<
+            solstone_core_system_health::TerminalUnit,
+            solstone_core_system_health::TerminalState,
+        >,
+    >,
+    now_ms: i64,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    checkpoint()?;
+    use solstone_core_system_health::TerminalEvent;
     if states.malformed_line_count != 0 {
         return Err("cannot seed activity retries from malformed health logs".to_owned());
     }

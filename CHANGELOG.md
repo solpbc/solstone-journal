@@ -89,6 +89,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when one source on a paired device has an upload turned away while another source on that device keeps adding to your journal, the problem now stays visible on home, network, status and `solstone journal doctor` until that source succeeds. paired devices that stay connected while idle also stay shown as connected instead of turning to not reporting or offline.
 - on home, pairing only the `solstone` command no longer lists it as awaiting its first upload, and a newly paired device with sources turned on or paused shows as quiet instead of awaiting its first upload. paired apps reading your journal's shared sources list also get the latest sync time for Safari on an iphone or ipad.
 - page names in the side rail, such as suggestions in narrower browser windows or on tablets, no longer get cut off or clip at the bottom, and wrap onto a second line when needed. counts on the side rail and dock stay clear of their icons, and labels on the dock no longer clip at the bottom.
+- background checks for unfinished work on larger journals now do much less repeated disk reading and processing without changing what gets checked.
 
 ### Removed
 

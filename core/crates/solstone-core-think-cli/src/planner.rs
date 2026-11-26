@@ -147,10 +147,16 @@ fn read_coverage(
     journal: &Path,
     day: &str,
     roots: Option<&DiscoveryTalentRoots>,
+    coverage_pass: Option<&daily_coverage::DailyCoveragePass>,
 ) -> Result<daily_coverage::DailyCoverage, String> {
+    if let Some(roots) = roots {
+        roots.revalidate()?;
+    }
+    if let Some(pass) = coverage_pass {
+        return pass.read_day(journal, day);
+    }
     match roots {
         Some(roots) => {
-            roots.revalidate()?;
             daily_coverage::read_daily_coverage_with_roots(journal, day, &roots.talent, &roots.apps)
         }
         None => daily_coverage::read_daily_coverage(journal, day),
@@ -471,6 +477,7 @@ struct DayWork {
     completed_segments: BTreeSet<Coordinate>,
     daily_current: bool,
     history: HistoryDay,
+    observed_talent_retries: Vec<String>,
 }
 
 #[derive(Default)]
@@ -896,6 +903,8 @@ fn daily_retries(
 fn talent_retries(
     journal: &Path,
     day: &str,
+    prelisted: Option<&[work_retry::Record]>,
+    extra_unit_ids: &[String],
     intent: Option<&OwnerIntent>,
     imports: &[ImportThinking],
     policy: WorkPolicy,
@@ -904,18 +913,53 @@ fn talent_retries(
     report: &mut WorkInventory,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Vec<DiscoveredTask>, String> {
-    let (records, errors) = work_retry::list(journal);
-    report.unreadable.extend(errors);
+    let records: Vec<work_retry::Record> = match prelisted {
+        Some(day_records) => {
+            let mut combined = Vec::with_capacity(day_records.len() + extra_unit_ids.len());
+            let mut seen = BTreeSet::new();
+            for record in day_records {
+                if let Ok(id) = record.unit.id() {
+                    seen.insert(id);
+                }
+                combined.push(record.clone());
+            }
+            for extra_id in extra_unit_ids {
+                if !seen.insert(extra_id.clone()) {
+                    continue;
+                }
+                if let Some(record) =
+                    work_retry::read(journal, extra_id)?.filter(|record| record.held)
+                    && record.unit.day() == day
+                    && matches!(record.unit, Unit::Segment { .. } | Unit::Activity { .. })
+                    && !is_body_data_hold(&record.unit)
+                {
+                    combined.push(record);
+                }
+            }
+            combined
+        }
+        None => {
+            let (listed, errors) = work_retry::list(journal);
+            report.unreadable.extend(errors);
+            listed
+                .into_iter()
+                .filter(|r| {
+                    r.unit.day() == day
+                        && matches!(r.unit, Unit::Segment { .. } | Unit::Activity { .. })
+                        && !is_body_data_hold(&r.unit)
+                })
+                .collect()
+        }
+    };
     let today = jiff::Timestamp::now()
         .to_zoned_datetime(solstone_core_journal_config::owner_zone(journal))
         .date();
     let mut candidates = Vec::new();
-    for record in records.into_iter().filter(|r| {
-        r.unit.day() == day
-            && matches!(r.unit, Unit::Segment { .. } | Unit::Activity { .. })
-            && !is_body_data_hold(&r.unit)
-    }) {
+    for record in records {
         let id = record.unit.id()?;
+        let Some(record) = work_retry::read(journal, &id)?.filter(|record| record.held) else {
+            continue;
+        };
         let current = match &record.unit {
             Unit::Activity { .. } => crate::activity_held_input(journal, &record.unit),
             _ => work_retry::input::current(journal, &record.unit).map(Some),
@@ -928,10 +972,16 @@ fn talent_retries(
                 None
             }
         };
-        if let Some(intent) = intent {
+        let record = if let Some(intent) = intent {
             work_retry::request_with_id_checked(journal, &record.unit, &intent.id, checkpoint)?;
-        }
-        let record = work_retry::read(journal, &id)?.ok_or("missing talent retry")?;
+            let Some(refreshed) = work_retry::read(journal, &id)?.filter(|record| record.held)
+            else {
+                continue;
+            };
+            refreshed
+        } else {
+            record
+        };
         let grant = input
             .as_ref()
             .and_then(|input| record.permission(input, work_retry::DECLARED_FIXES));
@@ -974,10 +1024,22 @@ fn talent_retries(
     Ok(candidates)
 }
 
+type DayHealthPair = (
+    solstone_core_system_health::FoldRead<
+        BTreeMap<
+            solstone_core_system_health::SegmentIdentity,
+            solstone_core_system_health::SegmentProgress,
+        >,
+    >,
+    solstone_core_system_health::FoldRead<solstone_core_system_health::SegmentTalentFailures>,
+);
+
 struct DaySources<'a> {
     imports: &'a [ImportThinking],
     archive_coordinates: &'a BTreeSet<Coordinate>,
     roots: Option<&'a DiscoveryTalentRoots>,
+    coverage_pass: Option<&'a daily_coverage::DailyCoveragePass>,
+    day_health: Option<Result<DayHealthPair, String>>,
     ask: crate::owner_asks::DayAsk,
 }
 
@@ -1004,6 +1066,7 @@ fn inspect_day(
         completed_segments: BTreeSet::new(),
         daily_current: false,
         history: HistoryDay::default(),
+        observed_talent_retries: Vec::new(),
     };
     if intent.is_some_and(|intent| intent.owner_stopped) {
         work.history.owed = 1;
@@ -1076,20 +1139,20 @@ fn inspect_day(
         now,
     )
     .map_err(|error| error.to_string())?;
-    let progress = solstone_core_system_health::read_segment_progress(
-        &solstone_core_system_health::FilesystemHealthLogSource::new(journal),
-        day,
-    )
-    .map_err(|error| error.to_string())?;
+    let (progress, failures) = match sources.day_health {
+        Some(day_health) => day_health?,
+        None => {
+            let folds = solstone_core_system_health::read_day_health_folds(
+                &solstone_core_system_health::FilesystemHealthLogSource::new(journal),
+                day,
+            )
+            .map_err(|error| error.to_string())?;
+            (folds.progress, folds.failures)
+        }
+    };
     if progress.malformed_line_count != 0 {
         return Err("segment progress contains unreadable records".into());
     }
-    // One read of the day's logs; never one per segment.
-    let failures = solstone_core_system_health::read_segment_talent_failures(
-        &solstone_core_system_health::FilesystemHealthLogSource::new(journal),
-        day,
-    )
-    .map_err(|error| error.to_string())?;
     if failures.malformed_line_count != 0 {
         return Err("floor failure evidence is unreadable".into());
     }
@@ -1175,6 +1238,7 @@ fn inspect_day(
                 segment,
                 &progress.value,
                 &failures.value.repeated,
+                &mut work.observed_talent_retries,
                 checkpoint,
             )?
         } else {
@@ -1214,7 +1278,7 @@ fn inspect_day(
         false
     } else {
         let closing = day_still_closing(journal, queue, SystemTime::now()).as_deref() == Some(day);
-        let coverage = read_coverage(journal, day, sources.roots)?;
+        let coverage = read_coverage(journal, day, sources.roots, sources.coverage_pass)?;
         let in_import = sources
             .imports
             .iter()
@@ -1650,7 +1714,7 @@ fn still_owed(
     {
         return Ok(false);
     }
-    let coverage = read_coverage(journal, day, roots)?;
+    let coverage = read_coverage(journal, day, roots, None)?;
     Ok(coverage.state.is_owed()
         && runnable_owed(journal, day, &coverage)?
         && solstone_core_system_health::day_unpublished_segments(journal, day)?.is_some())
@@ -1671,6 +1735,10 @@ enum HeldThinking {
 /// current input, then say whether all of its waiting thinking is held.
 /// `None` is ordinary work: something it waits on is not held, its input is
 /// newer than its last Sense read, or the evidence cannot be read.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Segment thinking-hold observation needs day, segment, health folds, and checkpoint explicitly."
+)]
 fn held_thinking(
     journal: &Path,
     day: &str,
@@ -1683,6 +1751,7 @@ fn held_thinking(
         solstone_core_system_health::TerminalUnit,
         solstone_core_system_health::RepeatedFailure,
     >,
+    observed_talent_retries: &mut Vec<String>,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Option<HeldThinking>, String> {
     if !solstone_core_system_health::segment_fully_sensed(&segment.data_state) {
@@ -1772,14 +1841,15 @@ fn held_thinking(
         }
         match work_retry::read(journal, &id)?.filter(|record| record.held) {
             None => return Ok(None),
-            Some(record)
+            Some(record) => {
+                observed_talent_retries.push(id.clone());
                 if record
                     .permission(&input, work_retry::DECLARED_FIXES)
-                    .is_some() =>
-            {
-                held = HeldThinking::Retrying;
+                    .is_some()
+                {
+                    held = HeldThinking::Retrying;
+                }
             }
-            Some(_) => {}
         }
     }
     Ok(Some(held))
@@ -2015,10 +2085,31 @@ fn reconcile_pass_with_roots(
     let (held_activities, held_errors) = crate::discover_held_activities(journal);
     let (held_records, mut retry_errors) = work_retry::list(journal);
     let held_records = settle_body_data_holds(journal, held_records, &mut retry_errors);
+    let mut held_talent_by_day: BTreeMap<String, Vec<work_retry::Record>> = BTreeMap::new();
+    for record in &held_records {
+        if matches!(record.unit, Unit::Segment { .. } | Unit::Activity { .. })
+            && !is_body_data_hold(&record.unit)
+        {
+            held_talent_by_day
+                .entry(record.unit.day().to_owned())
+                .or_default()
+                .push(record.clone());
+        }
+    }
     let now = jiff::Timestamp::now();
     let today = daily_coverage::local_day(journal, now);
     let pass_day = today.clone();
     solstone_core_system::daily_coverage::activate_daily_inputs_checked(journal, now, checkpoint)?;
+    let coverage_pass = match roots {
+        Some(roots) => daily_coverage::DailyCoveragePass::load_with_roots(
+            journal,
+            &roots.talent,
+            &roots.apps,
+            &pass_day,
+        )
+        .ok(),
+        None => daily_coverage::DailyCoveragePass::load(journal, &pass_day).ok(),
+    };
     let maintenance =
         solstone_core_journal_io::DailyUnitIdentity::new(&today, "daily_schedule", None);
     if solstone_core_journal_io::load_daily_unit_record(journal, &maintenance)
@@ -2123,15 +2214,30 @@ fn reconcile_pass_with_roots(
         days.entry(day.clone())
             .or_insert_with(|| journal.join("chronicle").join(&day));
         let mut day_report = WorkInventory::default();
-        if let Err(error) = crate::activity_work::seed_activity_retries_checked(
-            journal,
+        let day_health = match solstone_core_system_health::read_day_health_folds(
+            &solstone_core_system_health::FilesystemHealthLogSource::new(journal),
             &day,
-            jiff::Timestamp::now().as_millisecond(),
-            checkpoint,
         ) {
-            day_report.unreadable.push(format!("{day}: {error}"));
-        }
+            Ok(folds) => {
+                if let Err(error) = crate::activity_work::seed_activity_retries_from_states_checked(
+                    journal,
+                    &day,
+                    folds.terminal_states,
+                    jiff::Timestamp::now().as_millisecond(),
+                    checkpoint,
+                ) {
+                    day_report.unreadable.push(format!("{day}: {error}"));
+                }
+                Ok((folds.progress, folds.failures))
+            }
+            Err(error) => {
+                let message = error.to_string();
+                day_report.unreadable.push(format!("{day}: {message}"));
+                Err(message)
+            }
+        };
         let mut history_day = HistoryDay::default();
+        let mut observed_talent_retries = Vec::new();
         match inspect_day(
             journal,
             &day,
@@ -2141,6 +2247,8 @@ fn reconcile_pass_with_roots(
                 imports: &imports.imports,
                 archive_coordinates: &archive_coordinates,
                 roots,
+                coverage_pass: coverage_pass.as_ref(),
+                day_health: Some(day_health),
                 ask: asks.day(&day),
             },
             policy,
@@ -2149,6 +2257,7 @@ fn reconcile_pass_with_roots(
         ) {
             Ok(work) => {
                 history_day = work.history;
+                observed_talent_retries = work.observed_talent_retries;
                 for tile in pending_archives.tiles.iter().filter(|tile| tile.day == day) {
                     let coordinate = Coordinate {
                         day: tile.day.clone(),
@@ -2197,9 +2306,17 @@ fn reconcile_pass_with_roots(
         }
         let mut permanent_activities = 0;
         if !intents.get(&day).is_some_and(|intent| intent.from_scratch) {
+            let prelisted = (!owner_wakeup).then(|| {
+                held_talent_by_day
+                    .get(&day)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[])
+            });
             match talent_retries(
                 journal,
                 &day,
+                prelisted,
+                &observed_talent_retries,
                 intents.get(&day),
                 &imports.imports,
                 policy,
@@ -2931,7 +3048,7 @@ mod tests {
                 talent: root.path().join("missing-payload"),
                 apps: resources.apps.clone(),
             };
-            assert!(read_coverage(root.path(), unit.day(), Some(&missing)).is_err());
+            assert!(read_coverage(root.path(), unit.day(), Some(&missing), None).is_err());
             assert!(
                 reconcile_pass_with_roots(
                     root.path(),
@@ -3281,6 +3398,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -3324,6 +3443,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -3346,6 +3467,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -3380,6 +3503,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -3435,6 +3560,8 @@ mod tests {
                     imports: &[],
                     archive_coordinates: &BTreeSet::new(),
                     roots: None,
+                    coverage_pass: None,
+                    day_health: None,
                     ask: Default::default(),
                 },
                 WorkPolicy::read(root.path()).unwrap(),
@@ -4983,6 +5110,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -5686,6 +5815,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &archive_coords_today,
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -5734,6 +5865,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &BTreeSet::new(),
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -5764,6 +5897,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &past_archive_coords,
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -5859,6 +5994,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -5958,6 +6095,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -6021,6 +6160,8 @@ mod tests {
                     imports: &[],
                     archive_coordinates: &coords,
                     roots: None,
+                    coverage_pass: None,
+                    day_health: None,
                     ask: Default::default(),
                 },
                 policy,
@@ -6040,6 +6181,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -6110,6 +6253,8 @@ mod tests {
                 imports: &[],
                 archive_coordinates: &coords,
                 roots: None,
+                coverage_pass: None,
+                day_health: None,
                 ask: Default::default(),
             },
             policy,
@@ -6302,6 +6447,8 @@ mod tests {
                     imports: &[],
                     archive_coordinates: &BTreeSet::new(),
                     roots: None,
+                    coverage_pass: None,
+                    day_health: None,
                     ask: Default::default(),
                 },
                 WorkPolicy::read(root.path()).unwrap(),
@@ -6358,5 +6505,83 @@ mod tests {
             .maintenance
             .unwrap();
         assert_ne!(restored.state, CoverageState::Unreadable);
+    }
+
+    #[test]
+    fn talent_retries_reuses_prelisted_holds_and_picks_up_newly_observed_ids() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20260812";
+        let seg_dir = root
+            .path()
+            .join("chronicle")
+            .join(day)
+            .join("audio/120000_60");
+        std::fs::create_dir_all(seg_dir.join("talents")).unwrap();
+        std::fs::write(seg_dir.join("audio.jsonl"), "{}\n").unwrap();
+        std::fs::write(seg_dir.join("talents/sense.json"), "{}").unwrap();
+
+        let prelisted_unit = Unit::Segment {
+            day: day.into(),
+            stream: "audio".into(),
+            segment: "120000_60".into(),
+            talent: "documents".into(),
+            direct: false,
+        };
+        let prelisted_input = work_retry::input::current(root.path(), &prelisted_unit).unwrap();
+        work_retry::observe_held(
+            root.path(),
+            &prelisted_unit,
+            "schema_invalid",
+            &prelisted_input,
+        )
+        .unwrap();
+        let (initial_records, errors) = work_retry::list(root.path());
+        assert!(errors.is_empty());
+        assert_eq!(initial_records.len(), 1);
+
+        // A second hold observed mid-pass (after the pass-top `work_retry::list`).
+        let newly_observed_unit = Unit::Segment {
+            day: day.into(),
+            stream: "audio".into(),
+            segment: "120000_60".into(),
+            talent: "entities".into(),
+            direct: false,
+        };
+        let newly_observed_id = newly_observed_unit.id().unwrap();
+        let newly_observed_input =
+            work_retry::input::current(root.path(), &newly_observed_unit).unwrap();
+        work_retry::observe_held(
+            root.path(),
+            &newly_observed_unit,
+            "schema_invalid",
+            &newly_observed_input,
+        )
+        .unwrap();
+
+        let mut report = WorkInventory::default();
+        let mut perm_activities = 0;
+        let _tasks = talent_retries(
+            root.path(),
+            day,
+            Some(&initial_records),
+            std::slice::from_ref(&newly_observed_id),
+            None,
+            &[],
+            WorkPolicy::read(root.path()).unwrap(),
+            crate::owner_asks::DayAsk::default(),
+            &mut perm_activities,
+            &mut report,
+            &|| Ok(()),
+        )
+        .unwrap();
+        let hold_ids: BTreeSet<_> = report
+            .holds
+            .iter()
+            .filter_map(|h| h.retry_unit.as_ref())
+            .cloned()
+            .collect();
+        assert!(hold_ids.contains(&prelisted_unit.id().unwrap()));
+        assert!(hold_ids.contains(&newly_observed_id));
+        assert_eq!(hold_ids.len(), 2);
     }
 }

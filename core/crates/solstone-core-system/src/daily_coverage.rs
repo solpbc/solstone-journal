@@ -366,6 +366,71 @@ pub fn read_daily_coverage_with_roots_in(
     )
 }
 
+/// Pass-scoped coverage context reused across all days of one discovery pass.
+///
+/// Loads daily talent configurations and declared facet names once per pass,
+/// and evaluates global `daily_schedule` maintenance only when reading
+/// `pass_day`.
+pub struct DailyCoveragePass {
+    configs: Vec<TalentConfig>,
+    facets: Vec<String>,
+    pass_day: String,
+    locale: String,
+}
+
+impl DailyCoveragePass {
+    pub fn load(journal: &Path, pass_day: impl Into<String>) -> Result<Self, String> {
+        let locale = solstone_core_cli_copy::ENGLISH;
+        let (talent, apps) = package_roots_in(locale)?;
+        Self::load_with_roots_in(journal, &talent, &apps, pass_day, locale)
+    }
+
+    pub fn load_with_roots(
+        journal: &Path,
+        talent: &Path,
+        apps: &Path,
+        pass_day: impl Into<String>,
+    ) -> Result<Self, String> {
+        Self::load_with_roots_in(
+            journal,
+            talent,
+            apps,
+            pass_day,
+            solstone_core_cli_copy::ENGLISH,
+        )
+    }
+
+    pub fn load_with_roots_in(
+        journal: &Path,
+        talent: &Path,
+        apps: &Path,
+        pass_day: impl Into<String>,
+        locale: &str,
+    ) -> Result<Self, String> {
+        let configs = daily_configs_in(journal, talent, apps, locale)?;
+        let facets =
+            solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?;
+        Ok(Self {
+            configs,
+            facets,
+            pass_day: pass_day.into(),
+            locale: locale.to_owned(),
+        })
+    }
+
+    pub fn read_day(&self, journal: &Path, day: &str) -> Result<DailyCoverage, String> {
+        read_daily_coverage_core(
+            journal,
+            day,
+            &self.configs,
+            &self.facets,
+            Some(self.pass_day.as_str()),
+            &mut DayProjectionCache::new_in(journal, day, &self.locale),
+            &self.locale,
+        )
+    }
+}
+
 /// One coverage read of `day`, sharing one whole-day source projection across its units.
 fn read_daily_coverage_with_cache(
     journal: &Path,
@@ -382,14 +447,57 @@ fn read_daily_coverage_with_cache(
     let configs = daily_configs_in(journal, talent, apps, locale)?;
     let facets =
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?;
+    read_daily_coverage_unlocked(journal, day, &configs, &facets, None, cache, locale)
+}
+
+fn read_daily_coverage_core(
+    journal: &Path,
+    day: &str,
+    configs: &[TalentConfig],
+    facets: &[String],
+    maintenance_pass_day: Option<&str>,
+    cache: &mut DayProjectionCache,
+    locale: &str,
+) -> Result<DailyCoverage, String> {
+    let _one_read_at_a_time = acquire_coverage_read(&COVERAGE_READ, day);
+    read_daily_coverage_unlocked(
+        journal,
+        day,
+        configs,
+        facets,
+        maintenance_pass_day,
+        cache,
+        locale,
+    )
+}
+
+fn read_daily_coverage_unlocked(
+    journal: &Path,
+    day: &str,
+    configs: &[TalentConfig],
+    facets: &[String],
+    maintenance_pass_day: Option<&str>,
+    cache: &mut DayProjectionCache,
+    locale: &str,
+) -> Result<DailyCoverage, String> {
     let active = crate::activity_state::active_facets_checked_in(journal, day, locale)?;
+    let today = local_day(journal, Timestamp::now());
+    let include_maintenance =
+        maintenance_pass_day.is_none_or(|pass_day| day == pass_day || day == today);
+    let mut backfill_only: Option<bool> = None;
+    let mut is_backfill_only = || -> bool {
+        *backfill_only
+            .get_or_insert_with(|| solstone_core_segment::day_is_backfill_only(journal, day))
+    };
     let mut units = Vec::new();
     let mut maintenance = None;
     for config in configs {
         // Global maintenance is reported independently of historical evidence coverage.
         if config.key == "daily_schedule" {
-            let today = local_day(journal, Timestamp::now());
-            maintenance = Some(match read_unit_coverage(journal, &today, &config, None) {
+            if !include_maintenance {
+                continue;
+            }
+            maintenance = Some(match read_unit_coverage(journal, &today, config, None) {
                 Ok(mut unit) => {
                     if unit.state == CoverageState::HistoricalUnverified {
                         unit.state = CoverageState::Outstanding;
@@ -409,29 +517,44 @@ fn read_daily_coverage_with_cache(
             continue;
         }
         if config.metadata.get("multi_facet") == Some(&Value::Bool(true)) {
-            for facet in &facets {
+            for facet in facets {
                 if config.metadata.get("always") != Some(&Value::Bool(true))
                     && !active.contains(facet)
                 {
                     continue;
                 }
-                units.push(read_unit_coverage_cached(
+                units.push(read_unit_coverage_cached_with_backfill(
                     journal,
                     day,
-                    &config,
+                    &today,
+                    config,
                     Some(facet),
                     cache,
+                    &mut is_backfill_only,
                 )?);
             }
         } else {
-            if config.key == "morning_briefing" && !morning_briefing_applies(journal, day) {
+            if config.key == "morning_briefing"
+                && !morning_briefing_applies_with_backfill(
+                    journal,
+                    day,
+                    &today,
+                    &mut is_backfill_only,
+                )
+            {
                 continue;
             }
             if config.key == "experiences_detect" && active.is_empty() {
                 continue;
             }
-            units.push(read_unit_coverage_cached(
-                journal, day, &config, None, cache,
+            units.push(read_unit_coverage_cached_with_backfill(
+                journal,
+                day,
+                &today,
+                config,
+                None,
+                cache,
+                &mut is_backfill_only,
             )?);
         }
     }
@@ -476,6 +599,17 @@ pub fn morning_briefing_applies(journal: &Path, day: &str) -> bool {
 }
 
 pub fn morning_briefing_applies_at(journal: &Path, day: &str, today: &str) -> bool {
+    morning_briefing_applies_with_backfill(journal, day, today, &mut || {
+        solstone_core_segment::day_is_backfill_only(journal, day)
+    })
+}
+
+fn morning_briefing_applies_with_backfill(
+    journal: &Path,
+    day: &str,
+    today: &str,
+    is_backfill_only: &mut dyn FnMut() -> bool,
+) -> bool {
     let Some(day_date) = solstone_core_time::parse_day(day) else {
         return true;
     };
@@ -483,7 +617,7 @@ pub fn morning_briefing_applies_at(journal: &Path, day: &str, today: &str) -> bo
         return true;
     };
     let age = today_date.duration_since(day_date).as_hours() / 24;
-    if age <= 1 || !solstone_core_segment::day_is_backfill_only(journal, day) {
+    if age <= 1 || !is_backfill_only() {
         return true;
     }
     if crate::owner_ask::thawed(journal, day) {
@@ -531,18 +665,36 @@ pub fn historical_entity_daily_applies_at(
     facet: Option<&str>,
     now: Timestamp,
 ) -> bool {
+    let today_str = local_day(journal, now);
+    historical_entity_daily_applies_with_backfill(
+        journal,
+        day,
+        &today_str,
+        talent,
+        facet,
+        &mut || solstone_core_segment::day_is_backfill_only(journal, day),
+    )
+}
+
+fn historical_entity_daily_applies_with_backfill(
+    journal: &Path,
+    day: &str,
+    today_str: &str,
+    talent: &str,
+    facet: Option<&str>,
+    is_backfill_only: &mut dyn FnMut() -> bool,
+) -> bool {
     if !HISTORICAL_ENTITY_DAILY_TALENTS.contains(&talent) {
         return true;
     }
     let Some(day_date) = solstone_core_time::parse_day(day) else {
         return true;
     };
-    let today_str = local_day(journal, now);
-    let Some(today_date) = solstone_core_time::parse_day(&today_str) else {
+    let Some(today_date) = solstone_core_time::parse_day(today_str) else {
         return true;
     };
     let age = today_date.duration_since(day_date).as_hours() / 24;
-    if age <= 7 || !solstone_core_segment::day_is_backfill_only(journal, day) {
+    if age <= 7 || !is_backfill_only() {
         return true;
     }
     if crate::owner_ask::thawed(journal, day) {
@@ -563,24 +715,31 @@ pub fn read_unit_coverage(
     config: &TalentConfig,
     facet: Option<&str>,
 ) -> Result<UnitCoverage, String> {
-    read_unit_coverage_cached(
+    let today = local_day(journal, Timestamp::now());
+    read_unit_coverage_cached_with_backfill(
         journal,
         day,
+        &today,
         config,
         facet,
         &mut DayProjectionCache::new(journal, day),
+        &mut || solstone_core_segment::day_is_backfill_only(journal, day),
     )
 }
 
-fn read_unit_coverage_cached(
+fn read_unit_coverage_cached_with_backfill(
     journal: &Path,
     day: &str,
+    today: &str,
     config: &TalentConfig,
     facet: Option<&str>,
     cache: &mut DayProjectionCache,
+    is_backfill_only: &mut dyn FnMut() -> bool,
 ) -> Result<UnitCoverage, String> {
     let identity = DailyUnitIdentity::new(day, &config.key, facet.map(str::to_owned));
-    if config.key == "morning_briefing" && !morning_briefing_applies(journal, day) {
+    if config.key == "morning_briefing"
+        && !morning_briefing_applies_with_backfill(journal, day, today, is_backfill_only)
+    {
         return Ok(UnitCoverage {
             identity,
             evidence_revision: String::new(),
@@ -592,7 +751,14 @@ fn read_unit_coverage_cached(
         });
     }
     if HISTORICAL_ENTITY_DAILY_TALENTS.contains(&config.key.as_str())
-        && !historical_entity_daily_applies(journal, day, &config.key, facet)
+        && !historical_entity_daily_applies_with_backfill(
+            journal,
+            day,
+            today,
+            &config.key,
+            facet,
+            is_backfill_only,
+        )
     {
         return Ok(UnitCoverage {
             identity,
@@ -2206,5 +2372,32 @@ mod tests {
             .find(|u| u.identity.name == "morning_briefing")
             .expect("thawed briefing applies");
         assert_eq!(thawed_unit.state, CoverageState::Outstanding);
+    }
+
+    #[test]
+    fn daily_coverage_pass_matches_units_and_skips_maintenance_on_historical_days() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path();
+        let (talent, apps) = package_roots().unwrap();
+        let today = local_day(root, Timestamp::now());
+        let days = closed_days(root, 2);
+        let old_day = &days[0];
+
+        let pass = DailyCoveragePass::load_with_roots(root, &talent, &apps, &today).unwrap();
+        let pass_old = pass.read_day(root, old_day).unwrap();
+        let direct_old = read_daily_coverage_with_roots(root, old_day, &talent, &apps).unwrap();
+        assert_eq!(pass_old.state, direct_old.state);
+        assert_eq!(pass_old.units, direct_old.units);
+        assert!(
+            pass_old.maintenance.is_none(),
+            "historical day skips daily_schedule maintenance"
+        );
+        assert!(direct_old.maintenance.is_some());
+
+        let pass_today = pass.read_day(root, &today).unwrap();
+        assert!(
+            pass_today.maintenance.is_some(),
+            "pass_day keeps daily_schedule maintenance"
+        );
     }
 }

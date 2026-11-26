@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::event::HealthEvent;
+use crate::event::{HealthEvent, RunLogRecord};
 use crate::read::read_day_records;
 use crate::{FoldRead, HealthError, HealthLogSource, SegmentIdentity, SegmentProgress};
 
@@ -29,6 +29,15 @@ pub fn read_segment_progress<S: HealthLogSource>(
     day: &str,
 ) -> Result<FoldRead<BTreeMap<SegmentIdentity, SegmentProgress>>, HealthError> {
     let scanned = read_day_records(source, day)?;
+    Ok(FoldRead {
+        value: fold_segment_progress(&scanned.value),
+        malformed_line_count: scanned.malformed_line_count,
+    })
+}
+
+pub(crate) fn fold_segment_progress(
+    scanned: &[RunLogRecord],
+) -> BTreeMap<SegmentIdentity, SegmentProgress> {
     let mut latest_sense: BTreeMap<SegmentIdentity, (i64, Option<String>)> = BTreeMap::new();
     let mut sense_completions: BTreeMap<SegmentIdentity, Vec<i64>> = BTreeMap::new();
     let mut latest_change: BTreeMap<SegmentIdentity, (i64, Option<String>)> = BTreeMap::new();
@@ -36,7 +45,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
         BTreeMap::new();
     let mut unconfigured: BTreeMap<SegmentIdentity, BTreeSet<String>> = BTreeMap::new();
     let mut sequence = 0;
-    for record in scanned.value {
+    for record in scanned {
         let Some(payload) = record.event.payload() else {
             continue;
         };
@@ -149,8 +158,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
         .chain(unconfigured.keys())
         .cloned()
         .collect::<BTreeSet<_>>();
-    let value = keys
-        .into_iter()
+    keys.into_iter()
         .map(|key| {
             let mut dispatched = BTreeSet::new();
             let mut completed = BTreeSet::new();
@@ -248,11 +256,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
             };
             (key, progress)
         })
-        .collect();
-    Ok(FoldRead {
-        value,
-        malformed_line_count: scanned.malformed_line_count,
-    })
+        .collect()
 }
 
 fn push_record(

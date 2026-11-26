@@ -10,8 +10,8 @@ use crate::vocabulary::{
 };
 use crate::{
     CompletedUnit, CompletionActivity, CompletionSegment, CompletionsSince, DailyUnit,
-    DeterministicFailure, FoldRead, HealthError, HealthLogSource, RunLogRecord, TerminalEvent,
-    TerminalState, TerminalUnit,
+    DeterministicFailure, FoldRead, HealthError, HealthLogSource, RunLogRecord, SegmentIdentity,
+    SegmentProgress, TerminalEvent, TerminalState, TerminalUnit,
 };
 
 #[derive(Debug, Clone)]
@@ -27,6 +27,43 @@ struct ObservedTerminal {
     cache_hit: bool,
 }
 
+/// All per-day health-log folds needed by work discovery, computed from a
+/// single read of the day's health logs.
+#[derive(Debug, Clone)]
+pub struct DayHealthFolds {
+    pub progress: FoldRead<BTreeMap<SegmentIdentity, SegmentProgress>>,
+    pub failures: FoldRead<SegmentTalentFailures>,
+    pub terminal_states: FoldRead<BTreeMap<TerminalUnit, TerminalState>>,
+}
+
+/// Read a day's health logs once and fold segment progress, segment/daily
+/// talent failure state, and day-scoped terminal states from that single scan.
+pub fn read_day_health_folds<S: HealthLogSource>(
+    source: &S,
+    day: &str,
+) -> Result<DayHealthFolds, HealthError> {
+    let scanned = read_day_records(source, day)?;
+    let malformed_line_count = scanned.malformed_line_count;
+    let progress = crate::progress::fold_segment_progress(&scanned.value);
+    let failures = fold_segment_talent_failures(day, &scanned.value);
+    let terminal_states =
+        fold_terminal_records_ref(scanned.value.iter().map(|record| (day, record)), Some(day));
+    Ok(DayHealthFolds {
+        progress: FoldRead {
+            value: progress,
+            malformed_line_count,
+        },
+        failures: FoldRead {
+            value: failures,
+            malformed_line_count,
+        },
+        terminal_states: FoldRead {
+            value: terminal_states,
+            malformed_line_count,
+        },
+    })
+}
+
 pub fn read_terminal_states<S: HealthLogSource>(
     source: &S,
     day: &str,
@@ -34,19 +71,16 @@ pub fn read_terminal_states<S: HealthLogSource>(
 ) -> Result<FoldRead<BTreeMap<TerminalUnit, TerminalState>>, HealthError> {
     let scanned = read_day_records(source, day)?;
     Ok(FoldRead {
-        value: fold_terminal_records(
-            scanned
-                .value
-                .into_iter()
-                .map(|record| (day.to_owned(), record)),
+        value: fold_terminal_records_ref(
+            scanned.value.iter().map(|record| (day, record)),
             scope_to_day.then_some(day),
         ),
         malformed_line_count: scanned.malformed_line_count,
     })
 }
 
-fn group_observed_terminals(
-    input: impl IntoIterator<Item = (String, RunLogRecord)>,
+fn group_observed_terminals_ref<'a>(
+    input: impl IntoIterator<Item = (&'a str, &'a RunLogRecord)>,
     scoped_day: Option<&str>,
 ) -> BTreeMap<TerminalUnit, Vec<ObservedTerminal>> {
     let mut records: BTreeMap<TerminalUnit, Vec<ObservedTerminal>> = BTreeMap::new();
@@ -60,7 +94,7 @@ fn group_observed_terminals(
         let Some(payload) = record.event.payload() else {
             continue;
         };
-        let source_day = payload.day.as_deref().unwrap_or(&partition_day);
+        let source_day = payload.day.as_deref().unwrap_or(partition_day);
         if scoped_day.is_some_and(|day| source_day != day) {
             continue;
         }
@@ -95,11 +129,11 @@ fn group_observed_terminals(
     records
 }
 
-pub(crate) fn fold_terminal_records(
-    input: impl IntoIterator<Item = (String, RunLogRecord)>,
+fn fold_terminal_records_ref<'a>(
+    input: impl IntoIterator<Item = (&'a str, &'a RunLogRecord)>,
     scoped_day: Option<&str>,
 ) -> BTreeMap<TerminalUnit, TerminalState> {
-    let records = group_observed_terminals(input, scoped_day);
+    let records = group_observed_terminals_ref(input, scoped_day);
     records
         .into_iter()
         .map(|(unit, terminals)| {
@@ -152,6 +186,17 @@ pub(crate) fn fold_terminal_records(
         .collect()
 }
 
+pub(crate) fn fold_terminal_records(
+    input: impl IntoIterator<Item = (String, RunLogRecord)>,
+    scoped_day: Option<&str>,
+) -> BTreeMap<TerminalUnit, TerminalState> {
+    let owned: Vec<(String, RunLogRecord)> = input.into_iter().collect();
+    fold_terminal_records_ref(
+        owned.iter().map(|(day, record)| (day.as_str(), record)),
+        scoped_day,
+    )
+}
+
 pub fn is_floor_talent_capped<S: HealthLogSource>(
     source: &S,
     day: &str,
@@ -197,7 +242,7 @@ pub struct RepeatedFailure {
 }
 
 /// What one read of a day's logs says about segment talents that keep failing.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SegmentTalentFailures {
     /// The floor cap: any failure but a confidential-access or attestation
     /// outage counts.
@@ -266,13 +311,14 @@ pub fn read_segment_talent_failures<S: HealthLogSource>(
     day: &str,
 ) -> Result<FoldRead<SegmentTalentFailures>, HealthError> {
     let scanned = read_day_records(source, day)?;
-    let grouped = group_observed_terminals(
-        scanned
-            .value
-            .into_iter()
-            .map(|record| (day.to_owned(), record)),
-        None,
-    );
+    Ok(FoldRead {
+        value: fold_segment_talent_failures(day, &scanned.value),
+        malformed_line_count: scanned.malformed_line_count,
+    })
+}
+
+fn fold_segment_talent_failures(day: &str, records: &[RunLogRecord]) -> SegmentTalentFailures {
+    let grouped = group_observed_terminals_ref(records.iter().map(|record| (day, record)), None);
     let mut failures = SegmentTalentFailures::default();
     let mut daily_about_the_request = false;
     for (unit, terminals) in grouped {
@@ -319,10 +365,7 @@ pub fn read_segment_talent_failures<S: HealthLogSource>(
     if daily_about_the_request {
         failures.daily_retry_at = None;
     }
-    Ok(FoldRead {
-        value: failures,
-        malformed_line_count: scanned.malformed_line_count,
-    })
+    failures
 }
 
 /// At least `CAP` trailing failures spanning `MIN_SPAN_MS`, not counting the
@@ -877,5 +920,57 @@ mod tests {
             .unwrap()
             .value
         );
+    }
+
+    #[test]
+    fn read_day_health_folds_scans_once_and_matches_individual_reads() {
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingSource {
+            inner: FilesystemHealthLogSource,
+            calls: AtomicUsize,
+        }
+
+        impl HealthLogSource for CountingSource {
+            fn health_log_paths(&self, day: &str) -> Result<Vec<PathBuf>, HealthError> {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                self.inner.health_log_paths(day)
+            }
+        }
+
+        let day = "20260811";
+        let temp = TempDir::new().unwrap();
+        let lines = [
+            r#"{"ts":1000,"event":"sense.complete","mode":"segment","stream":"audio","segment":"120000_60","density":"rich"}"#,
+            r#"{"ts":1100,"event":"talent.dispatch","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","use_id":"u1"}"#,
+            r#"{"ts":1200,"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid","use_id":"u1"}"#,
+            r#"{"ts":1300,"event":"talent.fail","mode":"activity","facet":"work","activity":"a1","name":"notes","reason_code":"send_failed","use_id":"u2"}"#,
+            r#"{"ts":1400,"event":"talent.fail","mode":"daily","name":"morning_briefing","reason_code":"timeout"}"#,
+            "not-json",
+        ];
+        write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+
+        let source = CountingSource {
+            inner: FilesystemHealthLogSource::new(temp.path()),
+            calls: AtomicUsize::new(0),
+        };
+        let combined = read_day_health_folds(&source, day).unwrap();
+        assert_eq!(source.calls.load(Ordering::Relaxed), 1);
+
+        let direct_progress = crate::progress::read_segment_progress(
+            &FilesystemHealthLogSource::new(temp.path()),
+            day,
+        )
+        .unwrap();
+        let direct_failures =
+            read_segment_talent_failures(&FilesystemHealthLogSource::new(temp.path()), day)
+                .unwrap();
+        let direct_terminals =
+            read_terminal_states(&FilesystemHealthLogSource::new(temp.path()), day, true).unwrap();
+
+        assert_eq!(combined.progress, direct_progress);
+        assert_eq!(combined.failures, direct_failures);
+        assert_eq!(combined.terminal_states, direct_terminals);
     }
 }
