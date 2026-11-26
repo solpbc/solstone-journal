@@ -46,7 +46,7 @@ use solstone_core_import::triage::{self, Kind as ContentKind, Verdict};
 const SCREENSHOT_TRANSCRIPT: &str = "screenshot_transcript.md";
 const TRANSCRIPT_FILENAME: &str = "image_transcript.md";
 const IMAGE_META_FILENAME: &str = "image_meta.json";
-const VISION_MAX_LONG_EDGE: u32 = 1024;
+const VISION_MAX_LONG_EDGE: u32 = 1920;
 const VISION_JPEG_QUALITY: u8 = 85;
 const VISION_SCHEMA_JSON: &str = include_str!("image_vision.schema.json");
 const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. \
@@ -1727,11 +1727,11 @@ fn read_image(path: &Path, manual: bool) -> Result<DecodedImage, ImageImportErro
 }
 
 /// The copy of an imported image that goes to the vision model: upright pixels
-/// capped at 1024 px on the longest side (never upscaling smaller copies such
+/// capped at 1920 px on the longest side (never upscaling smaller copies such
 /// as 512 px library photos), with zero source metadata containers (EXIF, GPS,
 /// IPTC, XMP, ICC, comments, or trailing bytes).
 ///
-/// When the source is already an upright RGB/grayscale JPEG within the 1024 px
+/// When the source is already an upright RGB/grayscale JPEG within the 1920 px
 /// cap, its compressed DCT scan passes through without a second lossy JPEG
 /// generation while stripping every `APP*` and `COM` segment; any rotated,
 /// oversized, non-JPEG, or non-standard JPEG falls back to fresh JPEG encoding.
@@ -2757,8 +2757,8 @@ mod tests {
             (40, 24, 6, (24, 40)),
             // 512 px library copy: stays 512 px (never upscaled).
             (512, 384, 1, (512, 384)),
-            // No rotation, larger than the 1024 px vision bound: sent resized.
-            (3000, 16, 1, (1024, 5)),
+            // No rotation, larger than the 1920 px vision bound: sent resized.
+            (3000, 16, 1, (1920, 10)),
         ] {
             let source = jpeg_with_exif(width, height, orientation);
             let mut decoder = ImageReader::with_format(Cursor::new(&source), ImageFormat::Jpeg)
