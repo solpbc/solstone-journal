@@ -141,10 +141,16 @@ fresh_journal_loop() {
 	solstone journal indexer --rescan
 	solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20200101 --stream default --limit 10 \
 		>"$journal/query.out"
-	grep -Fx 'Total: 1 chunk' "$journal/query.out" >/dev/null \
-		|| refuse "$rung query did not return exactly one chunk"
+	# Two chunks since spoken transcript lines are indexed (8b6c7ca71): the talent
+	# transcript and the audio.jsonl line, each carrying the sentinel.
+	grep -Fx 'Total: 2 chunks' "$journal/query.out" >/dev/null \
+		|| refuse "$rung query did not return exactly two chunks"
 	grep -F 'CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query lost its sentinel"
+	grep -F 'audio: # Audio Transcript  CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
+		|| refuse "$rung query lost its talent transcript chunk"
+	grep -F 'Speaker 1: CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
+		|| refuse "$rung query lost its spoken transcript line"
 	solstone call journal read \
 		--path chronicle/20200101/default/120000_001/talents/audio.md --max 16384 \
 		>"$journal/read.out"
