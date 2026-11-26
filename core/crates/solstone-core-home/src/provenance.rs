@@ -463,6 +463,7 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
                 "obsidian" => "notes".to_owned(),
                 "evernote" => "Evernote".to_owned(),
                 "granola" => "Granola".to_owned(),
+                "email" => "Email".to_owned(),
                 "ics" => "calendar".to_owned(),
                 "document" => "documents".to_owned(),
                 "image" => "images".to_owned(),

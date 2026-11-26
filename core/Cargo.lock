@@ -6821,6 +6821,7 @@ dependencies = [
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
  "solstone-core-describe-categories",
+ "solstone-core-email",
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-import",

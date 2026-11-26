@@ -16,6 +16,8 @@ mod activities;
 mod assets;
 mod config;
 mod convey;
+mod email;
+pub use email::needs_attention as email_needs_attention;
 mod facets;
 mod garmin;
 mod granola;
@@ -44,6 +46,15 @@ pub fn routes(journal_root: PathBuf) -> Router {
 }
 
 pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: LockOptions) -> Router {
+    let email_service = email::EmailService::live(journal_root.clone());
+    routes_with_email_service(journal_root, config_lock_options, email_service)
+}
+
+pub(crate) fn routes_with_email_service(
+    journal_root: PathBuf,
+    config_lock_options: LockOptions,
+    email_service: email::EmailService,
+) -> Router {
     let config_get_root = journal_root.clone();
     let config_put_root = journal_root.clone();
     let config_post_root = journal_root.clone();
@@ -491,6 +502,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route("/app/settings/api/icons", get(icons::search))
         .route("/app/settings/api/emojis", get(icons::search_emojis))
+        .merge(email::routes_with_service(email_service))
 }
 
 #[cfg(test)]

@@ -30,6 +30,7 @@ tokio = { workspace = true, features = ["rt", "time"] }
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-convey-http.workspace = true
 solstone-core-describe-categories.workspace = true
+solstone-core-email.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true

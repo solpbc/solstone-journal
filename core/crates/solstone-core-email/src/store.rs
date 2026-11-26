@@ -58,6 +58,7 @@ pub struct AccountMeta {
 
 /// Durable scan/sync progress and attention state (`config/email/state.json`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct SourceState {
     /// `not_connected`, `scanning`, `scan_paused`, `awaiting_choice`,
     /// `fetching`, `steady`, `needs_attention`, or `disconnected`.

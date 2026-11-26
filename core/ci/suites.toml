@@ -1243,6 +1243,18 @@ runtime = "pdf"
 features = ["full-tests"]
 
 [[package_suites]]
+id = "package::solstone-core-photos-library"
+package = "solstone-core-photos-library"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+features = ["full-tests"]
+
+[[package_suites]]
 id = "package::solstone-core-possible-names"
 package = "solstone-core-possible-names"
 set = "component"

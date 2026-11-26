@@ -130,7 +130,42 @@ pub struct ScanSnapshot {
 pub struct ChoiceSnapshot {
     pub range: RangePreset,
     pub types: Vec<MessageType>,
+    pub covered_ranges: Vec<RangePreset>,
     pub updated_at: String,
+}
+
+/// Presets covered by an existing historical range choice (for widen-mode UI tags).
+#[must_use]
+pub fn covered_ranges_for(range: RangePreset) -> Vec<RangePreset> {
+    match range {
+        RangePreset::None => Vec::new(),
+        RangePreset::Last30d => vec![RangePreset::Last30d],
+        RangePreset::Last6m => vec![RangePreset::Last30d, RangePreset::Last6m],
+        RangePreset::Last1y => vec![
+            RangePreset::Last30d,
+            RangePreset::Last6m,
+            RangePreset::Last1y,
+        ],
+        RangePreset::All => vec![
+            RangePreset::Last30d,
+            RangePreset::Last6m,
+            RangePreset::Last1y,
+            RangePreset::All,
+        ],
+    }
+}
+
+/// Fast non-blocking check for Home/rail attention badges: true iff credentials
+/// exist and the last check/sync recorded an unresolved attention reason.
+#[must_use]
+pub fn needs_attention(root: &Path) -> bool {
+    let connected = matches!(store::read_credentials(root), Ok(Some(_)));
+    if !connected {
+        return false;
+    }
+    store::read_state(root)
+        .ok()
+        .is_some_and(|s| s.attention_reason.is_some())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1118,6 +1153,7 @@ pub fn status_snapshot(root: &Path, zone: &TimeZone) -> Result<StatusSnapshot> {
             folder_cap_warning: state.folder_cap_warning,
         },
         choice: choice.map(|c| ChoiceSnapshot {
+            covered_ranges: covered_ranges_for(c.range),
             range: c.range,
             types: c.types,
             updated_at: c.updated_at,

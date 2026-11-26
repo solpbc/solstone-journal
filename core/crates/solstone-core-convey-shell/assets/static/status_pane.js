@@ -86,6 +86,8 @@ window.whenShellReady(() => {
           window.solShellChrome?.setBadge?.('curation', curationCount > 0 ? { count: curationCount, tone: 'neutral' } : null);
           const importCount = Number.isFinite(data.import) ? Math.max(0, Math.floor(data.import)) : 0;
           window.solShellChrome?.setBadge?.('import', importCount > 0 ? { count: importCount, tone: 'review' } : null);
+          const sourcesCount = Number.isFinite(data.sources) ? Math.max(0, Math.floor(data.sources)) : 0;
+          window.solShellChrome?.setBadge?.('sources', sourcesCount > 0 ? { count: sourcesCount, tone: 'danger' } : null);
           if (typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') {
             try {
               window.dispatchEvent(new window.CustomEvent('sol:shell-badges', { detail: data }));

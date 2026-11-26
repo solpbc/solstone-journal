@@ -107,6 +107,14 @@ pub(crate) fn badges_payload_in(
         uncertain = true;
     }
 
+    let email_attention = usize::from(solstone_core_settings_web::email_needs_attention(root));
+    if email_attention > 0 {
+        issues += email_attention;
+        if severity != Some("red") {
+            severity = Some("amber");
+        }
+    }
+
     if issues == 0 && uncertain && severity.is_none() {
         severity = Some("amber");
     }
@@ -123,6 +131,7 @@ pub(crate) fn badges_payload_in(
         "curation": curation,
         "import": import,
         "import_reviews": import_reviews,
+        "sources": email_attention,
     })
 }
 
@@ -346,5 +355,49 @@ mod tests {
             serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
         assert_eq!(body["home"]["issues"], 1);
         assert_eq!(body["home"]["severity"], "red");
+    }
+
+    #[tokio::test]
+    async fn shell_badges_surfaces_email_needs_attention_on_sources_and_home() {
+        let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+        let dir = tempfile::TempDir::new_in(parent).expect("journal root");
+        fs::create_dir_all(dir.path().join("config/email")).expect("config/email dir");
+        let now = jiff::Timestamp::now();
+        fs::write(
+            dir.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "setup": { "completed_at": now.as_second() },
+                "email": {
+                    "provider": "gmail",
+                    "account": "maya@example.test",
+                    "app_password": "abcdefghijklmnop"
+                }
+            }))
+            .unwrap(),
+        )
+        .expect("journal config");
+        fs::write(
+            dir.path().join("config/email/state.json"),
+            serde_json::to_vec(&json!({
+                "phase": "needs_attention",
+                "attention_reason": "password_rejected"
+            }))
+            .unwrap(),
+        )
+        .expect("email state");
+        solstone_core_brain::begin_refresh(dir.path(), now, None, None, false, None)
+            .expect("initial none brain record");
+
+        let app = crate::router(dir.path().to_path_buf());
+        let mut req = Request::get("/api/shell/badges")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(AccessBasis::Localhost);
+        let resp = app.oneshot(req).await.unwrap();
+        let body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
+        assert_eq!(body["sources"], 1);
+        assert_eq!(body["home"]["issues"], 1);
+        assert_eq!(body["home"]["severity"], "amber");
     }
 }
