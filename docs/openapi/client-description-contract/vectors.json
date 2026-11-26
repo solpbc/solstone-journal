@@ -91,10 +91,10 @@
   },
   {
     "decision": {
-      "accepted": false,
-      "reason_code": "client_description_invalid"
+      "accepted": true,
+      "reason_code": null
     },
-    "http_status": 400,
+    "http_status": 200,
     "id": "client_description.put_self.unknown_fields",
     "kind": "declared",
     "operation": "client.putSelfDescription"

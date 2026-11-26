@@ -126,9 +126,13 @@ struct CanonicalPresentationMessage<'a> {
     fallback_en: &'a str,
 }
 
+/// The reader for what [`seal`] writes. The journal seals and a paired app
+/// opens, so nothing here opens an envelope outside tests. The envelope is
+/// authenticated over its bytes before any of it is parsed, so a top-level
+/// field this version does not know is read past; the known fields are still
+/// checked.
 #[allow(dead_code)]
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ParsedNotificationJson {
     v: u32,
     at: String,
@@ -988,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    fn open_envelope_rejects_unknown_outer_field_and_keeps_foreign_message() {
+    fn open_envelope_reads_past_unknown_outer_field_and_keeps_foreign_message() {
         let key = PushKey::from_bytes([77u8; 32]);
         let nonce = [1u8; NONCE_LEN];
 
@@ -1025,13 +1029,27 @@ mod tests {
         assert_eq!(pres.title.code, "push.test.other");
         assert_eq!(pres.title.fallback_en, "solstone foreign");
 
-        // Extra top-level JSON key fails SealError::Auth
-        let extra_outer = br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","unknown_extra":123}"#;
+        // An extra top-level JSON key, as a newer writer may add, is read
+        // past and the known fields are intact.
+        let extra_outer = br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","open":"/app/health","unknown_extra":{"a":[1]}}"#;
         let env_extra = seal_raw_json(&key, extra_outer, &nonce).unwrap();
         assert_eq!(
-            open_envelope(&key, &env_extra).unwrap_err(),
-            SealError::Auth
+            open_envelope(&key, &env_extra).unwrap(),
+            Notification {
+                open: Some("/app/health".to_owned()),
+                ..foreign_notif.clone()
+            }
         );
+
+        // A known field is still checked beside an unknown one.
+        for refused in [
+            &br#"{"v":2,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","unknown_extra":123}"#[..],
+            br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","open":"/api/x","unknown_extra":123}"#,
+            br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","unknown_extra":123}"#,
+        ] {
+            let sealed = seal_raw_json(&key, refused, &nonce).unwrap();
+            assert_eq!(open_envelope(&key, &sealed).unwrap_err(), SealError::Auth);
+        }
 
         // presentation: null fails SealError::Auth
         let pres_null = br#"{"v":1,"at":"2026-09-24T00:00:00Z","kind":"test","title":"solstone","body":"test","presentation":null}"#;

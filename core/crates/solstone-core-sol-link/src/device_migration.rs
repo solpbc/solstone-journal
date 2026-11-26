@@ -2,6 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 //! Authenticated linked-device rekey and takeover wire contract.
+//!
+//! A paired app updates on its own schedule and may be newer than this
+//! journal, so a request is read past any field this version does not know;
+//! the fields it does know are checked exactly as before. The caller is
+//! authenticated by its certificate and a replay is matched against the bytes
+//! received, never against a parsed request, so a field read past changes
+//! neither. [`DecisionResponse`] stays closed: it is also kept inside the
+//! stored decision record, whose reader is closed.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Visitor};
 use serde_json::{Value, json};
@@ -17,7 +25,6 @@ pub use host::{
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RekeyRequest {
     pub protocol_version: u32,
     pub operation_id: String,
@@ -121,7 +128,6 @@ impl<'de> Deserialize<'de> for ReplacesCid {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct DecisionRequest {
     pub protocol_version: u32,
     pub operation_id: String,
@@ -163,7 +169,6 @@ impl MigrationState {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RekeyResponse {
     pub protocol_version: u32,
     pub operation_id: String,
@@ -174,7 +179,6 @@ pub struct RekeyResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct MigrationStateResponse {
     pub protocol_version: u32,
     pub rekey_operation_id: Option<String>,
@@ -298,3 +302,61 @@ pub fn schema_json() -> Value {
 
 #[cfg(feature = "host")]
 pub use host::contract_pairing_value;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requests_from_a_newer_app_are_read_past_their_unknown_fields() {
+        let rekey: RekeyRequest = serde_json::from_str(
+            r#"{"protocol_version":1,"operation_id":"123e4567-e89b-42d3-a456-426614174000",
+                "csr":"fixture","device_label":"Phone","client_label":"Client",
+                "platform":"ios","later":{"a":[1]}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            rekey,
+            RekeyRequest {
+                protocol_version: 1,
+                operation_id: "123e4567-e89b-42d3-a456-426614174000".to_owned(),
+                csr: "fixture".to_owned(),
+                device_label: "Phone".to_owned(),
+                client_label: "Client".to_owned(),
+                platform: "ios".to_owned(),
+            }
+        );
+        // What is written carries only the fields this version knows.
+        assert!(serde_json::to_value(&rekey).unwrap().get("later").is_none());
+
+        let decision: DecisionRequest = serde_json::from_str(
+            r#"{"protocol_version":1,"operation_id":"123e4567-e89b-42d3-a456-426614174004",
+                "choice":"new_device","later":true}"#,
+        )
+        .unwrap();
+        assert_eq!(decision.choice, Choice::NewDevice);
+        assert!(decision.replaces_cid.is_missing());
+
+        let state: MigrationStateResponse = serde_json::from_str(
+            r#"{"protocol_version":1,"rekey_operation_id":null,"previous_cid":null,
+                "state":"none","replaced_cid":null,"later":1}"#,
+        )
+        .unwrap();
+        assert_eq!(state.state, MigrationState::None);
+
+        // A known field that is missing, or a value this version does not
+        // know, still refuses the request.
+        assert!(
+            serde_json::from_str::<RekeyRequest>(
+                r#"{"protocol_version":1,"operation_id":"x","csr":"c","device_label":"d","platform":"ios","later":1}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<DecisionRequest>(
+                r#"{"protocol_version":1,"operation_id":"x","choice":"later_choice","later":1}"#
+            )
+            .is_err()
+        );
+    }
+}

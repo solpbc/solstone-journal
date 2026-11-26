@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "1.1.0";
+const BUNDLE_SEMVER: &str = "1.2.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-description-contract";
 const AUTHORITY_PATH: &str = "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json";
 /// The client description OpenAPI authority is `client_description_contract_authority.json`, colocated with this
@@ -266,10 +266,10 @@ fn behavior_vectors() -> Value {
             "id": "client_description.put_self.unknown_fields",
             "kind": "declared",
             "operation": "client.putSelfDescription",
-            "http_status": 400,
+            "http_status": 200,
             "decision": {
-                "accepted": false,
-                "reason_code": "client_description_invalid"
+                "accepted": true,
+                "reason_code": null
             }
         },
         {

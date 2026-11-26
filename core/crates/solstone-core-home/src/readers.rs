@@ -3314,22 +3314,17 @@ mod tests {
 
         let write_cli_description =
             |root: &Path, cid: &str, app_id: Option<&str>, platform: Option<&str>| {
+                let mut stored = StoredClientDescription::initial();
+                stored.revision = 1;
+                stored.reported = Some(ReportedDescription {
+                    app_id: app_id.map(str::to_owned),
+                    platform: platform.map(str::to_owned),
+                    device_type: None,
+                    ..ReportedDescription::default()
+                });
+                stored.updated_at = Some("2026-06-02T00:01:00Z".to_owned());
                 let mut map = BTreeMap::new();
-                map.insert(
-                    cid.to_owned(),
-                    StoredClientDescription {
-                        protocol_version: 1,
-                        revision: 1,
-                        reported: Some(ReportedDescription {
-                            app_id: app_id.map(str::to_owned),
-                            platform: platform.map(str::to_owned),
-                            device_type: None,
-                            ..ReportedDescription::default()
-                        }),
-                        owner_label: None,
-                        updated_at: Some("2026-06-02T00:01:00Z".to_owned()),
-                    },
-                );
+                map.insert(cid.to_owned(), stored);
                 std::fs::write(
                     client_descriptions_path(root),
                     serde_json::to_vec(&map).unwrap(),

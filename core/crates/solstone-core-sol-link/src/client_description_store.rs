@@ -212,6 +212,7 @@ pub fn put_self_description(
                     reported: sanitized_reported,
                     owner_label: None,
                     updated_at: Some(now_str),
+                    extra: BTreeMap::new(),
                 };
                 descriptions.insert(cid.to_owned(), new_desc.clone());
                 write_json(
@@ -240,6 +241,7 @@ pub fn put_self_description(
                     reported: sanitized_reported,
                     owner_label: cur.owner_label,
                     updated_at: Some(now_str),
+                    extra: cur.extra,
                 };
                 descriptions.insert(cid.to_owned(), new_desc.clone());
                 write_json(
@@ -360,6 +362,7 @@ fn set_owner_label_under_description_lock(
             reported: current.reported,
             owner_label,
             updated_at: Some(now_str),
+            extra: current.extra,
         },
         None if owner_label.is_none() => StoredClientDescription::initial(),
         None => StoredClientDescription {
@@ -368,6 +371,7 @@ fn set_owner_label_under_description_lock(
             reported: None,
             owner_label,
             updated_at: Some(now_str),
+            extra: BTreeMap::new(),
         },
     };
     descriptions.insert(cid.to_owned(), updated.clone());
@@ -658,5 +662,86 @@ mod tests {
             Err(DescriptionMutationError::NotAuthorized)
         ));
         assert!(!read_descriptions(&root).unwrap().contains_key(cid));
+    }
+
+    #[test]
+    fn a_record_from_a_later_version_is_read_and_its_fields_written_back() {
+        let dir = TempDir::new();
+        let root = dir.path();
+        let cid = "sha256:0000000000000000000000000000000000000000000000000000000000000001";
+        let other = "sha256:0000000000000000000000000000000000000000000000000000000000000002";
+        seed_client(root, cid, "mac");
+        let reported = serde_json::json!({
+            "name": "Studio", "platform": "macos", "device_type": null,
+            "app_id": null, "app_version": null,
+        });
+        fs::write(
+            client_descriptions_path(root),
+            serde_json::json!({
+                cid: {
+                    "protocol_version": 1, "revision": 4, "reported": reported,
+                    "owner_label": null, "updated_at": "2026-01-01T00:00:00Z",
+                    "later": {"kept": true},
+                },
+                other: {
+                    "protocol_version": 1, "revision": 1, "reported": null,
+                    "owner_label": "Other", "updated_at": null, "later": [1, 2],
+                },
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let read = read_descriptions(root).unwrap();
+        assert_eq!(read[cid].revision, 4);
+        assert_eq!(
+            read[cid].reported.as_ref().unwrap().name.as_deref(),
+            Some("Studio")
+        );
+        assert_eq!(read[other].owner_label.as_deref(), Some("Other"));
+
+        // Both writers rewrite the whole store.
+        let now = OffsetDateTime::now_utc();
+        let labelled = patch_owner_label(root, cid, Some("Desk".into()), now, test_meta()).unwrap();
+        assert_eq!(
+            (labelled.revision, labelled.display_label.as_str()),
+            (5, "Desk")
+        );
+        put_self_description(
+            root,
+            cid,
+            PutSelfDescriptionRequest {
+                protocol_version: 1,
+                expected_revision: 5,
+                reported: Some(ReportedDescription {
+                    name: Some("Studio Two".into()),
+                    ..ReportedDescription::default()
+                }),
+            },
+            now,
+            test_meta(),
+        )
+        .unwrap();
+
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(client_descriptions_path(root)).unwrap()).unwrap();
+        assert_eq!(on_disk[cid]["revision"], 6);
+        assert_eq!(on_disk[cid]["owner_label"], "Desk");
+        assert_eq!(on_disk[cid]["reported"]["name"], "Studio Two");
+        assert_eq!(on_disk[cid]["later"], serde_json::json!({"kept": true}));
+        assert_eq!(on_disk[other]["later"], serde_json::json!([1, 2]));
+
+        // A record that is damaged, not merely newer, is still unreadable.
+        for damaged in [
+            r#"{"sha256:x":{"protocol_version":1,"revision":"4","reported":null,"owner_label":null,"updated_at":null}}"#,
+            r#"{"sha256:x":{"protocol_version":1,"reported":null,"owner_label":null,"updated_at":null}}"#,
+            "not json",
+        ] {
+            fs::write(client_descriptions_path(root), damaged).unwrap();
+            assert!(matches!(
+                read_descriptions(root),
+                Err(DescriptionStoreError::Unreadable(_))
+            ));
+        }
     }
 }

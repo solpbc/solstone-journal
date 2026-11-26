@@ -336,16 +336,11 @@ mod tests {
         let map: BTreeMap<String, StoredClientDescription> = rows
             .into_iter()
             .map(|(cid, reported)| {
-                (
-                    cid.to_owned(),
-                    StoredClientDescription {
-                        protocol_version: 1,
-                        revision: 1,
-                        reported: Some(reported),
-                        owner_label: None,
-                        updated_at: Some("2026-08-13T00:01:30Z".to_owned()),
-                    },
-                )
+                let mut stored = StoredClientDescription::initial();
+                stored.revision = 1;
+                stored.reported = Some(reported);
+                stored.updated_at = Some("2026-08-13T00:01:30Z".to_owned());
+                (cid.to_owned(), stored)
             })
             .collect();
         std::fs::write(

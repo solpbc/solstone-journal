@@ -202,12 +202,16 @@ fn device_migration_dtos_parse_hand_written_wire_json() {
     serde_json::from_slice::<DecisionRequest>(decision_request).expect("decision request DTO");
     serde_json::from_slice::<DecisionResponse>(decision_response).expect("decision response DTO");
 
-    for invalid in [
-        br#"{"protocol":1,"operation_id":"123e4567-e89b-42d3-a456-426614174000","csr":"fixture","device_label":"Phone","client_label":"Client","platform":"ios"}"#.as_slice(),
-        br#"{"protocol_version":1,"operation_id":"123e4567-e89b-42d3-a456-426614174000","csr":"fixture","device_label":"Phone","client_label":"Client","platform":"ios","protocol":1}"#.as_slice(),
-    ] {
-        assert!(serde_json::from_slice::<RekeyRequest>(invalid).is_err());
-    }
+    assert!(serde_json::from_slice::<RekeyRequest>(
+        br#"{"protocol":1,"operation_id":"123e4567-e89b-42d3-a456-426614174000","csr":"fixture","device_label":"Phone","client_label":"Client","platform":"ios"}"#
+    )
+    .is_err());
+    // A field this version does not know is read past: a newer app may send one.
+    let newer: RekeyRequest = serde_json::from_slice(
+        br#"{"protocol_version":1,"operation_id":"123e4567-e89b-42d3-a456-426614174000","csr":"fixture","device_label":"Phone","client_label":"Client","platform":"ios","protocol":1}"#,
+    )
+    .expect("rekey request with an unknown field");
+    assert_eq!(newer.protocol_version, 1);
     assert!(serde_json::from_slice::<DecisionRequest>(
         br#"{"protocol_version":1,"decision_id":"123e4567-e89b-42d3-a456-426614174004","choice":"new_device"}"#
     )

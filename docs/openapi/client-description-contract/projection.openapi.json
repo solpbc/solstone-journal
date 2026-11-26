@@ -348,7 +348,7 @@
   "info": {
     "description": "Generated from client_description_contract_authority.json. Covers client descriptions, labels and shared source awareness.",
     "title": "Linked-device client description contract",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "x-disclaimer": "reported-device-metadata / owner-label-precedence",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
@@ -455,7 +455,7 @@
                 }
               }
             },
-            "description": "Invalid description payload or unknown fields"
+            "description": "Invalid description payload"
           },
           "403": {
             "content": {

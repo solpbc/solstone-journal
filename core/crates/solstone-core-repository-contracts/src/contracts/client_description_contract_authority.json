@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Linked-device client description contract",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Linked-device client description and owner labeling contract. Covers GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
     "x-disclaimer": "reported-device-metadata / owner-label-precedence"
   },
@@ -65,7 +65,7 @@
             }
           },
           "400": {
-            "description": "Invalid description payload or unknown fields",
+            "description": "Invalid description payload",
             "content": {
               "application/json": {
                 "schema": {

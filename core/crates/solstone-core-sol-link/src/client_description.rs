@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+//! Linked-device description messages and the record kept for each device.
+//!
+//! A paired app, or the journal on the other end, updates on its own schedule
+//! and may be newer than this one. Every type here reads past a field it does
+//! not know instead of refusing the whole message; the fields it does know
+//! are checked exactly as before. A message field this version does not know
+//! is not stored. A stored record's own unknown fields were written by a later
+//! version of this journal and are written back as read.
+
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "host")]
@@ -8,7 +19,6 @@ use crate::ledger::ClientEntry;
 
 /// Reported device metadata from client self-publication.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ReportedDescription {
     #[serde(deserialize_with = "required_nullable_string")]
     pub name: Option<String>,
@@ -24,7 +34,6 @@ pub struct ReportedDescription {
 
 /// Journal-local stored linked-device description record.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct StoredClientDescription {
     pub protocol_version: u32,
     pub revision: u64,
@@ -34,6 +43,9 @@ pub struct StoredClientDescription {
     pub owner_label: Option<String>,
     #[serde(deserialize_with = "required_nullable_string")]
     pub updated_at: Option<String>,
+    /// Fields a later version wrote. Never interpreted; written back as read.
+    #[serde(flatten)]
+    pub(crate) extra: BTreeMap<String, serde_json::Value>,
 }
 
 impl StoredClientDescription {
@@ -45,13 +57,13 @@ impl StoredClientDescription {
             reported: None,
             owner_label: None,
             updated_at: None,
+            extra: BTreeMap::new(),
         }
     }
 }
 
 /// Journal identity metadata attached to client description responses.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct JournalIdentityMeta {
     #[serde(deserialize_with = "required_nullable_string")]
     pub name: Option<String>,
@@ -60,7 +72,6 @@ pub struct JournalIdentityMeta {
 
 /// HTTP response payload for GET/PUT /api/clients/self and PATCH /api/clients/{cid}/label.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ClientDescriptionResponse {
     pub protocol_version: u32,
     pub revision: u64,
@@ -76,7 +87,6 @@ pub struct ClientDescriptionResponse {
 
 /// HTTP request payload for PUT /api/clients/self.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PutSelfDescriptionRequest {
     pub protocol_version: u32,
     pub expected_revision: u64,
@@ -86,7 +96,6 @@ pub struct PutSelfDescriptionRequest {
 
 /// HTTP request payload for PATCH /api/clients/{cid}/label.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PatchClientLabelRequest {
     #[serde(deserialize_with = "required_nullable_string")]
     pub label: Option<String>,
@@ -209,5 +218,55 @@ mod tests {
         assert_eq!(sanitized.device_type.as_deref(), Some("phone"));
         assert_eq!(sanitized.app_id.as_deref(), Some("solstone"));
         assert_eq!(sanitized.app_version.as_deref(), Some("1.0.0"));
+    }
+
+    #[test]
+    fn messages_from_a_newer_peer_are_read_past_their_unknown_fields() {
+        let put: PutSelfDescriptionRequest = serde_json::from_str(
+            r#"{"protocol_version":1,"expected_revision":3,"later":true,
+                "reported":{"name":"Phone","platform":"ios","device_type":null,
+                            "app_id":null,"app_version":"9.0","later":{"a":1}}}"#,
+        )
+        .unwrap();
+        assert_eq!((put.protocol_version, put.expected_revision), (1, 3));
+        let reported = put.reported.unwrap();
+        assert_eq!(reported.name.as_deref(), Some("Phone"));
+        assert_eq!(reported.platform.as_deref(), Some("ios"));
+        assert_eq!(reported.app_version.as_deref(), Some("9.0"));
+        // What is written carries only the fields this version knows.
+        assert!(
+            serde_json::to_value(&reported)
+                .unwrap()
+                .get("later")
+                .is_none()
+        );
+
+        let patch: PatchClientLabelRequest =
+            serde_json::from_str(r#"{"label":"Desk","later":1}"#).unwrap();
+        assert_eq!(patch.label.as_deref(), Some("Desk"));
+
+        let response: ClientDescriptionResponse = serde_json::from_str(
+            r#"{"protocol_version":1,"revision":2,"reported":null,"owner_label":"Desk",
+                "display_label":"Desk","updated_at":null,"later":[1],
+                "journal":{"name":null,"version":"1.2.3","later":"x"}}"#,
+        )
+        .unwrap();
+        assert_eq!(response.revision, 2);
+        assert_eq!(response.owner_label.as_deref(), Some("Desk"));
+        assert_eq!(response.journal.version, "1.2.3");
+
+        // A known field that is missing or of the wrong type still refuses.
+        for refused in [
+            r#"{"protocol_version":1,"expected_revision":0,"later":true}"#,
+            r#"{"protocol_version":1,"expected_revision":0,"reported":null}"#,
+            r#"{"protocol_version":"1","expected_revision":0,"reported":{"name":null,"platform":null,"device_type":null,"app_id":null,"app_version":null}}"#,
+            r#"{"protocol_version":1,"expected_revision":0,"reported":{"name":null,"later":1}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<PutSelfDescriptionRequest>(refused).is_err(),
+                "{refused}"
+            );
+        }
+        assert!(serde_json::from_str::<PatchClientLabelRequest>(r#"{"later":1}"#).is_err());
     }
 }

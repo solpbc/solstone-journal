@@ -1,6 +1,6 @@
 {
   "bundle_format": "solstone.openapi-contract-bundle.v1",
-  "bundle_semver": "1.1.0",
+  "bundle_semver": "1.2.0",
   "canonical_spec_title": "Linked-device client description contract",
   "client_protocol_version": 1,
   "component_closure": [
@@ -27,12 +27,12 @@
       "sha256": "e26cc7cf3478bfca30f0ead60ed163150ca12b2206bd02e1173fcf1edefb676f"
     },
     "projection.openapi.json": {
-      "byte_count": 18202,
-      "sha256": "b71eea881eabdeddef2bc0dea1b11ca7be28bc0c33674300cad8eb2eab9a2206"
+      "byte_count": 18184,
+      "sha256": "42166e9a70e63bc7bfdcee3c80ad3f4e6918ff295a049347a850a41d60277d82"
     },
     "vectors.json": {
-      "byte_count": 3243,
-      "sha256": "e297b7a21fd92c0af5b5d495df41e5756103d36c5f49e8c3ea5470e9a79d19fc"
+      "byte_count": 3218,
+      "sha256": "2af642377e45a101753f65cf9e8c8df98fda74be18f2c23487e775ff35a15738"
     }
   },
   "generator_identity": "solstone.repository_contracts.client_description_contract_bundle.v1",
@@ -41,10 +41,10 @@
       "id": "openapi.client_description_contract_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json",
       "role": "openapi_source",
-      "sha256": "28946519b5cb41dde4f49c706a22d907c71e1a5e4ac4ed51c640267b1a7f047d"
+      "sha256": "bd5dd1ef9383eb427b004ce929cb642e160457181cfd455a5745bffec8546baf"
     }
   ],
-  "openapi_document_version": "1.1.0",
+  "openapi_document_version": "1.2.0",
   "openapi_spec_version": "3.1.0",
   "operation_ids": [
     "client.putSelfSources",

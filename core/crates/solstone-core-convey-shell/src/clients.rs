@@ -1644,14 +1644,13 @@ mod tests {
         journal.write_ledger(json!([client(cid_str, "phone")]));
         let app = crate::router(journal.0.path().to_path_buf());
 
-        // 1. PUT unknown keys (e.g. cid, owner_label) -> 400 client_description_invalid
+        // 1. A known field of the wrong type -> 400 client_description_invalid
         let mut req_invalid = Request::put("/app/network/api/clients/self")
             .header("Content-Type", "application/json")
             .body(Body::from(
                 json!({
                     "protocol_version": 1,
-                    "expected_revision": 0,
-                    "cid": cid_str,
+                    "expected_revision": "0",
                     "reported": {"name": "Test", "platform": null, "device_type": null, "app_id": null, "app_version": null}
                 })
                 .to_string(),
@@ -1749,6 +1748,66 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["revision"], 1);
         assert_eq!(body["reported"]["name"], "Alex's Laptop");
+
+        // 4. Keys this version does not know, as a newer app may send, are
+        // read past: the known fields apply to the caller's own record and
+        // the unknown ones are neither acted on nor stored.
+        let other_cid = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+        let mut req_newer = Request::put("/app/network/api/clients/self")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "protocol_version": 1,
+                    "expected_revision": 1,
+                    "cid": other_cid,
+                    "owner_label": "Set by the device",
+                    "reported": {
+                        "name": "Alex's Laptop",
+                        "platform": "linux",
+                        "device_type": "laptop",
+                        "app_id": "solstone",
+                        "app_version": "2026.07.26",
+                        "later": {"field": true}
+                    }
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        req_newer
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+                leaf_spki: vec![0x30, 0x00],
+            });
+        let (status, body) = request(app.clone(), req_newer).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["revision"], 2);
+        assert_eq!(body["reported"]["device_type"], "laptop");
+        assert_eq!(body["owner_label"], Value::Null);
+        let stored: Value = serde_json::from_slice(
+            &std::fs::read(journal.0.path().join("link/client-descriptions.json"))
+                .expect("stored descriptions"),
+        )
+        .expect("stored descriptions parse");
+        assert_eq!(
+            stored,
+            json!({
+                cid_str: {
+                    "protocol_version": 1,
+                    "revision": 2,
+                    "reported": {
+                        "name": "Alex's Laptop",
+                        "platform": "linux",
+                        "device_type": "laptop",
+                        "app_id": "solstone",
+                        "app_version": "2026.07.26"
+                    },
+                    "owner_label": null,
+                    "updated_at": stored[cid_str]["updated_at"].clone()
+                }
+            })
+        );
     }
 
     #[tokio::test]
