@@ -495,32 +495,46 @@ pub(crate) fn apply_result_cancellable(
             }
         }
     }
-    if let Some(prior_entries) = stored.get("participation").and_then(Value::as_array) {
-        for prior in prior_entries.iter().filter_map(Value::as_object) {
-            if prior.get("role").and_then(Value::as_str) != Some("corresponded") {
-                continue;
-            }
-            let Some(prior_name) = prior.get("name").and_then(Value::as_str).map(str::trim) else {
-                continue;
-            };
-            if prior_name.is_empty() {
-                continue;
-            }
-            let prior_eid = prior.get("entity_id").and_then(Value::as_str);
-            if let Some(existing) = resolved.iter_mut().find(|r| {
-                (prior_eid.is_some() && r.get("entity_id").and_then(Value::as_str) == prior_eid)
-                    || r.get("name")
-                        .and_then(Value::as_str)
-                        .is_some_and(|n| n.trim().eq_ignore_ascii_case(prior_name))
-            }) {
-                if matches!(
-                    existing.get("role").and_then(Value::as_str),
-                    Some("mentioned" | "visible")
-                ) {
-                    existing.insert("role".to_owned(), Value::String("corresponded".to_owned()));
+    // Who wrote to whom is a fact of the exchange, read from its own record,
+    // so a result that leaves a correspondent out or calls them `mentioned`
+    // does not unsay it. Any other `corresponded` row is the talent's to keep
+    // or drop.
+    for prior in stored
+        .get("participation")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .filter(|prior| read_from_exchange(prior))
+    {
+        let Some(prior_name) = prior
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+        let prior_eid = entry_entity_id(prior);
+        let Some(existing) = resolved.iter_mut().find(|row| {
+            (prior_eid.is_some() && entry_entity_id(row) == prior_eid)
+                || row
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| same_correspondent(prior_name, name))
+        }) else {
+            resolved.push(prior.clone());
+            continue;
+        };
+        // One row for the person, under the name the talent gave, still
+        // marked as read from the exchange.
+        if participation_role_rank(existing.get("role").and_then(Value::as_str))
+            <= participation_role_rank(Some("corresponded"))
+        {
+            for field in ["role", "source", "confidence", "context"] {
+                if let Some(value) = prior.get(field) {
+                    existing.insert(field.to_owned(), value.clone());
                 }
-            } else {
-                resolved.push(prior.clone());
             }
         }
     }
@@ -1847,6 +1861,44 @@ fn roster_name_matches(roster_name: &str, candidate: &str) -> bool {
         }
     }
     crate::possible_names::retrieval::near_spelling(roster_name, candidate)
+}
+
+/// What the history fill-in writes as the context of a correspondent it read
+/// from an exchange's own record of who wrote to whom. A `corresponded` row
+/// carrying one of these is that reading, and no talent's judgement.
+pub const EXCHANGE_SENDER_CONTEXT: &str = "Corresponded in written exchange.";
+pub const EXCHANGE_RECIPIENT_CONTEXT: &str = "Corresponded in email.";
+pub const EXCHANGE_ANSWERED_CONTEXT: &str = "Corresponded in email reply.";
+
+fn read_from_exchange(row: &Map<String, Value>) -> bool {
+    row.get("role").and_then(Value::as_str) == Some("corresponded")
+        && row.get("source").and_then(Value::as_str) == Some("transcript")
+        && row
+            .get("context")
+            .and_then(Value::as_str)
+            .is_some_and(|context| {
+                [
+                    EXCHANGE_SENDER_CONTEXT,
+                    EXCHANGE_RECIPIENT_CONTEXT,
+                    EXCHANGE_ANSWERED_CONTEXT,
+                ]
+                .contains(&context)
+            })
+}
+
+/// Whether a correspondent an exchange names and a name the talent gave are
+/// one person: the same name however it is written, or the short and long
+/// form of one first name before the same last name.
+fn same_correspondent(exchange_name: &str, given_name: &str) -> bool {
+    if roster_name_matches(exchange_name, given_name) {
+        return true;
+    }
+    let (left, right) = (cleaned_words(exchange_name), cleaned_words(given_name));
+    let short_for = |short: &str, long: &str| short.chars().count() >= 3 && long.starts_with(short);
+    left.len() >= 2
+        && right.len() >= 2
+        && left.last() == right.last()
+        && (short_for(&left[0], &right[0]) || short_for(&right[0], &left[0]))
 }
 
 fn participation_role_rank(role: Option<&str>) -> u8 {
@@ -5237,5 +5289,65 @@ mod tests {
                 "activity={kind}"
             );
         }
+    }
+    #[test]
+    fn only_a_correspondent_read_from_the_exchange_outlives_a_result_that_omits_them() {
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        let activity_path = root
+            .path()
+            .join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let corresponded = |name: &str, context: &str| json!({"name":name,"role":"corresponded","source":"transcript","confidence":1.0,"context":context,"entity_id":null});
+        let run = |held: Value, entries: Value| -> Vec<(String, String)> {
+            let line = json!({"id":"activity","segments":[SEGMENT],"participation":held});
+            fs::write(&activity_path, format!("{line}\n")).unwrap();
+            apply_result(
+                root.path(),
+                &json!({"participation":entries}).to_string(),
+                FACET,
+                &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+                DAY,
+                &activity(),
+            )
+            .unwrap();
+            let text = fs::read_to_string(&activity_path).unwrap();
+            let row: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+            let mut rows = row["participation"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| {
+                    (
+                        p["name"].as_str().unwrap().to_owned(),
+                        p["role"].as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            rows.sort();
+            rows
+        };
+        let pair = |name: &str, role: &str| (name.to_owned(), role.to_owned());
+        let read = corresponded("Christopher Adams", EXCHANGE_RECIPIENT_CONTEXT);
+        // The exchange says who it was written to; a result naming nobody
+        // does not unsay it.
+        assert_eq!(
+            run(json!([read.clone()]), json!([])),
+            [pair("Christopher Adams", "corresponded")]
+        );
+        // A `corresponded` row that came any other way is the talent's to drop.
+        assert!(
+            run(
+                json!([corresponded("Christopher Adams", "They traded mail.")]),
+                json!([])
+            )
+            .is_empty()
+        );
+        // The same person under a shorter name is one row, under the name the
+        // talent gave, and it is still the exchange's reading the next time.
+        let once = run(json!([read]), json!([mentioned("Chris Adams")]));
+        assert_eq!(once, [pair("Chris Adams", "corresponded")]);
+        let text = fs::read_to_string(&activity_path).unwrap();
+        let row: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        assert_eq!(run(row["participation"].clone(), json!([])), once);
     }
 }
