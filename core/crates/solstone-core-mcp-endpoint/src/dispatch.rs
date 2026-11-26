@@ -2100,7 +2100,15 @@ fn search(
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         // One query reads each activity day file once.
         let day_files = crate::body_source::ActivityDayFiles::default();
-        let batch = (MAX_SEARCH_EXAMINED_ROWS - examined).min(100);
+        // For a short first page, one lookahead distinguishes a real next
+        // cursor from exhaustion. If live checks drop rows, finish the same
+        // 100-row window before resuming normal batches.
+        let remaining = (MAX_SEARCH_EXAMINED_ROWS - examined).min(100 - examined % 100);
+        let short = start_after.is_none()
+            && examined == 0
+            && !request.query.trim().is_empty()
+            && request.limit + 1 < remaining;
+        let batch = if short { request.limit + 1 } else { remaining };
         let response = search_connection_with_possible_names(
             journal_root,
             &boundary,
@@ -2139,7 +2147,8 @@ fn search(
         let batch_relaxed = response.relaxed;
         let facet_declarations = FacetDeclarationSet::from_journal(journal_root).ok();
         let mut processed = 0;
-        for hit in response.results {
+        let process_limit = if short { request.limit } else { batch };
+        for hit in response.results.into_iter().take(process_limit) {
             processed += 1;
             examined += 1;
             let hit_score_bits = (batch_order == solstone_core_indexer_query::Order::Relevance)
@@ -2844,7 +2853,7 @@ fn search(
                 break;
             }
         }
-        has_more = processed < batch_len || batch_len == batch;
+        has_more = processed < batch_len || (!short && batch_len == batch);
         if !has_more || results.len() == request.limit {
             break;
         }

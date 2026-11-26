@@ -461,16 +461,23 @@ fn deleted_entities(journal_root: &Path) -> Result<BTreeMap<String, String>, Str
 /// Unretired ids absent from `entities/` (for example historical day-detected
 /// slugs) are intentionally NOT included.
 pub fn hidden_participation_entity_ids(journal_root: &Path) -> BTreeSet<String> {
+    let live = super::journal_entities::live_journal_entities(journal_root).unwrap_or_default();
+    hidden_participation_ids_for_live(journal_root, &live)
+}
+
+/// Compute participation exclusions from the same identities the caller is projecting.
+pub fn hidden_participation_ids_for_live(
+    journal_root: &Path,
+    live: &[(String, super::JournalEntity)],
+) -> BTreeSet<String> {
     let mut hidden = BTreeSet::new();
-    let live = super::map::read_identity_map(journal_root)
-        .map(|map| map.resolved)
-        .unwrap_or_default();
+    let live_ids: BTreeSet<&str> = live.iter().map(|(_, entity)| entity.id.as_str()).collect();
     match deleted_entities(journal_root) {
         Ok(deleted) => {
             for (id, dir) in deleted {
-                if !live.contains_key(&id) {
+                if !live_ids.contains(id.as_str()) {
                     hidden.insert(id.clone());
-                    if dir != id && !live.contains_key(&dir) {
+                    if dir != id && !live_ids.contains(dir.as_str()) {
                         hidden.insert(dir);
                     }
                 }
@@ -480,11 +487,9 @@ pub fn hidden_participation_entity_ids(journal_root: &Path) -> BTreeSet<String> 
             warn_once(&DAMAGED_RECORD_WARNED, &detail);
         }
     }
-    for (eid, dir) in &live {
-        let Ok(Some(snap)) = super::identity::read_entity_identity(journal_root, dir) else {
-            continue;
-        };
-        let val = snap.value();
+    for (dir, entity) in live {
+        let eid = &entity.id;
+        let val = &entity.value;
         let blocked = val.get("blocked").and_then(Value::as_bool).unwrap_or(false);
         let is_principal = crate::identity_is_principal(val);
         let kind = val
@@ -495,7 +500,7 @@ pub fn hidden_participation_entity_ids(journal_root: &Path) -> BTreeSet<String> 
         let is_person = kind.is_none_or(|k| k.eq_ignore_ascii_case("person"));
         if blocked || is_principal || !is_person {
             hidden.insert(eid.clone());
-            if dir != eid && !live.contains_key(dir) {
+            if dir != eid && !live_ids.contains(dir.as_str()) {
                 hidden.insert(dir.clone());
             }
         }

@@ -213,14 +213,22 @@ fn principal_identities(journal_root: &Path) -> Result<Vec<(String, Value)>, Ent
 pub fn journal_principal_entry(
     journal_root: &Path,
 ) -> Result<Option<(String, Value)>, EntityStoreError> {
-    let mut found = principal_identities(journal_root)?
-        .into_iter()
-        .filter(|(_, identity)| !identity.get("blocked").is_some_and(value_is_truthy))
-        .collect::<Vec<_>>();
-    if found.len() != 1 {
-        return Ok(None);
-    }
-    Ok(Some(found.remove(0)))
+    let live = super::journal_entities::live_journal_entities(journal_root)?;
+    Ok(
+        principal_from_live_entities(&live)
+            .map(|(dir, entity)| (dir.clone(), entity.value.clone())),
+    )
+}
+
+/// Resolve the same unique, unblocked principal in an already enumerated journal.
+pub fn principal_from_live_entities(
+    live: &[(String, super::JournalEntity)],
+) -> Option<&(String, super::JournalEntity)> {
+    let mut principals = live
+        .iter()
+        .filter(|(_, entity)| entity.is_principal() && !entity.is_blocked());
+    let first = principals.next()?;
+    principals.next().is_none().then_some(first)
 }
 
 /// The journal's principal identity, as [`journal_principal_entry`] resolves it.

@@ -47,6 +47,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- your connected agent can get the first results faster when it searches a large journal for a common word. your agent can also look up a week faster when your journal has a lot of people in it.
+
 - security fix: your journal now loads its bundled helpers and data files only from its own installation folder and no longer checks folders from the machine where it was built. before, on apple silicon macs, local speech-to-text checked build-machine folders, including the mac's shared temporary folder, before your journal's own copy, and local thinking could fall back there if its installed helper was missing. another account on the same mac could place a program in that temporary folder and have your journal run it as your account, giving it access to your journal and anything else your mac account can reach. on mac, linux and windows, your journal also checked build-machine folders before its own installed copy for map place names and local speech, speaker and face files; a file placed there couldn't run code because those files are checked before use, though it could keep those features from working. your journal keeps no record of which helper it ran, so it can't tell whether this was ever used. please install this update.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can now import files that used to stop with a size error when you open your journal in a browser from journal setup on windows.

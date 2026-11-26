@@ -148,11 +148,14 @@ pub fn connection_search_withheld_body(
     )?;
     // An activity file's rows are judged by the admission: body entries and
     // Strava lines only.
-    push_keyed(
-        &mut plan,
-        " AND (solstone_indexed_permission(chunks.path,'transcripts')='body' OR chunks.path LIKE 'facets/%/activities/%.jsonl')",
-        &[],
-    );
+    const BODY_PATH: &str = "CASE WHEN typeof(chunks.path)='text' THEN (chunks.path LIKE 'facets/%/activities/%.jsonl' OR solstone_indexed_permission(chunks.path,'transcripts')='body') ELSE 0 END";
+    plan.where_clause.push_str(" AND ");
+    plan.where_clause.push_str(BODY_PATH);
+    if let Some(key) = &mut plan.key {
+        // Reject other kinds before testing the grant and date for each match.
+        // The full row predicate still judges every nominated entry.
+        key.clause = format!("CASE WHEN {BODY_PATH} THEN ({}) ELSE 0 END", key.clause);
+    }
     connection.any_row(&plan)
 }
 
@@ -2352,6 +2355,11 @@ impl QueryConnection {
                 self.query_hits(plan, limit, 0, CONNECTION_RECENCY_ORDER)
             }
             Order::Relevance => {
+                if start_after.is_none()
+                    && let Some(hits) = self.first_relevance_page(plan, limit)?
+                {
+                    return Ok(hits);
+                }
                 if let Some(key) = &plan.key
                     && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(
                         &self.connection,
@@ -2364,6 +2372,58 @@ impl QueryConnection {
                 self.fetch_connection_hits_relevance(plan, limit, start_after)
             }
         }
+    }
+
+    /// Only complete score groups can decide a page. A tie crossing the window,
+    /// hidden rows, or several hits in one segment can leave too few winners;
+    /// in that case the ordinary exhaustive query decides it.
+    fn first_relevance_page(
+        &self,
+        plan: &SqlPlan,
+        limit: usize,
+    ) -> Result<Option<Vec<SearchHit>>, IndexAccessError> {
+        const WINDOW: usize = 256;
+        let Some(rest) = plan.where_clause.strip_prefix(MATCH_CLAUSE) else {
+            return Ok(None);
+        };
+        // Keep rowids and scores tied to the same index snapshot as admission.
+        let snapshot = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|e| self.classify(e))?;
+        let mut statement = snapshot.prepare(
+            "SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ? ORDER BY bm25(chunks) LIMIT ?",
+        ).map_err(|e| self.classify(e))?;
+        let mut ranked = statement
+            .query_map(
+                rusqlite::params![plan.params[0], (WINDOW + 1) as i64],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?)),
+            )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|e| self.classify(e))?;
+        let complete = ranked.len() <= WINDOW;
+        if !complete {
+            let cutoff = ranked[WINDOW].1;
+            ranked.truncate(ranked.partition_point(|(_, score)| *score < cutoff));
+            if ranked.len() < limit {
+                return Ok(None);
+            }
+        }
+        if ranked.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let matched = format!(
+            "VALUES {}",
+            std::iter::repeat_n("(?,?)", ranked.len())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let values = ranked
+            .into_iter()
+            .flat_map(|(rid, score)| [Value::Integer(rid), Value::Real(score)])
+            .collect();
+        let hits = self.pick_relevance_hits(plan, rest, &matched, values, limit, None)?;
+        Ok((complete || hits.len() == limit).then_some(hits))
     }
 
     /// Relevance-ordered connection search using the FTS5 inverted index and
@@ -2546,21 +2606,39 @@ impl QueryConnection {
         let Some(expression) = plan.params.first() else {
             return Ok(Vec::new());
         };
+        self.pick_relevance_hits(
+            plan,
+            rest,
+            "SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ?",
+            vec![Value::Text(expression.clone())],
+            limit,
+            start_after,
+        )
+    }
+
+    fn pick_relevance_hits(
+        &self,
+        plan: &SqlPlan,
+        rest: &str,
+        matched: &str,
+        mut values: Vec<Value>,
+        limit: usize,
+        start_after: Option<&crate::types::ConnectionStartAfter>,
+    ) -> Result<Vec<SearchHit>, IndexAccessError> {
         let (extra_columns, joins) = self.hit_projection()?;
         let base_where = format!("1=1{rest}");
-        let mut values = vec![Value::Text(expression.clone())];
         values.extend(plan.params[1..].iter().cloned().map(Value::Text));
         let mut outer_filter = String::from("1=1");
         append_relevance_start_after(&mut outer_filter, &mut values, start_after);
         values.push(Value::Integer(limit as i64));
         let sql = format!(
-            "WITH matched(rid, score) AS MATERIALIZED (SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ?), \
+            "WITH matched(rid, score) AS MATERIALIZED ({matched}), \
              admitted AS MATERIALIZED ( \
                  SELECT matched.rid AS rid, matched.score AS score, \
                         solstone_relevance_tie_priority(chunks.path) AS tie_priority, \
                         chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
                         solstone_relevance_collapse_key(chunks.path) AS collapse_key \
-                 FROM matched JOIN chunks ON chunks.rowid = matched.rid \
+                 FROM matched CROSS JOIN chunks ON chunks.rowid = matched.rid \
                  WHERE ({base_where}) \
              ), \
              picked AS ( \
@@ -2699,7 +2777,7 @@ impl QueryConnection {
             return Ok(None);
         };
         let sql = format!(
-            "WITH matched(rid) AS MATERIALIZED (SELECT rowid FROM chunks WHERE chunks MATCH ?) \
+            "WITH matched(rid) AS NOT MATERIALIZED (SELECT rowid FROM chunks WHERE chunks MATCH ?) \
              SELECT matched.rid, chunks.rowid IS NULL \
              FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
              WHERE chunks.rowid IS NULL OR ({})",
@@ -2715,6 +2793,7 @@ impl QueryConnection {
             .query(params_from_iter(values.iter()))
             .map_err(|error| self.classify(error))?;
         let mut pending = Vec::with_capacity(BATCH);
+        let mut target = 1;
         loop {
             let row = candidates.next().map_err(|error| self.classify(error))?;
             let done = row.is_none();
@@ -2726,7 +2805,7 @@ impl QueryConnection {
                     return Ok(None);
                 }
                 pending.push(row.get::<_, i64>(0).map_err(|error| self.classify(error))?);
-                if pending.len() < BATCH {
+                if pending.len() < target {
                     continue;
                 }
             }
@@ -2745,6 +2824,7 @@ impl QueryConnection {
                 if found.is_some() {
                     return Ok(Some(true));
                 }
+                target = (target * 2).min(BATCH);
             }
             if done {
                 return Ok(Some(false));
@@ -3225,4 +3305,77 @@ pub(crate) fn agents_with_connection_for_test(
             agents_calls: connection.agents_calls,
         },
     ))
+}
+
+#[cfg(test)]
+mod first_page_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn relevance_checks_only_decisive_score_groups_and_preserves_a_split_tie() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE VIRTUAL TABLE chunks USING fts5(content, path UNINDEXED, day UNINDEXED,
+                 facet UNINDEXED, agent UNINDEXED, stream UNINDEXED, idx UNINDEXED);
+             WITH RECURSIVE nums(i) AS (VALUES (1) UNION ALL SELECT i+1 FROM nums WHERE i<300)
+             INSERT INTO chunks(content,path,idx) SELECT 'needle and thread','notes/day.md',i FROM nums;
+             INSERT INTO chunks(content,path,idx) VALUES
+                 ('needle needle needle','hidden',1), ('needle needle','notes/best.md',1);",
+        ).unwrap();
+        use solstone_core_indexer_store::chunk_sources::{
+            CREATE_CHUNK_SOURCE_KEYS, CREATE_CHUNK_SOURCE_READINESS, CREATE_CHUNK_SOURCES,
+        };
+        for ddl in [
+            CREATE_CHUNK_SOURCES,
+            CREATE_CHUNK_SOURCE_READINESS,
+            CREATE_CHUNK_SOURCE_KEYS,
+        ] {
+            db.execute_batch(ddl).unwrap();
+        }
+        db.execute_batch(
+            "INSERT INTO chunk_sources(rowid,path,day,idx) SELECT rowid,path,day,idx FROM chunks;
+             INSERT INTO chunk_source_readiness VALUES(1,1);
+             INSERT INTO chunk_source_keys VALUES(1,302,1);
+             CREATE TRIGGER chunk_sources_keys AFTER INSERT ON chunk_sources
+               WHEN NEW.day IS NULL AND NEW.idx IS NULL BEGIN
+               UPDATE chunk_sources SET (day,idx)=(SELECT day,idx FROM chunks WHERE rowid=NEW.rowid)
+               WHERE rowid=NEW.rowid; END;",
+        )
+        .unwrap();
+        assert!(solstone_core_indexer_store::chunk_sources::chunk_keys_ready(&db));
+        let checks = Arc::new(AtomicUsize::new(0));
+        let checked = Arc::clone(&checks);
+        db.create_scalar_function("admit", 1, FunctionFlags::SQLITE_UTF8, move |ctx| {
+            checked.fetch_add(1, Ordering::Relaxed);
+            Ok(ctx.get_raw(0).as_str()? != "hidden")
+        })
+        .unwrap();
+        let mut reader = QueryConnection::new(db, PathBuf::from(":memory:")).unwrap();
+        let plan = SqlPlan {
+            where_clause: "chunks MATCH ? AND admit(path)".into(),
+            params: vec!["needle".into()],
+            has_live_match_expression: true,
+            key: Some(KeyPlan {
+                match_expression: Some("needle".into()),
+                clause: "admit(chunks.path)".into(),
+                params: Vec::new(),
+            }),
+        };
+        let top = reader
+            .fetch_connection_hits(&plan, 1, Order::Relevance, None)
+            .unwrap();
+        assert_eq!(top[0].metadata.path, "notes/best.md");
+        assert!(
+            checks.load(Ordering::Relaxed) < 300,
+            "a full admission scan for one decisive hit"
+        );
+        let page = reader
+            .fetch_connection_hits(&plan, 3, Order::Relevance, None)
+            .unwrap();
+        assert_eq!(page.len(), 3);
+        assert_eq!(page[0].metadata.path, "notes/best.md");
+        assert_eq!(page[1].metadata.idx, 300);
+        assert_eq!(page[2].metadata.idx, 299);
+    }
 }

@@ -50,9 +50,12 @@ pub(crate) struct OwnerIdentity {
 impl OwnerIdentity {
     pub(crate) fn load(journal_root: &Path) -> Self {
         let mut id = None;
-        let mut excluded_ids = BTreeSet::new();
+        let live = solstone_core_entity::live_journal_entities(journal_root).unwrap_or_default();
+        let mut excluded_ids =
+            solstone_core_entity::hidden_participation_ids_for_live(journal_root, &live);
         let mut excluded_names = BTreeSet::new();
-        if let Ok(Some(principal)) = solstone_core_entity::read_journal_principal(journal_root) {
+        if let Some((_, entity)) = solstone_core_entity::principal_from_live_entities(&live) {
+            let principal = &entity.value;
             if let Some(pid) = principal
                 .get("id")
                 .and_then(Value::as_str)
@@ -79,43 +82,23 @@ impl OwnerIdentity {
                 }
             }
         }
-        if let Ok(map) = solstone_core_entity::read_identity_map(journal_root) {
-            let mut live_person_names = BTreeSet::new();
-            let mut candidate_excluded_names = BTreeSet::new();
-            for (eid, dir) in &map.resolved {
-                let Ok(Some(snap)) = solstone_core_entity::read_entity_identity(journal_root, dir)
-                else {
-                    continue;
-                };
-                let val = snap.value();
-                let blocked = val.get("blocked").and_then(Value::as_bool).unwrap_or(false);
-                let is_principal = solstone_core_entity::identity_is_principal(val)
-                    || id.as_deref() == Some(eid.as_str());
-                let kind = val
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty());
-                let is_person = kind.is_none_or(|k| k.eq_ignore_ascii_case("person"));
-                let name = entity_name(val);
-                if blocked || is_principal || !is_person {
-                    excluded_ids.insert(eid.clone());
-                    if !name.is_empty() {
-                        candidate_excluded_names.insert(fold_literal(&name));
-                    }
-                } else if !name.is_empty() {
+        let mut live_person_names = BTreeSet::new();
+        let mut candidate_excluded_names = BTreeSet::new();
+        for (_, entity) in &live {
+            let name = entity_name(&entity.value);
+            if !name.is_empty() {
+                if excluded_ids.contains(&entity.id) {
+                    candidate_excluded_names.insert(fold_literal(&name));
+                } else {
                     live_person_names.insert(fold_literal(&name));
                 }
             }
-            for folded in candidate_excluded_names {
-                if !live_person_names.contains(&folded) {
-                    excluded_names.insert(folded);
-                }
+        }
+        for name in candidate_excluded_names {
+            if !live_person_names.contains(&name) {
+                excluded_names.insert(name);
             }
         }
-        excluded_ids.extend(solstone_core_entity::hidden_participation_entity_ids(
-            journal_root,
-        ));
         Self {
             id,
             excluded_ids,

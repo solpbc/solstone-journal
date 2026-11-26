@@ -467,7 +467,8 @@ fn project_sunday(
     let mut photo_cache = BTreeMap::new();
     let collect_entities = include.contains(&AdmittedCategory::Entities)
         && snapshot.categories.contains(&AdmittedCategory::Entities);
-    let owner = Some(crate::people_view::OwnerIdentity::load(journal));
+    let owner = (collect_entities || !collected.is_empty())
+        .then(|| crate::people_view::OwnerIdentity::load(journal));
     let mut people_by_day = BTreeMap::<String, BTreeSet<String>>::new();
     if collect_entities {
         for row in &collected {
