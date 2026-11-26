@@ -2804,7 +2804,6 @@ fn populate_backfill_activity_defaults(
         let has_screenshot = seg_dir.join("screenshot_transcript.md").is_file();
         let is_real_photo = has_image && !has_screenshot;
         let mut is_spoken = false;
-        let mut seg_has_header_corresponded = false;
 
         // Who corresponded is read from an exchange's own record of who wrote
         // to whom, never from the text of a note or a document: a line that
@@ -2812,7 +2811,7 @@ fn populate_backfill_activity_defaults(
         if !is_assistant_chat {
             for line in exchange_lines {
                 for (name, address, placed) in written_line_people(line, is_email_stream) {
-                    seg_has_header_corresponded |= upsert(
+                    let _ = upsert(
                         name,
                         address,
                         "corresponded",
@@ -2886,15 +2885,6 @@ fn populate_backfill_activity_defaults(
                     .to_owned();
                 if is_real_photo && level != "low" {
                     let _ = upsert(name.to_owned(), None, "visible", "screen", 0.9, ctx);
-                } else if is_email_stream && level == "high" && !seg_has_header_corresponded {
-                    let _ = upsert(
-                        name.to_owned(),
-                        None,
-                        "corresponded",
-                        "transcript",
-                        0.9,
-                        ctx,
-                    );
                 } else if !is_spoken {
                     let src = if has_screenshot || is_real_photo {
                         "screen"
@@ -6822,6 +6812,47 @@ fn a_name_a_talent_shortened_still_finds_its_address() {
             serde_json::json!(["chris@example.com"]),
         )]
     );
+}
+
+#[cfg(test)]
+#[test]
+fn someone_a_note_to_self_only_names_is_mentioned_and_never_a_correspondent() {
+    let root = span_journal();
+    let journal = root.path();
+    let seg = journal.join("chronicle/20210510/import.email/100000_0");
+    std::fs::create_dir_all(seg.join("talents")).unwrap();
+    let header = serde_json::json!({"source": "email", "email": {"account": "me@hale.example"}});
+    let line = serde_json::json!({
+        "speaker": "You", "is_owner": true, "text": "Ask Sam Reyes about the lease.",
+        "to": ["me@hale.example"],
+        "email": {"from": "me@hale.example", "to_addresses": ["me@hale.example"]},
+    });
+    std::fs::write(
+        seg.join("conversation_transcript.jsonl"),
+        format!("{header}\n{line}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        seg.join("talents/sense.json"),
+        serde_json::json!({"entities": [
+            {"type": "Person", "name": "Sam Reyes", "level": "high", "context": "Named in the note."}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let mut record = serde_json::json!({"id":"a","title":"Mail","segments":["100000_0"]})
+        .as_object()
+        .unwrap()
+        .clone();
+    populate_backfill_activity_defaults(journal, "20210510", "work", "import.email", &mut record);
+    let rows: Vec<(&str, &str)> = record["participation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap(), p["role"].as_str().unwrap()))
+        .collect();
+    // No message passed between the owner and the person the text names.
+    assert_eq!(rows, vec![("Sam Reyes", "mentioned")]);
 }
 
 #[cfg(test)]
