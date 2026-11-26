@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use solstone_core_facets::{
     ActivityRef, ExperienceActivitiesMutation, ExperienceDirectPatch, ExperienceMoment,
     ExperienceRecord, ShareDetailPolicy, create_owner_experience, get_experience,
-    hydrate_experience, list_declared_facet_names, list_experiences_in_range,
+    hydrate_experience, hydrate_experiences, list_declared_facet_names, list_experiences_in_range,
     load_experiences_overlapping_day, mutate_experience_activities, project_experience_for_share,
     set_experience_hidden, update_experience_direct,
 };
@@ -868,10 +868,7 @@ pub fn execute(
                     .then_with(|| a.id.cmp(&b.id))
             });
             if as_json {
-                let hydrated: Vec<_> = rows
-                    .into_iter()
-                    .map(|r| hydrate_experience(journal, r, None))
-                    .collect();
+                let hydrated = hydrate_experiences(journal, rows);
                 let payload = json!({
                     "from": label_from,
                     "to": label_to,

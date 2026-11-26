@@ -391,6 +391,16 @@ pub fn merged_away(journal_root: &Path, identity_id: &str) -> Result<Option<Stri
 /// any. Used only to name the survivor to the owner.
 pub fn live_merge_successor(journal_root: &Path, successor: &str) -> Option<String> {
     let map = super::map::read_identity_map(journal_root).ok()?;
+    live_merge_successor_in(journal_root, &map, successor)
+}
+
+/// [`live_merge_successor`] against an identity map the caller already read,
+/// so following many ids reads the journal's entities once.
+pub fn live_merge_successor_in(
+    journal_root: &Path,
+    map: &super::map::EntityIdentityMap,
+    successor: &str,
+) -> Option<String> {
     let mut current = successor.to_owned();
     for _ in 0..16 {
         if map.resolved.contains_key(&current) {

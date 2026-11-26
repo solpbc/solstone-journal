@@ -101,9 +101,9 @@ pub use repair::{
 pub use retired::{
     EntityEdgeAlias, MergeLogRow, MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities,
     RetiredState, damaged_record_detail, entity_edge_aliases, fresh_entity_id,
-    hidden_participation_entity_ids, live_merge_successor, merged_away, merged_successor,
-    parse_retired_entities, read_merge_log, read_retired_entities, record_deleted_entity,
-    retired_record_damage, retired_state,
+    hidden_participation_entity_ids, live_merge_successor, live_merge_successor_in, merged_away,
+    merged_successor, parse_retired_entities, read_merge_log, read_retired_entities,
+    record_deleted_entity, retired_record_damage, retired_state,
 };
 pub use review_candidates::{
     DiscoveredMergeCandidate, record_discovered_merge_candidates, remove_open_merge_candidates_for,
