@@ -786,7 +786,9 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             }
         }
         ValidatedTool::ListActivities(request) => {
-            arguments.insert("limit".to_owned(), request.limit.into());
+            if request.group_by.is_none() {
+                arguments.insert("limit".to_owned(), request.limit.into());
+            }
             insert_present(&mut arguments, "day", request.day.as_deref());
             arguments.insert("from".to_owned(), request.from.clone().into());
             arguments.insert("to".to_owned(), request.to.clone().into());
@@ -797,6 +799,31 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                 } else {
                     arguments.insert("entity".to_owned(), entity.into());
                 }
+            }
+            if let Some(person) = request.person.as_deref() {
+                if crate::references::is_framed_entity_token(person) {
+                    arguments.insert("person".to_owned(), reference_fingerprint(person).into());
+                } else {
+                    arguments.insert("person".to_owned(), person.into());
+                }
+            }
+            if let Some(roles) = &request.roles {
+                arguments.insert(
+                    "roles".to_owned(),
+                    json!(roles.iter().map(|role| role.as_str()).collect::<Vec<_>>()),
+                );
+            }
+            if !request.activity.is_empty() {
+                arguments.insert("activity".to_owned(), json!(request.activity));
+            }
+            if let Some(group_by) = &request.group_by {
+                arguments.insert(
+                    "group_by".to_owned(),
+                    json!(group_by.iter().map(|dim| dim.as_str()).collect::<Vec<_>>()),
+                );
+            }
+            if request.compact {
+                arguments.insert("compact".to_owned(), Value::Bool(true));
             }
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
@@ -898,16 +925,13 @@ fn validate(
         });
     }
     use crate::jsonrpc::ToolName;
-    if matches!(
-        entry.tool_name,
-        ToolName::ListActivities | ToolName::ListTranscripts
-    ) && let Some(object) = arguments.and_then(Value::as_object)
+    if entry.tool_name == ToolName::ListTranscripts
+        && let Some(object) = arguments.and_then(Value::as_object)
         && (["person", "place", "activity"]
             .iter()
             .any(|key| object.contains_key(*key))
             || (object.contains_key("kind")
-                && !(entry.tool_name == ToolName::ListTranscripts
-                    && object.contains_key("source")
+                && !(object.contains_key("source")
                     && object.get("kind").is_some_and(Value::is_string))))
     {
         if object.keys().any(|key| {
@@ -1253,9 +1277,8 @@ fn execute_validated(
         ValidatedTool::Find(tool, request) => {
             let mut found = search(journal_root, principal, snapshot, request)?;
             let rows_key = match tool {
-                crate::jsonrpc::ToolName::ListActivities => "activities",
                 crate::jsonrpc::ToolName::ListTranscripts => "transcripts",
-                _ => unreachable!("only list tools use the find projection"),
+                _ => unreachable!("only list_transcripts uses the find projection"),
             };
             found.value[rows_key] = found
                 .value

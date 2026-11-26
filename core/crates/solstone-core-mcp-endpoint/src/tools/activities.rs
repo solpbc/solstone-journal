@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use jiff::Span;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_indexer_query::{AdmittedCategory, ConnectionScope};
@@ -28,6 +28,91 @@ use crate::segment_links::{
     LinkSubject, LiveTranscriptPages, activity_segment_candidates, issue_segment_links,
 };
 
+pub(crate) const MAX_ACTIVITY_FILTER_ITEMS: usize = 20;
+pub(crate) const MAX_ACTIVITY_TYPE_BYTES: usize = 128;
+pub(crate) const MAX_GROUP_BY_GROUPS: usize = 500;
+
+/// Resolved participation roles on an activity, matching the buckets returned by
+/// `list_activities` (`attendee` maps to `participants`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ActivityRole {
+    Attendee,
+    Heard,
+    Corresponded,
+    InPhoto,
+    Mentioned,
+    OnScreen,
+}
+
+impl ActivityRole {
+    pub(crate) const ALL: &'static [Self] = &[
+        Self::Attendee,
+        Self::Heard,
+        Self::Corresponded,
+        Self::InPhoto,
+        Self::Mentioned,
+        Self::OnScreen,
+    ];
+
+    /// Spoken or attended presence: the default when grouping by `person`
+    /// without an explicit `roles` filter.
+    pub(crate) const DEFAULT_PERSON_GROUP: &'static [Self] = &[Self::Attendee, Self::Heard];
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Attendee => "attendee",
+            Self::Heard => "heard",
+            Self::Corresponded => "corresponded",
+            Self::InPhoto => "in_photo",
+            Self::Mentioned => "mentioned",
+            Self::OnScreen => "on_screen",
+        }
+    }
+
+    const fn from_rank(rank: u8) -> Self {
+        match rank {
+            5 => Self::Attendee,
+            4 => Self::Heard,
+            3 => Self::Corresponded,
+            2 => Self::InPhoto,
+            0 => Self::OnScreen,
+            _ => Self::Mentioned,
+        }
+    }
+}
+
+/// Dimensions accepted by `list_activities`'s `group_by` server-side rollup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum GroupByDimension {
+    Month,
+    Day,
+    Facet,
+    Activity,
+    Person,
+}
+
+impl GroupByDimension {
+    pub(crate) const ALL: &'static [Self] = &[
+        Self::Month,
+        Self::Day,
+        Self::Facet,
+        Self::Activity,
+        Self::Person,
+    ];
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Month => "month",
+            Self::Day => "day",
+            Self::Facet => "facet",
+            Self::Activity => "activity",
+            Self::Person => "person",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidatedListActivities {
     pub(crate) day: Option<String>,
@@ -35,14 +120,59 @@ pub(crate) struct ValidatedListActivities {
     pub(crate) to: String,
     pub(crate) facet: Option<String>,
     pub(crate) entity: Option<String>,
+    pub(crate) person: Option<String>,
+    pub(crate) roles: Option<Vec<ActivityRole>>,
+    pub(crate) activity: Vec<String>,
+    pub(crate) group_by: Option<Vec<GroupByDimension>>,
+    pub(crate) compact: bool,
     pub(crate) limit: usize,
     pub(crate) cursor: Option<String>,
+}
+
+impl ValidatedListActivities {
+    fn role_tokens(&self) -> Vec<String> {
+        self.roles
+            .as_ref()
+            .map(|roles| roles.iter().map(|role| role.as_str().to_owned()).collect())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidatedGetActivitySources {
     pub(crate) reference: String,
     pub(crate) cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ActivityTypeFilterInput {
+    One(String),
+    Several(Vec<String>),
+}
+
+impl ActivityTypeFilterInput {
+    fn validate(self) -> Result<Vec<String>, ToolError> {
+        let raw = match self {
+            Self::One(word) => vec![word],
+            Self::Several(words) => words,
+        };
+        if raw.is_empty() || raw.len() > MAX_ACTIVITY_FILTER_ITEMS {
+            return Err(ToolError::InvalidInput);
+        }
+        let mut normalized = BTreeSet::new();
+        for word in raw {
+            if word.len() > MAX_ACTIVITY_TYPE_BYTES {
+                return Err(ToolError::InvalidInput);
+            }
+            let norm = normalize_activity_type(&word);
+            if norm.is_empty() {
+                return Err(ToolError::InvalidInput);
+            }
+            normalized.insert(norm);
+        }
+        Ok(normalized.into_iter().collect())
+    }
 }
 
 #[derive(Deserialize)]
@@ -59,8 +189,18 @@ struct ListParams {
     facet: Option<String>,
     #[serde(default)]
     entity: Option<String>,
-    #[serde(default = "default_limit")]
-    limit: usize,
+    #[serde(default)]
+    person: Option<String>,
+    #[serde(default)]
+    roles: Option<Vec<ActivityRole>>,
+    #[serde(default)]
+    activity: Option<ActivityTypeFilterInput>,
+    #[serde(default)]
+    group_by: Option<Vec<GroupByDimension>>,
+    #[serde(default)]
+    compact: bool,
+    #[serde(default)]
+    limit: Option<usize>,
     #[serde(default)]
     cursor: Option<String>,
 }
@@ -85,6 +225,27 @@ fn validate_limit(limit: usize) -> Result<(), ToolError> {
     }
 }
 
+fn normalize_activity_type(value: &str) -> String {
+    value.trim().replace('_', " ").to_lowercase()
+}
+
+fn validate_optional_trimmed(
+    value: Option<String>,
+    max_bytes: usize,
+) -> Result<Option<String>, ToolError> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    if raw.len() > max_bytes {
+        return Err(ToolError::InvalidInput);
+    }
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(ToolError::InvalidInput);
+    }
+    Ok(Some(trimmed.to_owned()))
+}
+
 pub(crate) fn validate_list(
     params: Option<&Value>,
     owner_zone: &solstone_core_journal_config::TimeZone,
@@ -92,7 +253,6 @@ pub(crate) fn validate_list(
     let params = params.cloned().unwrap_or_else(|| serde_json::json!({}));
     let params =
         serde_json::from_value::<ListParams>(params).map_err(|_| ToolError::InvalidInput)?;
-    validate_limit(params.limit)?;
 
     if !optional_string_within_limit(&params.day, MAX_DAY_BYTES)
         || !optional_string_within_limit(&params.day_from, MAX_DAY_BYTES)
@@ -102,6 +262,56 @@ pub(crate) fn validate_list(
     {
         return Err(ToolError::InvalidInput);
     }
+
+    let entity = validate_optional_trimmed(params.entity, MAX_OPAQUE_REFERENCE_BYTES)?;
+    let person = validate_optional_trimmed(params.person, MAX_OPAQUE_REFERENCE_BYTES)?;
+    let activity = params
+        .activity
+        .map(ActivityTypeFilterInput::validate)
+        .transpose()?
+        .unwrap_or_default();
+
+    let group_by = if let Some(dims) = params.group_by {
+        if dims.is_empty() || dims.len() > GroupByDimension::ALL.len() {
+            return Err(ToolError::InvalidInput);
+        }
+        let mut seen = BTreeSet::new();
+        for dim in &dims {
+            if !seen.insert(*dim) {
+                return Err(ToolError::InvalidInput);
+            }
+        }
+        if params.limit.is_some() || params.cursor.is_some() || params.compact {
+            return Err(ToolError::InvalidInput);
+        }
+        Some(dims)
+    } else {
+        None
+    };
+
+    let limit = match params.limit {
+        Some(limit) => {
+            validate_limit(limit)?;
+            limit
+        }
+        None => default_limit(),
+    };
+
+    let roles = if let Some(roles) = params.roles {
+        if roles.is_empty() || roles.len() > ActivityRole::ALL.len() {
+            return Err(ToolError::InvalidInput);
+        }
+        let groups_by_person = group_by
+            .as_ref()
+            .is_some_and(|dims| dims.contains(&GroupByDimension::Person));
+        if person.is_none() && entity.is_none() && !groups_by_person {
+            return Err(ToolError::InvalidInput);
+        }
+        let deduped: BTreeSet<ActivityRole> = roles.into_iter().collect();
+        Some(deduped.into_iter().collect())
+    } else {
+        None
+    };
 
     if params.day.is_some() && (params.day_from.is_some() || params.day_to.is_some()) {
         return Err(ToolError::ActivityDayArguments);
@@ -137,8 +347,13 @@ pub(crate) fn validate_list(
         from,
         to,
         facet: params.facet,
-        entity: params.entity,
-        limit: params.limit,
+        entity,
+        person,
+        roles,
+        activity,
+        group_by,
+        compact: params.compact,
+        limit,
         cursor: params.cursor,
     })
 }
@@ -446,33 +661,63 @@ pub(crate) fn activity_people_across<'a>(
     activity_people_in_context(records, None, None, None, None)
 }
 
-/// Like `activity_people_across`, resolving real photo provenance when
-/// `journal_root` and `day` are given (so `visible` on an `import.image`
-/// photo splits into `in_photo` while screen captures and imported screenshots
-/// remain `on_screen`) and optionally excluding the journal's owner.
-pub(crate) fn activity_people_in_context<'a>(
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedParticipant {
+    name: String,
+    entity_ids: Vec<String>,
+    role: ActivityRole,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ResolvedMomentPeople {
+    participants: Vec<ResolvedParticipant>,
+    unnamed_voices: usize,
+}
+
+impl ResolvedMomentPeople {
+    fn to_activity_people(&self) -> ActivityPeople {
+        let mut people = ActivityPeople {
+            unnamed_voices: self.unnamed_voices,
+            ..ActivityPeople::default()
+        };
+        let push_unique = |bucket: &mut Vec<String>, name: &str| {
+            if !bucket.iter().any(|known| known.eq_ignore_ascii_case(name)) {
+                bucket.push(name.to_owned());
+            }
+        };
+        for participant in &self.participants {
+            match participant.role {
+                ActivityRole::Attendee => push_unique(&mut people.participants, &participant.name),
+                ActivityRole::Heard => push_unique(&mut people.heard, &participant.name),
+                ActivityRole::Corresponded => {
+                    push_unique(&mut people.corresponded, &participant.name)
+                }
+                ActivityRole::InPhoto => push_unique(&mut people.in_photo, &participant.name),
+                ActivityRole::Mentioned => push_unique(&mut people.mentioned, &participant.name),
+                ActivityRole::OnScreen => push_unique(&mut people.on_screen, &participant.name),
+            }
+        }
+        people
+    }
+}
+
+fn resolve_activity_participants<'a>(
     records: impl Iterator<Item = &'a Map<String, Value>>,
     journal_root: Option<&Path>,
     day: Option<&str>,
     mut photo_cache: Option<&mut BTreeMap<(String, String), ImageSegmentKind>>,
     exclude_owner: Option<&crate::people_view::OwnerIdentity>,
-) -> ActivityPeople {
+) -> ResolvedMomentPeople {
     let mut local_cache = BTreeMap::new();
-    // Name as first written, and its strongest role so far.
-    let mut named: Vec<(String, u8)> = Vec::new();
-    let mut people = ActivityPeople::default();
+    // (display name as first written, seen entity_ids, strongest role rank so far).
+    let mut named: Vec<(String, Vec<String>, u8)> = Vec::new();
+    let mut unnamed_voices = 0usize;
     for record in records {
         let Some(entries) = record.get("participation").and_then(Value::as_array) else {
             continue;
         };
-        let photo_record = match (journal_root, day) {
-            (Some(root), Some(day_key)) => {
-                let cache = photo_cache.as_deref_mut().unwrap_or(&mut local_cache);
-                is_real_photo_record(root, day_key, record, cache)
-            }
-            _ => false,
-        };
-        let mut voices = 0;
+        let mut photo_record: Option<bool> = None;
+        let mut voices = 0usize;
         for entry in entries.iter().filter_map(Value::as_object) {
             let Some(name) = entry.get("name").and_then(Value::as_str) else {
                 continue;
@@ -492,39 +737,90 @@ pub(crate) fn activity_people_in_context<'a>(
                 }
                 continue;
             }
-            if let Some(owner) = exclude_owner {
-                let explicit_id = entry
-                    .get("entity_id")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty());
-                if owner.excludes(explicit_id, trimmed) {
-                    continue;
-                }
-            }
-            let rank = role_rank(role, photo_record);
-            match named
-                .iter_mut()
-                .find(|(known, _)| known.eq_ignore_ascii_case(trimmed))
+            let explicit_id = entry
+                .get("entity_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            if let Some(owner) = exclude_owner
+                && owner.excludes(explicit_id, trimmed)
             {
-                Some((_, known_rank)) => *known_rank = (*known_rank).max(rank),
-                None => named.push((trimmed.to_owned(), rank)),
+                continue;
+            }
+            let is_photo = if role == "visible" {
+                *photo_record.get_or_insert_with(|| match (journal_root, day) {
+                    (Some(root), Some(day_key)) => {
+                        let cache = photo_cache.as_deref_mut().unwrap_or(&mut local_cache);
+                        is_real_photo_record(root, day_key, record, cache)
+                    }
+                    _ => false,
+                })
+            } else {
+                false
+            };
+            let rank = role_rank(role, is_photo);
+            let existing_idx = if let Some(eid) = explicit_id {
+                named
+                    .iter()
+                    .position(|(_, ids, _)| ids.iter().any(|known| known == eid))
+                    .or_else(|| {
+                        named.iter().position(|(known, ids, _)| {
+                            ids.is_empty() && known.eq_ignore_ascii_case(trimmed)
+                        })
+                    })
+            } else {
+                named
+                    .iter()
+                    .position(|(known, _, _)| known.eq_ignore_ascii_case(trimmed))
+            };
+            match existing_idx {
+                Some(idx) => {
+                    let (_, ids, known_rank) = &mut named[idx];
+                    *known_rank = (*known_rank).max(rank);
+                    if let Some(eid) = explicit_id
+                        && !ids.iter().any(|known| known == eid)
+                    {
+                        ids.push(eid.to_owned());
+                    }
+                }
+                None => {
+                    let ids = explicit_id
+                        .map(|eid| vec![eid.to_owned()])
+                        .unwrap_or_default();
+                    named.push((trimmed.to_owned(), ids, rank));
+                }
             }
         }
         // Copies hear the same recording, so the most any one copy counted.
-        people.unnamed_voices = people.unnamed_voices.max(voices);
+        unnamed_voices = unnamed_voices.max(voices);
     }
-    for (name, rank) in named {
-        match rank {
-            5 => people.participants.push(name),
-            4 => people.heard.push(name),
-            3 => people.corresponded.push(name),
-            2 => people.in_photo.push(name),
-            0 => people.on_screen.push(name),
-            _ => people.mentioned.push(name),
-        }
+    let participants = named
+        .into_iter()
+        .map(|(name, entity_ids, rank)| ResolvedParticipant {
+            name,
+            entity_ids,
+            role: ActivityRole::from_rank(rank),
+        })
+        .collect();
+    ResolvedMomentPeople {
+        participants,
+        unnamed_voices,
     }
-    people
+}
+
+/// Like `activity_people_across`, resolving real photo provenance when
+/// `journal_root` and `day` are given (so `visible` on an `import.image`
+/// photo splits into `in_photo` while screen captures and imported screenshots
+/// remain `on_screen`) and optionally excluding the journal's owner.
+pub(crate) fn activity_people_in_context<'a>(
+    records: impl Iterator<Item = &'a Map<String, Value>>,
+    journal_root: Option<&Path>,
+    day: Option<&str>,
+    photo_cache: Option<&mut BTreeMap<(String, String), ImageSegmentKind>>,
+    exclude_owner: Option<&crate::people_view::OwnerIdentity>,
+) -> ActivityPeople {
+    resolve_activity_participants(records, journal_root, day, photo_cache, exclude_owner)
+        .to_activity_people()
 }
 
 /// What kind of activity the journal recorded: meeting, writing and so on,
@@ -788,6 +1084,220 @@ pub(crate) fn clean_activity_record_for_wire_with_owner(
     record
 }
 
+enum EntityFilter {
+    Token {
+        entity_id: String,
+        folded_name: String,
+    },
+    /// Words a record's names contain, or the ids of the entities this
+    /// list reaches that the words name exactly.
+    Literal {
+        target: String,
+        entity_ids: HashSet<String>,
+    },
+}
+
+fn resolve_entity_filter(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    facets_to_search: &[(String, String, String)],
+    raw: &str,
+) -> Result<EntityFilter, DispatchError> {
+    if is_framed_entity_token(raw) {
+        if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        }
+        let ReferenceTarget::Entity(entity_ref) = codec()
+            .resolve(
+                raw,
+                ReferenceKind::Entity,
+                principal.connection,
+                snapshot.generation,
+            )
+            .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
+        else {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        };
+        let Some((_, facet_dir, _)) = facets_to_search
+            .iter()
+            .find(|(id, _, _)| id == &entity_ref.facet_id)
+        else {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        };
+        let item = read_scoped_entities(journal_root, facet_dir)?
+            .into_iter()
+            .find(|item| item.entity_id == entity_ref.entity_id)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        let name = entity_name(&item.identity);
+        Ok(EntityFilter::Token {
+            entity_id: entity_ref.entity_id,
+            folded_name: fold_literal(&name),
+        })
+    } else if let Some((entity_id, facet_dir)) =
+        crate::names::parse_entity(raw).and_then(|(entity_id, facet)| {
+            facets_to_search
+                .iter()
+                .find(|(id, _, _)| id == &facet)
+                .or_else(|| facets_to_search.iter().find(|(_, dir, _)| dir == &facet))
+                .map(|(_, dir, _)| (entity_id, dir.clone()))
+        })
+    {
+        // An entity's name in a facet this list reaches: the entity this
+        // connection's own list shows there, or not found. Anything else
+        // written with an `@` is read as the words it is.
+        if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+            return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+        }
+        let item = read_scoped_entities(journal_root, &facet_dir)?
+            .into_iter()
+            .find(|item| item.entity_id == entity_id)
+            .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        Ok(EntityFilter::Token {
+            entity_id,
+            folded_name: fold_literal(&entity_name(&item.identity)),
+        })
+    } else {
+        let target = fold_literal(raw);
+        let mut entity_ids = HashSet::new();
+        // A record can name an entity by its id: merges before 2.0.82
+        // wrote the survivor's id where its name belonged. Words that are
+        // a reachable entity's name find those records too, and only for
+        // a connection that reads entities. An aka is never matched: it
+        // stays out of every answer.
+        if snapshot.categories.contains(&AdmittedCategory::Entities) {
+            // It reads every entity in the journal, so once for all facets.
+            let identities = solstone_core_facets::read_identity_map(journal_root)
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+            for (_, facet_dir, _) in facets_to_search {
+                for item in read_scoped_entities_resolved(journal_root, facet_dir, &identities)? {
+                    if fold_literal(&entity_name(&item.identity)) == target {
+                        entity_ids.insert(item.entity_id);
+                    }
+                }
+            }
+        }
+        Ok(EntityFilter::Literal { target, entity_ids })
+    }
+}
+
+fn participant_matches_filter(participant: &ResolvedParticipant, filter: &EntityFilter) -> bool {
+    match filter {
+        EntityFilter::Token {
+            entity_id,
+            folded_name,
+        } => {
+            participant.entity_ids.iter().any(|id| id == entity_id)
+                || participant.name == *entity_id
+                || fold_literal(&participant.name) == *folded_name
+        }
+        EntityFilter::Literal { target, entity_ids } => {
+            participant
+                .entity_ids
+                .iter()
+                .any(|id| entity_ids.contains(id))
+                || entity_ids.contains(&participant.name)
+                || fold_literal(&participant.name).contains(target.as_str())
+        }
+    }
+}
+
+fn active_entities_match_filter<'a>(
+    records: impl Iterator<Item = &'a Map<String, Value>>,
+    filter: &EntityFilter,
+) -> bool {
+    for record in records {
+        for entity in activity_entities(record) {
+            let matched = match filter {
+                EntityFilter::Token {
+                    entity_id,
+                    folded_name,
+                } => entity == *entity_id || fold_literal(&entity) == *folded_name,
+                EntityFilter::Literal { target, entity_ids } => {
+                    entity_ids.contains(&entity) || fold_literal(&entity).contains(target.as_str())
+                }
+            };
+            if matched {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn record_matches_activity_filter(record: &Map<String, Value>, wanted: &[String]) -> bool {
+    if wanted.is_empty() {
+        return true;
+    }
+    activity_kind(record)
+        .map(|kind| normalize_activity_type(&kind))
+        .is_some_and(|kind| wanted.iter().any(|target| target == &kind))
+}
+
+fn effective_rollup_roles(request: &ValidatedListActivities) -> Option<&[ActivityRole]> {
+    if let Some(ref roles) = request.roles {
+        Some(roles.as_slice())
+    } else if request
+        .group_by
+        .as_ref()
+        .is_some_and(|dims| dims.contains(&GroupByDimension::Person))
+    {
+        Some(ActivityRole::DEFAULT_PERSON_GROUP)
+    } else {
+        None
+    }
+}
+
+const NO_ACTIVITIES_NOTE: &str = "no activities. this connection can see none that match. this is a complete answer, not an error.";
+
+fn empty_activities_response(request: &ValidatedListActivities) -> Prepared {
+    if let Some(ref dims) = request.group_by {
+        let mut response = json!({
+            "group_by": dims.iter().map(|d| d.as_str()).collect::<Vec<_>>(),
+            "groups": [],
+            "total": {
+                "count": 0,
+                "timed_count": 0,
+                "duration_sec": 0,
+            },
+        });
+        if let Some(roles) = effective_rollup_roles(request) {
+            response["roles"] = json!(roles.iter().map(|r| r.as_str()).collect::<Vec<_>>());
+        }
+        Prepared::new(response, 0, Vec::new()).when_empty(NO_ACTIVITIES_NOTE)
+    } else {
+        Prepared::new(json!({ "activities": [] }), 0, Vec::new()).when_empty(NO_ACTIVITIES_NOTE)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum GroupKeyPart {
+    Month(String),
+    Day(String),
+    Facet {
+        title_folded: String,
+        id: String,
+        title: String,
+    },
+    Activity(Option<String>),
+    Person(String),
+}
+
+#[derive(Default)]
+struct GroupBucket {
+    count: usize,
+    timed_count: usize,
+    duration_sec: u64,
+    person_display: Option<String>,
+}
+
+fn day_to_month(day: &str) -> String {
+    match (day.get(0..4), day.get(4..6)) {
+        (Some(year), Some(month)) => format!("{year}-{month}"),
+        _ => day.to_owned(),
+    }
+}
+
 pub(crate) fn execute_list(
     journal_root: &Path,
     principal: DispatchPrincipal<'_>,
@@ -812,116 +1322,41 @@ pub(crate) fn execute_list(
         })
         .collect();
 
-    let facets_to_search: Vec<(String, String, String)> = if let Some(ref facet_filter) =
-        request.facet
-    {
-        let matching: Vec<_> = all_facets
-            .into_iter()
-            .filter(|(id, dir, _)| id == facet_filter || dir == facet_filter)
-            .collect();
-        if matching.is_empty() {
-            return Ok(Prepared::new(json!({ "activities": [] }), 0, Vec::new()).when_empty(
-                "No activities. This connection can see none that match. This is a complete answer, not an error.",
-            ));
-        }
-        matching
-    } else {
-        all_facets
-    };
-
-    enum EntityFilter {
-        Token {
-            entity_id: String,
-            folded_name: String,
-        },
-        /// Words a record's names contain, or the ids of the entities this
-        /// list reaches that the words name exactly.
-        Literal {
-            target: String,
-            entity_ids: HashSet<String>,
-        },
-    }
-
-    let entity_filter: Option<EntityFilter> = if let Some(ref entity_str) = request.entity {
-        if is_framed_entity_token(entity_str) {
-            if !snapshot.categories.contains(&AdmittedCategory::Entities) {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            }
-            let ReferenceTarget::Entity(entity_ref) = codec()
-                .resolve(
-                    entity_str,
-                    ReferenceKind::Entity,
-                    principal.connection,
-                    snapshot.generation,
-                )
-                .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
-            else {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            };
-            let Some((_, facet_dir, _)) = facets_to_search
-                .iter()
-                .find(|(id, _, _)| id == &entity_ref.facet_id)
-            else {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
-            };
-            let item = read_scoped_entities(journal_root, facet_dir)?
+    let facets_to_search: Vec<(String, String, String)> =
+        if let Some(ref facet_filter) = request.facet {
+            let matching: Vec<_> = all_facets
                 .into_iter()
-                .find(|item| item.entity_id == entity_ref.entity_id)
-                .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-            let name = entity_name(&item.identity);
-            Some(EntityFilter::Token {
-                entity_id: entity_ref.entity_id,
-                folded_name: fold_literal(&name),
-            })
-        } else if let Some((entity_id, facet_dir)) = crate::names::parse_entity(entity_str)
-            .and_then(|(entity_id, facet)| {
-                facets_to_search
-                    .iter()
-                    .find(|(id, _, _)| id == &facet)
-                    .or_else(|| facets_to_search.iter().find(|(_, dir, _)| dir == &facet))
-                    .map(|(_, dir, _)| (entity_id, dir.clone()))
-            })
-        {
-            // An entity's name in a facet this list reaches: the entity this
-            // connection's own list shows there, or not found. Anything else
-            // written with an `@` is read as the words it is.
-            if !snapshot.categories.contains(&AdmittedCategory::Entities) {
-                return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                .filter(|(id, dir, _)| id == facet_filter || dir == facet_filter)
+                .collect();
+            if matching.is_empty() {
+                return Ok(empty_activities_response(&request));
             }
-            let item = read_scoped_entities(journal_root, &facet_dir)?
-                .into_iter()
-                .find(|item| item.entity_id == entity_id)
-                .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-            Some(EntityFilter::Token {
-                entity_id,
-                folded_name: fold_literal(&entity_name(&item.identity)),
-            })
+            matching
         } else {
-            let target = fold_literal(entity_str);
-            let mut entity_ids = HashSet::new();
-            // A record can name an entity by its id: merges before 2.0.82
-            // wrote the survivor's id where its name belonged. Words that are
-            // a reachable entity's name find those records too, and only for
-            // a connection that reads entities. An aka is never matched: it
-            // stays out of every answer.
-            if snapshot.categories.contains(&AdmittedCategory::Entities) {
-                // It reads every entity in the journal, so once for all facets.
-                let identities = solstone_core_facets::read_identity_map(journal_root)
-                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
-                for (_, facet_dir, _) in &facets_to_search {
-                    for item in read_scoped_entities_resolved(journal_root, facet_dir, &identities)?
-                    {
-                        if fold_literal(&entity_name(&item.identity)) == target {
-                            entity_ids.insert(item.entity_id);
-                        }
-                    }
-                }
-            }
-            Some(EntityFilter::Literal { target, entity_ids })
-        }
-    } else {
-        None
+            all_facets
+        };
+
+    let entity_filter: Option<EntityFilter> = match request.entity.as_deref() {
+        Some(raw) => Some(resolve_entity_filter(
+            journal_root,
+            principal,
+            snapshot,
+            &facets_to_search,
+            raw,
+        )?),
+        None => None,
     };
+    let person_filter: Option<EntityFilter> = match request.person.as_deref() {
+        Some(raw) => Some(resolve_entity_filter(
+            journal_root,
+            principal,
+            snapshot,
+            &facets_to_search,
+            raw,
+        )?),
+        None => None,
+    };
+    let has_person_or_entity = entity_filter.is_some() || person_filter.is_some();
 
     let cursor_bound = if let Some(ref cursor_token) = request.cursor {
         let ReferenceTarget::ActivityList(c) = codec()
@@ -940,6 +1375,10 @@ pub(crate) fn execute_list(
             || c.to.as_deref() != Some(&request.to)
             || c.facet != request.facet
             || c.entity != request.entity
+            || c.person != request.person
+            || c.roles != request.role_tokens()
+            || c.activity != request.activity
+            || c.compact != request.compact
         {
             return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
         }
@@ -960,12 +1399,14 @@ pub(crate) fn execute_list(
         /// A body record's group as this connection reads it, and the
         /// stretch it was read in; composed once the item is on the page.
         group: Option<(usize, solstone_core_location::body_records::Group)>,
-        /// Whether this record passes the entity filter, when one is given.
-        matched: bool,
         /// The other facets holding a copy of this moment, by title, and
         /// those copies' records.
         also_in: Vec<String>,
         copies: Vec<Map<String, Value>>,
+        /// Cached resolved participants across primary + copies, computed once
+        /// when person/role filtering, `group_by: ["person"]`, or full row
+        /// serialization needs it.
+        resolved_people: Option<ResolvedMomentPeople>,
     }
 
     let mut collected = Vec::new();
@@ -1038,15 +1479,18 @@ pub(crate) fn execute_list(
                     // A body record or Strava line this connection would list
                     // with the body permission, so the answer says it needs it.
                     crate::may_see::Shown::NeedsBody => {
-                        body_withheld = body_withheld || entity_filter.is_none();
+                        body_withheld = body_withheld
+                            || (!has_person_or_entity
+                                && record_matches_activity_filter(&record, &request.activity));
                         continue;
                     }
                 }
                 if solstone_core_facets::is_body_record(&record) {
                     // A body record shows as its face, only for windows this
-                    // connection reads; it names no entity, so an entity filter
-                    // leaves it out.
-                    if entity_filter.is_none()
+                    // connection reads; it names no entity or person, so those
+                    // filters leave it out.
+                    if !has_person_or_entity
+                        && record_matches_activity_filter(&record, &request.activity)
                         && let Some(id) = record.get("id").and_then(Value::as_str)
                     {
                         body_rows.insert(
@@ -1063,45 +1507,14 @@ pub(crate) fn execute_list(
                                 day: day.clone(),
                                 file_digest: file_digest.clone(),
                                 group: None,
-                                matched: true,
                                 also_in: Vec::new(),
                                 copies: Vec::new(),
+                                resolved_people: None,
                             },
                         );
                     }
                     continue;
                 }
-                let mut entities = activity_entities(&record);
-                if let Some(part) = record.get("participation").and_then(Value::as_array) {
-                    for entry in part.iter().filter_map(Value::as_object) {
-                        if let Some(name) = entry.get("name").and_then(Value::as_str) {
-                            let trimmed = name.trim();
-                            if !trimmed.is_empty() && !entities.iter().any(|e| e == trimmed) {
-                                entities.push(trimmed.to_owned());
-                            }
-                        }
-                        if let Some(eid) = entry.get("entity_id").and_then(Value::as_str) {
-                            let trimmed = eid.trim();
-                            if !trimmed.is_empty() && !entities.iter().any(|e| e == trimmed) {
-                                entities.push(trimmed.to_owned());
-                            }
-                        }
-                    }
-                }
-                // A copy that doesn't match is kept until the moment is
-                // folded: another facet's copy of it may.
-                let matched = entity_filter.as_ref().is_none_or(|filter| match filter {
-                    EntityFilter::Token {
-                        entity_id,
-                        folded_name,
-                    } => entities
-                        .iter()
-                        .any(|e| e == entity_id || fold_literal(e) == *folded_name),
-                    EntityFilter::Literal { target, entity_ids } => entities.iter().any(|entity| {
-                        entity_ids.contains(entity)
-                            || fold_literal(entity).contains(target.as_str())
-                    }),
-                });
                 let rec_identity =
                     crate::activity_admit::compute_record_identity(&record, &trimmed);
                 let sort_key = sort_activity_key(&day, facet_id, &record);
@@ -1115,45 +1528,105 @@ pub(crate) fn execute_list(
                     file_digest: file_digest.clone(),
                     rec_identity,
                     group: None,
-                    matched,
                     also_in: Vec::new(),
                     copies: Vec::new(),
+                    resolved_people: None,
                 });
             }
         }
     }
 
+    let needs_owner_now = has_person_or_entity
+        || request
+            .group_by
+            .as_ref()
+            .is_some_and(|dims| dims.contains(&GroupByDimension::Person))
+        || (request.group_by.is_none() && !request.compact);
+    let owner = needs_owner_now.then(|| crate::people_view::OwnerIdentity::load(journal_root));
+    let mut photo_cache: BTreeMap<(String, String), ImageSegmentKind> = BTreeMap::new();
+
     // A moment recorded in several facets is listed once, from the facet it
-    // belongs to most, with the others named beside it. It passes an entity
-    // filter when any facet's copy does.
+    // belongs to most, with the others named beside it. Activity-type and
+    // role-aware person/entity filters run on the folded moment so multi-facet
+    // role promotion matches the rendered row and rollup identically.
     collected.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
-    let collected: Vec<CollectedItem> = solstone_core_facets::merge_moment_copies(
+    let mut collected: Vec<CollectedItem> = solstone_core_facets::merge_moment_copies(
         collected,
         |item| item.day.as_str(),
         |item| &item.record,
     )
     .into_iter()
-    .filter(|moment| moment.primary.matched || moment.copies.iter().any(|copy| copy.matched))
-    .map(|moment| {
+    .filter_map(|moment| {
         let mut primary = moment.primary;
         for copy in moment.copies {
             primary.also_in.push(copy.facet_title);
             primary.copies.push(copy.record);
         }
-        primary
+        if !record_matches_activity_filter(&primary.record, &request.activity) {
+            return None;
+        }
+        if has_person_or_entity {
+            let resolved = resolve_activity_participants(
+                std::iter::once(&primary.record).chain(primary.copies.iter()),
+                Some(journal_root),
+                Some(&primary.day),
+                Some(&mut photo_cache),
+                owner.as_ref(),
+            );
+            if let Some(ref pf) = person_filter {
+                let person_ok = resolved.participants.iter().any(|participant| {
+                    participant_matches_filter(participant, pf)
+                        && request
+                            .roles
+                            .as_ref()
+                            .is_none_or(|allowed| allowed.contains(&participant.role))
+                });
+                if !person_ok {
+                    return None;
+                }
+            }
+            if let Some(ref ef) = entity_filter {
+                let entity_ok = if person_filter.is_none()
+                    && let Some(ref allowed) = request.roles
+                {
+                    resolved.participants.iter().any(|participant| {
+                        participant_matches_filter(participant, ef)
+                            && allowed.contains(&participant.role)
+                    })
+                } else {
+                    active_entities_match_filter(
+                        std::iter::once(&primary.record).chain(primary.copies.iter()),
+                        ef,
+                    ) || resolved
+                        .participants
+                        .iter()
+                        .any(|participant| participant_matches_filter(participant, ef))
+                };
+                if !entity_ok {
+                    return None;
+                }
+            }
+            primary.resolved_people = Some(resolved);
+        }
+        Some(primary)
     })
     .collect();
-    let mut collected = collected;
 
     // Body groups, read a stretch of days at a time from the day before the
     // first this page can show, until the page and the item after it are
     // settled: everything sorts by day first, so nothing on a later day can
     // come before them. Each stretch groups as its days do alone.
+    // Compact and group_by modes emit no beside lines, so they skip stretches
+    // altogether when no body rows matched.
     let mut body: Vec<(String, solstone_core_location::body_records::Groups)> = Vec::new();
-    if let (Some(mut from), Some(last)) = (
-        solstone_core_time::parse_day(&before_from),
-        solstone_core_time::parse_day(&request.to),
-    ) {
+    let need_body_groups =
+        !body_rows.is_empty() || (request.group_by.is_none() && !request.compact);
+    if need_body_groups
+        && let (Some(mut from), Some(last)) = (
+            solstone_core_time::parse_day(&before_from),
+            solstone_core_time::parse_day(&request.to),
+        )
+    {
         while from <= last {
             // A stretch reaching past the last representable day ends at `last`.
             let to = from
@@ -1175,7 +1648,10 @@ pub(crate) fn execute_list(
                     Ok(groups) => groups,
                     // A body record shows only as its face, so a list that would
                     // hold one can't go on without it; beside lines alone can.
-                    Err(_) if entity_filter.is_none() => {
+                    Err(_)
+                        if !body_rows.is_empty()
+                            || (!has_person_or_entity && request.activity.is_empty()) =>
+                    {
                         return Err(DispatchError::Tool(ToolError::FileUnreadable));
                     }
                     Err(_) => solstone_core_location::body_records::Groups::default(),
@@ -1200,17 +1676,19 @@ pub(crate) fn execute_list(
                 }
                 body.push((facet_dir.clone(), groups));
             }
-            let settled = collected
-                .iter()
-                .filter(|item| item.day <= to_day)
-                .filter(|item| {
-                    cursor_bound
-                        .as_ref()
-                        .is_none_or(|cursor_key| &item.sort_key > cursor_key)
-                })
-                .count();
-            if settled > request.limit {
-                break;
+            if request.group_by.is_none() {
+                let settled = collected
+                    .iter()
+                    .filter(|item| item.day <= to_day)
+                    .filter(|item| {
+                        cursor_bound
+                            .as_ref()
+                            .is_none_or(|cursor_key| &item.sort_key > cursor_key)
+                    })
+                    .count();
+                if settled > request.limit {
+                    break;
+                }
             }
             let Ok(next) = to.tomorrow() else {
                 break;
@@ -1220,6 +1698,179 @@ pub(crate) fn execute_list(
     }
 
     collected.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
+
+    if let Some(ref dims) = request.group_by {
+        let person_roles = effective_rollup_roles(&request);
+        let group_roles = person_roles.unwrap_or(ActivityRole::DEFAULT_PERSON_GROUP);
+        let groups_by_person = dims.contains(&GroupByDimension::Person);
+        let mut buckets: BTreeMap<Vec<GroupKeyPart>, GroupBucket> = BTreeMap::new();
+        let mut total_count = 0usize;
+        let mut total_timed_count = 0usize;
+        let mut total_duration_sec = 0u64;
+
+        for item in &mut collected {
+            let (duration_opt, kind_opt) = if let Some((stretch, group)) = &item.group {
+                let face = body[*stretch].1.compose(journal_root, group);
+                crate::body_source::name_windows(
+                    &mut targets,
+                    crate::body_source::face_windows(&face),
+                );
+                let face_val = solstone_core_location::body_records::face_json(&face);
+                let dur = face_span(&face_val)
+                    .and_then(|(start, end)| end.checked_sub(start))
+                    .and_then(|diff| u64::try_from(diff).ok());
+                let kind = face_val
+                    .get("activity")
+                    .and_then(Value::as_str)
+                    .map(|k| k.trim().replace('_', " "))
+                    .filter(|k| !k.is_empty());
+                (dur, kind)
+            } else {
+                let (_, _, dur) = activity_times_and_duration(&item.record);
+                (dur, activity_kind(&item.record))
+            };
+            let is_timed = duration_opt.is_some_and(|d| d > 0);
+            let dur_sec = duration_opt.unwrap_or(0);
+            total_count += 1;
+            if is_timed {
+                total_timed_count += 1;
+            }
+            total_duration_sec = total_duration_sec.saturating_add(dur_sec);
+
+            let mut person_entries: Vec<(String, String)> = Vec::new();
+            if groups_by_person {
+                if item.group.is_none() {
+                    let resolved = item.resolved_people.get_or_insert_with(|| {
+                        resolve_activity_participants(
+                            std::iter::once(&item.record).chain(item.copies.iter()),
+                            Some(journal_root),
+                            Some(&item.day),
+                            Some(&mut photo_cache),
+                            owner.as_ref(),
+                        )
+                    });
+                    let mut seen_folded = BTreeSet::new();
+                    for participant in &resolved.participants {
+                        if !group_roles.contains(&participant.role) {
+                            continue;
+                        }
+                        let folded = fold_literal(&participant.name);
+                        if seen_folded.insert(folded.clone()) {
+                            person_entries.push((folded, participant.name.clone()));
+                        }
+                    }
+                }
+                if person_entries.is_empty() {
+                    continue;
+                }
+            }
+
+            let add_to_bucket =
+                |key: Vec<GroupKeyPart>,
+                 person_display: Option<String>,
+                 buckets: &mut BTreeMap<Vec<GroupKeyPart>, GroupBucket>| {
+                    let bucket = buckets.entry(key).or_default();
+                    bucket.count += 1;
+                    if is_timed {
+                        bucket.timed_count += 1;
+                    }
+                    bucket.duration_sec = bucket.duration_sec.saturating_add(dur_sec);
+                    if bucket.person_display.is_none() {
+                        bucket.person_display = person_display;
+                    }
+                };
+
+            let build_key = |person_folded: Option<&str>| -> Vec<GroupKeyPart> {
+                dims.iter()
+                    .map(|dim| match dim {
+                        GroupByDimension::Month => GroupKeyPart::Month(day_to_month(&item.day)),
+                        GroupByDimension::Day => GroupKeyPart::Day(item.day.clone()),
+                        GroupByDimension::Facet => GroupKeyPart::Facet {
+                            title_folded: fold_literal(&item.facet_title),
+                            id: item.facet_id.clone(),
+                            title: item.facet_title.clone(),
+                        },
+                        GroupByDimension::Activity => GroupKeyPart::Activity(kind_opt.clone()),
+                        GroupByDimension::Person => {
+                            GroupKeyPart::Person(person_folded.unwrap_or_default().to_owned())
+                        }
+                    })
+                    .collect()
+            };
+
+            if groups_by_person {
+                for (folded, display) in person_entries {
+                    add_to_bucket(build_key(Some(&folded)), Some(display), &mut buckets);
+                }
+            } else {
+                add_to_bucket(build_key(None), None, &mut buckets);
+            }
+        }
+
+        let groups_total = buckets.len();
+        let truncated = groups_total > MAX_GROUP_BY_GROUPS;
+        let groups: Vec<Value> = buckets
+            .into_iter()
+            .take(MAX_GROUP_BY_GROUPS)
+            .map(|(key, bucket)| {
+                let mut row = Map::new();
+                for part in key {
+                    match part {
+                        GroupKeyPart::Month(month) => {
+                            row.insert("month".to_owned(), json!(month));
+                        }
+                        GroupKeyPart::Day(day) => {
+                            row.insert("day".to_owned(), json!(day));
+                        }
+                        GroupKeyPart::Facet { id, title, .. } => {
+                            row.insert("facet".to_owned(), json!(title));
+                            row.insert("facet_id".to_owned(), json!(id));
+                        }
+                        GroupKeyPart::Activity(kind) => {
+                            row.insert("activity".to_owned(), json!(kind));
+                        }
+                        GroupKeyPart::Person(folded) => {
+                            let label = bucket.person_display.as_deref().unwrap_or(&folded);
+                            row.insert("person".to_owned(), json!(label));
+                        }
+                    }
+                }
+                row.insert("count".to_owned(), json!(bucket.count));
+                row.insert("timed_count".to_owned(), json!(bucket.timed_count));
+                row.insert("duration_sec".to_owned(), json!(bucket.duration_sec));
+                Value::Object(row)
+            })
+            .collect();
+
+        let count = groups.len();
+        let mut response_val = json!({
+            "group_by": dims.iter().map(|d| d.as_str()).collect::<Vec<_>>(),
+            "groups": groups,
+            "total": {
+                "count": total_count,
+                "timed_count": total_timed_count,
+                "duration_sec": total_duration_sec,
+            },
+        });
+        if let Some(roles) = person_roles {
+            response_val["roles"] = json!(roles.iter().map(|r| r.as_str()).collect::<Vec<_>>());
+        }
+        if truncated {
+            response_val["truncated"] = Value::Bool(true);
+            response_val["groups_total"] = json!(groups_total);
+        }
+        if body_withheld {
+            response_val["body_note"] = json!(crate::body_source::BODY_NOT_GRANTED);
+            return Ok(Prepared::new(response_val, count, targets)
+                .when_empty(crate::body_source::BODY_NOT_GRANTED));
+        }
+        let empty_note = if total_count > 0 {
+            "no people matched those roles in these activities. this is a complete answer, not an error."
+        } else {
+            NO_ACTIVITIES_NOTE
+        };
+        return Ok(Prepared::new(response_val, count, targets).when_empty(empty_note));
+    }
 
     let items_iter = collected.into_iter();
     let unskipped: Vec<CollectedItem> = if let Some(ref cursor_key) = cursor_bound {
@@ -1233,52 +1884,79 @@ pub(crate) fn execute_list(
     let has_more = unskipped.len() > request.limit;
     let page: Vec<CollectedItem> = unskipped.into_iter().take(request.limit).collect();
 
-    let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
-    let now = jiff::Timestamp::now().to_zoned_datetime(owner_zone.clone());
-    let zone_str =
-        solstone_core_journal_config::zone_label(Some(&owner_zone), now.offset().seconds());
-
-    // The calendar and day location belong to no facet.
-    let whole_journal = matches!(snapshot.scope, ConnectionScope::WholeJournal);
-    let sees_calendar = whole_journal && snapshot.categories.contains(&AdmittedCategory::Calendar);
-    let places_precision = snapshot.places_precision();
-    let mut calendars = BTreeMap::new();
-    let mut locations = BTreeMap::new();
-
     let sources = crate::dispatch::source_labels(journal_root);
-    let owner = crate::people_view::OwnerIdentity::load(journal_root);
     let mut activities = Vec::new();
-    let mut photo_cache: BTreeMap<(String, String), ImageSegmentKind> = BTreeMap::new();
-    // Beside lines between body faces and capture activities, both ways, only
-    // between items this connection reads. Worked out when read; never stored.
-    let mut body_near: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
-    let mut capture_on: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
-    for item in &page {
-        let reference = crate::dispatch::activity_reference(
-            principal,
-            snapshot,
-            ActivityReference {
-                facet_id: item.facet_id.clone(),
-                facet_dir: item.facet_dir.clone(),
-                day: item.day.clone(),
-                record_identity: item.rec_identity.clone(),
-                file_digest: item.file_digest.clone(),
-                unit_index: None,
-                source_binding: None,
-            },
-        )?;
 
-        let face = item.group.as_ref().map(|(stretch, group)| {
-            let face = body[*stretch].1.compose(journal_root, group);
-            crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
-            (
-                solstone_core_location::body_records::face_json(&face),
-                solstone_core_location::body_records::face_still_there(&face),
-            )
-        });
-        if let Some((face, there)) = &face {
-            let mut activity =
-                body_activity(face, &item.facet_title, &item.day, reference, &zone_str);
+    if request.compact {
+        for item in &page {
+            let reference = crate::dispatch::activity_reference(
+                principal,
+                snapshot,
+                ActivityReference {
+                    facet_id: item.facet_id.clone(),
+                    facet_dir: item.facet_dir.clone(),
+                    day: item.day.clone(),
+                    record_identity: item.rec_identity.clone(),
+                    file_digest: item.file_digest.clone(),
+                    unit_index: None,
+                    source_binding: None,
+                },
+            )?;
+            if let Some((stretch, group)) = &item.group {
+                let face = body[*stretch].1.compose(journal_root, group);
+                crate::body_source::name_windows(
+                    &mut targets,
+                    crate::body_source::face_windows(&face),
+                );
+                let face_val = solstone_core_location::body_records::face_json(&face);
+                let accounts = face_val.get("accounts").and_then(Value::as_array);
+                let first = accounts.and_then(|arr| arr.first());
+                let title = face_val
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        first
+                            .and_then(|f| f.get("label"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_default();
+                let duration = face_span(&face_val)
+                    .and_then(|(start, end)| end.checked_sub(start))
+                    .and_then(|diff| u64::try_from(diff).ok());
+                let mut activity = json!({
+                    "title": title,
+                    "facet": item.facet_title,
+                    "day": item.day,
+                    "content_kind": "body",
+                    "source": "body",
+                    "kind": face_val.get("activity").cloned().unwrap_or(Value::Null),
+                    "start": first.and_then(|f| f.get("start")).cloned().unwrap_or(Value::Null),
+                    "end": first.and_then(|f| f.get("end")).cloned().unwrap_or(Value::Null),
+                    "duration": duration,
+                    "reference": reference,
+                });
+                crate::journal_links::activity(
+                    journal_root,
+                    &mut activity,
+                    &item.facet_dir,
+                    &item.day,
+                    &item.rec_identity,
+                );
+                activities.push(activity);
+                continue;
+            }
+            let (start, _, duration) = activity_times_and_duration(&item.record);
+            let title = activity_title(&item.record);
+            let mut activity = json!({
+                "title": title,
+                "facet": item.facet_title,
+                "day": item.day,
+                "start": start,
+                "duration": duration,
+                "reference": reference,
+            });
             crate::journal_links::activity(
                 journal_root,
                 &mut activity,
@@ -1286,14 +1964,205 @@ pub(crate) fn execute_list(
                 &item.day,
                 &item.rec_identity,
             );
-            if let Some(span) = face_span(face) {
-                let captures = capture_on.entry(item.day.clone()).or_insert_with(|| {
-                    capture_lines_on(journal_root, &facets_to_search, &item.day)
-                });
-                // A record with nothing still there sits beside nothing, either way.
-                let beside = captures
+            if let Some(kind) = activity_kind(&item.record) {
+                activity["kind"] = json!(kind);
+            }
+            if let Some(stream) = item.record.get("stream").and_then(Value::as_str) {
+                activity["source"] = json!(crate::dispatch::source_label(&sources, stream));
+            }
+            if !item.also_in.is_empty() {
+                activity["also_in"] = json!(item.also_in);
+            }
+            activities.push(activity);
+        }
+    } else {
+        let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
+        let now = jiff::Timestamp::now().to_zoned_datetime(owner_zone.clone());
+        let zone_str =
+            solstone_core_journal_config::zone_label(Some(&owner_zone), now.offset().seconds());
+
+        // The calendar and day location belong to no facet.
+        let whole_journal = matches!(snapshot.scope, ConnectionScope::WholeJournal);
+        let sees_calendar =
+            whole_journal && snapshot.categories.contains(&AdmittedCategory::Calendar);
+        let places_precision = snapshot.places_precision();
+        let mut calendars = BTreeMap::new();
+        let mut locations = BTreeMap::new();
+
+        // Beside lines between body faces and capture activities, both ways, only
+        // between items this connection reads. Worked out when read; never stored.
+        let mut body_near: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
+        let mut capture_on: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
+        for item in &page {
+            let reference = crate::dispatch::activity_reference(
+                principal,
+                snapshot,
+                ActivityReference {
+                    facet_id: item.facet_id.clone(),
+                    facet_dir: item.facet_dir.clone(),
+                    day: item.day.clone(),
+                    record_identity: item.rec_identity.clone(),
+                    file_digest: item.file_digest.clone(),
+                    unit_index: None,
+                    source_binding: None,
+                },
+            )?;
+
+            let face = item.group.as_ref().map(|(stretch, group)| {
+                let face = body[*stretch].1.compose(journal_root, group);
+                crate::body_source::name_windows(
+                    &mut targets,
+                    crate::body_source::face_windows(&face),
+                );
+                (
+                    solstone_core_location::body_records::face_json(&face),
+                    solstone_core_location::body_records::face_still_there(&face),
+                )
+            });
+            if let Some((face, there)) = &face {
+                let mut activity =
+                    body_activity(face, &item.facet_title, &item.day, reference, &zone_str);
+                crate::journal_links::activity(
+                    journal_root,
+                    &mut activity,
+                    &item.facet_dir,
+                    &item.day,
+                    &item.rec_identity,
+                );
+                if let Some(span) = face_span(face) {
+                    let captures = capture_on.entry(item.day.clone()).or_insert_with(|| {
+                        capture_lines_on(journal_root, &facets_to_search, &item.day)
+                    });
+                    // A record with nothing still there sits beside nothing, either way.
+                    let beside = captures
+                        .iter()
+                        .filter(|_| *there)
+                        .filter(|(other, _)| {
+                            solstone_core_location::body_records::half_cover(span, *other)
+                        })
+                        .map(|(_, line)| line.clone())
+                        .collect::<Vec<_>>();
+                    if !beside.is_empty() {
+                        activity["beside"] = Value::Array(beside);
+                    }
+                    // Where a device was at its middle, as that device timed it.
+                    if let Some(precision) = places_precision
+                        && let Some(beside) = solstone_core_location::place_at(
+                            journal_root,
+                            span.0 + (span.1 - span.0) / 2,
+                            &mut locations,
+                        )
+                    {
+                        activity["place"] =
+                            crate::places_view::beside_place_json(&beside, precision);
+                    }
+                }
+                activities.push(activity);
+                continue;
+            }
+            let (start, end, duration) = activity_times_and_duration(&item.record);
+            let people = match &item.resolved_people {
+                Some(resolved) => resolved.to_activity_people(),
+                None => activity_people_in_context(
+                    std::iter::once(&item.record).chain(item.copies.iter()),
+                    Some(journal_root),
+                    Some(&item.day),
+                    Some(&mut photo_cache),
+                    owner.as_ref(),
+                ),
+            };
+            let entities = activity_entities(&item.record);
+            let title = activity_title(&item.record);
+
+            let activity_content_kind =
+                if solstone_core_format::content::is_strava_reading(&item.record) {
+                    "body"
+                } else {
+                    "facets"
+                };
+            let mut activity = json!({
+                "title": title,
+                "facet": item.facet_title,
+                "day": item.day,
+                "content_kind": activity_content_kind,
+                "start": start,
+                "end": end,
+                "duration": duration,
+                "participants": people.participants,
+                "heard": people.heard,
+                "in_photo": people.in_photo,
+                "mentioned": people.mentioned,
+                "on_screen": people.on_screen,
+                "entities": entities,
+                "reference": reference,
+                "zone": zone_str,
+            });
+            if !people.corresponded.is_empty() {
+                activity["corresponded"] = json!(people.corresponded);
+            }
+            crate::journal_links::activity(
+                journal_root,
+                &mut activity,
+                &item.facet_dir,
+                &item.day,
+                &item.rec_identity,
+            );
+            if let Some(kind) = activity_kind(&item.record) {
+                activity["kind"] = json!(kind);
+            }
+            if let Some(stream) = item.record.get("stream").and_then(Value::as_str) {
+                activity["source"] = json!(crate::dispatch::source_label(&sources, stream));
+            }
+            if people.unnamed_voices > 0 {
+                activity["unnamed_voices"] = json!(people.unnamed_voices);
+            }
+            if !item.also_in.is_empty() {
+                activity["also_in"] = json!(item.also_in);
+            }
+            if let Some(span) = solstone_core_facets::activity_span(&item.record) {
+                if sees_calendar {
+                    let calendar = calendars.entry(item.day.clone()).or_insert_with(|| {
+                        solstone_core_facets::calendar_on_day(journal_root, &item.day)
+                    });
+                    let mut scheduled =
+                        solstone_core_facets::calendar_beside(calendar, &item.day, span);
+                    // Naming the people on an invite takes the people grant too.
+                    if !snapshot.categories.contains(&AdmittedCategory::Entities) {
+                        for event in &mut scheduled {
+                            if let Some(event) = event.as_object_mut() {
+                                event.remove("people");
+                            }
+                        }
+                    }
+                    if !scheduled.is_empty() {
+                        activity["scheduled"] = Value::Array(scheduled);
+                    }
+                }
+                if let Some(precision) = places_precision {
+                    let location = locations.entry(item.day.clone()).or_insert_with(|| {
+                        solstone_core_location::DayBeside::read(journal_root, &item.day)
+                    });
+                    let stream = item.record.get("stream").and_then(Value::as_str);
+                    if let Some(beside) = location.beside(span, stream) {
+                        activity["place"] =
+                            crate::places_view::beside_place_json(&beside, precision);
+                    }
+                }
+            }
+            // A capture's span is worked out only when a body face could sit
+            // beside it.
+            let faces = body_near.entry(item.day.clone()).or_insert_with(|| {
+                body_lines_near(journal_root, &mut body, &item.day, &mut targets)
+            });
+            if !faces.is_empty()
+                && let Some(span) = solstone_core_location::body_records::capture_instants(
+                    journal_root,
+                    &item.day,
+                    &item.record,
+                )
+            {
+                let beside = faces
                     .iter()
-                    .filter(|_| *there)
                     .filter(|(other, _)| {
                         solstone_core_location::body_records::half_cover(span, *other)
                     })
@@ -1302,127 +2171,9 @@ pub(crate) fn execute_list(
                 if !beside.is_empty() {
                     activity["beside"] = Value::Array(beside);
                 }
-                // Where a device was at its middle, as that device timed it.
-                if let Some(precision) = places_precision
-                    && let Some(beside) = solstone_core_location::place_at(
-                        journal_root,
-                        span.0 + (span.1 - span.0) / 2,
-                        &mut locations,
-                    )
-                {
-                    activity["place"] = crate::places_view::beside_place_json(&beside, precision);
-                }
             }
             activities.push(activity);
-            continue;
         }
-        let (start, end, duration) = activity_times_and_duration(&item.record);
-        let people = activity_people_in_context(
-            std::iter::once(&item.record).chain(item.copies.iter()),
-            Some(journal_root),
-            Some(&item.day),
-            Some(&mut photo_cache),
-            Some(&owner),
-        );
-        let entities = activity_entities(&item.record);
-        let title = activity_title(&item.record);
-
-        let activity_content_kind =
-            if solstone_core_format::content::is_strava_reading(&item.record) {
-                "body"
-            } else {
-                "facets"
-            };
-        let mut activity = json!({
-            "title": title,
-            "facet": item.facet_title,
-            "day": item.day,
-            "content_kind": activity_content_kind,
-            "start": start,
-            "end": end,
-            "duration": duration,
-            "participants": people.participants,
-            "heard": people.heard,
-            "in_photo": people.in_photo,
-            "mentioned": people.mentioned,
-            "on_screen": people.on_screen,
-            "entities": entities,
-            "reference": reference,
-            "zone": zone_str,
-        });
-        if !people.corresponded.is_empty() {
-            activity["corresponded"] = json!(people.corresponded);
-        }
-        crate::journal_links::activity(
-            journal_root,
-            &mut activity,
-            &item.facet_dir,
-            &item.day,
-            &item.rec_identity,
-        );
-        if let Some(kind) = activity_kind(&item.record) {
-            activity["kind"] = json!(kind);
-        }
-        if let Some(stream) = item.record.get("stream").and_then(Value::as_str) {
-            activity["source"] = json!(crate::dispatch::source_label(&sources, stream));
-        }
-        if people.unnamed_voices > 0 {
-            activity["unnamed_voices"] = json!(people.unnamed_voices);
-        }
-        if !item.also_in.is_empty() {
-            activity["also_in"] = json!(item.also_in);
-        }
-        if let Some(span) = solstone_core_facets::activity_span(&item.record) {
-            if sees_calendar {
-                let calendar = calendars.entry(item.day.clone()).or_insert_with(|| {
-                    solstone_core_facets::calendar_on_day(journal_root, &item.day)
-                });
-                let mut scheduled =
-                    solstone_core_facets::calendar_beside(calendar, &item.day, span);
-                // Naming the people on an invite takes the people grant too.
-                if !snapshot.categories.contains(&AdmittedCategory::Entities) {
-                    for event in &mut scheduled {
-                        if let Some(event) = event.as_object_mut() {
-                            event.remove("people");
-                        }
-                    }
-                }
-                if !scheduled.is_empty() {
-                    activity["scheduled"] = Value::Array(scheduled);
-                }
-            }
-            if let Some(precision) = places_precision {
-                let location = locations.entry(item.day.clone()).or_insert_with(|| {
-                    solstone_core_location::DayBeside::read(journal_root, &item.day)
-                });
-                let stream = item.record.get("stream").and_then(Value::as_str);
-                if let Some(beside) = location.beside(span, stream) {
-                    activity["place"] = crate::places_view::beside_place_json(&beside, precision);
-                }
-            }
-        }
-        // A capture's span is worked out only when a body face could sit
-        // beside it.
-        let faces = body_near
-            .entry(item.day.clone())
-            .or_insert_with(|| body_lines_near(journal_root, &mut body, &item.day, &mut targets));
-        if !faces.is_empty()
-            && let Some(span) = solstone_core_location::body_records::capture_instants(
-                journal_root,
-                &item.day,
-                &item.record,
-            )
-        {
-            let beside = faces
-                .iter()
-                .filter(|(other, _)| solstone_core_location::body_records::half_cover(span, *other))
-                .map(|(_, line)| line.clone())
-                .collect::<Vec<_>>();
-            if !beside.is_empty() {
-                activity["beside"] = Value::Array(beside);
-            }
-        }
-        activities.push(activity);
     }
 
     let next_cursor = if has_more {
@@ -1438,6 +2189,10 @@ pub(crate) fn execute_list(
                             to: Some(request.to.clone()),
                             facet: request.facet.clone(),
                             entity: request.entity.clone(),
+                            person: request.person.clone(),
+                            roles: request.role_tokens(),
+                            activity: request.activity.clone(),
+                            compact: request.compact,
                             last_day: last.sort_key.0.clone(),
                             last_facet: last.sort_key.1.clone(),
                             last_created_at: last.sort_key.2,
@@ -1464,9 +2219,7 @@ pub(crate) fn execute_list(
             .when_empty(crate::body_source::BODY_NOT_GRANTED));
     }
 
-    Ok(Prepared::new(response_val, count, targets).when_empty(
-        "No activities. This connection can see none that match. This is a complete answer, not an error.",
-    ))
+    Ok(Prepared::new(response_val, count, targets).when_empty(NO_ACTIVITIES_NOTE))
 }
 
 pub(crate) fn execute_get_sources(
@@ -2276,5 +3029,83 @@ mod tests {
         );
         assert_eq!(p_merged.participants, vec!["Anne"]);
         assert_eq!(p_merged.in_photo, vec!["Will"]);
+    }
+
+    #[test]
+    fn validate_list_accepts_and_rejects_role_activity_group_by_and_compact_combinations() {
+        let zone = solstone_core_time::zone("UTC").expect("UTC parses");
+
+        let ok_roles = validate_list(
+            Some(&json!({
+                "day_from": "2025-01-01",
+                "day_to": "2025-12-31",
+                "person": "Ada Lovelace",
+                "roles": ["heard", "attendee", "heard"],
+                "activity": ["Reading", "deep_work"],
+                "compact": true,
+                "limit": 100
+            })),
+            &zone,
+        )
+        .expect("valid native filters");
+        assert_eq!(ok_roles.person.as_deref(), Some("Ada Lovelace"));
+        assert_eq!(
+            ok_roles.roles,
+            Some(vec![ActivityRole::Attendee, ActivityRole::Heard])
+        );
+        assert_eq!(
+            ok_roles.activity,
+            vec!["deep work".to_owned(), "reading".to_owned()]
+        );
+        assert!(ok_roles.compact);
+        assert_eq!(ok_roles.limit, 100);
+
+        let ok_rollup = validate_list(
+            Some(&json!({
+                "day_from": "20250101",
+                "day_to": "20251231",
+                "group_by": ["month", "facet"]
+            })),
+            &zone,
+        )
+        .expect("valid group_by");
+        assert_eq!(
+            ok_rollup.group_by,
+            Some(vec![GroupByDimension::Month, GroupByDimension::Facet])
+        );
+
+        let ok_person_rollup = validate_list(
+            Some(&json!({
+                "day_from": "20250101",
+                "day_to": "20251231",
+                "group_by": ["person"],
+                "roles": ["in_photo"]
+            })),
+            &zone,
+        )
+        .expect("roles allowed with group_by person");
+        assert_eq!(ok_person_rollup.roles, Some(vec![ActivityRole::InPhoto]));
+
+        for bad in [
+            json!({"day": "20250101", "roles": ["attendee"]}),
+            json!({"day": "20250101", "person": "Ada", "roles": []}),
+            json!({"day": "20250101", "person": "   "}),
+            json!({"day": "20250101", "activity": ""}),
+            json!({"day": "20250101", "activity": []}),
+            json!({"day": "20250101", "group_by": []}),
+            json!({"day": "20250101", "group_by": ["month", "month"]}),
+            json!({"day": "20250101", "group_by": ["month"], "limit": 10}),
+            json!({"day": "20250101", "group_by": ["month"], "cursor": "abc"}),
+            json!({"day": "20250101", "group_by": ["month"], "compact": true}),
+            json!({"day": "20250101", "group_by": ["month"], "roles": ["attendee"]}),
+            json!({"day": "20250101", "kind": "photos"}),
+            json!({"day": "20250101", "place": "London"}),
+        ] {
+            assert_eq!(
+                validate_list(Some(&bad), &zone),
+                Err(ToolError::InvalidInput),
+                "{bad}"
+            );
+        }
     }
 }

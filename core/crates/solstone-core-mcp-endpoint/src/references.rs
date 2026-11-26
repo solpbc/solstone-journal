@@ -336,6 +336,14 @@ pub(crate) struct ActivityListCursor {
     pub facet: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activity: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub compact: bool,
     pub last_day: String,
     pub last_facet: String,
     pub last_created_at: i64,

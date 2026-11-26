@@ -251,7 +251,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListActivities,
         wire_name: "list_activities",
         title: "list activities",
-        description: "list individual activities from the facets this connection may read. use list_activities for a full second-person timeline of readable activities on a day or range; for higher-level third-person episodes and milestones, read experiences from get_week or search. use day or an inclusive range with day_from and day_to. for a day-by-day overview across a month, a season or a year (with day links, memories, owner quotes and optional daily summaries), use get_week with day_from and day_to instead when available. on the activity list without the shared find filters, a moment in several facets appears once, with the other facets in also_in. when places is allowed, an activity carries place when available, with words and, according to permission, exact coordinates or a ~1 km cell. participants and heard both count as spoken or attended presence. in_photo lists people seen in imported photos separately from on_screen entries (screen recordings, imported screenshots and other non-photo entries). mentioned, on_screen and scheduled alone do not establish attendance. pass an activity reference to get_activity_sources. in a filtered result, use activity_reference when present. use kind, person, place or activity to find matching journal entries, then pass their references to fetch. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list individual activities from the facets this connection may read, or group them into exact counts and summed durations. use list_activities for a full second-person timeline of readable activities on a day or range; for higher-level third-person episodes and milestones, read experiences from get_week or search. use day or an inclusive range with day_from and day_to. for a day-by-day overview across a month, a season or a year (with day links, memories, owner quotes and optional daily summaries), use get_week with day_from and day_to instead when available. a moment in several facets appears once, from its primary facet, with the other facets in also_in. filter by facet, entity, person, roles or activity (matching the activity kind field such as reading or meeting). participants and heard both count as spoken or attended presence; corresponded lists people from messages or email; in_photo lists people seen in imported photos separately from on_screen entries (screen recordings, imported screenshots and other non-photo entries); mentioned, on_screen and scheduled alone do not establish attendance. pass roles with person or entity to keep only specific participation roles, or with group_by including person (which counts attendee and heard when roles is omitted). pass group_by to return up to 500 groups of exact activity counts, timed activity counts and summed durations in seconds in one call (with truncated true and groups_total if more) plus total across all matching activities, instead of paging every row; when grouping by person, an activity with several people counts toward each of them while total counts each matching activity once. pass compact: true for smaller activity rows (title, facet, day, start, duration, kind, source, reference, link and also_in) without people, entities, place, scheduled or beside fields. when places is allowed and compact is false, an activity carries place when available, with words and, according to permission, exact coordinates or a ~1 km cell. pass reference to get_activity_sources. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_activities_input_schema,
         requires: FACETS,
         audit_name: solstone_core_mcp_audit::ToolName::ListActivities,
@@ -260,7 +260,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetActivitySources,
         wire_name: "get_activity_sources",
         title: "read activity sources",
-        description: "read the transcript or body sources for activities. pass either reference for one activity or references for up to 12. use activity_reference from a filtered list, or reference from the activity list without the shared find filters or from get_week. each batch item carries its own result or error in input order. pass next_cursor as cursor with that single reference to read the rest. only quote from the source text. give the owner a journal link when available.",
+        description: "read the transcript or body sources for activities. pass either reference for one activity or references for up to 12. use activity_reference from a filtered search or filtered transcript list, or reference from list_activities or get_week. each batch item carries its own result or error in input order. pass next_cursor as cursor with that single reference to read the rest. only quote from the source text. give the owner a journal link when available.",
         input_schema: get_activity_sources_input_schema,
         requires: FACETS_AND_SOURCE,
         audit_name: solstone_core_mcp_audit::ToolName::GetActivitySources,
@@ -549,6 +549,14 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     };
     for key in arguments.keys() {
         if !properties.contains_key(key) && !is_earlier_name(name, key) {
+            if name == "list_activities" && key == "kind" {
+                return "list_activities has no `kind` argument. use `activity` to filter by activity type (such as reading or meeting), or use `search` with `kind` to filter by journal material kind."
+                    .to_owned();
+            }
+            if name == "list_activities" && key == "place" {
+                return "list_activities has no `place` argument. use `search` with `place` to find entries by location."
+                    .to_owned();
+            }
             return if properties.is_empty() {
                 format!("{name} takes no arguments, so `{key}` is not one.")
             } else {
@@ -584,6 +592,39 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     }
     if name == "search" && arguments.contains_key("category") && arguments.contains_key("kind") {
         return "search takes either `kind` or `category`.".to_owned();
+    }
+    if name == "list_activities" {
+        if let Some(group_by) = arguments.get("group_by") {
+            if arguments.contains_key("limit")
+                || arguments.contains_key("cursor")
+                || arguments.get("compact").and_then(Value::as_bool) == Some(true)
+            {
+                return "list_activities cannot combine `group_by` with `limit`, `cursor`, or `compact`."
+                    .to_owned();
+            }
+            if let Some(items) = group_by.as_array() {
+                let mut seen = BTreeSet::new();
+                for item in items.iter().filter_map(Value::as_str) {
+                    if !seen.insert(item) {
+                        return "list_activities: `group_by` must not repeat a dimension."
+                            .to_owned();
+                    }
+                }
+            }
+        }
+        if arguments.contains_key("roles") {
+            let groups_by_person = arguments
+                .get("group_by")
+                .and_then(Value::as_array)
+                .is_some_and(|items| items.iter().any(|item| item.as_str() == Some("person")));
+            if !arguments.contains_key("person")
+                && !arguments.contains_key("entity")
+                && !groups_by_person
+            {
+                return "list_activities needs `person`, `entity`, or `group_by` including `person` when using `roles`."
+                    .to_owned();
+            }
+        }
     }
     if name == "get_transcript" {
         let has_audio_options = [
@@ -729,7 +770,41 @@ fn explain_value(key: &str, property: &Value, value: &Value) -> Option<String> {
             }
             None
         }
-        _ => None,
+        Some("array") => {
+            let Some(items) = value.as_array() else {
+                return Some(format!("`{key}` must be a list."));
+            };
+            if property["minItems"]
+                .as_u64()
+                .is_some_and(|minimum| (items.len() as u64) < minimum)
+            {
+                return Some(format!("`{key}` must not be empty."));
+            }
+            if let Some(maximum) = property["maxItems"].as_u64()
+                && items.len() as u64 > maximum
+            {
+                return Some(format!("`{key}` has too many items: at most {maximum}."));
+            }
+            let item_schema = &property["items"];
+            if item_schema.is_object() {
+                for item in items {
+                    if let Some(problem) = explain_value(key, item_schema, item) {
+                        return Some(problem);
+                    }
+                }
+            }
+            None
+        }
+        _ => {
+            if let Some(choices) = property["anyOf"].as_array()
+                && !choices
+                    .iter()
+                    .any(|choice| explain_value(key, choice, value).is_none())
+            {
+                return Some(format!("`{key}` is not valid."));
+            }
+            None
+        }
     }
 }
 
@@ -995,6 +1070,19 @@ fn week_input_schema(_context: &SchemaContext<'_>) -> Value {
 }
 
 fn list_activities_input_schema(context: &SchemaContext<'_>) -> Value {
+    let role_enum: Vec<&str> = crate::tools::activities::ActivityRole::ALL
+        .iter()
+        .map(|role| role.as_str())
+        .collect();
+    let group_by_enum: Vec<&str> = crate::tools::activities::GroupByDimension::ALL
+        .iter()
+        .map(|dim| dim.as_str())
+        .collect();
+    let activity_word = json!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": crate::tools::activities::MAX_ACTIVITY_TYPE_BYTES,
+    });
     let schema = json!({
         "type": "object",
         "additionalProperties": false,
@@ -1002,12 +1090,40 @@ fn list_activities_input_schema(context: &SchemaContext<'_>) -> Value {
             "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "a single day, YYYYMMDD or YYYY-MM-DD. mutually exclusive with day_from and day_to. without any of them, today." },
             "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "first day of a range of individual activities, YYYYMMDD or YYYY-MM-DD (inclusive). for one summary row per day across a month, season or year, use get_week with day_from and day_to when available." },
             "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "last day of a range of individual activities, YYYYMMDD or YYYY-MM-DD (inclusive)." },
-            "entity": { "type": "string", "description": "filter by entity display name, or by an entity's reference from list_entities or search." },
-            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "maximum number of activities to return (default 10, max 100)." },
-            "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "opaque cursor from a previous list_activities call." },
+            "entity": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "filter by entity display name, or by an entity reference from list_entities, search or get_week." },
+            "person": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "filter by a person's display name or entity reference on activity participation. combine with roles to narrow how they took part." },
+            "roles": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": role_enum.len(),
+                "items": { "type": "string", "enum": role_enum },
+                "description": "participation roles to match with person or entity, or to count when group_by includes person. attendee and heard both count as spoken or attended presence; in_photo matches real photos separately from on_screen."
+            },
+            "activity": {
+                "description": "filter by one activity type (matching the output kind field, such as reading, meeting or writing) or a list of activity types.",
+                "anyOf": [
+                    activity_word,
+                    {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": crate::tools::activities::MAX_ACTIVITY_FILTER_ITEMS,
+                        "items": activity_word,
+                    }
+                ]
+            },
+            "group_by": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": group_by_enum.len(),
+                "items": { "type": "string", "enum": group_by_enum },
+                "description": "group matching activities in the journal and return up to 500 groups with exact count, timed_count and duration_sec per group (with truncated true and groups_total if more) plus total across all matching activities, in one call. cannot be combined with limit, cursor or compact. grouping by person without roles counts attendee and heard."
+            },
+            "compact": { "type": "boolean", "default": false, "description": "return smaller activity rows (title, facet, day, start, duration, kind, source, reference, link and also_in), omitting people, entities, place, scheduled and beside fields. cannot be combined with group_by." },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "maximum number of activities to return per page (default 10, max 100). cannot be combined with group_by." },
+            "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "opaque cursor from a previous list_activities call. cannot be combined with group_by." },
         }
     });
-    with_find_filters(schema, context)
+    with_scoped_facet(schema, context)
 }
 
 fn get_activity_sources_input_schema(_context: &SchemaContext<'_>) -> Value {
@@ -1314,6 +1430,46 @@ mod tests {
                 json!({"from": "tuesday"}),
                 "`from`",
             ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "kind": "reading"}),
+                "`activity`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "place": "London"}),
+                "`place`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "roles": ["attendee"]}),
+                "`person`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "person": "Ada", "roles": ["guest"]}),
+                "`roles`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "group_by": ["year"]}),
+                "`group_by`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "group_by": ["month", "month"]}),
+                "`group_by`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "group_by": ["month"], "limit": 10}),
+                "`group_by`",
+            ),
+            (
+                ToolName::ListActivities,
+                json!({"day": "20260308", "group_by": ["month"], "compact": true}),
+                "`group_by`",
+            ),
             (ToolName::GetWeek, json!({"week": "tuesday"}), "`week`"),
             (
                 ToolName::GetWeek,
@@ -1408,6 +1564,19 @@ mod tests {
                 .get("facet")
                 .is_some()
         );
+        let activities_schema = list_activities_input_schema(&context);
+        assert_eq!(activities_schema["additionalProperties"], false);
+        for key in [
+            "day", "day_from", "day_to", "facet", "entity", "person", "roles", "activity",
+            "group_by", "compact", "limit", "cursor",
+        ] {
+            assert!(
+                activities_schema["properties"].get(key).is_some(),
+                "list_activities missing {key}"
+            );
+        }
+        assert!(activities_schema["properties"].get("kind").is_none());
+        assert!(activities_schema["properties"].get("place").is_none());
         assert_eq!(
             search_input_schema(&context)["properties"]["query"]["maxLength"],
             MAX_QUERY_BYTES

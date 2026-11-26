@@ -17818,11 +17818,7 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
     );
 
     let mut photos = Vec::new();
-    for (tool, field) in [
-        ("search", "results"),
-        ("list_transcripts", "transcripts"),
-        ("list_activities", "activities"),
-    ] {
+    for (tool, field) in [("search", "results"), ("list_transcripts", "transcripts")] {
         let page = probe(
             &journal,
             tool,
@@ -17864,7 +17860,7 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
             assert_eq!(refused.len(), 1, "{denied}: {refused:?}");
             assert!(refused["note"].is_string());
         }
-        for tool in ["search", "list_transcripts", "list_activities"] {
+        for tool in ["search", "list_transcripts"] {
             assert_eq!(
                 probe(&journal, tool, json!({"day": day, "kind": denied})),
                 Err(McpProbeError::PermissionDenied),
@@ -17892,7 +17888,7 @@ fn week_summaries_and_typed_find_share_the_live_kind_and_facet_boundary() {
         probe(&journal, "get_week", week_args),
         Err(McpProbeError::PermissionDenied),
     );
-    for tool in ["search", "list_transcripts", "list_activities"] {
+    for tool in ["search", "list_transcripts"] {
         assert_eq!(
             probe(&journal, tool, json!({"day": day, "place": "Denver"})),
             Err(McpProbeError::PermissionDenied),
@@ -22726,5 +22722,778 @@ fn audio_media_revoked_mid_read_releases_zero_audio_bytes() {
         Some(crate::dispatch::DispatchError::PermissionDenied(
             "no_permission"
         ))
+    );
+}
+
+#[test]
+fn list_activities_native_person_role_filtering_and_cursor_stability() {
+    let journal = base_activity_journal();
+    let root = journal.path();
+
+    // Principal (owner), one live person (Alice), and one blocked person (Blocked Bob).
+    for (dir, body) in [
+        (
+            "owner",
+            json!({
+                "id": "ent-owner",
+                "name": "Owner Person",
+                "type": "Person",
+                "is_principal": true
+            }),
+        ),
+        (
+            "alice",
+            json!({
+                "id": "ent-alice",
+                "name": "Alice Ward",
+                "type": "Person",
+                "aka": ["secret-alice"]
+            }),
+        ),
+        (
+            "bob",
+            json!({
+                "id": "ent-bob",
+                "name": "Blocked Bob",
+                "type": "Person",
+                "blocked": true
+            }),
+        ),
+    ] {
+        let dir_path = root.join("entities").join(dir);
+        fs::create_dir_all(&dir_path).unwrap();
+        fs::write(dir_path.join("entity.json"), body.to_string()).unwrap();
+    }
+    let alice_link = root.join("facets/alpha/entities/alice");
+    fs::create_dir_all(&alice_link).unwrap();
+    fs::write(
+        alice_link.join("entity.json"),
+        json!({"entity_id": "ent-alice", "detached": false}).to_string(),
+    )
+    .unwrap();
+
+    // Real photo vs imported screenshot provenance on 20260308.
+    let photo_seg = root.join("chronicle/20260308/import.image/110000_0");
+    fs::create_dir_all(&photo_seg).unwrap();
+    fs::write(photo_seg.join("image_transcript.md"), "Garden portrait").unwrap();
+
+    let shot_seg = root.join("chronicle/20260308/import.image/120000_0");
+    fs::create_dir_all(&shot_seg).unwrap();
+    fs::write(shot_seg.join("screenshot_transcript.md"), "Browser tab").unwrap();
+
+    let promoted_photo_seg = root.join("chronicle/20260308/import.image/160000_0");
+    fs::create_dir_all(&promoted_photo_seg).unwrap();
+    fs::write(
+        promoted_photo_seg.join("image_transcript.md"),
+        "Shared group photo",
+    )
+    .unwrap();
+
+    let append_raw = |facet: &str, day: &str, row: Value| {
+        let dir = root.join("facets").join(facet).join("activities");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{day}.jsonl"));
+        let mut content = fs::read_to_string(&path).unwrap_or_default();
+        content.push_str(&row.to_string());
+        content.push('\n');
+        fs::write(path, content).unwrap();
+    };
+
+    // 1. Attendee (talk, 600s)
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_att",
+            "title": "Standup with Alice",
+            "activity": "meeting",
+            "stream": "talk",
+            "segments": ["090000_600"],
+            "created_at": 100,
+            "participation": [
+                {"name": "Owner Person", "entity_id": "ent-owner", "role": "attendee"},
+                {"name": "Alice Ward", "entity_id": "ent-alice", "role": "attendee"},
+                {"name": "Blocked Bob", "entity_id": "ent-bob", "role": "attendee"}
+            ]
+        }),
+    );
+    // 2. Heard (calls, 300s)
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_heard",
+            "title": "Quick call with Alice",
+            "activity": "social",
+            "stream": "calls",
+            "segments": ["100000_300"],
+            "created_at": 200,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "heard"}]
+        }),
+    );
+    // 3. Real photo (in_photo, 0s)
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_photo",
+            "title": "Garden photo of Alice",
+            "activity": "media",
+            "stream": "import.image",
+            "segments": ["110000_0"],
+            "created_at": 300,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "visible"}]
+        }),
+    );
+    // 4. Screenshot (on_screen, 0s)
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_shot",
+            "title": "Screenshot showing Alice",
+            "activity": "reading",
+            "stream": "import.image",
+            "segments": ["120000_0"],
+            "created_at": 400,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "visible"}]
+        }),
+    );
+    // 5. Corresponded (messages, 120s)
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_corr",
+            "title": "Email thread with Alice",
+            "activity": "writing",
+            "stream": "messages",
+            "segments": ["130000_120"],
+            "created_at": 500,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "corresponded"}]
+        }),
+    );
+    // 6. Mentioned (desk, 240s)
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_ment",
+            "title": "Notes mentioning Alice",
+            "activity": "writing",
+            "stream": "desk",
+            "segments": ["140000_240"],
+            "created_at": 600,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "mentioned"}]
+        }),
+    );
+    // 7. Multi-facet moment: visible in photo on alpha (level 0.9), attendee on beta (level 0.4).
+    // Merged role must promote to attendee, so it matches `attendee` and NOT `in_photo`.
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "act_promo_a",
+            "title": "Shared photo moment",
+            "activity": "social",
+            "stream": "import.image",
+            "segments": ["160000_0"],
+            "level_avg": 0.9,
+            "created_at": 700,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "visible"}]
+        }),
+    );
+    append_raw(
+        "beta",
+        "20260308",
+        json!({
+            "id": "act_promo_b",
+            "title": "Shared photo moment beta",
+            "activity": "social",
+            "stream": "import.image",
+            "segments": ["160000_0"],
+            "level_avg": 0.4,
+            "created_at": 700,
+            "participation": [{"name": "Alice Ward", "entity_id": "ent-alice", "role": "attendee"}]
+        }),
+    );
+
+    // Without roles, person="Alice Ward" returns all 7 deduplicated native rows with durations/facets.
+    let all_alice = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "person": "Alice Ward", "limit": 100}),
+    )
+    .unwrap();
+    let all_rows = all_alice["activities"].as_array().unwrap();
+    assert_eq!(all_rows.len(), 7, "{all_alice}");
+    assert!(
+        all_rows
+            .iter()
+            .all(|row| row["duration"].is_u64() && row["facet"].is_string())
+    );
+
+    // Role separation across all 6 roles.
+    let titles_for = |roles: Value| -> Vec<String> {
+        let res = probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "person": "Alice Ward", "roles": roles, "limit": 100}),
+        )
+        .unwrap();
+        res["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["title"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    assert_eq!(
+        titles_for(json!(["attendee", "heard"])),
+        vec![
+            "Standup with Alice",
+            "Quick call with Alice",
+            "Shared photo moment"
+        ]
+    );
+    assert_eq!(titles_for(json!(["heard"])), vec!["Quick call with Alice"]);
+    assert_eq!(
+        titles_for(json!(["corresponded"])),
+        vec!["Email thread with Alice"]
+    );
+    assert_eq!(
+        titles_for(json!(["in_photo"])),
+        vec!["Garden photo of Alice"]
+    );
+    assert_eq!(
+        titles_for(json!(["mentioned"])),
+        vec!["Notes mentioning Alice"]
+    );
+    assert_eq!(
+        titles_for(json!(["on_screen"])),
+        vec!["Screenshot showing Alice"]
+    );
+
+    // Owner, blocked entity, and aka never match `person`.
+    for excluded in ["Owner Person", "Blocked Bob", "secret-alice"] {
+        let res = probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "person": excluded, "limit": 100}),
+        )
+        .unwrap();
+        assert!(
+            res["activities"].as_array().unwrap().is_empty(),
+            "{excluded} leaked: {res}"
+        );
+    }
+
+    // Entity reference token works with person + roles, and fails when entities permission is revoked.
+    let ent_list = probe(&journal, "list_entities", json!({})).unwrap();
+    let alice_ref = ent_list["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "Alice Ward")
+        .unwrap()["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let by_ref = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "person": alice_ref, "roles": ["attendee", "heard"]}),
+    )
+    .unwrap();
+    assert_eq!(by_ref["activities"].as_array().unwrap().len(), 3);
+
+    // Cursor stability across pages, role-order canonicalization, and cross-filter cursor refusal.
+    let p1 = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "person": "Alice Ward", "roles": ["heard", "attendee"], "limit": 2}),
+    )
+    .unwrap();
+    assert_eq!(p1["activities"].as_array().unwrap().len(), 2);
+    let cursor = p1["next_cursor"].as_str().unwrap().to_owned();
+    let p2 = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "person": "Alice Ward", "roles": ["attendee", "heard"], "limit": 2, "cursor": cursor}),
+    )
+    .unwrap();
+    assert_eq!(p2["activities"].as_array().unwrap().len(), 1);
+    assert!(p2.get("next_cursor").is_none());
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "person": "Alice Ward", "roles": ["mentioned"], "limit": 2, "cursor": cursor}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    // Revoking entities denies token-based person filter while still allowing literal name.
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "person": alice_ref, "roles": ["attendee"]}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+    let literal_no_ent = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "person": "Alice Ward", "roles": ["attendee"]}),
+    )
+    .unwrap();
+    assert_eq!(literal_no_ent["activities"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn list_activities_native_activity_type_filtering_and_compact_projection() {
+    let journal = base_activity_journal();
+    let root = journal.path();
+
+    let append_raw = |facet: &str, day: &str, row: Value| {
+        let dir = root.join("facets").join(facet).join("activities");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{day}.jsonl"));
+        let mut content = fs::read_to_string(&path).unwrap_or_default();
+        content.push_str(&row.to_string());
+        content.push('\n');
+        fs::write(path, content).unwrap();
+    };
+
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "read_1",
+            "title": "Morning reading",
+            "activity": "reading",
+            "stream": "desk",
+            "segments": ["080000_600"],
+            "created_at": 100,
+            "participation": [{"name": "Clara", "role": "mentioned"}]
+        }),
+    );
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "read_photo",
+            "title": "Page photo",
+            "activity": "reading",
+            "stream": "import.image",
+            "segments": ["090000_0"],
+            "created_at": 200
+        }),
+    );
+    append_raw(
+        "beta",
+        "20260308",
+        json!({
+            "id": "deep_1",
+            "title": "Deep work block",
+            "activity": "deep_work",
+            "stream": "desk",
+            "segments": ["100000_900"],
+            "created_at": 300
+        }),
+    );
+    append_raw(
+        "alpha",
+        "20260308",
+        json!({
+            "id": "meet_1",
+            "title": "Team sync",
+            "activity": "meeting",
+            "stream": "talk",
+            "segments": ["110000_300"],
+            "created_at": 400
+        }),
+    );
+
+    // Single activity type filter runs natively (preserves duration, facet, kind, zero-duration photo).
+    let reading = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "activity": "reading", "limit": 100}),
+    )
+    .unwrap();
+    let rows = reading["activities"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{reading}");
+    assert_eq!(rows[0]["kind"], "reading");
+    assert_eq!(rows[0]["duration"], 600);
+    assert_eq!(rows[0]["facet"], "Alpha");
+    assert_eq!(rows[0]["mentioned"], json!(["Clara"]));
+    assert_eq!(rows[1]["kind"], "reading");
+    assert_eq!(rows[1]["duration"], 0);
+
+    // Multi-value activity filter normalizes case and underscores.
+    let multi = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "activity": ["Reading", "deep_work"], "limit": 100}),
+    )
+    .unwrap();
+    assert_eq!(multi["activities"].as_array().unwrap().len(), 3, "{multi}");
+
+    // Compact projection keeps core table columns and drops heavy people/place/calendar/zone fields.
+    let compact_p1 = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "activity": ["reading", "deep work"], "compact": true, "limit": 2}),
+    )
+    .unwrap();
+    let c_rows = compact_p1["activities"].as_array().unwrap();
+    assert_eq!(c_rows.len(), 2, "{compact_p1}");
+    let row0 = c_rows[0].as_object().unwrap();
+    for present in [
+        "title",
+        "facet",
+        "day",
+        "start",
+        "duration",
+        "kind",
+        "source",
+        "reference",
+    ] {
+        assert!(
+            row0.contains_key(present),
+            "compact missing {present}: {row0:?}"
+        );
+    }
+    for omitted in [
+        "participants",
+        "heard",
+        "corresponded",
+        "in_photo",
+        "mentioned",
+        "on_screen",
+        "entities",
+        "zone",
+        "end",
+        "place",
+        "scheduled",
+        "beside",
+    ] {
+        assert!(
+            !row0.contains_key(omitted),
+            "compact leaked {omitted}: {row0:?}"
+        );
+    }
+    let cursor = compact_p1["next_cursor"].as_str().unwrap().to_owned();
+    let compact_p2 = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260308", "activity": ["deep_work", "reading"], "compact": true, "limit": 2, "cursor": cursor}),
+    )
+    .unwrap();
+    assert_eq!(compact_p2["activities"].as_array().unwrap().len(), 1);
+    assert!(compact_p2.get("next_cursor").is_none());
+
+    // Compact cursor cannot be replayed without compact: true, nor with a different activity filter.
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "activity": ["deep_work", "reading"], "limit": 2, "cursor": cursor}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "activity": "reading", "compact": true, "limit": 2, "cursor": cursor}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    // `kind` and `place` are refused on list_activities instead of silently falling through to search.
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "kind": "reading"})
+        ),
+        Err(McpProbeError::InvalidInput)
+    );
+    assert_eq!(
+        probe(
+            &journal,
+            "list_activities",
+            json!({"day": "20260308", "place": "London"})
+        ),
+        Err(McpProbeError::InvalidInput)
+    );
+}
+
+#[test]
+fn list_activities_group_by_rollup_boundaries_and_zero_duration() {
+    let journal = base_activity_journal();
+    let root = journal.path();
+
+    // Principal (owner) excluded from person rollups.
+    let owner_dir = root.join("entities/owner");
+    fs::create_dir_all(&owner_dir).unwrap();
+    fs::write(
+        owner_dir.join("entity.json"),
+        json!({"id": "ent-owner", "name": "Owner Person", "type": "Person", "is_principal": true})
+            .to_string(),
+    )
+    .unwrap();
+
+    let photo_seg = root.join("chronicle/20260210/import.image/150000_0");
+    fs::create_dir_all(&photo_seg).unwrap();
+    fs::write(photo_seg.join("image_transcript.md"), "Winter walk").unwrap();
+
+    let append_raw = |facet: &str, day: &str, row: Value| {
+        let dir = root.join("facets").join(facet).join("activities");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{day}.jsonl"));
+        let mut content = fs::read_to_string(&path).unwrap_or_default();
+        content.push_str(&row.to_string());
+        content.push('\n');
+        fs::write(path, content).unwrap();
+    };
+
+    // Jan alpha: 600s meeting with Alice + Bob + Owner (duplicated in beta with lower level_avg -> must count ONCE under alpha).
+    append_raw(
+        "alpha",
+        "20260115",
+        json!({
+            "id": "jan_m1_a",
+            "title": "Planning sync",
+            "activity": "meeting",
+            "stream": "talk",
+            "segments": ["090000_600"],
+            "level_avg": 0.9,
+            "created_at": 100,
+            "participation": [
+                {"name": "Owner Person", "entity_id": "ent-owner", "role": "attendee"},
+                {"name": "Alice", "role": "attendee"},
+                {"name": "Bob", "role": "heard"}
+            ]
+        }),
+    );
+    append_raw(
+        "beta",
+        "20260115",
+        json!({
+            "id": "jan_m1_b",
+            "title": "Planning sync copy",
+            "activity": "meeting",
+            "stream": "talk",
+            "segments": ["090000_600"],
+            "level_avg": 0.3,
+            "created_at": 100,
+            "participation": [{"name": "Alice", "role": "attendee"}]
+        }),
+    );
+    // Jan alpha hidden row: must be excluded completely.
+    append_raw(
+        "alpha",
+        "20260115",
+        json!({
+            "id": "jan_hidden",
+            "title": "Private note",
+            "activity": "writing",
+            "stream": "desk",
+            "segments": ["100000_999"],
+            "hidden": true,
+            "created_at": 150,
+            "participation": [{"name": "Secret", "role": "attendee"}]
+        }),
+    );
+    // Jan beta: 300s reading, solo.
+    append_raw(
+        "beta",
+        "20260120",
+        json!({
+            "id": "jan_read",
+            "title": "Book chapter",
+            "activity": "reading",
+            "stream": "desk",
+            "segments": ["140000_300"],
+            "created_at": 200
+        }),
+    );
+    // Feb alpha: 0s real photo with Alice in_photo, plus 180s email with Carol corresponded.
+    append_raw(
+        "alpha",
+        "20260210",
+        json!({
+            "id": "feb_photo",
+            "title": "Snow photo",
+            "activity": "media",
+            "stream": "import.image",
+            "segments": ["150000_0"],
+            "created_at": 300,
+            "participation": [{"name": "Alice", "role": "visible"}]
+        }),
+    );
+    append_raw(
+        "alpha",
+        "20260210",
+        json!({
+            "id": "feb_mail",
+            "title": "Reply to Carol",
+            "activity": "writing",
+            "stream": "messages",
+            "segments": ["160000_180"],
+            "created_at": 400,
+            "participation": [
+                {"name": "Carol", "role": "corresponded"},
+                {"name": "Alice", "role": "mentioned"}
+            ]
+        }),
+    );
+
+    // 1. Month x facet rollup: 3 groups, 4 total activities (3 timed, 1 zero-duration photo), 1080s.
+    let mf = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260101", "day_to": "20260228", "group_by": ["month", "facet"]}),
+    )
+    .unwrap();
+    assert_eq!(mf["group_by"], json!(["month", "facet"]));
+    assert_eq!(
+        mf["total"],
+        json!({"count": 4, "timed_count": 3, "duration_sec": 1080}),
+        "{mf}"
+    );
+    assert_eq!(
+        mf["groups"],
+        json!([
+            {"month": "2026-01", "facet": "Alpha", "facet_id": FACET_A, "count": 1, "timed_count": 1, "duration_sec": 600},
+            {"month": "2026-01", "facet": "Beta", "facet_id": FACET_B, "count": 1, "timed_count": 1, "duration_sec": 300},
+            {"month": "2026-02", "facet": "Alpha", "facet_id": FACET_A, "count": 2, "timed_count": 1, "duration_sec": 180},
+        ]),
+        "{mf}"
+    );
+
+    // 2. Group by person without roles defaults to attendee + heard; total still counts each distinct activity once.
+    let by_person = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260101", "day_to": "20260228", "group_by": ["person"]}),
+    )
+    .unwrap();
+    assert_eq!(by_person["roles"], json!(["attendee", "heard"]));
+    assert_eq!(
+        by_person["total"],
+        json!({"count": 4, "timed_count": 3, "duration_sec": 1080})
+    );
+    assert_eq!(
+        by_person["groups"],
+        json!([
+            {"person": "Alice", "count": 1, "timed_count": 1, "duration_sec": 600},
+            {"person": "Bob", "count": 1, "timed_count": 1, "duration_sec": 600},
+        ]),
+        "{by_person}"
+    );
+
+    // 3. Explicit roles on group_by: ["person"] (in_photo and corresponded).
+    let by_photo = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260101", "day_to": "20260228", "group_by": ["person"], "roles": ["in_photo"]}),
+    )
+    .unwrap();
+    assert_eq!(by_photo["roles"], json!(["in_photo"]));
+    assert_eq!(
+        by_photo["groups"],
+        json!([{"person": "Alice", "count": 1, "timed_count": 0, "duration_sec": 0}])
+    );
+
+    let by_corr = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260101", "day_to": "20260228", "group_by": ["person"], "roles": ["corresponded"]}),
+    )
+    .unwrap();
+    assert_eq!(
+        by_corr["groups"],
+        json!([{"person": "Carol", "count": 1, "timed_count": 1, "duration_sec": 180}])
+    );
+
+    // 4. Solo day with group_by: ["person"] emits empty groups with truthful people-empty note, non-zero total.
+    let solo = probe(
+        &journal,
+        "list_activities",
+        json!({"day": "20260120", "group_by": ["person"]}),
+    )
+    .unwrap();
+    assert_eq!(solo["groups"], json!([]));
+    assert_eq!(
+        solo["total"],
+        json!({"count": 1, "timed_count": 1, "duration_sec": 300})
+    );
+    assert!(solo["note"].as_str().unwrap().contains("no people"));
+
+    // 5. Empty range returns zeroed rollup and empty note.
+    let empty = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260501", "day_to": "20260531", "group_by": ["month", "facet"]}),
+    )
+    .unwrap();
+    assert_eq!(empty["groups"], json!([]));
+    assert_eq!(
+        empty["total"],
+        json!({"count": 0, "timed_count": 0, "duration_sec": 0})
+    );
+    assert!(empty["note"].is_string());
+
+    // 6. Facet-scoped connection never sees beta facet counts or rows.
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    let scoped = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260101", "day_to": "20260228", "group_by": ["facet"]}),
+    )
+    .unwrap();
+    assert_eq!(
+        scoped["groups"],
+        json!([{"facet": "Alpha", "facet_id": FACET_A, "count": 3, "timed_count": 2, "duration_sec": 780}])
+    );
+    assert_eq!(
+        scoped["total"],
+        json!({"count": 3, "timed_count": 2, "duration_sec": 780})
+    );
+    let foreign = probe(
+        &journal,
+        "list_activities",
+        json!({"day_from": "20260101", "day_to": "20260228", "facet": FACET_B, "group_by": ["facet"]}),
+    )
+    .unwrap();
+    assert_eq!(foreign["groups"], json!([]));
+    assert_eq!(
+        foreign["total"],
+        json!({"count": 0, "timed_count": 0, "duration_sec": 0})
     );
 }
