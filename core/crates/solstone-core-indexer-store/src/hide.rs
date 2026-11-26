@@ -301,7 +301,9 @@ impl HideCache {
             LeftOut::None => return FileHide::Index,
             LeftOut::Keys(keys) if keys.is_empty() => return FileHide::Index,
             LeftOut::Keys(keys) => keys,
-            LeftOut::Unreadable => {
+            // A later version's store may leave out more than this one reads:
+            // no week page is indexed until it reads whole.
+            LeftOut::Partly(..) | LeftOut::Unreadable => {
                 return FileHide::Undecidable(solstone_core_cli_copy::MessageDetail::message(
                     "journal.cli.journal.indexer.hidden.weeks",
                     [("path", &(LEFT_OUT_RELATIVE_PATH))],

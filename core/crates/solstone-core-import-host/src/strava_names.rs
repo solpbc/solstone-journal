@@ -268,10 +268,11 @@ fn record_strava_names_keeping(
     };
     let live = live_workouts(journal);
     outcome.workouts = live.len() as u64;
-    // With the hidden days unreadable, no workout's words are read or marked
-    // read, and no name is promoted.
+    // With the hidden days unreadable, or holding more than this version
+    // reads, no workout's words are read or marked read, and no name is
+    // promoted.
     let hidden = read_hidden_days(journal);
-    if hidden == HiddenDays::Unreadable {
+    if hidden.days().is_none() {
         log::warn!("Strava names: the hidden body days can't be read, no words read");
         outcome.hidden_days_unreadable = true;
     }
@@ -307,7 +308,7 @@ fn record_strava_names_keeping(
             line.day.clone_from(&workout.day);
             line.gear.clone_from(&workout.gear);
             if let Some(hash) = empty.get(activity_id)
-                && hidden != HiddenDays::Unreadable
+                && hidden.days().is_some()
             {
                 line.words_hash = Some(hash.clone());
                 line.entities = Vec::new();
@@ -479,7 +480,7 @@ fn record_strava_names_keeping(
     // Read again: a day hidden while the words were read counts toward no
     // entity either.
     let hidden = read_hidden_days(journal);
-    if hidden == HiddenDays::Unreadable {
+    if hidden.days().is_none() {
         outcome.hidden_days_unreadable = true;
         return outcome;
     }

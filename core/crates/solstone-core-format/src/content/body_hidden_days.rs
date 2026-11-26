@@ -10,16 +10,22 @@
 //! [`HIDDEN_DAYS_RELATIVE_PATH`], so whatever comes in for a hidden day later
 //! lands hidden. One writer keeps it; every reader, the search index among
 //! them, reads it here.
+//!
+//! A store a later version wrote may hold more than this one reads
+//! ([`HiddenDays::Partly`]): the days read stay hidden for every reader, and
+//! search and connections take every other day as hidden too.
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use jiff::tz::TimeZone;
-use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
 
 use super::body_records::{BodyRow, RowKind, parse_source_time};
+use super::hide_list::{Unread, hide_list_bytes, parse_hide_list};
+
+const DAYS: &str = "days";
 
 /// Where the owner's hidden body days live, relative to the journal.
 pub const HIDDEN_DAYS_RELATIVE_PATH: &str = "solstone/apps/body/hidden-days.json";
@@ -32,6 +38,9 @@ pub const MAX_HIDDEN_DAYS_BYTES: usize = 1_048_576;
 pub enum HiddenDays {
     /// The days hidden; empty when the store doesn't exist.
     Days(BTreeSet<String>),
+    /// These days are hidden, and a later version wrote more that this one
+    /// can't read: any other day may be hidden too.
+    Partly(BTreeSet<String>, Unread),
     /// The store exists but couldn't be read or isn't the expected shape.
     /// Nothing can rebuild what the owner chose, so it is never taken as
     /// "nothing hidden".
@@ -39,29 +48,47 @@ pub enum HiddenDays {
 }
 
 impl HiddenDays {
-    /// Whether `day` is hidden, or `None` when the store can't be read.
+    /// Whether `day` is hidden, or `None` when that can't be known: the store
+    /// can't be read, or a later version wrote more in it and `day` isn't
+    /// among the days read. Search and connections take `None` as hidden.
     #[must_use]
     pub fn hides(&self, day: &str) -> Option<bool> {
         match self {
             Self::Days(days) => Some(days.contains(day)),
+            Self::Partly(days, _) => days.contains(day).then_some(true),
             Self::Unreadable => None,
         }
     }
 
-    /// The days hidden, or `None` when the store can't be read.
+    /// Every day hidden, or `None` when the store can't be read or may hide
+    /// more than this version reads. For search and connections.
     #[must_use]
     pub fn days(&self) -> Option<&BTreeSet<String>> {
         match self {
             Self::Days(days) => Some(days),
-            Self::Unreadable => None,
+            Self::Partly(..) | Self::Unreadable => None,
         }
     }
-}
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HiddenDaysFile {
-    days: Vec<String>,
+    /// The days known to be hidden: all of them, or the ones read from a store
+    /// that holds more; none when the store can't be read. For the owner's own
+    /// pages, which show a day unless it is known to be hidden.
+    #[must_use]
+    pub fn known_days(&self) -> Cow<'_, BTreeSet<String>> {
+        match self {
+            Self::Days(days) | Self::Partly(days, _) => Cow::Borrowed(days),
+            Self::Unreadable => Cow::Owned(BTreeSet::new()),
+        }
+    }
+
+    /// What a later version wrote that this one can't read, to write back.
+    #[must_use]
+    pub fn unread(&self) -> Option<&Unread> {
+        match self {
+            Self::Partly(_, unread) => Some(unread),
+            Self::Days(_) | Self::Unreadable => None,
+        }
+    }
 }
 
 /// Whether `day` names a calendar day as a journal day folder does.
@@ -78,19 +105,32 @@ pub fn hidden_days_path(journal: &Path) -> PathBuf {
 }
 
 /// The days in a store's bytes, or `None` when they aren't the store's shape
-/// or name something that isn't a day.
+/// or hold anything else: a field or an entry that isn't a day. For a reader
+/// that must have the whole of the owner's choice or refuse.
 pub fn parse_hidden_days(bytes: &[u8]) -> Option<BTreeSet<String>> {
-    let file = serde_json::from_slice::<HiddenDaysFile>(bytes).ok()?;
-    file.days
-        .iter()
-        .all(|day| is_day(day))
-        .then(|| file.days.into_iter().collect())
+    match parse_store(bytes) {
+        HiddenDays::Days(days) => Some(days),
+        HiddenDays::Partly(..) | HiddenDays::Unreadable => None,
+    }
+}
+
+fn parse_store(bytes: &[u8]) -> HiddenDays {
+    match parse_hide_list(bytes, DAYS, is_day) {
+        Some((days, None)) => HiddenDays::Days(days),
+        Some((days, Some(unread))) => HiddenDays::Partly(days, unread),
+        None => HiddenDays::Unreadable,
+    }
 }
 
 /// The bytes the store holds for `days`, in sorted order.
 pub fn hidden_days_bytes(days: &BTreeSet<String>) -> Vec<u8> {
-    let days = days.iter().cloned().collect();
-    let mut bytes = serde_json::to_vec(&HiddenDaysFile { days }).expect("hidden days serialize");
+    hidden_days_bytes_keeping(days, None)
+}
+
+/// The bytes the store holds for `days`, with what a later version wrote in
+/// it (`unread`) written back.
+pub fn hidden_days_bytes_keeping(days: &BTreeSet<String>, unread: Option<&Unread>) -> Vec<u8> {
+    let mut bytes = hide_list_bytes(DAYS, days, unread);
     bytes.push(b'\n');
     bytes
 }
@@ -111,9 +151,7 @@ pub fn read_hidden_days(journal: &Path) -> HiddenDays {
         Path::new(HIDDEN_DAYS_RELATIVE_PATH),
         MAX_HIDDEN_DAYS_BYTES,
     ) {
-        Ok(Some(observation)) => {
-            parse_hidden_days(&observation.bytes).map_or(HiddenDays::Unreadable, HiddenDays::Days)
-        }
+        Ok(Some(observation)) => parse_store(&observation.bytes),
         Ok(None) => HiddenDays::Days(BTreeSet::new()),
         Err(_) => HiddenDays::Unreadable,
     }
@@ -258,9 +296,7 @@ mod tests {
             &b"{"[..],
             b"[]",
             br#"{"days": "20261103"}"#,
-            br#"{"days": ["20261103"], "more": 1}"#,
-            br#"{"days": ["2026-11-03"]}"#,
-            br#"{"days": ["20261332"]}"#,
+            br#"{"more": 1}"#,
         ] {
             write(journal.path(), bad);
             let read = read_hidden_days(journal.path());
@@ -271,7 +307,58 @@ mod tests {
                 String::from_utf8_lossy(bad)
             );
             assert_eq!(read.hides("20261103"), None);
+            assert!(read.known_days().is_empty());
         }
+    }
+
+    #[test]
+    fn a_later_versions_store_keeps_the_days_read_hidden_and_opens_no_other() {
+        let journal = TempDir::new().unwrap();
+        for later in [
+            &br#"{"days": ["20261103"], "more": 1}"#[..],
+            br#"{"days": ["20261103", "2026-11-05"]}"#,
+            br#"{"days": ["20261103", {"from": "20261105", "to": "20261107"}]}"#,
+        ] {
+            write(journal.path(), later);
+            let read = read_hidden_days(journal.path());
+            let shown = String::from_utf8_lossy(later);
+            // The day this version reads is hidden for every reader.
+            assert_eq!(read.hides("20261103"), Some(true), "{shown}");
+            assert_eq!(*read.known_days(), days(&["20261103"]), "{shown}");
+            // No other day is known to be open, and the whole set isn't known.
+            assert_eq!(read.hides("20261106"), None, "{shown}");
+            assert_eq!(read.days(), None, "{shown}");
+            // A reader that needs the whole of the choice still refuses.
+            assert_eq!(parse_hidden_days(later), None, "{shown}");
+        }
+    }
+
+    #[test]
+    fn a_later_versions_store_is_written_back_whole() {
+        let journal = TempDir::new().unwrap();
+        write(
+            journal.path(),
+            br#"{"days": ["20261103", {"from": "20261105"}], "more": {"a": 1}}"#,
+        );
+        let read = read_hidden_days(journal.path());
+        let mut held = read.known_days().into_owned();
+        held.insert("20261101".to_owned());
+        write(
+            journal.path(),
+            &hidden_days_bytes_keeping(&held, read.unread()),
+        );
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(hidden_days_path(journal.path())).unwrap()).unwrap();
+        assert_eq!(
+            on_disk,
+            serde_json::json!({
+                "days": ["20261101", "20261103", {"from": "20261105"}],
+                "more": {"a": 1},
+            })
+        );
+        let again = read_hidden_days(journal.path());
+        assert_eq!(*again.known_days(), days(&["20261101", "20261103"]));
+        assert_eq!(again.unread(), read.unread());
     }
 
     fn row(kind: RowKind, id: &str, of: Option<&str>, start: &str) -> BodyRow {

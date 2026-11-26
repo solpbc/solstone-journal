@@ -1050,7 +1050,8 @@ pub fn body_groups_range(
     // in one with a hidden account, or shown under a day of body data the owner
     // hid, hides for every reader, whatever else that reader may read. While
     // the hidden days can't be read, the owner sees everything and a
-    // connection sees none of it.
+    // connection sees none of it. From a store a later version wrote, the
+    // days read are hidden for both and a connection sees no other day.
     let hidden_days = read_hidden_days(journal);
     let mut hides = BTreeSet::new();
     let mut day_hides = BTreeSet::new();
@@ -1061,6 +1062,7 @@ pub fn body_groups_range(
         let day = &every[anchor(&every, &group)].day;
         let day_hidden = match &hidden_days {
             HiddenDays::Days(days) => days.contains(day),
+            HiddenDays::Partly(days, _) => days.contains(day) || readable.is_some(),
             HiddenDays::Unreadable => readable.is_some(),
         };
         if day_hidden {
@@ -1180,10 +1182,8 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
         })
     };
     // The owner's home: while the hidden days can't be read, everything shows.
-    let hidden_days = read_hidden_days(journal)
-        .days()
-        .cloned()
-        .unwrap_or_default();
+    let hidden_days = read_hidden_days(journal);
+    let hidden_days = hidden_days.known_days();
     if hidden_days.contains(day) {
         return Ok(Vec::new());
     }

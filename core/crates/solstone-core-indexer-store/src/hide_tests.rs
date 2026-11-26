@@ -616,6 +616,17 @@ fn a_week_page_waits_while_what_is_left_out_of_it_cant_be_read() {
     assert!(journal.rows(WEEK).is_empty());
     assert_eq!(journal.stored_mtime(WEEK), Some(-1));
 
+    // A later version's store may leave out more than this one reads.
+    for later in [
+        json!({"keys": [], "more": 1}),
+        json!({"keys": ["elsewhere", {"week": "20260301"}]}),
+    ] {
+        journal.json("health/week-left-out.json", later);
+        journal.scan(false);
+        assert!(journal.rows(WEEK).is_empty());
+        assert_eq!(journal.stored_mtime(WEEK), Some(-1));
+    }
+
     // Something is left out and the page's own keys can't be read.
     journal.json("health/week-left-out.json", json!({"keys": ["m1"]}));
     journal.write("reflections/weekly/20260301.json", "{ damaged");
@@ -1127,6 +1138,21 @@ fn body_files_wait_while_the_hidden_days_cant_be_read_and_other_files_dont() {
     }
     // An ordinary activity beside a body record is found as ever.
     assert_eq!(journal.search("alphaneedle").len(), 1);
+
+    // A later version's store may hide more days than this one reads: no body
+    // file is indexed, on a day it names or any other.
+    for later in [
+        json!({"days": [], "more": 1}),
+        json!({"days": ["20260101", {"from": "20260301"}]}),
+    ] {
+        journal.json(HIDDEN_DAYS, later.clone());
+        journal.scan(false);
+        for rel in &hidden {
+            assert!(journal.rows(rel).is_empty(), "{rel} {later}");
+            assert_eq!(journal.stored_mtime(rel), Some(-1), "{rel} {later}");
+        }
+        assert!(journal.search("wrenneedle").is_empty(), "{later}");
+    }
 
     journal.json(HIDDEN_DAYS, json!({"days": []}));
     journal.scan(false);

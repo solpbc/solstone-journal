@@ -1194,6 +1194,54 @@ async fn week_leave_out_fails_safely_when_left_out_file_is_unreadable() {
 }
 
 #[tokio::test]
+async fn week_leave_out_keeps_what_a_later_version_wrote_in_the_store() {
+    let journal = seeded_root();
+    let router = test_router(journal.path());
+    let (status, _, _, body) = get(router.clone(), "/app/home/api/week/20260809").await;
+    assert_eq!(status, StatusCode::OK);
+    let model: Value = serde_json::from_slice(&body).expect("json");
+    let key = model["rows"][0]["key"].as_str().expect("key").to_owned();
+
+    let health_dir = journal.path().join("health");
+    fs::create_dir_all(&health_dir).expect("health dir");
+    let left_out_path = health_dir.join("week-left-out.json");
+    fs::write(
+        &left_out_path,
+        br#"{"keys":["an-earlier-key",{"week":"20260802"}],"more":1}"#,
+    )
+    .expect("write");
+
+    let (status, _, body) = post(
+        router.clone(),
+        "/app/home/api/week/20260809/leave-out",
+        json!({ "key": key, "undo": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let model: Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(model["rows"][0]["left_out"], true);
+    let stored = || -> Value {
+        serde_json::from_slice(&fs::read(&left_out_path).expect("read")).expect("json")
+    };
+    let mut keys = vec![json!("an-earlier-key"), json!(key)];
+    keys.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    keys.push(json!({"week": "20260802"}));
+    assert_eq!(stored(), json!({"keys": keys, "more": 1}));
+
+    let (status, _, _) = post(
+        router,
+        "/app/home/api/week/20260809/leave-out",
+        json!({ "key": key, "undo": true }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        stored(),
+        json!({"keys": ["an-earlier-key", {"week": "20260802"}], "more": 1})
+    );
+}
+
+#[tokio::test]
 async fn week_api_uses_owner_local_year_for_title() {
     let journal = TempDir::new().expect("temp journal");
     let config_dir = journal.path().join("config");

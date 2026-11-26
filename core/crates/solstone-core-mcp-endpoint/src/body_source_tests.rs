@@ -2459,6 +2459,18 @@ fn damage_hidden_days(root: &Path) {
     fs::write(path, "{ damaged").unwrap();
 }
 
+/// A store a later version wrote: it reads no day of `days` as open, since
+/// the field beside them may hide any day.
+fn later_hidden_days(root: &Path, days: &[&str]) {
+    let path = solstone_core_format::content::body_hidden_days::hidden_days_path(root);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        json!({"days": days, "through": "20991231"}).to_string(),
+    )
+    .unwrap();
+}
+
 fn probe_fails(root: &Path, tool: &str, arguments: Value) -> bool {
     run_mcp_probe(root, CONNECTION, tool, &arguments).is_err()
 }
@@ -2709,8 +2721,25 @@ fn a_hidden_day_lists_and_reads_no_body_window_and_its_night_leaves_the_next_mor
     assert!(probe_fails(
         root,
         "get_transcript",
-        json!({"reference": next_window})
+        json!({"reference": next_window.clone()})
     ));
+
+    // Nor while a later version's store may hide more days than this one reads.
+    for known in [&[][..], &["20200101"]] {
+        later_hidden_days(root, known);
+        for day in [DAY, NEXT] {
+            let listed = source_list(root, day);
+            assert!(
+                listed["transcripts"].as_array().unwrap().is_empty(),
+                "{listed}"
+            );
+        }
+        assert!(probe_fails(
+            root,
+            "get_transcript",
+            json!({"reference": next_window.clone()})
+        ));
+    }
 }
 
 fn run_row(id: &str, by: &str, start: &str, end: &str) -> BodyRow {
@@ -2863,11 +2892,27 @@ fn a_group_whose_day_is_hidden_is_found_by_no_group_reader() {
     assert!(probe_fails(root, "get_activity_sources", reference));
     assert!(!week_names_the_run(root));
     // The owner's own view still lists it.
-    let owner = solstone_core_location::body_records::body_faces_range(
-        root, "health", DAY, NEXT, None, false,
-    )
-    .unwrap();
-    assert_eq!(owner.values().flatten().count(), 1);
+    let owner = || {
+        solstone_core_location::body_records::body_faces_range(
+            root, "health", DAY, NEXT, None, false,
+        )
+        .unwrap()
+        .values()
+        .flatten()
+        .count()
+    };
+    assert_eq!(owner(), 1);
+
+    // A later version's store that names another day: no connection sees the
+    // group, and the owner still does.
+    later_hidden_days(root, &["20200101"]);
+    assert!(body_activities(root).is_empty());
+    assert!(!week_names_the_run(root));
+    assert_eq!(owner(), 1);
+    // One that names this day hides the group from the owner too.
+    later_hidden_days(root, &[DAY, NEXT]);
+    assert!(body_activities(root).is_empty());
+    assert_eq!(owner(), 0);
 }
 
 #[test]

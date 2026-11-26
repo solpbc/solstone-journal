@@ -1124,10 +1124,7 @@ pub fn page_model_in(
         _ => None,
     };
     let empty_set = BTreeSet::new();
-    let left_out_keys = match &left_out {
-        LeftOut::Keys(keys) => keys,
-        _ => &empty_set,
-    };
+    let left_out_keys = left_out.known_keys().unwrap_or(&empty_set);
 
     let mut rows = Vec::new();
     let mut shown_count = 0_usize;
@@ -1889,10 +1886,7 @@ fn week_card(context: &HomeContext, stem_date: Date, trusted: TrustedWeek) -> Va
 
     let left_out = read_left_out(context.journal_root());
     let empty_set = BTreeSet::new();
-    let left_out_keys = match &left_out {
-        LeftOut::Keys(keys) => keys,
-        _ => &empty_set,
-    };
+    let left_out_keys = left_out.known_keys().unwrap_or(&empty_set);
     let memory_by_id: std::collections::BTreeMap<&str, &TrustedMemory> = trusted
         .memories
         .iter()
@@ -2316,6 +2310,19 @@ mod tests {
         );
         assert_eq!(model_unreadable["rows"].as_array().unwrap().len(), 3);
         assert_eq!(model_unreadable["rows"][0]["left_out"], false);
+
+        // A later version's store: the key this version reads stays left out
+        // of the owner's page, with no notice that everything is showing.
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            r#"{"keys":["b359922341f75193",{"week":"20260315"}],"more":1}"#,
+        );
+        let model_later = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(model_later["rows"][0]["left_out"], true);
+        assert!(model_later["rows"][0].get("text").is_none());
+        assert!(model_later["left_out_notice"].is_null());
+        assert_eq!(model_later["cells"][0]["state"], "not_on_page");
 
         // Key-based matching: same key with new memory ID vs changed key
         let mut key_set = BTreeSet::new();

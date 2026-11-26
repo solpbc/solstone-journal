@@ -375,7 +375,7 @@ pub(crate) fn build_day(root: &Path, day: &str, locale: &str) -> Result<Value, S
     let date = parse_day(day).ok_or_else(|| "invalid day".to_owned())?;
     let store = read_hidden_days(root);
     let hidden_unreadable = store == HiddenDays::Unreadable;
-    let hidden = store.days().cloned().unwrap_or_default();
+    let hidden = store.known_days().into_owned();
     let days = body_days(root, &store)?.shown;
     if hidden.contains(day) {
         return Ok(json!({

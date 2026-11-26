@@ -497,7 +497,7 @@ pub(crate) fn build_window(
     to: &ZonedDateTime,
     locale: &str,
 ) -> Value {
-    let hidden = read_hidden_days(root).days().cloned().unwrap_or_default();
+    let hidden = read_hidden_days(root).known_days().into_owned();
     let rows = collect_rows(root, from, to, &hidden);
     let on_hidden_day = !hidden.is_disjoint(&span_days(from, to));
     let entry_total = rows.iter().filter(|item| is_entry(item)).count() as u64;

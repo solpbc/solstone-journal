@@ -16,7 +16,7 @@ use std::fs;
 use std::path::Path;
 
 use solstone_core_format::content::body_hidden_days::{
-    HiddenDays, MAX_HIDDEN_DAYS_BYTES, hidden_days_bytes, hidden_days_path, is_day,
+    HiddenDays, MAX_HIDDEN_DAYS_BYTES, hidden_days_bytes_keeping, hidden_days_path, is_day,
     read_hidden_days,
 };
 use solstone_core_format::content::body_records::BODY_RECORD_STREAMS;
@@ -117,13 +117,16 @@ fn update(
             solstone_core_journal_io::LockOptions::default(),
         )
         .map_err(|error| BodyHiddenError::Write(error.to_string()))?;
-        let HiddenDays::Days(mut held) = read_hidden_days(journal) else {
-            return Err(BodyHiddenError::Unreadable);
+        // What a later version wrote in the store is kept and written back.
+        let (mut held, unread) = match read_hidden_days(journal) {
+            HiddenDays::Days(held) => (held, None),
+            HiddenDays::Partly(held, unread) => (held, Some(unread)),
+            HiddenDays::Unreadable => return Err(BodyHiddenError::Unreadable),
         };
         let before = held.clone();
         change(&mut held);
         if held != before {
-            let bytes = hidden_days_bytes(&held);
+            let bytes = hidden_days_bytes_keeping(&held, unread.as_ref());
             // A store its reader would refuse would hide every day from search
             // and connections and refuse every later change.
             if bytes.len() > MAX_HIDDEN_DAYS_BYTES {
@@ -238,6 +241,48 @@ mod tests {
             Err(BodyHiddenError::Unreadable)
         );
         assert_eq!(fs::read(&path).unwrap(), b"{not json");
+    }
+
+    #[test]
+    fn a_hide_in_a_later_versions_store_keeps_what_this_version_cant_read() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        let path = hidden_days_path(root);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            br#"{"days": ["20261103", {"from": "20261201"}], "more": 1}"#,
+        )
+        .unwrap();
+        let on_disk =
+            || -> serde_json::Value { serde_json::from_slice(&fs::read(&path).unwrap()).unwrap() };
+        assert_eq!(
+            set_body_days_hidden(root, &days(&["20261105"]), true)
+                .unwrap()
+                .days,
+            days(&["20261103", "20261105"])
+        );
+        assert_eq!(
+            on_disk(),
+            serde_json::json!({
+                "days": ["20261103", "20261105", {"from": "20261201"}],
+                "more": 1,
+            })
+        );
+        set_body_days_hidden(root, &days(&["20261103"]), false).unwrap();
+        assert_eq!(
+            merge_hidden_body_days(root, &days(&["20261001", "20261105"]))
+                .unwrap()
+                .0,
+            1
+        );
+        assert_eq!(
+            on_disk(),
+            serde_json::json!({
+                "days": ["20261001", "20261105", {"from": "20261201"}],
+                "more": 1,
+            })
+        );
     }
 
     #[test]

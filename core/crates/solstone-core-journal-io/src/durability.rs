@@ -189,7 +189,7 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         path: "health/week-left-out.json",
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
-        rationale: "the memories and quotes the owner left out of their week pages, written under a lock with atomic replace and read strictly by week_left_out::read_left_out; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the page shows everything with a notice, further changes refuse and search leaves out every week page",
+        rationale: "the memories and quotes the owner left out of their week pages, written under a lock with atomic replace and read by week_left_out::read_left_out; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the page shows everything with a notice, further changes refuse and search leaves out every week page; from one a later version wrote, the keys read stay left out everywhere, what isn't read is written back, and search and connections leave out every week page",
     },
     DurableArtifact {
         id: ArtifactId::MapPlaces,
@@ -203,7 +203,7 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         path: "solstone/apps/body/hidden-days.json",
         class: DurabilityClass::MustBeValid,
         parser: ParserKind::WholeJson,
-        rationale: "the days of body data the owner hid, written under a lock with atomic replace and read strictly by body_hidden_days::read_hidden_days; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the body page shows everything with a notice, a hide or unhide refuses, and search and connections leave out all body data",
+        rationale: "the days of body data the owner hid, written under a lock with atomic replace and read by body_hidden_days::read_hidden_days; nothing can rebuild what the owner chose, so a damaged one is kept as it is, the body page shows everything with a notice, a hide or unhide refuses, and search and connections leave out all body data; from one a later version wrote, the days read stay hidden everywhere, what isn't read is written back, and search and connections leave out all body data",
     },
     DurableArtifact {
         id: ArtifactId::FacetHiddenNames,

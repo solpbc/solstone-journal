@@ -824,10 +824,15 @@ impl BodyDays {
     /// happens to location's.
     pub fn reconcile(&mut self, journal: &Path) {
         // While the owner's hidden days can't be read no day is rendered: the
-        // documents stay as they were until it reads again.
-        let HiddenDays::Days(hidden) = read_hidden_days(journal) else {
-            log::warn!("body documents wait: the hidden body days can't be read");
-            return;
+        // documents stay as they were until it reads again. From a store a
+        // later version wrote, the days read are hidden here too; search and
+        // connections decide the rest for themselves.
+        let hidden = match read_hidden_days(journal) {
+            HiddenDays::Days(hidden) | HiddenDays::Partly(hidden, _) => hidden,
+            HiddenDays::Unreadable => {
+                log::warn!("body documents wait: the hidden body days can't be read");
+                return;
+            }
         };
         let mut days: Vec<String> = day_dirs(journal)
             .map(|days| days.into_keys().collect())

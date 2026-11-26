@@ -49,6 +49,11 @@ pub fn parse_kinds<'a>(
         .collect()
 }
 
+/// Read strictly on purpose. A record this version can't read whole, one a
+/// later version wrote with another field included, verifies nothing here:
+/// the topic then needs every source permission a topic can draw on. The
+/// owner's own search doesn't read this record, and Sense writes it new with
+/// each topic text, so nothing a later version wrote is lost or shown.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Provenance {
@@ -144,5 +149,39 @@ impl TopicDocument {
             .chunks
             .get(index)
             .is_some_and(|chunk| chunk.content == text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    #[test]
+    fn a_later_versions_record_releases_the_topic_only_with_every_source() {
+        let journal = tempfile::TempDir::new().unwrap();
+        let dir = journal.path().join("chronicle/20260308/120000_300/talents");
+        fs::create_dir_all(&dir).unwrap();
+        let text = "a topic";
+        fs::write(dir.join("topics.md"), text).unwrap();
+        let path = "chronicle/20260308/120000_300/talents/topics.md";
+        let notes = BTreeSet::from([AdmittedCategory::Notes]);
+
+        let mut record = provenance(text, Some(&notes));
+        fs::write(dir.join(PROVENANCE_FILE), record.to_string()).unwrap();
+        let read = TopicDocument::read(journal.path(), path).unwrap();
+        assert_eq!(read.kinds, Some(notes));
+
+        // A field this version doesn't know may narrow who can be served.
+        record["withheld_from"] = serde_json::json!(["notes"]);
+        fs::write(dir.join(PROVENANCE_FILE), record.to_string()).unwrap();
+        let read = TopicDocument::read(journal.path(), path).unwrap();
+        assert_eq!(read.text, text);
+        assert_eq!(read.kinds, None);
+        assert_eq!(
+            read.required_kinds().collect::<Vec<_>>(),
+            POSSIBLE_INPUTS.to_vec()
+        );
     }
 }

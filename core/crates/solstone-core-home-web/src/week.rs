@@ -15,7 +15,7 @@ use solstone_core_convey_http::cant_open::cant_open_response_for;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_convey_http::window_catalog::text;
 use solstone_core_format::content::week_left_out::{
-    LeftOut, left_out_bytes, left_out_path, read_left_out,
+    LeftOut, left_out_bytes_keeping, left_out_path, read_left_out,
 };
 use solstone_core_home::weekly::{Said, WeekJudgment, judge, page_model_in, week_day};
 
@@ -247,13 +247,15 @@ pub fn save_left_out(
     };
 
     let left_out = read_left_out(journal_root);
-    let mut keys = match left_out {
+    // What a later version wrote in the store is kept and written back.
+    let (mut keys, unread) = match left_out {
         LeftOut::Unreadable => {
             drop(guard);
             return Err((StatusCode::INTERNAL_SERVER_ERROR, fail_msg));
         }
-        LeftOut::Keys(k) => k,
-        LeftOut::None => BTreeSet::new(),
+        LeftOut::Keys(k) => (k, None),
+        LeftOut::Partly(k, unread) => (k, Some(unread)),
+        LeftOut::None => (BTreeSet::new(), None),
     };
 
     if req.undo {
@@ -262,7 +264,7 @@ pub fn save_left_out(
         keys.insert(req.key);
     }
 
-    let bytes = left_out_bytes(&keys);
+    let bytes = left_out_bytes_keeping(&keys, unread.as_ref());
 
     if solstone_core_journal_io::atomic_replace(
         &target_path,

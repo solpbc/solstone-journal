@@ -184,8 +184,9 @@ fn sunday_of(date: Date) -> Date {
 fn agent_day_state<'a>(stored: &'a str, memory_key: Option<&str>, left_out: &LeftOut) -> &'a str {
     match left_out {
         LeftOut::Keys(keys) => resolve_day_cell_state(stored, memory_key, keys),
-        LeftOut::Unreadable if stored == "memory" => "not_on_page",
-        _ => stored,
+        // What is left out isn't fully known: no memory is taken as on the page.
+        LeftOut::Partly(..) | LeftOut::Unreadable if stored == "memory" => "not_on_page",
+        LeftOut::None | LeftOut::Partly(..) | LeftOut::Unreadable => stored,
     }
 }
 
@@ -193,7 +194,7 @@ fn week_entry_visible(key: &str, left_out: &LeftOut) -> bool {
     match left_out {
         LeftOut::None => true,
         LeftOut::Keys(keys) => !keys.contains(key),
-        LeftOut::Unreadable => false,
+        LeftOut::Partly(..) | LeftOut::Unreadable => false,
     }
 }
 
@@ -3314,6 +3315,21 @@ mod tests {
         assert_eq!(states(), [json!("memory"), json!("memory")]);
         write_raw(root.path(), "health/week-left-out.json", "{");
         assert_eq!(states(), [json!("not_on_page"), json!("not_on_page")]);
+        // A later version's store may leave out more than this one reads: no
+        // memory is given to a connection, whatever key it has.
+        for later in [
+            r#"{"keys":[],"more":1}"#,
+            r#"{"keys":["another",{"week":"20260308"}]}"#,
+        ] {
+            write_raw(root.path(), "health/week-left-out.json", later);
+            assert_eq!(
+                states(),
+                [json!("not_on_page"), json!("not_on_page")],
+                "{later}"
+            );
+        }
+        write_raw(root.path(), "health/week-left-out.json", r#"{"keys":[]}"#);
+        assert_eq!(states(), [json!("memory"), json!("memory")]);
     }
 
     #[test]

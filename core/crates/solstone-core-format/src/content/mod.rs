@@ -56,6 +56,7 @@ use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns
 
 pub mod body_hidden_days;
 pub mod body_material;
+pub mod hide_list;
 pub mod possible_names;
 pub mod screen_text;
 pub mod week_left_out;

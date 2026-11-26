@@ -5,8 +5,12 @@
 //!
 //! The owner can leave a memory or a quote out of a week page. Those choices
 //! are kept as `{"keys": [...]}` at [`LEFT_OUT_RELATIVE_PATH`], written by
-//! Home's single writer. Search reads them too, so the path, the schema and a
-//! strict reader live here, below both.
+//! Home's single writer. Search reads them too, so the path, the schema and
+//! the reader live here, below both.
+//!
+//! A store a later version wrote may hold more than this one reads
+//! ([`LeftOut::Partly`]): the keys read stay left out for every reader, and
+//! search and connections take every other entry as left out too.
 //!
 //! [`read_week_page_keys`] reads a week page's json for its keys only: every
 //! `key` string of an entry in `memories` or `said`, with no other check, so it
@@ -15,9 +19,12 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_journal_io::{JournalRoot, read_relative_file_bounded};
+
+use super::hide_list::{Unread, hide_list_bytes, parse_hide_list};
+
+const KEYS: &str = "keys";
 
 /// Where the owner's week leave-outs live, relative to the journal.
 pub const LEFT_OUT_RELATIVE_PATH: &str = "health/week-left-out.json";
@@ -32,8 +39,25 @@ pub enum LeftOut {
     None,
     /// The keys the owner left out.
     Keys(BTreeSet<String>),
+    /// These keys are left out, and a later version wrote more that this one
+    /// can't read: any other entry may be left out too.
+    Partly(BTreeSet<String>, Unread),
     /// The store exists but couldn't be read or isn't the expected shape.
     Unreadable,
+}
+
+impl LeftOut {
+    /// The keys known to be left out: all of them, or the ones read from a
+    /// store that holds more; none when there is no store or it can't be
+    /// read. For the owner's own pages, which show an entry unless it is known
+    /// to be left out.
+    #[must_use]
+    pub fn known_keys(&self) -> Option<&BTreeSet<String>> {
+        match self {
+            Self::Keys(keys) | Self::Partly(keys, _) => Some(keys),
+            Self::None | Self::Unreadable => None,
+        }
+    }
 }
 
 /// A week page's keys, as read from its json.
@@ -47,29 +71,28 @@ pub enum WeekPageKeys {
     Unreadable,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LeftOutFile {
-    keys: Vec<String>,
-}
-
 /// The leave-out store's path in `journal`.
 pub fn left_out_path(journal: &Path) -> PathBuf {
     journal.join(LEFT_OUT_RELATIVE_PATH)
 }
 
-/// The keys in a leave-out store's bytes, or `None` when they aren't the
-/// store's shape.
-pub fn parse_left_out(bytes: &[u8]) -> Option<BTreeSet<String>> {
-    serde_json::from_slice::<LeftOutFile>(bytes)
-        .ok()
-        .map(|file| file.keys.into_iter().collect())
+fn parse_store(bytes: &[u8]) -> LeftOut {
+    match parse_hide_list(bytes, KEYS, |_| true) {
+        Some((keys, None)) => LeftOut::Keys(keys),
+        Some((keys, Some(unread))) => LeftOut::Partly(keys, unread),
+        None => LeftOut::Unreadable,
+    }
 }
 
 /// The bytes the leave-out store holds for `keys`, in sorted order.
 pub fn left_out_bytes(keys: &BTreeSet<String>) -> Vec<u8> {
-    let keys = keys.iter().cloned().collect();
-    serde_json::to_vec(&LeftOutFile { keys }).expect("leave-out keys serialize")
+    left_out_bytes_keeping(keys, None)
+}
+
+/// The bytes the leave-out store holds for `keys`, with what a later version
+/// wrote in it (`unread`) written back.
+pub fn left_out_bytes_keeping(keys: &BTreeSet<String>, unread: Option<&Unread>) -> Vec<u8> {
+    hide_list_bytes(KEYS, keys, unread)
 }
 
 /// Read the owner's leave-outs from `journal`, telling a store that doesn't
@@ -78,7 +101,7 @@ pub fn left_out_bytes(keys: &BTreeSet<String>) -> Vec<u8> {
 pub fn read_left_out(journal: &Path) -> LeftOut {
     match read_bounded(journal, Path::new(LEFT_OUT_RELATIVE_PATH)) {
         Read::Absent => LeftOut::None,
-        Read::Bytes(bytes) => parse_left_out(&bytes).map_or(LeftOut::Unreadable, LeftOut::Keys),
+        Read::Bytes(bytes) => parse_store(&bytes),
         Read::Unreadable => LeftOut::Unreadable,
     }
 }
@@ -194,7 +217,7 @@ mod tests {
         for damaged in [
             &b"garbage"[..],
             br#"{"keys":"k1"}"#,
-            br#"{"keys":["k1"],"extra":1}"#,
+            br#"{"extra":1}"#,
             br#"{}"#,
             br#"["k1"]"#,
         ] {
@@ -205,6 +228,42 @@ mod tests {
                 LeftOut::Unreadable,
                 "{}",
                 String::from_utf8_lossy(damaged)
+            );
+        }
+    }
+
+    #[test]
+    fn a_later_versions_store_keeps_the_keys_read_and_is_written_back_whole() {
+        for later in [
+            &br#"{"keys":["k1"],"extra":1}"#[..],
+            br#"{"keys":["k1",{"week":"20260308"}]}"#,
+        ] {
+            let journal = TempDir::new().unwrap();
+            write(journal.path(), LEFT_OUT_RELATIVE_PATH, later);
+            let read = read_left_out(journal.path());
+            let LeftOut::Partly(held, unread) = &read else {
+                panic!("{}: {read:?}", String::from_utf8_lossy(later));
+            };
+            assert_eq!(read.known_keys(), Some(&keys(&["k1"])));
+            // A rewrite by this version keeps what it couldn't read.
+            let mut held = held.clone();
+            held.insert("k0".to_owned());
+            write(
+                journal.path(),
+                LEFT_OUT_RELATIVE_PATH,
+                &left_out_bytes_keeping(&held, Some(unread)),
+            );
+            let mut expected: Value = serde_json::from_slice(later).unwrap();
+            expected["keys"]
+                .as_array_mut()
+                .unwrap()
+                .insert(0, json!("k0"));
+            let on_disk: Value =
+                serde_json::from_slice(&fs::read(left_out_path(journal.path())).unwrap()).unwrap();
+            assert_eq!(on_disk, expected);
+            assert_eq!(
+                read_left_out(journal.path()),
+                LeftOut::Partly(held, unread.clone())
             );
         }
     }

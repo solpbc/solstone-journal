@@ -255,6 +255,42 @@ async fn a_damaged_store_refuses_a_hide_and_every_day_shows() {
 }
 
 #[tokio::test]
+async fn a_later_versions_store_keeps_its_days_hidden_and_takes_a_hide() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    a_night_crossing_midnight(root);
+    let path = hidden_days_path(root);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // A later version wrote a field and a kind of entry this one can't read.
+    fs::write(
+        &path,
+        json!({"days": [START, {"from": "20270101"}], "more": 1}).to_string(),
+    )
+    .unwrap();
+
+    // The day this version reads is hidden on the owner's own pages.
+    let (_, day) = get(root, &format!("/app/body/api/day/{START}")).await;
+    assert_eq!(day["hidden"], true);
+    assert_eq!(day["has_data"], false);
+    let (_, next) = get(root, &format!("/app/body/api/day/{NEXT}")).await;
+    assert_eq!(next["hidden"], false);
+    assert_eq!(next["hidden_unreadable"], false);
+    assert!(!experience_kinds(&next).contains(&("sleep".to_owned(), true)));
+    let (_, status) = get(root, "/app/body/api/status").await;
+    assert_eq!(status["hidden_unreadable"], false);
+    assert_eq!(status["days"], 1);
+
+    // A hide is taken, and what the later version wrote is still there.
+    let (status, saved) = set_hidden(root, &[NEXT], true).await;
+    assert!(status.is_success(), "{saved}");
+    let stored: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        stored,
+        json!({"days": [START, NEXT, {"from": "20270101"}], "more": 1})
+    );
+}
+
+#[tokio::test]
 async fn a_hide_that_couldnt_tell_search_says_so() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
