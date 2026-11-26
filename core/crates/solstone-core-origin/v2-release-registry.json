@@ -415,6 +415,11 @@
       "version": "2.0.90",
       "logical_target": "software/journal/2.0.90/release-record.json",
       "record_sha256": "e395a1aa101c88ca42919e327059a5b8de026b2e8a671ee834bf81238edd6e05"
+    },
+    {
+      "version": "2.0.91",
+      "logical_target": "software/journal/2.0.91/release-record.json",
+      "record_sha256": "48a36a25c8d4ccff73e707ead13b04d68a11c8553478ef609297267adf428965"
     }
   ]
 }
