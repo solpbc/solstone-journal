@@ -1293,8 +1293,8 @@ tr:hover .entity-delete-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  min-height: 24px;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
 }
 
 .close:hover {
@@ -2126,8 +2126,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
   .journal-sort-select { min-height: var(--touch-min); }
   .trash-bar-actions button, .ent-select-btn { min-height: 44px; }
   .journal-row-tick input, .trash-all input, .entity-card-tick input { width: 20px; height: 20px; }
-  .btn, .close, .entity-observation-show-all { min-height: var(--touch-min); }
-  .close { min-width: var(--touch-min); }
+  .btn, .entity-observation-show-all { min-height: var(--touch-min); }
   /* The clear stays a small mark in its chip; its press area reaches past it. */
   .entity-observation-range-chip button {
     min-width: var(--touch-min);

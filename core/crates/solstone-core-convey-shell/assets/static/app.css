@@ -751,7 +751,7 @@ body.has-managed-dialog .workspace {
 }
 
 .app-chrome-badge--review {
-  color: var(--orange-text-aa);
+  color: var(--ink);
   background: var(--orange-wash);
   border: 1px solid var(--orange-ink);
 }
@@ -989,7 +989,8 @@ body.has-managed-dialog .workspace {
 .pin-offer-link {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   font-size: 13px;
@@ -1004,7 +1005,8 @@ body.has-managed-dialog .workspace {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
   padding: 6px 12px;
   border-radius: var(--radius-sm);
   font-size: 13px;
@@ -1028,14 +1030,6 @@ body.has-managed-dialog .workspace {
 .pin-offer-link:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
-}
-
-@media (max-width: 768px), (pointer: coarse) {
-  .pin-offer-btn,
-  .pin-offer-link {
-    min-height: 44px;
-    min-width: 44px;
-  }
 }
 
 /* Notification Center */
@@ -1920,55 +1914,54 @@ body.presentation-mode .surface-state-desc {
 }
 
 /* ==========================================================================
-   Phone touch floor — the shell's own controls (X-24)
+   Touch floor — the shell's own controls (X-24)
    The system-messages drawer, the skip link, a notification's dismiss and
    the shared dialog close are shell chrome, so no app can raise them to the
-   44px floor its own controls already meet. Padding and box size only; type
-   sizes stay where they are.
+   44px floor its own controls already meet. It holds at every width: a
+   touch laptop or a wide tablet is touched as much as a phone. Padding and
+   box size only; type sizes stay where they are.
    ========================================================================== */
-@media (max-width: 768px) {
-  /* The larger negative margin keeps the glyph where it sat and the
-     header's height close to what it was. */
-  .notification-close {
-    min-width: var(--touch-min);
-    min-height: var(--touch-min);
-    margin: -12px -12px -12px 0;
-  }
+/* The larger negative margin keeps the glyph where it sat and the
+   header's height close to what it was. */
+.notification-close {
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  margin: -12px -12px -12px 0;
+}
 
-  /* Closer to the corner, so the glyph stays near where it sat. */
-  .close {
-    min-width: var(--touch-min);
-    min-height: var(--touch-min);
-    top: 4px;
-    right: 4px;
-  }
+/* Closer to the corner, so the glyph stays near where it sat. */
+.close {
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  top: 4px;
+  right: 4px;
+}
 
-  .diagnostic-console-actions button,
-  .diagnostic-console-entry button,
-  .diagnostic-console-tabs button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    min-width: 44px;
-    min-height: 44px;
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
+.diagnostic-console-actions button,
+.diagnostic-console-entry button,
+.diagnostic-console-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
 
-  .diagnostic-console-close {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-  }
+.diagnostic-console-close {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
 
-  .skip-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
+.skip-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 /* The version leads to the journal's about block without another chrome fetch. */
