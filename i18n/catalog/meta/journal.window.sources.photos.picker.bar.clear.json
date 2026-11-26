@@ -1,0 +1,16 @@
+{
+  "description": "Button to clear selected photos in the picker bar.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d657a30cde477ea44030fc411196ce245d0abec6343dc87fe44032c77f31dba5",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Empty-state message when a month filter has no remaining photos.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "da9c799dec53dcbeb76c4594480769fe42e8b210b6841aa63b3cc8b5f5713f19",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Link to /app/health/ when older-history processing is active.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "401ddaf83d1fa6b01a177d9afc3c084b022beb26b8cabfa750a239f38a8e85ce",
+  "max_length": 159,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

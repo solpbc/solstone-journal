@@ -1,0 +1,16 @@
+{
+  "description": "Stat label for earliest scanned item month.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1ba07bb84cd455f8ac53899365be1c99ba18483adee641486aea8253ce3ab51e",
+  "max_length": 148,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

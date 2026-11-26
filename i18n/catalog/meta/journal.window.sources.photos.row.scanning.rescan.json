@@ -1,0 +1,25 @@
+{
+  "description": "Sync row sub-line while scanning a library when a range is already active.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "6f9dc97498f8fa2a6a1fd95e81f917692356baeb2d03f8d6e1239c537e1f5bf8",
+  "max_length": 184,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

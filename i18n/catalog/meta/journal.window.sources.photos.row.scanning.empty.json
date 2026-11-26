@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line while scanning before item counts are known.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6f235db2ade0be004d16b503022ee1e941ff36ec47f726ba293752dbb046af5b",
+  "max_length": 168,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Button to resume asking the paired device for photos.",
+  "context": "Journal window, /app/sources/photos.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "75aeda114072ab7e6ab458709e2365efcbd8a73062209a37861074f51a5ad149",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

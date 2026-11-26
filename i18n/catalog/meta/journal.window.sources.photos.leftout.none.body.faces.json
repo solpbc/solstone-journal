@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of automatic exclusions when profile pic suggestions are on.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "6547c31f5cf8a47f6433cd0a33c11bac42995b86d098e303831435a2a683ebe8",
+  "max_length": 318,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

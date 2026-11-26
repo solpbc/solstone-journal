@@ -1,0 +1,16 @@
+{
+  "description": "Plain two-sentence summary of how the journal selects photos.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e9a9c2fce228717a494a1e9fd4e5437b5cb33baec2cd3ea30880bc0467340ad1",
+  "max_length": 468,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

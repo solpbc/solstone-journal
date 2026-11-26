@@ -1,0 +1,34 @@
+{
+  "description": "Offline notice while bringing in chosen photos from a named device.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    },
+    {
+      "name": "waiting",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "4c28f51fc4be8c7ea6aa31ee0e2c8a2444263559fa6b8899e363f2665674c8f2",
+  "max_length": 239,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

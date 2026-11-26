@@ -1,0 +1,16 @@
+{
+  "description": "Alert when photo access is turned off by a device restriction without a device name.",
+  "context": "Journal window, /app/sources/photos needs-attention state for restricted devices.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3920f772db48f980cbfbe2f788df5a98cc03b3c867cb11e78645e56e4f2457b4",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

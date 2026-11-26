@@ -1,0 +1,30 @@
+{
+  "description": "Inline receipt shown after moving chosen photos to trash.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "6ae00150c0af7c2176b0b818e7c495ed7e6dd3bc03df142b1e55dcbea1e56c7c",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

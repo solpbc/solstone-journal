@@ -1,0 +1,16 @@
+{
+  "description": "Fact label for count of photos in the journal.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2084d849f1028b794dfc720cc372588fc99ab97fe5e53393db80b4980e6098d",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

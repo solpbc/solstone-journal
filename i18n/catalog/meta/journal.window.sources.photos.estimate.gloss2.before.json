@@ -1,0 +1,16 @@
+{
+  "description": "Second gloss line prefix before the status link.",
+  "context": "Journal window, /app/sources/photos estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7c54125a0925d0dab89da764a60fa3357b419afc46dface50fc9cb5e6b0beed7",
+  "max_length": 226,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

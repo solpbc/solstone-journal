@@ -1,0 +1,16 @@
+{
+  "description": "Footer note inside the choose-state left-out breakdown when profile pic suggestions are on.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2fa90313e00cfa70ce9352a45037b121455332104c191ffbd7b4f5adacefaae0",
+  "max_length": 425,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line when iOS photo access is limited or turned off without a device name.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "392fa3b6f1cdf569e1fe15f5724e13574a3cadc86d8a53fe8d530e71153254f0",
+  "max_length": 192,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

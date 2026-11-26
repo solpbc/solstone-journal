@@ -1,0 +1,30 @@
+{
+  "description": "Sync row sub-line when scan finished and photos are ready in the default range.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "809002efe380862a90dea268394f36cdb5f7c2c17a5146bbdfd6b8f9bcb33677",
+  "max_length": 224,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

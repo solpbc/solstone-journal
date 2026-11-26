@@ -482,6 +482,9 @@ test('try again replaces the error with the device it gets back', async () => {
       if (url === '/app/sources/api/email') {
         return { status: 200, json: async () => ({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }) };
       }
+      if (url === '/app/sources/photos/api/state') {
+        return { status: 404, json: async () => ({ code: 'photos_library_disabled' }) };
+      }
       clientAttempts += 1;
       if (clientAttempts === 1) return { status: 503, json: async () => ({ reason_code: 'authorization_ledger_unreadable' }) };
       return { status: 200, json: async () => ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]).body };
@@ -498,6 +501,7 @@ test('try again replaces the error with the device it gets back', async () => {
     '/app/settings/api/granola',
     '/app/settings/api/garmin',
     '/app/sources/api/email',
+    '/app/sources/photos/api/state',
     '/app/network/api/clients',
   ]);
   assert.ok(calls.every((call) => call.method === 'GET'));
@@ -727,6 +731,12 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
           json: async () => ({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }),
         };
       }
+      if (url === '/app/sources/photos/api/state') {
+        return {
+          status: 404,
+          json: async () => ({ code: 'photos_library_disabled' }),
+        };
+      }
       granolaAttempts += 1;
       if (granolaAttempts === 1) return { status: 400, json: async () => ({ error: 'storage', code: 'storage' }) };
       return {
@@ -767,6 +777,7 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
     '/app/settings/api/granola',
     '/app/settings/api/garmin',
     '/app/sources/api/email',
+    '/app/sources/photos/api/state',
     '/app/network/api/clients',
     '/app/settings/api/granola',
   ]);
@@ -974,6 +985,66 @@ test('email selective-sync row covers all 8 states, inline left-out counts-only 
   assert.notStrictEqual(broken.querySelector('.sources-sync-unavailable-email'), null);
 });
 
+test('photos sync row stays hidden when disabled (404) and renders every enabled state on the shared frame', () => {
+  // Default OFF (404): zero photos row in the DOM.
+  const hidden = render({
+    clients: ok([]),
+    photos: { status: 404, body: { code: 'photos_library_disabled' } },
+  });
+  assert.strictEqual(hidden.querySelector('[data-sync="photos"]'), null);
+
+  // Ready to set up
+  const ready = render({
+    clients: ok([]),
+    photos: { status: 200, body: { source: 'photos', state: 'ready_to_set_up', substate: 'never_set_up', devices: [], scan: {}, ranges: {}, left_out: { total: 0, reasons: {} }, progress: {} } },
+  });
+  const readyRow = ready.querySelector('[data-sync="photos"]');
+  assert.notStrictEqual(readyRow, null);
+  assert.strictEqual(readyRow.querySelector('.ss-pill').getAttribute('data-state'), 'ready_to_set_up');
+  assert.strictEqual(readyRow.querySelector('.sources-sync-action-photos').getAttribute('href'), '/app/sources/photos');
+
+  // Choose state (accent action)
+  const choose = render({
+    clients: ok([]),
+    photos: { status: 200, body: { source: 'photos', state: 'setting_up', substate: 'choose', devices: [{ name: 'Test Phone' }], scan: { items_checked: 200, items_total: 200 }, ranges: { '1y': { photos: 40 } }, left_out: { total: 0, reasons: {} }, progress: {} } },
+  });
+  assert.ok(choose.querySelector('.sources-sync-action-photos').className.includes('accent'));
+
+  // Bringing in (status link)
+  const bringing = render({
+    clients: ok([]),
+    photos: { status: 200, body: { source: 'photos', state: 'on', substate: 'bringing_in', devices: [{ name: 'Test Phone' }], scan: {}, ranges: {}, left_out: { total: 0, reasons: {} }, progress: { chosen_total: 40, arrived: 12, in_journal: 12, waiting_on_phone: 28 } } },
+  });
+  const bringingRow = bringing.querySelector('[data-sync="photos"]');
+  assert.strictEqual(bringingRow.querySelector('.ss-inline-link').getAttribute('href'), '/app/health/');
+
+  // Steady with left-out fold
+  const steady = render({
+    clients: ok([]),
+    photos: { status: 200, body: { source: 'photos', state: 'on', substate: 'steady', devices: [{ name: 'Test Phone', last_upload_at: iso(NOW - 10 * MIN), last_scan_at: iso(NOW - 5 * MIN) }], scan: {}, ranges: {}, left_out: { total: 15, reasons: { near_duplicates: 10, videos: 5 } }, progress: { in_journal: 38 } } },
+  });
+  assert.notStrictEqual(steady.querySelector('[data-sync="photos"]').querySelector('details'), null);
+
+  // Needs attention & off & isolated failure
+  const attn = render({
+    clients: ok([]),
+    photos: { status: 200, body: { source: 'photos', state: 'needs_attention', substate: 'access_limited', attention_reason: 'access_limited', devices: [{ name: 'Test Phone' }], scan: {}, ranges: {}, left_out: { total: 0, reasons: {} }, progress: {} } },
+  });
+  assert.strictEqual(attn.querySelector('[data-sync="photos"]').querySelector('.ss-pill').getAttribute('data-state'), 'needs_attention');
+
+  const off = render({
+    clients: ok([]),
+    photos: { status: 200, body: { source: 'photos', state: 'off', substate: 'off', devices: [], scan: {}, ranges: {}, left_out: { total: 0, reasons: {} }, progress: { in_journal: 38 } } },
+  });
+  assert.strictEqual(off.querySelector('[data-sync="photos"]').querySelector('.ss-pill').getAttribute('data-state'), 'off');
+
+  const broken = render({
+    clients: ok([]),
+    photos: { status: 503, body: null },
+  });
+  assert.notStrictEqual(broken.querySelector('.sources-sync-unavailable-photos'), null);
+});
+
 (async () => {
   let passed = 0;
   for (let i = 0; i < tests.length; i += 1) {
@@ -982,6 +1053,7 @@ test('email selective-sync row covers all 8 states, inline left-out counts-only 
   }
   passed += await require(path.join(__dirname, 'sources_contract_dom.js'))(path.join(__dirname, '..'));
   passed += await require(path.join(__dirname, 'email_source_dom.js'))(path.join(__dirname, '..'));
+  passed += await require(path.join(__dirname, 'photos_source_dom.js'))(path.join(__dirname, '..'));
   console.log('DOM CASES: ' + passed + ' passed');
 })().catch((error) => {
   console.error(error);

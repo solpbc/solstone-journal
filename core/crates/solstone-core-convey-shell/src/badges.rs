@@ -108,8 +108,14 @@ pub(crate) fn badges_payload_in(
     }
 
     let email_attention = usize::from(solstone_core_settings_web::email_needs_attention(root));
-    if email_attention > 0 {
-        issues += email_attention;
+    let photos_attention = usize::from(
+        solstone_core_photos_library::photos_library_enabled(root)
+            && solstone_core_photos_library::dashboard_state(root)
+                .is_ok_and(|s| s.state == "needs_attention"),
+    );
+    let sources_attention = email_attention + photos_attention;
+    if sources_attention > 0 {
+        issues += sources_attention;
         if severity != Some("red") {
             severity = Some("amber");
         }
@@ -131,7 +137,7 @@ pub(crate) fn badges_payload_in(
         "curation": curation,
         "import": import,
         "import_reviews": import_reviews,
-        "sources": email_attention,
+        "sources": sources_attention,
     })
 }
 
@@ -400,5 +406,66 @@ mod tests {
         assert_eq!(body["sources"], 1);
         assert_eq!(body["home"]["issues"], 1);
         assert_eq!(body["home"]["severity"], "amber");
+    }
+
+    #[tokio::test]
+    async fn shell_badges_gates_photos_needs_attention_behind_feature_flag() {
+        let parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+        let dir = tempfile::TempDir::new_in(parent).expect("journal root");
+        fs::create_dir_all(dir.path().join("config")).expect("config dir");
+        let now = jiff::Timestamp::now();
+        fs::write(
+            dir.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "setup": { "completed_at": now.as_second() }
+            }))
+            .unwrap(),
+        )
+        .expect("journal config off");
+        solstone_core_photos_library::scan_start(
+            dir.path(),
+            "sha256:test-device",
+            "Test Phone",
+            "iphone",
+            "limited",
+            10,
+            Vec::new(),
+        )
+        .expect("photos scan_start");
+        solstone_core_brain::begin_refresh(dir.path(), now, None, None, false, None)
+            .expect("initial none brain record");
+
+        let app = crate::router(dir.path().to_path_buf());
+        let mut req_off = Request::get("/api/shell/badges")
+            .body(Body::empty())
+            .unwrap();
+        req_off.extensions_mut().insert(AccessBasis::Localhost);
+        let resp_off = app.clone().oneshot(req_off).await.unwrap();
+        let body_off: Value =
+            serde_json::from_slice(&to_bytes(resp_off.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body_off["sources"], 0);
+        assert_eq!(body_off["home"]["issues"], 0);
+
+        fs::write(
+            dir.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "setup": { "completed_at": now.as_second() },
+                "photos_library": { "enabled": true }
+            }))
+            .unwrap(),
+        )
+        .expect("journal config on");
+        let mut req_on = Request::get("/api/shell/badges")
+            .body(Body::empty())
+            .unwrap();
+        req_on.extensions_mut().insert(AccessBasis::Localhost);
+        let resp_on = app.oneshot(req_on).await.unwrap();
+        let body_on: Value =
+            serde_json::from_slice(&to_bytes(resp_on.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body_on["sources"], 1);
+        assert_eq!(body_on["home"]["issues"], 1);
+        assert_eq!(body_on["home"]["severity"], "amber");
     }
 }

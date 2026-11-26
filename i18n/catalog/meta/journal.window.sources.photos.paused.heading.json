@@ -1,0 +1,16 @@
+{
+  "description": "Heading when photo sync is paused.",
+  "context": "Journal window, /app/sources/photos paused state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4dc3cff652b4887b3695687e97bf6839e92bead223d883ceb16204070b76d191",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

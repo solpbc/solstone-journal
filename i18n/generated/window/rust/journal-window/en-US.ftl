@@ -20207,6 +20207,397 @@ m6a6f75726e616c2e77696e646f772e736f75726365732e6d6f6e7468732e6c6162656c2e6f63746
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e6d6f6e7468732e6c6162656c2e73657074656d626572 = september
 
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e7061757365 = pause
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e726573756d65 = resume
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e7475726e2e6f6666 = turn off photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e776964656e = widen range
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e616363657373 = photo access on { $device } is limited or turned off, so no new photos can come in. allow full access in Settings on { $device }. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e6163636573732e6e6f646576696365 = photo access on your iphone or ipad is limited or turned off, so no new photos can come in. allow full access in Settings on your iphone or ipad. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e616c62756d = your journal couldn't confirm which photos you took on { $device }, so photo sync stopped rather than miss your photos. check for a solstone update.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e616c62756d2e6e6f646576696365 = your journal couldn't confirm which photos you took, so photo sync stopped rather than miss your photos. check for a solstone update.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e72657374726963746564 = photo access on { $device } is turned off by a device restriction, so no new photos can come in. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e726573747269637465642e6e6f646576696365 = photo access on your iphone or ipad is turned off by a device restriction, so no new photos can come in. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e626f756e646172792e7374617973 = a photo already in your journal stays if you delete it from Photos.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e68656164696e67 = bringing in your chosen photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e686f6e65737479 = photos reach your journal while the solstone app is open, so large sets arrive as you open the app.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e69636c6f7564 = { $i18nCategory ->
+    [one] 1 photo is waiting to download from iCloud on { $device }.
+   *[other] { $count } photos are waiting to download from iCloud on { $device }.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e69636c6f75642e6e6f646576696365 = { $i18nCategory ->
+    [one] 1 photo is waiting to download from iCloud.
+   *[other] { $count } photos are waiting to download from iCloud.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e6f66666c696e65 = { $i18nCategory ->
+    [one] waiting for { $device } to reconnect. 1 photo is still waiting there.
+   *[other] waiting for { $device } to reconnect. { $waiting } photos are still waiting there.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e6f66666c696e652e6e6f646576696365 = { $i18nCategory ->
+    [one] waiting for your device to reconnect. 1 photo is still waiting there.
+   *[other] waiting for your device to reconnect. { $waiting } photos are still waiting there.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70617573652e63617074696f6e = pausing stops asking { $device } for photos until you resume. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70617573652e63617074696f6e2e6e6f646576696365 = pausing stops asking your iphone or ipad for photos until you resume. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70726f6772657373 = { $i18nCategory ->
+    [one] { $done } of 1 photo checked from { $device }.
+   *[other] { $done } of { $total } photos checked from { $device }.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70726f67726573732e6e6f646576696365 = { $i18nCategory ->
+    [one] { $done } of 1 photo checked.
+   *[other] { $done } of { $total } photos checked.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e616374697665 = processing older days runs behind recent days.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e6163746976652e6c696e6b = follow or pause older history on status
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e706175736564 = older-history processing is paused on status. photos from { $device } are still described when they land; older days wait to be processed.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e7061757365642e6c696e6b = open status
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e7061757365642e6e6f646576696365 = older-history processing is paused on status. arriving photos are still described when they land; older days wait to be processed.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e636f6e6669726d = { $i18nCategory ->
+    [one] bring in 1 photo
+   *[other] bring in { $count } photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e68656164696e67 = choose what comes in
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72616e67652e636f756e74 = { $i18nCategory ->
+    [one] 1 photo
+   *[other] { $count } photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72616e67652e68656c706572 = new photos that match come in when you open the solstone app after you start. you can widen this range later.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72616e67652e6e6f6e652e636f756e74 = 0 older photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72756c6573 = your journal picks the photos you took, photos you marked (like favorites, edits, or your own albums), and, when profile pic suggestions are on, photos others took near your moments that show people your journal recognizes from meetings. originals stay in your photo library; your journal asks only for small copies from the range you choose.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d617279 = scanned { $total } items on { $device } back to { $earliest }. no photos come in until you choose.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d6172792e62617265 = scan finished. no photos come in until you choose.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d6172792e6e6f646576696365 = scanned { $total } items back to { $earliest }. no photos come in until you choose.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d6172792e6e6f6561726c69657374 = scanned { $total } items on { $device }. no photos come in until you choose.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e646576696365732e6d756c7469 = { $devices } · duplicates skipped automatically
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6572726f722e616374696f6e = that didn't go through. try again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6572726f722e6c6f6164 = this didn't load.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f737331 = each photo is described once so you can search it.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f7373322e6166746572 = .
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f7373322e6265666f7265 = older days are processed newest first, behind recent days. you can pause or resume older history any time on
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f7373322e6c696e6b = status
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e6d6f72652e70686f746f73 = { $i18nCategory ->
+    [one] 1 more photo
+   *[other] { $count } more photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e6e6f2e7468696e6b696e67 = thinking isn't set up yet. your photos can still come in now and wait to be described.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e70686f746f73 = { $i18nCategory ->
+    [one] 1 photo
+   *[other] { $count } photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e7a65726f2e64617973 = 0 past days
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e7a65726f2e70686f746f73 = 0 older photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e7a65726f2e74686f7567687473 = 0 thoughts to catch up
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e646576696365 = device
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e64657669636573 = devices
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e696e2e6a6f75726e616c = in your journal
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e696e2e6a6f75726e616c2e76616c7565 = { $i18nCategory ->
+    [one] 1 photo
+   *[other] { $count } photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e6c6173742e6164646564 = last photo added
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e6c6173742e7363616e = last library scan
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e72616e6765 = range
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e72616e67652e73696e6365 = { $start } to today
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e72616e67652e746f646179 = from when you started
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e74726173686564 = moved to trash by you
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e63686f6f73652e73756d6d617279 = { $i18nCategory ->
+    [one] 1 item left out in { $range }
+   *[other] { $count } items left out in { $range }
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e63686f6f73652e73756d6d6172792e616c6c = { $i18nCategory ->
+    [one] 1 item left out across your library
+   *[other] { $count } items left out across your library
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e626f64792e6661636573 = these stay out automatically: videos, screenshots, near-duplicates, extra shots in busy moments, and saved or shared images that aren't marked by you and don't show people your journal recognizes from meetings near your moments.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e626f64792e6e6f6661636573 = these stay out automatically: videos, screenshots, near-duplicates, extra shots in busy moments, and saved or shared images not marked by you.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e666f6f746572 = hidden photos are never read. no photo content is kept for anything left out.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e73756d6d617279 = what stays out automatically
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e63686f6f73652e6661636573 = saved and shared images: saved or shared images not marked by you (ones near your moments are checked once you start and kept only if they show people your journal recognizes from meetings). screenshots: screenshots have their own source. hidden photos are never read. no photo content is kept for anything left out.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e63686f6f73652e6e6f6661636573 = saved and shared images: saved or shared images not marked by you. screenshots: screenshots have their own source. hidden photos are never read. no photo content is kept for anything left out.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e7374656164792e6661636573 = saved and shared images: saved or shared images that aren't marked by you and don't show people your journal recognizes from meetings near your moments. screenshots: screenshots have their own source. left out as noise: blurry, accidental, or blank shots left out when described. no photo content is kept for anything left out. hidden photos are never read.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e7374656164792e6e6f6661636573 = saved and shared images: saved or shared images not marked by you. screenshots: screenshots have their own source. left out as noise: blurry, accidental, or blank shots left out when described. no photo content is kept for anything left out. hidden photos are never read.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e7374656164792e73756d6d617279 = { $i18nCategory ->
+    [one] 1 item left out
+   *[other] { $count } items left out
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e6e6f74652e6e6f6e65 = photos is off and its scanned library details have been removed.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e6e6f74652e73746179 = { $i18nCategory ->
+    [one] photos is off and its scanned library details have been removed. 1 photo already in your journal stays.
+   *[other] photos is off and its scanned library details have been removed. { $count } photos already in your journal stay.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e7265656e747279 = to turn it back on, open photos in the solstone app on { $device }.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e7265656e7472792e6e6f646576696365 = to turn it back on, open photos in the solstone app on your iphone or ipad.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7061757365642e6261636b66696c6c = { $i18nCategory ->
+    [one] paused at { $done } of 1 photo checked. no more photos are coming in until you resume.
+   *[other] paused at { $done } of { $total } photos checked. no more photos are coming in until you resume.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7061757365642e68656164696e67 = photo sync is paused
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7061757365642e737465616479 = no photos are coming in while this is paused. photos already in your journal stay.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e636c656172 = clear
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e656d707479 = select photos to move them to trash.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e6d6f7665 = { $i18nCategory ->
+    [one] move 1 photo to trash
+   *[other] move { $count } photos to trash
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e73656c6563746564 = { $count } selected
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e656d707479 = no photos in this month.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e68656164696e67 = photos in your journal
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e696e74726f = select one or more photos to move them to your journal's trash. you can also delete any photo from its day in transcripts.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6c6f61642e6d6f7265 = load more
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6d6f6e74682e616c6c = all months
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6d6f6e74682e6c6162656c = month
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6f70656e2e646179 = open day
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e73656c6563742e61726961 = select photo from { $when }
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e72656164792e6c656465 = turn on photos in the solstone app on your iphone or ipad to scan your library. no photos come in until you come back here and choose how far back.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e72656164792e6e6f7465 = originals stay in your photo library, and hidden photos are never read.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e627573792e6d6f6d656e7473 = extra shots in busy moments
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e6e6561722e6475706c696361746573 = near-duplicates
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e6e6f697365 = left out as noise
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e73617665642e736861726564 = saved and shared images
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e73637265656e73686f7473 = screenshots
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e766964656f73 = videos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e617474656e74696f6e2e616363657373 = photo access on { $device } is limited or off. nothing new is coming in.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e617474656e74696f6e2e6163636573732e6e6f646576696365 = photo access on your iphone or ipad is limited or off. nothing new is coming in.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e617474656e74696f6e2e616c62756d = your journal couldn't confirm which photos you took, so photo sync stopped. check for a solstone update.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6272696e67696e672e696e = { $i18nCategory ->
+    [one] { $done } of 1 photo checked
+   *[other] { $done } of { $total } photos checked
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e63686f6f7365 = choose what comes in
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e666f6c6c6f772e737461747573 = follow older days on status
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e696e2e6a6f75726e616c = { $i18nCategory ->
+    [one] 1 photo in your journal
+   *[other] { $count } photos in your journal
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6c6173742e7363616e = last scan { $when }
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6c6566742e6f75742e6e6f7465 = no photo content is kept for anything left out.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6c6566742e6f75742e73756d6d617279 = { $count } left out
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6d616e616765 = manage photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6f66662e6e6f6e65 = off.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6f66662e73746179 = { $i18nCategory ->
+    [one] off. 1 photo already in your journal stays.
+   *[other] off. { $count } photos already in your journal stay.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6f70656e = open photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7061757365642e6261636b66696c6c = { $i18nCategory ->
+    [one] paused at { $done } of 1 photo checked. no more photos are coming in.
+   *[other] paused at { $done } of { $total } photos checked. no more photos are coming in.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7061757365642e737465616479 = paused. no photos are coming in.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7265616479 = turn on photos in the solstone app on your iphone or ipad to scan your library.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e72656164792e646576696365 = turn on photos in the solstone app on your { $device_kind } to scan your library.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e646f6e65 = { $i18nCategory ->
+    [one] scan done. 1 photo ready in the last year. choose what comes in.
+   *[other] scan done. { $count } photos ready in the last year. choose what comes in.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e646f6e652e67656e65726963 = scan done. choose what comes in.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e706175736564 = scan paused at { $checked } of { $total } items. reopen the solstone app on { $device } to scan your library again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e7061757365642e6e6f646576696365 = scan paused at { $checked } of { $total } items. reopen the solstone app on your iphone or ipad to scan your library again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e67 = scanning your library: { $checked } of { $total } items checked. no photos brought in yet.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e672e656d707479 = scanning your library. no photos brought in yet.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e672e72657363616e = scanning your library: { $checked } of { $total } items checked.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e672e72657363616e2e656d707479 = scanning your library.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e68656164696e67 = scanning your photo library
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e6e6f7465 = hidden photos are never read. you can leave this page while the scan runs. no photos come in until you come back and choose.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e6e6f74652e72657363616e = hidden photos are never read. you can leave this page while the scan runs.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e706175736564 = scan paused at { $checked } of { $total } items. reopen the solstone app on { $device } to scan your library again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e7061757365642e656d707479 = scan paused. reopen the solstone app on { $device } to scan your library again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e7061757365642e656d7074792e6e6f646576696365 = scan paused. reopen the solstone app on your iphone or ipad to scan your library again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e7061757365642e6e6f646576696365 = scan paused at { $checked } of { $total } items. reopen the solstone app on your iphone or ipad to scan your library again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f6772657373 = { $checked } of { $total } items checked on { $device }
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f67726573732e656d707479 = scanning your photo library on { $device }
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f67726573732e656d7074792e6e6f646576696365 = scanning your photo library
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f67726573732e6e6f646576696365 = { $checked } of { $total } items checked
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e62726f75676874 = photos brought in so far
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e62726f756768742e7a65726f = 0 (details only)
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e636865636b6564 = items checked
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e6561726c69657374 = earliest item checked so far
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7469746c65 = photos
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e6d6f64616c2e626f6479 = { $i18nCategory ->
+    [one] this photo leaves your journal now and waits in the trash, then it's erased. you can recover it until then. this moves the photo, its analysis, and its location if it has one. activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose. the entities you're tending stay, and what your journal wrote about them may still mention it. nothing changes in your photo library. a deleted photo doesn't come back on a later sync.
+   *[other] these photos leave your journal now and wait in the trash, then they're erased. you can recover them until then. this moves each photo, its analysis, and its location if it has one. activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. the entities you're tending stay, and what your journal wrote about them may still mention them. nothing changes in your photo library. deleted photos don't come back on a later sync.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e6d6f64616c2e636f6e6669726d = move to trash
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e6d6f64616c2e7469746c65 = { $i18nCategory ->
+    [one] move 1 photo to trash?
+   *[other] move { $count } photos to trash?
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e72656365697074 = { $i18nCategory ->
+    [one] moved 1 photo to trash.
+   *[other] moved { $count } photos to trash.
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e726563656970742e6f70656e = open trash
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7475726e6f66662e6d6f64616c2e626f6479 = this stops syncing from { $device } and removes the scanned library details (photo times, places, and left-out counts). photos already in your journal stay, and nothing changes in your photo library.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7475726e6f66662e6d6f64616c2e626f64792e6e6f646576696365 = this stops syncing photos and removes the scanned library details (photo times, places, and left-out counts). photos already in your journal stay, and nothing changes in your photo library.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7475726e6f66662e6d6f64616c2e7469746c65 = turn off photos?
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e756e617661696c61626c652e6c656465 = photos isn't enabled on this journal.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e636f6e6669726d = { $i18nCategory ->
+    [one] bring in 1 more photo
+   *[other] bring in { $count } more photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e64656c7461 = { $i18nCategory ->
+    [one] +1 more photo
+   *[other] +{ $count } more photos
+}
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e657374696d6174652e676c6f7373 = each photo is described once so you can search it. older days are processed newest first, behind recent days.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e657374696d6174652e68656164696e67 = what the added range will process
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e68656164696e67 = widen how far back
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e696e74726f = reach further back in your library. photos already in your journal aren't brought in again.
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e746f74616c = { $count } total
+
 m6a6f75726e616c2e77696e646f772e736f75726365732e73656c6563746976652e616374696f6e2e63616e63656c = cancel
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e73656c6563746976652e616374696f6e2e646973636f6e6e656374 = disconnect
@@ -20293,6 +20684,8 @@ m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756
 m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e6c6f636174696f6e = location
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e6f6273696469616e = Obsidian
+
+m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e70686f746f73 = photos
 
 m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e73637265656e = screen
 

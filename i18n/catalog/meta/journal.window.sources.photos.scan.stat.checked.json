@@ -1,0 +1,16 @@
+{
+  "description": "Stat label for items checked during library scan.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "83c7e147d656fde1e922a6ce92568f7f18f33edbf12e8fe3fb082b2805ea3f7c",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

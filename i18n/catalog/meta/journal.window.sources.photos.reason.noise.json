@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for blurry, accidental, or blank shots dropped when described.",
+  "context": "Journal window, photos left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "412c8be4b77833135fc3cfb2431174a0f255de243669c1b4c5e5c82ed50699fb",
+  "max_length": 137,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

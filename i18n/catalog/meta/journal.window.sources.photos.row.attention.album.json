@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line when the smart-album check failed.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9b9bd8b917b99ac02d7b065ed934aad670a385c80799502fa1b870150272abf4",
+  "max_length": 218,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Status notice when photos is turned off and zero photos had landed.",
+  "context": "Journal window, /app/sources/photos off state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "870089fc5c551a1d772d2f8598074192e1174469db0a34d021ee12a3bc0fe559",
+  "max_length": 184,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

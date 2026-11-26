@@ -1,0 +1,16 @@
+{
+  "description": "Stat value showing zero photos brought in during metadata scan.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a365af0bbed4b2ace1db84af4a6289f4daff2a02918302f2d7f60ae44385e81",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

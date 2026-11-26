@@ -1,0 +1,30 @@
+{
+  "description": "Disclosure summary for left-out items on the steady detail view.",
+  "context": "Journal window, /app/sources/photos steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "8e53a7dffcc8d3fdb492bd5a7d84a7f17a917b977209729ee14626c816cd13d2",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

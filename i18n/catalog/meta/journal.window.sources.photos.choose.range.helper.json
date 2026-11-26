@@ -1,0 +1,16 @@
+{
+  "description": "Helper note beneath the five-range chooser.",
+  "context": "Journal window, /app/sources/photos range chooser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7292d5241a7cab875155f7d55a5e106b190df88d6d6cfd4562a7fc8d9708f166",
+  "max_length": 207,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

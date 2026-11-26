@@ -1,0 +1,16 @@
+{
+  "description": "Status relationship note when older-history processing is active.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80ce24fa82d3deaafdcbdac3b7d57954a536b007972972d8712da2581825f056",
+  "max_length": 166,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

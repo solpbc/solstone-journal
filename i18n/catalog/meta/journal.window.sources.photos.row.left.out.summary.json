@@ -1,0 +1,21 @@
+{
+  "description": "Collapsed disclosure summary for left-out counts on the photos sync row.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8d2b4bf89b97872cbaf18b76e4d0d0c816ad41e1884248d02881223dd375a927",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

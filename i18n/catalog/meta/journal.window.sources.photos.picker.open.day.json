@@ -1,0 +1,16 @@
+{
+  "description": "Link on each photo card to open its day in transcripts.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "61d985cb25647b8f4606151c3b4abadbcb5b6309ce38a8d0def1202621fba9dd",
+  "max_length": 128,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

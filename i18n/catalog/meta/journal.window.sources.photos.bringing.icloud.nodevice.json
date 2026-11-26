@@ -1,0 +1,30 @@
+{
+  "description": "Notice when chosen photos are waiting on iCloud download without a device name.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "3a93d01c8fb792ea64c19820f8d1013e2da8db99cf0236c3781d37d42b93743a",
+  "max_length": 204,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Heading while chosen photos are being brought in from the paired device.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59bb9d1f785c946a90a249b4c4493e8db86bb73ad9f9344d8b0d478210304849",
+  "max_length": 150,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

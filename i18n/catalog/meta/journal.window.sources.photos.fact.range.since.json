@@ -1,0 +1,21 @@
+{
+  "description": "Range fact value with start date.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "start",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ef7aca3818dd3a740c9b83b0d0570e5d53a1f4fd0abaaf1c0f514deccd62005a",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

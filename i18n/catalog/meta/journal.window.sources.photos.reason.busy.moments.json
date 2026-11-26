@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for moment-capped extra shots.",
+  "context": "Journal window, photos left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "88d4a6fec2a9ce9c42fd6b2cf5cd4e626fa465e1f296aea4fdb1c126af610946",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

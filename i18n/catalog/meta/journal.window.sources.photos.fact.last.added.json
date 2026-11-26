@@ -1,0 +1,16 @@
+{
+  "description": "Fact label for last added photo timestamp.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "287380395d67fd3fb99f342b3e5982cc095a43720f6c592b917d79f465f134a8",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

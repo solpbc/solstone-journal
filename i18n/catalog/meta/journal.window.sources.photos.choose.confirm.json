@@ -1,0 +1,30 @@
+{
+  "description": "Primary confirm button on the choose-what-comes-in screen.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "d4843ce8f5cfdfba27428e255ea0a9daf31ffea6aba2d66c80ed00227430a864",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

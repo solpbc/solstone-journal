@@ -1,0 +1,16 @@
+{
+  "description": "Selection bar prompt when zero photos are selected.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4303cc0dc209515853da12c28fab6ae89e89c9b969b5ce0d4b8fc6cbbd7999cf",
+  "max_length": 156,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

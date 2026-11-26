@@ -36,6 +36,7 @@
     granola: t('journal.window.sources.syncs.provider.granola'),
     garmin: t('journal.window.sources.syncs.provider.garmin'),
     email: t('journal.window.sources.email.title'),
+    photos: t('journal.window.sources.photos.title'),
     syncSyncing: t('journal.window.sources.syncs.state.syncing'),
     syncPaused: t('journal.window.sources.syncs.state.paused'),
     syncUnavailable: t('journal.window.sources.syncs.unavailable'),
@@ -44,6 +45,7 @@
 
   const SOURCES_HREF = '/app/sources/';
   const EMAIL_HREF = '/app/sources/email';
+  const PHOTOS_HREF = '/app/sources/photos';
   const HEALTH_HREF = '/app/health/';
   const NETWORK = '/app/network/';
   const IMPORT = '/app/import/';
@@ -53,9 +55,11 @@
   const GRANOLA = '/app/settings/api/granola';
   const GARMIN = '/app/settings/api/garmin';
   const EMAIL = '/app/sources/api/email';
+  const PHOTOS = '/app/sources/photos/api/state';
 
   const DEFAULT_SYNC = { status: 200, body: { connected: false, syncing: false } };
   const DEFAULT_GARMIN_SYNC = { status: 200, body: { available: false, connected: false, syncing: false } };
+  const DEFAULT_PHOTOS_SYNC = { status: 404, body: { code: 'photos_library_disabled' } };
   const DEFAULT_EMAIL_SYNC = {
     status: 200,
     body: {
@@ -91,6 +95,7 @@
     { label: t('journal.window.sources.source.or.date.unit.label.camera'), keys: ['camera'] },
     // S1 / J4 in the design system's screenshots copy file.
     { label: t('journal.window.sources.source.or.date.unit.label.screenshots'), keys: ['screenshots'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.photos'), keys: ['photos'] },
     { label: t('journal.window.sources.source.or.date.unit.label.watch'), keys: ['watch', 'watch-audio'] },
   ];
 
@@ -258,6 +263,17 @@
     return typeof entry.body.phase !== 'string';
   }
 
+  function photosHidden(entry) {
+    return Boolean(entry && entry.status === 404);
+  }
+
+  function photosFailed(entry) {
+    if (photosHidden(entry)) return false;
+    if (!entry || entry.status !== 200) return true;
+    if (!entry.body || typeof entry.body !== 'object') return true;
+    return typeof entry.body.state !== 'string';
+  }
+
   function syncAttention(id, data) {
     if (!data) return '';
     if (id === 'granola') {
@@ -280,6 +296,7 @@
         granola: payload.granola || DEFAULT_SYNC,
         garmin: payload.garmin || DEFAULT_GARMIN_SYNC,
         email: payload.email || DEFAULT_EMAIL_SYNC,
+        photos: payload.photos || DEFAULT_PHOTOS_SYNC,
       };
     }
     return {
@@ -288,6 +305,7 @@
       granola: (payload && payload.granola) || DEFAULT_SYNC,
       garmin: (payload && payload.garmin) || DEFAULT_GARMIN_SYNC,
       email: (payload && payload.email) || DEFAULT_EMAIL_SYNC,
+      photos: (payload && payload.photos) || DEFAULT_PHOTOS_SYNC,
     };
   }
 
@@ -591,7 +609,305 @@
     });
   }
 
-  function paintSyncs(doc, plaudEntry, granolaEntry, garminEntry, emailEntry, opts) {
+  const PHOTOS_REASON_SPECS = [
+    ['near_duplicates', 'journal.window.sources.photos.reason.near.duplicates'],
+    ['videos', 'journal.window.sources.photos.reason.videos'],
+    ['saved_and_shared', 'journal.window.sources.photos.reason.saved.shared'],
+    ['busy_moments', 'journal.window.sources.photos.reason.busy.moments'],
+    ['screenshots', 'journal.window.sources.photos.reason.screenshots'],
+    ['noise', 'journal.window.sources.photos.reason.noise'],
+  ];
+
+  function photosDeviceSummary(devices) {
+    if (!Array.isArray(devices) || devices.length === 0) return '';
+    const seen = [];
+    devices.forEach((d) => {
+      const n = d && typeof d.name === 'string' ? d.name.trim() : '';
+      if (n && seen.indexOf(n) === -1) seen.push(n);
+    });
+    return seen.join(', ');
+  }
+
+  function attentionPhotosDevice(devices) {
+    if (!Array.isArray(devices) || devices.length === 0) return '';
+    const bad = devices.filter((d) => {
+      const acc = d && d.access_state ? String(d.access_state) : '';
+      return acc === 'limited' || acc === 'denied' || acc === 'restricted';
+    });
+    return photosDeviceSummary(bad.length > 0 ? bad : devices);
+  }
+
+  function latestPhotosDeviceTime(devices, field) {
+    if (!Array.isArray(devices)) return null;
+    let best = null;
+    devices.forEach((d) => {
+      const ms = parseTime(d && d[field]);
+      if (ms !== null && (best === null || ms > best)) best = ms;
+    });
+    return best;
+  }
+
+  function readyPhotosDeviceKind(clientsEntry) {
+    const clients = clientsEntry && clientsEntry.body && Array.isArray(clientsEntry.body.clients)
+      ? clientsEntry.body.clients
+      : [];
+    let foundIpad = false;
+    for (let i = 0; i < clients.length; i += 1) {
+      const kind = kindWord(clients[i]);
+      if (kind === 'iphone') return 'iphone';
+      if (kind === 'ipad') foundIpad = true;
+    }
+    return foundIpad ? 'ipad' : null;
+  }
+
+  function paintPhotosRow(doc, photosEntry, clientsEntry, opts) {
+    if (photosHidden(photosEntry)) return null;
+    const f = frame || global.SolSelectiveSync;
+    if (photosFailed(photosEntry)) {
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        state: 'unavailable',
+        unavailable: true,
+        statusText: COPY.syncUnavailable,
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+      });
+    }
+
+    const data = photosEntry.body;
+    const topState = data.state || 'ready_to_set_up';
+    const substate = data.substate || '';
+    const dev = photosDeviceSummary(data.devices);
+    const scan = data.scan || {};
+    const prog = data.progress || {};
+    const ranges = data.ranges || {};
+    const lo = data.left_out || { total: 0, reasons: {} };
+
+    if (topState === 'ready_to_set_up') {
+      const kind = readyPhotosDeviceKind(clientsEntry);
+      const statusText = kind
+        ? t('journal.window.sources.photos.row.ready.device', [['device_kind', kind]])
+        : t('journal.window.sources.photos.row.ready');
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        state: 'ready_to_set_up',
+        statusText: statusText,
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+      });
+    }
+
+    if (topState === 'needs_attention') {
+      const isAlbum = substate === 'album_contract_error'
+        || data.attention_reason === 'smart_album_contract_failed';
+      const attnDev = attentionPhotosDevice(data.devices);
+      let statusText;
+      if (isAlbum) {
+        statusText = t('journal.window.sources.photos.row.attention.album');
+      } else if (attnDev) {
+        statusText = t('journal.window.sources.photos.row.attention.access', [['device', attnDev]]);
+      } else {
+        statusText = t('journal.window.sources.photos.row.attention.access.nodevice');
+      }
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        subtitle: dev,
+        state: 'needs_attention',
+        statusText: statusText,
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+        actionTone: 'attn',
+      });
+    }
+
+    if (topState === 'setting_up' && (substate === 'scanning' || substate === 'scan_paused')) {
+      const checked = Number(scan.items_checked || 0);
+      const total = Number(scan.items_total || 0);
+      const hasActiveChoice = Boolean(data.choice && data.choice.range)
+        || Number(scan.photos_brought_in_so_far || 0) > 0
+        || Number((data.progress && data.progress.in_journal) || 0) > 0;
+      let statusText;
+      if (substate === 'scan_paused' || scan.paused === true) {
+        if (total > 0) {
+          statusText = dev
+            ? t('journal.window.sources.photos.row.scan.paused', [
+              ['checked', f.formatCount(checked)],
+              ['total', f.formatCount(total)],
+              ['device', dev],
+            ])
+            : t('journal.window.sources.photos.row.scan.paused.nodevice', [
+              ['checked', f.formatCount(checked)],
+              ['total', f.formatCount(total)],
+            ]);
+        } else {
+          statusText = dev
+            ? t('journal.window.sources.photos.scan.paused.empty', [['device', dev]])
+            : t('journal.window.sources.photos.scan.paused.empty.nodevice');
+        }
+      } else if (total > 0) {
+        statusText = t(
+          hasActiveChoice
+            ? 'journal.window.sources.photos.row.scanning.rescan'
+            : 'journal.window.sources.photos.row.scanning',
+          [
+            ['checked', f.formatCount(checked)],
+            ['total', f.formatCount(total)],
+          ]
+        );
+      } else {
+        statusText = t(
+          hasActiveChoice
+            ? 'journal.window.sources.photos.row.scanning.rescan.empty'
+            : 'journal.window.sources.photos.row.scanning.empty'
+        );
+      }
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        subtitle: dev,
+        state: 'setting_up',
+        statusText: statusText,
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+      });
+    }
+
+    if (topState === 'setting_up' && substate === 'choose') {
+      const hasExisting = Number(prog.in_journal || 0) > 0
+        || Number(prog.moved_to_trash_by_owner || 0) > 0;
+      const yearEst = ranges['1y'] || {};
+      const readyInYear = hasExisting && yearEst.delta_photos !== undefined
+        ? Number(yearEst.delta_photos || 0)
+        : Number(yearEst.photos || 0);
+      const statusText = readyInYear > 0
+        ? t('journal.window.sources.photos.row.scan.done', [
+          ['quantity', readyInYear],
+          ['count', f.formatCount(readyInYear)],
+        ])
+        : t('journal.window.sources.photos.row.scan.done.generic');
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        subtitle: dev,
+        state: 'setting_up',
+        statusText: statusText,
+        actionLabel: t('journal.window.sources.photos.row.choose'),
+        actionHref: PHOTOS_HREF,
+        actionTone: 'accent',
+      });
+    }
+
+    if (topState === 'paused') {
+      const done = Number(prog.arrived || 0);
+      const total = Number(prog.chosen_total || 0);
+      const waiting = Number(prog.waiting_on_phone || 0);
+      const statusText = waiting > 0 && total > 0
+        ? t('journal.window.sources.photos.row.paused.backfill', [
+          ['quantity', total],
+          ['done', f.formatCount(done)],
+          ['total', f.formatCount(total)],
+        ])
+        : t('journal.window.sources.photos.row.paused.steady');
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        subtitle: dev,
+        state: 'paused',
+        statusText: statusText,
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+      });
+    }
+
+    if (topState === 'off') {
+      const inJournal = Number(prog.in_journal || 0);
+      const statusText = inJournal > 0
+        ? t('journal.window.sources.photos.row.off.stay', [
+          ['quantity', inJournal],
+          ['count', f.formatCount(inJournal)],
+        ])
+        : t('journal.window.sources.photos.row.off.none');
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        subtitle: dev,
+        state: 'off',
+        statusText: statusText,
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+      });
+    }
+
+    if (substate === 'bringing_in') {
+      const done = Number(prog.arrived || 0);
+      const total = Number(prog.chosen_total || 0);
+      return f.renderSyncRow(doc, {
+        id: 'photos',
+        name: COPY.photos,
+        subtitle: dev,
+        state: 'on',
+        statusText: t('journal.window.sources.photos.row.bringing.in', [
+          ['quantity', total],
+          ['done', f.formatCount(done)],
+          ['total', f.formatCount(total)],
+        ]),
+        statusLink: {
+          label: t('journal.window.sources.photos.row.follow.status'),
+          href: HEALTH_HREF,
+        },
+        actionLabel: t('journal.window.sources.photos.row.open'),
+        actionHref: PHOTOS_HREF,
+      });
+    }
+
+    // Steady `on` state
+    const inJournal = Number(prog.in_journal || 0);
+    const parts = [
+      t('journal.window.sources.photos.row.in.journal', [
+        ['quantity', inJournal],
+        ['count', f.formatCount(inJournal)],
+      ]),
+    ];
+    const addedMs = latestPhotosDeviceTime(data.devices, 'last_upload_at');
+    if (addedMs !== null) {
+      parts.push(t('journal.window.sources.syncs.last.added', [['when', relative(addedMs, opts.now, opts.timeZone)]]));
+    }
+    const scanMs = latestPhotosDeviceTime(data.devices, 'last_scan_at');
+    if (scanMs !== null) {
+      parts.push(t('journal.window.sources.photos.row.last.scan', [['when', relative(scanMs, opts.now, opts.timeZone)]]));
+    }
+
+    const leftOutItems = [];
+    const reasons = lo.reasons || {};
+    PHOTOS_REASON_SPECS.forEach((spec) => {
+      const count = Number(reasons[spec[0]] || 0);
+      if (count > 0) leftOutItems.push({ label: t(spec[1]), count: count });
+    });
+    const leftOut = Number(lo.total || 0) > 0
+      ? {
+        total: Number(lo.total || 0),
+        summary: t('journal.window.sources.photos.row.left.out.summary', [['count', f.formatCount(lo.total)]]),
+        items: leftOutItems,
+        note: t('journal.window.sources.photos.row.left.out.note'),
+      }
+      : null;
+
+    return f.renderSyncRow(doc, {
+      id: 'photos',
+      name: COPY.photos,
+      subtitle: dev,
+      state: 'on',
+      statusText: parts.join(' \u00b7 '),
+      leftOut: leftOut,
+      actionLabel: t('journal.window.sources.photos.row.manage'),
+      actionHref: PHOTOS_HREF,
+    });
+  }
+
+  function paintSyncs(doc, plaudEntry, granolaEntry, garminEntry, emailEntry, photosEntry, clientsEntry, opts) {
     const section = el(doc, 'section', 'sources-syncs');
     const head = el(doc, 'div', 'sources-syncs-head');
     head.appendChild(text(doc, 'h2', 'sources-syncs-title', COPY.syncsHeading));
@@ -608,7 +924,9 @@
 
     const list = el(doc, 'ul', 'sources-sync-list');
 
-    // Selective-sync sources (Email; Photos plugs onto the same shared pattern)
+    // Selective-sync sources on the shared frame (Photos when enabled; Email).
+    const photosRow = paintPhotosRow(doc, photosEntry, clientsEntry, opts);
+    if (photosRow) list.appendChild(photosRow);
     list.appendChild(paintEmailRow(doc, emailEntry, opts));
 
     const providers = [
@@ -692,6 +1010,8 @@
     'sources-current',
     'sources-import',
     'sources-syncs-manage',
+    'sources-sync-action-photos',
+    'sources-sync-unavailable-photos',
     'sources-sync-action-email',
     'sources-sync-unavailable-email',
     'sources-sync-unavailable-plaud',
@@ -730,7 +1050,7 @@
     const hasPairedDevices = clientsOk && clientsEntry.body.clients.length > 0;
     root.appendChild(paintSwitcher(doc, hasPairedDevices));
     root.appendChild(paintDevices(doc, root, clientsEntry, opts));
-    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, unpacked.garmin, unpacked.email, opts));
+    root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, unpacked.garmin, unpacked.email, unpacked.photos, clientsEntry, opts));
   }
 
   // The state a drawn payload reports as the view's readiness.
@@ -764,19 +1084,22 @@
     const needGranola = !prev || !prev.granola || syncFailed(prev.granola);
     const needGarmin = !prev || !prev.garmin || (!garminHidden(prev.garmin) && syncFailed(prev.garmin));
     const needEmail = !prev || !prev.email || emailFailed(prev.email);
+    const needPhotos = !prev || !prev.photos || (!photosHidden(prev.photos) && photosFailed(prev.photos));
     const results = await Promise.all([
       fetchEndpoint(opts.fetch, CLIENTS, ended),
       needPlaud ? fetchEndpoint(opts.fetch, PLAUD, ended) : Promise.resolve(prev.plaud),
       needGranola ? fetchEndpoint(opts.fetch, GRANOLA, ended) : Promise.resolve(prev.granola),
       needGarmin ? fetchEndpoint(opts.fetch, GARMIN, ended) : Promise.resolve(prev.garmin),
       needEmail ? fetchEndpoint(opts.fetch, EMAIL, ended) : Promise.resolve(prev.email),
+      needPhotos ? fetchEndpoint(opts.fetch, PHOTOS, ended) : Promise.resolve(prev.photos),
     ]);
-    if (ended() || !results[0] || !results[1] || !results[2] || !results[3] || !results[4]) return null;
+    if (ended() || !results[0] || !results[1] || !results[2] || !results[3] || !results[4] || !results[5]) return null;
     const clients = results[0];
     const plaud = results[1];
     const granola = results[2];
     const garmin = results[3];
     const email = results[4];
+    const photos = results[5];
     const payload = {
       status: clients.status,
       body: clients.body,
@@ -785,6 +1108,7 @@
       granola: granola,
       garmin: garmin,
       email: email,
+      photos: photos,
     };
     opts.last = payload;
     render(doc, root, payload, opts);

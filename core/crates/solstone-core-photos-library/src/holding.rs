@@ -40,6 +40,7 @@ use crate::types::{
 };
 
 pub const HOLDING_DIR_REL: &str = "config/photos-library";
+const TURNED_OFF_MARKER_REL: &str = "config/photos/turned_off.json";
 const LOCK_NAME: &str = ".photos-library.lock";
 const PRIVATE_DIR_MODE: u32 = 0o700;
 const PRIVATE_FILE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
@@ -477,6 +478,7 @@ pub fn scan_start(
 ) -> Result<(), String> {
     let _lock = lock_holding(journal)?;
     let root = ensure_holding_dirs(journal)?;
+    let _ = fs::remove_file(journal.join(TURNED_OFF_MARKER_REL));
     let now = solstone_core_time::utc_rfc3339(Timestamp::now());
 
     // Clear stale batch files from any prior incomplete scan.
@@ -650,6 +652,9 @@ pub fn scan_changes(
     access_state: Option<&str>,
     icloud_waiting_count: Option<u64>,
 ) -> Result<SelectionSummary, String> {
+    if !holding_root(journal).is_dir() && journal.join(TURNED_OFF_MARKER_REL).is_file() {
+        return Err("photos library source is turned off".to_owned());
+    }
     let _lock = lock_holding(journal)?;
     let root = ensure_holding_dirs(journal)?;
     let now = solstone_core_time::utc_rfc3339(Timestamp::now());
@@ -935,6 +940,9 @@ pub fn turn_off(journal: &Path) -> Result<PhotosDashboardState, String> {
         drop(lock);
         fs::remove_dir_all(&root).map_err(|e| format!("remove holding area: {e}"))?;
     }
+    let marker = journal.join(TURNED_OFF_MARKER_REL);
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+    write_json_private(&marker, &serde_json::json!({ "turned_off_at": now }))?;
     dashboard_state(journal)
 }
 
@@ -1255,12 +1263,13 @@ fn read_thinking_and_band4(journal: &Path) -> (bool, bool) {
 pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
     let root = holding_root(journal);
     let (thinking_ready, band4_paused) = read_thinking_and_band4(journal);
-    let profile_pics_enabled = !cfg!(any(target_os = "ios", target_os = "android"))
-        && faceprints::enabled(journal).unwrap_or(false);
+    let profile_pics_enabled = can_run_others_face_check(journal);
     let live_in_journal = count_live_photos_in_journal(journal);
 
     if !root.is_dir() {
-        let is_off = live_in_journal > 0 || journal.join("config/photos/received").is_dir();
+        let is_off = live_in_journal > 0
+            || journal.join("config/photos/received").is_dir()
+            || journal.join(TURNED_OFF_MARKER_REL).is_file();
         return Ok(PhotosDashboardState {
             source: "photos".to_owned(),
             state: if is_off {

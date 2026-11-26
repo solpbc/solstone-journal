@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line while scanning a library with an active range before item counts arrive.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "86d1b77b85ed250d1e6e3b01bb0a5b964f7ea579e74f80bc6f33d50d2b912461",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

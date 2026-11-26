@@ -1,0 +1,21 @@
+{
+  "description": "Selection bar count when one or more photos are selected.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "242124b9212daf84bc6f15e88c92e638460007f491c7367df04b300e86f60330",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

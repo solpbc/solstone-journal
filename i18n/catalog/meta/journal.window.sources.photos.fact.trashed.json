@@ -1,0 +1,16 @@
+{
+  "description": "Fact label for count of photos moved to trash by the owner.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "7588638c9efc2689da39a6f8b031901b674362f8f1533d593b0ad3993a45bb1b",
+  "max_length": 141,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

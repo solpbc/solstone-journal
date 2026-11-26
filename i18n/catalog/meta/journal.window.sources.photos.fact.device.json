@@ -1,0 +1,16 @@
+{
+  "description": "Fact label for single paired device.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e40cefb0772348007fe8b34d57e3b45e3b6b4e358ea32ffc4b330401d2376200",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

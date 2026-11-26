@@ -1,0 +1,21 @@
+{
+  "description": "Alert when smart-album contract verification failed on a named device.",
+  "context": "Journal window, /app/sources/photos needs-attention state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "432ad5071fd459bbed04c460583f9c1d67bd2f4a85479309197241ac5839f31e",
+  "max_length": 268,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

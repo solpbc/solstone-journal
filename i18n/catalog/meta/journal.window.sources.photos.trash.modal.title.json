@@ -1,0 +1,30 @@
+{
+  "description": "Confirmation dialog title when moving chosen photos to trash.",
+  "context": "Journal window, /app/sources/photos trash modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "49b7589484f58d916b80834dc56ad8cc2b9d3dfbd065f6111ed1f5b8dc73bcf1",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

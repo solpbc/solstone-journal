@@ -1,0 +1,16 @@
+{
+  "description": "Button to open the inline widen-range panel.",
+  "context": "Journal window, /app/sources/photos.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9cb737dd8eb31f87bf04379f114db23b32413a5b42592be4e82fcdd51b0bad85",
+  "max_length": 131,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

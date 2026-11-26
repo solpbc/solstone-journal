@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for unmarked saved or shared images.",
+  "context": "Journal window, photos left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b71f98d8b7bc764f14a7c9b53b8a754dc4a6a515389e63b82c51d1f50421a892",
+  "max_length": 143,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

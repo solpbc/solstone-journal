@@ -1,0 +1,16 @@
+{
+  "description": "Zero-backfill photos unit when nothing from before today is selected.",
+  "context": "Journal window, /app/sources/photos estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a6ae5247dc70fca822189db03c958d927868d13055e31dd5e648d835ad29590",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

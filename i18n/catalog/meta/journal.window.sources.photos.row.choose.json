@@ -1,0 +1,16 @@
+{
+  "description": "Action link on the photos sync row when scan is complete.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "80e02b092050eb06a5856ad5b66a5927e3ebb3925e22235e03673ff737844c76",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

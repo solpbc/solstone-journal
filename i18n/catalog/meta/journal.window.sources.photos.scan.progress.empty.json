@@ -1,0 +1,21 @@
+{
+  "description": "Scan progress line before item totals arrive, with device name.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "aff925e36f05e7fd8d2c772c3a08faa4a143beedcf499d966181e035e631a824",
+  "max_length": 162,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Range fact value when nothing from before today was chosen.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d312fcfa0ccd8cad7fe69b8733beeda4685d96ed76a0eef1532dd90a12863381",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

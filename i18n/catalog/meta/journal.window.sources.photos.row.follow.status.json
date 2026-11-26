@@ -1,0 +1,16 @@
+{
+  "description": "Inline link on the photos sync row while bringing in chosen photos.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a6d507f2ae4637ee0ac5f32a4841e0386e286d2e9ea95eedf1cde33eace3c6a5",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

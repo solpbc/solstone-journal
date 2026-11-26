@@ -24657,3 +24657,396 @@ journal.window.sources.email.disconnected.note = { $quantity ->
 journal.window.sources.email.disconnected.note.none = Gmail is disconnected.
 
 journal.window.sources.email.disconnected.reconnect = reconnect Gmail
+
+journal.window.sources.source.or.date.unit.label.photos = photos
+
+journal.window.sources.photos.title = photos
+
+journal.window.sources.photos.devices.multi = { $devices } · duplicates skipped automatically
+
+journal.window.sources.photos.row.ready = turn on photos in the solstone app on your iphone or ipad to scan your library.
+
+journal.window.sources.photos.row.ready.device = turn on photos in the solstone app on your { $device_kind } to scan your library.
+
+journal.window.sources.photos.row.scanning = scanning your library: { $checked } of { $total } items checked. no photos brought in yet.
+
+journal.window.sources.photos.row.scanning.empty = scanning your library. no photos brought in yet.
+
+journal.window.sources.photos.row.scan.paused = scan paused at { $checked } of { $total } items. reopen the solstone app on { $device } to scan your library again.
+
+journal.window.sources.photos.row.scan.paused.nodevice = scan paused at { $checked } of { $total } items. reopen the solstone app on your iphone or ipad to scan your library again.
+
+journal.window.sources.photos.row.scan.done = { $quantity ->
+        [one] scan done. 1 photo ready in the last year. choose what comes in.
+       *[other] scan done. { $count } photos ready in the last year. choose what comes in.
+    }
+
+journal.window.sources.photos.row.scan.done.generic = scan done. choose what comes in.
+
+journal.window.sources.photos.row.bringing.in = { $quantity ->
+        [one] { $done } of 1 photo checked
+       *[other] { $done } of { $total } photos checked
+    }
+
+journal.window.sources.photos.row.follow.status = follow older days on status
+
+journal.window.sources.photos.row.paused.backfill = { $quantity ->
+        [one] paused at { $done } of 1 photo checked. no more photos are coming in.
+       *[other] paused at { $done } of { $total } photos checked. no more photos are coming in.
+    }
+
+journal.window.sources.photos.row.paused.steady = paused. no photos are coming in.
+
+journal.window.sources.photos.row.in.journal = { $quantity ->
+        [one] 1 photo in your journal
+       *[other] { $count } photos in your journal
+    }
+
+journal.window.sources.photos.row.last.scan = last scan { $when }
+
+journal.window.sources.photos.row.left.out.summary = { $count } left out
+
+journal.window.sources.photos.row.left.out.note = no photo content is kept for anything left out.
+
+journal.window.sources.photos.row.attention.access = photo access on { $device } is limited or off. nothing new is coming in.
+
+journal.window.sources.photos.row.attention.access.nodevice = photo access on your iphone or ipad is limited or off. nothing new is coming in.
+
+journal.window.sources.photos.row.attention.album = your journal couldn't confirm which photos you took, so photo sync stopped. check for a solstone update.
+
+journal.window.sources.photos.row.off.stay = { $quantity ->
+        [one] off. 1 photo already in your journal stays.
+       *[other] off. { $count } photos already in your journal stay.
+    }
+
+journal.window.sources.photos.row.off.none = off.
+
+journal.window.sources.photos.row.open = open photos
+
+journal.window.sources.photos.row.choose = choose what comes in
+
+journal.window.sources.photos.row.manage = manage photos
+
+journal.window.sources.photos.ready.lede = turn on photos in the solstone app on your iphone or ipad to scan your library. no photos come in until you come back here and choose how far back.
+
+journal.window.sources.photos.ready.note = originals stay in your photo library, and hidden photos are never read.
+
+journal.window.sources.photos.unavailable.lede = photos isn't enabled on this journal.
+
+journal.window.sources.photos.scan.heading = scanning your photo library
+
+journal.window.sources.photos.scan.progress = { $checked } of { $total } items checked on { $device }
+
+journal.window.sources.photos.scan.progress.nodevice = { $checked } of { $total } items checked
+
+journal.window.sources.photos.scan.progress.empty = scanning your photo library on { $device }
+
+journal.window.sources.photos.scan.progress.empty.nodevice = scanning your photo library
+
+journal.window.sources.photos.scan.stat.checked = items checked
+
+journal.window.sources.photos.scan.stat.brought = photos brought in so far
+
+journal.window.sources.photos.scan.stat.brought.zero = 0 (details only)
+
+journal.window.sources.photos.scan.stat.earliest = earliest item checked so far
+
+journal.window.sources.photos.scan.note = hidden photos are never read. you can leave this page while the scan runs. no photos come in until you come back and choose.
+
+journal.window.sources.photos.scan.paused = scan paused at { $checked } of { $total } items. reopen the solstone app on { $device } to scan your library again.
+
+journal.window.sources.photos.scan.paused.nodevice = scan paused at { $checked } of { $total } items. reopen the solstone app on your iphone or ipad to scan your library again.
+
+journal.window.sources.photos.choose.heading = choose what comes in
+
+journal.window.sources.photos.choose.summary = scanned { $total } items on { $device } back to { $earliest }. no photos come in until you choose.
+
+journal.window.sources.photos.choose.summary.noearliest = scanned { $total } items on { $device }. no photos come in until you choose.
+
+journal.window.sources.photos.choose.summary.nodevice = scanned { $total } items back to { $earliest }. no photos come in until you choose.
+
+journal.window.sources.photos.choose.summary.bare = scan finished. no photos come in until you choose.
+
+journal.window.sources.photos.choose.rules = your journal picks the photos you took, photos you marked (like favorites, edits, or your own albums), and, when profile pic suggestions are on, photos others took near your moments that show people your journal recognizes from meetings. originals stay in your photo library; your journal asks only for small copies from the range you choose.
+
+journal.window.sources.photos.choose.range.count = { $quantity ->
+        [one] 1 photo
+       *[other] { $count } photos
+    }
+
+journal.window.sources.photos.choose.range.none.count = 0 older photos
+
+journal.window.sources.photos.choose.range.helper = new photos that match come in when you open the solstone app after you start. you can widen this range later.
+
+journal.window.sources.photos.estimate.photos = { $quantity ->
+        [one] 1 photo
+       *[other] { $count } photos
+    }
+
+journal.window.sources.photos.estimate.more.photos = { $quantity ->
+        [one] 1 more photo
+       *[other] { $count } more photos
+    }
+
+journal.window.sources.photos.estimate.zero.photos = 0 older photos
+
+journal.window.sources.photos.estimate.zero.days = 0 past days
+
+journal.window.sources.photos.estimate.zero.thoughts = 0 thoughts to catch up
+
+journal.window.sources.photos.estimate.gloss1 = each photo is described once so you can search it.
+
+journal.window.sources.photos.estimate.gloss2.before = older days are processed newest first, behind recent days. you can pause or resume older history any time on
+
+journal.window.sources.photos.estimate.gloss2.link = status
+
+journal.window.sources.photos.estimate.gloss2.after = .
+
+journal.window.sources.photos.estimate.no.thinking = thinking isn't set up yet. your photos can still come in now and wait to be described.
+
+journal.window.sources.photos.leftout.choose.summary = { $quantity ->
+        [one] 1 item left out in { $range }
+       *[other] { $count } items left out in { $range }
+    }
+
+journal.window.sources.photos.leftout.choose.summary.all = { $quantity ->
+        [one] 1 item left out across your library
+       *[other] { $count } items left out across your library
+    }
+
+journal.window.sources.photos.leftout.none.summary = what stays out automatically
+
+journal.window.sources.photos.leftout.none.body.faces = these stay out automatically: videos, screenshots, near-duplicates, extra shots in busy moments, and saved or shared images that aren't marked by you and don't show people your journal recognizes from meetings near your moments.
+
+journal.window.sources.photos.leftout.none.body.nofaces = these stay out automatically: videos, screenshots, near-duplicates, extra shots in busy moments, and saved or shared images not marked by you.
+
+journal.window.sources.photos.leftout.none.footer = hidden photos are never read. no photo content is kept for anything left out.
+
+journal.window.sources.photos.leftout.note.choose.faces = saved and shared images: saved or shared images not marked by you (ones near your moments are checked once you start and kept only if they show people your journal recognizes from meetings). screenshots: screenshots have their own source. hidden photos are never read. no photo content is kept for anything left out.
+
+journal.window.sources.photos.leftout.note.choose.nofaces = saved and shared images: saved or shared images not marked by you. screenshots: screenshots have their own source. hidden photos are never read. no photo content is kept for anything left out.
+
+journal.window.sources.photos.leftout.steady.summary = { $quantity ->
+        [one] 1 item left out
+       *[other] { $count } items left out
+    }
+
+journal.window.sources.photos.leftout.note.steady.faces = saved and shared images: saved or shared images that aren't marked by you and don't show people your journal recognizes from meetings near your moments. screenshots: screenshots have their own source. left out as noise: blurry, accidental, or blank shots left out when described. no photo content is kept for anything left out. hidden photos are never read.
+
+journal.window.sources.photos.leftout.note.steady.nofaces = saved and shared images: saved or shared images not marked by you. screenshots: screenshots have their own source. left out as noise: blurry, accidental, or blank shots left out when described. no photo content is kept for anything left out. hidden photos are never read.
+
+journal.window.sources.photos.reason.near.duplicates = near-duplicates
+
+journal.window.sources.photos.reason.videos = videos
+
+journal.window.sources.photos.reason.saved.shared = saved and shared images
+
+journal.window.sources.photos.reason.busy.moments = extra shots in busy moments
+
+journal.window.sources.photos.reason.screenshots = screenshots
+
+journal.window.sources.photos.reason.noise = left out as noise
+
+journal.window.sources.photos.choose.confirm = { $quantity ->
+        [one] bring in 1 photo
+       *[other] bring in { $count } photos
+    }
+
+journal.window.sources.photos.action.turn.off = turn off photos
+
+journal.window.sources.photos.action.pause = pause
+
+journal.window.sources.photos.action.resume = resume
+
+journal.window.sources.photos.action.widen = widen range
+
+journal.window.sources.photos.bringing.heading = bringing in your chosen photos
+
+journal.window.sources.photos.bringing.progress = { $quantity ->
+        [one] { $done } of 1 photo checked from { $device }.
+       *[other] { $done } of { $total } photos checked from { $device }.
+    }
+
+journal.window.sources.photos.bringing.progress.nodevice = { $quantity ->
+        [one] { $done } of 1 photo checked.
+       *[other] { $done } of { $total } photos checked.
+    }
+
+journal.window.sources.photos.bringing.honesty = photos reach your journal while the solstone app is open, so large sets arrive as you open the app.
+
+journal.window.sources.photos.bringing.offline = { $quantity ->
+        [one] waiting for { $device } to reconnect. 1 photo is still waiting there.
+       *[other] waiting for { $device } to reconnect. { $waiting } photos are still waiting there.
+    }
+
+journal.window.sources.photos.bringing.offline.nodevice = { $quantity ->
+        [one] waiting for your device to reconnect. 1 photo is still waiting there.
+       *[other] waiting for your device to reconnect. { $waiting } photos are still waiting there.
+    }
+
+journal.window.sources.photos.bringing.icloud = { $quantity ->
+        [one] 1 photo is waiting to download from iCloud on { $device }.
+       *[other] { $count } photos are waiting to download from iCloud on { $device }.
+    }
+
+journal.window.sources.photos.bringing.icloud.nodevice = { $quantity ->
+        [one] 1 photo is waiting to download from iCloud.
+       *[other] { $count } photos are waiting to download from iCloud.
+    }
+
+journal.window.sources.photos.bringing.pause.caption = pausing stops asking { $device } for photos until you resume. photos already in your journal stay.
+
+journal.window.sources.photos.bringing.pause.caption.nodevice = pausing stops asking your iphone or ipad for photos until you resume. photos already in your journal stay.
+
+journal.window.sources.photos.bringing.status.active = processing older days runs behind recent days.
+
+journal.window.sources.photos.bringing.status.active.link = follow or pause older history on status
+
+journal.window.sources.photos.bringing.status.paused = older-history processing is paused on status. photos from { $device } are still described when they land; older days wait to be processed.
+
+journal.window.sources.photos.bringing.status.paused.nodevice = older-history processing is paused on status. arriving photos are still described when they land; older days wait to be processed.
+
+journal.window.sources.photos.bringing.status.paused.link = open status
+
+journal.window.sources.photos.paused.heading = photo sync is paused
+
+journal.window.sources.photos.paused.backfill = { $quantity ->
+        [one] paused at { $done } of 1 photo checked. no more photos are coming in until you resume.
+       *[other] paused at { $done } of { $total } photos checked. no more photos are coming in until you resume.
+    }
+
+journal.window.sources.photos.paused.steady = no photos are coming in while this is paused. photos already in your journal stay.
+
+journal.window.sources.photos.fact.in.journal = in your journal
+
+journal.window.sources.photos.fact.in.journal.value = { $quantity ->
+        [one] 1 photo
+       *[other] { $count } photos
+    }
+
+journal.window.sources.photos.fact.range = range
+
+journal.window.sources.photos.fact.range.since = { $start } to today
+
+journal.window.sources.photos.fact.range.today = from when you started
+
+journal.window.sources.photos.fact.device = device
+
+journal.window.sources.photos.fact.devices = devices
+
+journal.window.sources.photos.fact.last.added = last photo added
+
+journal.window.sources.photos.fact.last.scan = last library scan
+
+journal.window.sources.photos.fact.trashed = moved to trash by you
+
+journal.window.sources.photos.boundary.stays = a photo already in your journal stays if you delete it from Photos.
+
+journal.window.sources.photos.widen.heading = widen how far back
+
+journal.window.sources.photos.widen.intro = reach further back in your library. photos already in your journal aren't brought in again.
+
+journal.window.sources.photos.widen.delta = { $quantity ->
+        [one] +1 more photo
+       *[other] +{ $count } more photos
+    }
+
+journal.window.sources.photos.widen.total = { $count } total
+
+journal.window.sources.photos.widen.estimate.heading = what the added range will process
+
+journal.window.sources.photos.widen.estimate.gloss = each photo is described once so you can search it. older days are processed newest first, behind recent days.
+
+journal.window.sources.photos.widen.confirm = { $quantity ->
+        [one] bring in 1 more photo
+       *[other] bring in { $count } more photos
+    }
+
+journal.window.sources.photos.picker.heading = photos in your journal
+
+journal.window.sources.photos.picker.intro = select one or more photos to move them to your journal's trash. you can also delete any photo from its day in transcripts.
+
+journal.window.sources.photos.picker.month.label = month
+
+journal.window.sources.photos.picker.month.all = all months
+
+journal.window.sources.photos.picker.bar.empty = select photos to move them to trash.
+
+journal.window.sources.photos.picker.bar.selected = { $count } selected
+
+journal.window.sources.photos.picker.bar.clear = clear
+
+journal.window.sources.photos.picker.bar.move = { $quantity ->
+        [one] move 1 photo to trash
+       *[other] move { $count } photos to trash
+    }
+
+journal.window.sources.photos.picker.open.day = open day
+
+journal.window.sources.photos.picker.select.aria = select photo from { $when }
+
+journal.window.sources.photos.picker.empty = no photos in this month.
+
+journal.window.sources.photos.picker.load.more = load more
+
+journal.window.sources.photos.trash.modal.title = { $quantity ->
+        [one] move 1 photo to trash?
+       *[other] move { $count } photos to trash?
+    }
+
+journal.window.sources.photos.trash.modal.body = { $quantity ->
+        [one] this photo leaves your journal now and waits in the trash, then it's erased. you can recover it until then. this moves the photo, its analysis, and its location if it has one. activities made from it drop it now, and the write-ups of its day and week leave search. your journal then writes those again from what's left, with the thinking you chose. the entities you're tending stay, and what your journal wrote about them may still mention it. nothing changes in your photo library. a deleted photo doesn't come back on a later sync.
+       *[other] these photos leave your journal now and wait in the trash, then they're erased. you can recover them until then. this moves each photo, its analysis, and its location if it has one. activities made from them drop them now, and the write-ups of their days and weeks leave search. your journal then writes those again from what's left, with the thinking you chose. the entities you're tending stay, and what your journal wrote about them may still mention them. nothing changes in your photo library. deleted photos don't come back on a later sync.
+    }
+
+journal.window.sources.photos.trash.modal.confirm = move to trash
+
+journal.window.sources.photos.trash.receipt = { $quantity ->
+        [one] moved 1 photo to trash.
+       *[other] moved { $count } photos to trash.
+    }
+
+journal.window.sources.photos.trash.receipt.open = open trash
+
+journal.window.sources.photos.turnoff.modal.title = turn off photos?
+
+journal.window.sources.photos.turnoff.modal.body = this stops syncing from { $device } and removes the scanned library details (photo times, places, and left-out counts). photos already in your journal stay, and nothing changes in your photo library.
+
+journal.window.sources.photos.turnoff.modal.body.nodevice = this stops syncing photos and removes the scanned library details (photo times, places, and left-out counts). photos already in your journal stay, and nothing changes in your photo library.
+
+journal.window.sources.photos.off.note.stay = { $quantity ->
+        [one] photos is off and its scanned library details have been removed. 1 photo already in your journal stays.
+       *[other] photos is off and its scanned library details have been removed. { $count } photos already in your journal stay.
+    }
+
+journal.window.sources.photos.off.note.none = photos is off and its scanned library details have been removed.
+
+journal.window.sources.photos.off.reentry = to turn it back on, open photos in the solstone app on { $device }.
+
+journal.window.sources.photos.off.reentry.nodevice = to turn it back on, open photos in the solstone app on your iphone or ipad.
+
+journal.window.sources.photos.attention.access = photo access on { $device } is limited or turned off, so no new photos can come in. allow full access in Settings on { $device }. photos already in your journal stay.
+
+journal.window.sources.photos.attention.access.nodevice = photo access on your iphone or ipad is limited or turned off, so no new photos can come in. allow full access in Settings on your iphone or ipad. photos already in your journal stay.
+
+journal.window.sources.photos.attention.restricted = photo access on { $device } is turned off by a device restriction, so no new photos can come in. photos already in your journal stay.
+
+journal.window.sources.photos.attention.restricted.nodevice = photo access on your iphone or ipad is turned off by a device restriction, so no new photos can come in. photos already in your journal stay.
+
+journal.window.sources.photos.attention.album = your journal couldn't confirm which photos you took on { $device }, so photo sync stopped rather than miss your photos. check for a solstone update.
+
+journal.window.sources.photos.attention.album.nodevice = your journal couldn't confirm which photos you took, so photo sync stopped rather than miss your photos. check for a solstone update.
+
+journal.window.sources.photos.error.load = this didn't load.
+
+journal.window.sources.photos.error.action = that didn't go through. try again.
+
+journal.window.sources.photos.row.scanning.rescan = scanning your library: { $checked } of { $total } items checked.
+
+journal.window.sources.photos.row.scanning.rescan.empty = scanning your library.
+
+journal.window.sources.photos.scan.note.rescan = hidden photos are never read. you can leave this page while the scan runs.
+
+journal.window.sources.photos.scan.paused.empty = scan paused. reopen the solstone app on { $device } to scan your library again.
+
+journal.window.sources.photos.scan.paused.empty.nodevice = scan paused. reopen the solstone app on your iphone or ipad to scan your library again.

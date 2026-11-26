@@ -1,0 +1,21 @@
+{
+  "description": "Subtitle when more than one device contributes to the photos library source.",
+  "context": "Journal window, /app/sources/photos header.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "devices",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "65f6a4b0dfad27391b8025a2f85cf5d8dd20b6d8aa9841cee53b14055ee17342",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

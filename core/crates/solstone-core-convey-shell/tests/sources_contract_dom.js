@@ -21,7 +21,8 @@ const PLAUD = '/app/settings/api/plaud';
 const GRANOLA = '/app/settings/api/granola';
 const GARMIN = '/app/settings/api/garmin';
 const EMAIL = '/app/sources/api/email';
-const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN, EMAIL];
+const PHOTOS = '/app/sources/photos/api/state';
+const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN, EMAIL, PHOTOS];
 
 let cases = 0;
 async function test(name, fn) {
@@ -285,6 +286,9 @@ function makePage(env, { wide = true, withApi = false } = {}) {
     loadEmailScript() {
       vm.runInContext(env.emailScript, context, { filename: 'email_source.js' });
     },
+    loadPhotosScript() {
+      vm.runInContext(env.photosScript, context, { filename: 'photos_source.js' });
+    },
     async mount() {
       page.ready = [];
       page.view = await window.SolViews.mount('sources', { reportReady: (s) => page.ready.push(s) });
@@ -299,11 +303,13 @@ function makePage(env, { wide = true, withApi = false } = {}) {
       granola = [200, { connected: false, syncing: false }],
       garmin = [200, { available: true, connected: false, syncing: false }],
       email = [200, { source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }],
+      photos = [404, { code: 'photos_library_disabled' }],
     } = {}) {
       calls.filter((c) => c.url === PLAUD && !c.settled).forEach((c) => c.answer(plaud[0], plaud[1]));
       calls.filter((c) => c.url === GRANOLA && !c.settled).forEach((c) => c.answer(granola[0], granola[1]));
       calls.filter((c) => c.url === GARMIN && !c.settled).forEach((c) => c.answer(garmin[0], garmin[1]));
       calls.filter((c) => c.url === EMAIL && !c.settled).forEach((c) => c.answer(email[0], email[1]));
+      calls.filter((c) => c.url === PHOTOS && !c.settled).forEach((c) => c.answer(photos[0], photos[1]));
     },
     last: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET').slice(-1)[0],
     leave() {
@@ -348,13 +354,15 @@ module.exports = async function sourcesContractCases(manifestDir) {
   const workspace = fs.readFileSync(path.join(manifestDir, 'assets/sources/workspace.html'), 'utf8');
   const frameScript = fs.readFileSync(path.join(manifestDir, 'assets/sources/selective_sync_frame.js'), 'utf8');
   const emailScript = fs.readFileSync(path.join(manifestDir, 'assets/sources/email_source.js'), 'utf8');
+  const photosScript = fs.readFileSync(path.join(manifestDir, 'assets/sources/photos_source.js'), 'utf8');
   const script = fs.readFileSync(path.join(manifestDir, 'assets/sources/sources.js'), 'utf8');
-  const env = { manifestDir, frameScript, emailScript, script, workspace };
+  const env = { manifestDir, frameScript, emailScript, photosScript, script, workspace };
 
   await test('the fragment declares the contract and its first reads', async () => {
     assert.ok(workspace.includes('<!-- view-contract -->'), 'the view-contract marker');
     assert.ok(workspace.includes(`<!-- first-read: /app/sources/ -> ${FIRST_READS.join(' ')} -->`), 'the first reads');
     assert.ok(workspace.includes(`<!-- first-read: /app/sources/email -> ${EMAIL} -->`), 'the email detail first read');
+    assert.ok(workspace.includes(`<!-- first-read: /app/sources/photos -> ${PHOTOS} -->`), 'the photos detail first read');
   });
 
   await test('the script only registers: nothing reads, draws, listens or times at load', async () => {
@@ -378,6 +386,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
     assert.strictEqual(p.readsOf(GRANOLA).length, 1, 'one granola read');
     assert.strictEqual(p.readsOf(GARMIN).length, 1, 'one garmin read');
     assert.strictEqual(p.readsOf(EMAIL).length, 1, 'one email read');
+    assert.strictEqual(p.readsOf(PHOTOS).length, 1, 'one photos read');
     assert.ok(p.reads()[0].url === CLIENTS, 'of the clients, by its absolute address');
     assert.ok(p.media.query === '(max-width: 700px)', 'the layout query');
     assert.strictEqual(p.media.listenerCount(), 1, 'one media listener');
@@ -453,7 +462,7 @@ module.exports = async function sourcesContractCases(manifestDir) {
   await test('leaving while the reads are out aborts them, and their late answers draw nothing', async () => {
     const p = await boot(env);
     const allCalls = [...p.calls];
-    assert.strictEqual(allCalls.length, 5, 'five reads in flight');
+    assert.strictEqual(allCalls.length, FIRST_READS.length, 'six reads in flight');
     const root = p.root();
     p.leave();
     await settle();
@@ -524,13 +533,14 @@ module.exports = async function sourcesContractCases(manifestDir) {
         [ORIGIN + GRANOLA]: mkEarly({ connected: false, syncing: false }),
         [ORIGIN + GARMIN]: mkEarly({ available: true, connected: false, syncing: false }),
         [ORIGIN + EMAIL]: mkEarly({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }),
+        [ORIGIN + PHOTOS]: mkEarly({ source: 'photos', state: 'ready_to_set_up', substate: 'never_set_up', devices: [], scan: {}, ranges: {}, left_out: { total: 0, reasons: {} }, progress: {} }),
       },
     };
     p.loadScript();
     p.place();
     await p.mount();
-    assert.strictEqual(p.calls.length, 0, 'the first load takes all five early reads and asks nothing');
-    assert.strictEqual(p.window.__solEarly.stats.adopted, 5, 'adopted all five');
+    assert.strictEqual(p.calls.length, 0, 'the first load takes all six early reads and asks nothing');
+    assert.strictEqual(p.window.__solEarly.stats.adopted, 6, 'adopted all six');
     assert.deepStrictEqual(Object.keys(p.window.__solEarly.reads), [], 'all early reads are taken');
     assert.deepStrictEqual(p.ready, ['error'], 'it drew the unreadable device as the error state');
     p.root().querySelector('.sources-retry').click();
@@ -642,6 +652,43 @@ module.exports = async function sourcesContractCases(manifestDir) {
     });
     await settle();
     assert.deepStrictEqual(p.ready, ['content'], 'email detail reports content');
+    assert.strictEqual(p.timers.size, 1, 'polling timer scheduled while scanning');
+    const view = p.view;
+    p.leave();
+    await settle();
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(view.ctx.held())), { listeners: 0, timeouts: 0, intervals: 0, observers: 0, undo: 0, bodyClasses: 0, reads: 0 });
+    assert.strictEqual(p.timers.size, 0, 'polling timer cleared on dispose');
+    assert.deepStrictEqual(p.windowKeys(), keys, 'no global left after dispose');
+  });
+
+  await test('/app/sources/photos mounts through the shared selective-sync frame and disposes cleanly', async () => {
+    const p = makePage(env);
+    p.window.location.href = ORIGIN + '/app/sources/photos';
+    p.window.location.pathname = '/app/sources/photos';
+    p.place();
+    const keys = p.windowKeys();
+    p.loadPhotosScript();
+    p.loadScript();
+    assert.deepStrictEqual(p.windowKeys(), keys, 'no global added when loading photos detail + sources');
+    await p.mount();
+    assert.strictEqual(p.readsOf(PHOTOS).length, 1, 'one photos state read');
+    assert.strictEqual(p.reads().length, 0, 'does not read clients on photos detail route');
+    p.readsOf(PHOTOS)[0].answer(200, {
+      source: 'photos',
+      state: 'setting_up',
+      substate: 'scanning',
+      devices: [{ cid: 'dev-1', name: 'Test Phone', kind: 'iphone', connected: true, access_state: 'authorized', icloud_waiting_count: 0 }],
+      scan: { items_checked: 200, items_total: 1000, earliest_item_at: '2023-04-01T00:00:00Z', photos_brought_in_so_far: 0, paused: false },
+      choice: { range: null, range_start_at: null, can_widen: true },
+      ranges: {},
+      left_out: { total: 0, reasons: {} },
+      progress: { chosen_total: 0, arrived: 0, in_journal: 0, waiting_on_phone: 0, moved_to_trash_by_owner: 0 },
+      band4_paused: false,
+      thinking_ready: true,
+      profile_pics_enabled: false,
+    });
+    await settle();
+    assert.deepStrictEqual(p.ready, ['content'], 'photos detail reports content');
     assert.strictEqual(p.timers.size, 1, 'polling timer scheduled while scanning');
     const view = p.view;
     p.leave();

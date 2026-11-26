@@ -1,0 +1,16 @@
+{
+  "description": "Fallback scan completion summary when count and device are unavailable.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8dbaa1a72d35bdab7c855bfed662123ce030131fa181fc619975c4c3cb78351e",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

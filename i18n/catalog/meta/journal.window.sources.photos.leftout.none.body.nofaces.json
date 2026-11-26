@@ -1,0 +1,16 @@
+{
+  "description": "Explanation of automatic exclusions when profile pic suggestions are off or unavailable.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "39b9660300ae6e2bb64053565d89c5c60478e75f0511bbca48e3963c14cff1c8",
+  "max_length": 255,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

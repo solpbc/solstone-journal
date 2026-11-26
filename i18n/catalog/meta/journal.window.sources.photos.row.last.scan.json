@@ -1,0 +1,21 @@
+{
+  "description": "Relative timestamp of the last library scan in the photos sync row.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "26ab38ca1697a31cc48561e01339504f628b1623d51d992cfabf1f5793cae6c3",
+  "max_length": 139,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

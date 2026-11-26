@@ -1,0 +1,16 @@
+{
+  "description": "Notice when the initial photo library scan paused before item counts were available, without a device name.",
+  "context": "Journal window, /app/sources/ and /app/sources/photos scan-paused state with unknown total.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "72a2eb102df1722ce46167b683d9ae4e9e3081ab3a2361317893dac01b670ce4",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

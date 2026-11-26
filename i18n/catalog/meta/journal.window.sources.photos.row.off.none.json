@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line when photos is turned off and no photos had landed.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9c191af73c14a999df1c5ef627255c16bd3801d377838cc66fdff96d89f43f90",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

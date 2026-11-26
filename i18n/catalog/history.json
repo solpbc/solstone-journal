@@ -157436,6 +157436,2799 @@
       "selector": null
     },
     {
+      "id": "journal.window.sources.photos.action.pause",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e7061757365",
+      "namespace": "journal.window.sources.photos.action",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.action.resume",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e726573756d65",
+      "namespace": "journal.window.sources.photos.action",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.action.turn.off",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e7475726e2e6f6666",
+      "namespace": "journal.window.sources.photos.action.turn",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.action.widen",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e616374696f6e2e776964656e",
+      "namespace": "journal.window.sources.photos.action",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.attention.access",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e616363657373",
+      "namespace": "journal.window.sources.photos.attention",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.attention.access.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e6163636573732e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.attention.access",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.attention.album",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e616c62756d",
+      "namespace": "journal.window.sources.photos.attention",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.attention.album.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e616c62756d2e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.attention.album",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.attention.restricted",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e72657374726963746564",
+      "namespace": "journal.window.sources.photos.attention",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.attention.restricted.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e617474656e74696f6e2e726573747269637465642e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.attention.restricted",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.boundary.stays",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e626f756e646172792e7374617973",
+      "namespace": "journal.window.sources.photos.boundary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e68656164696e67",
+      "namespace": "journal.window.sources.photos.bringing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.honesty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e686f6e65737479",
+      "namespace": "journal.window.sources.photos.bringing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.icloud",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e69636c6f7564",
+      "namespace": "journal.window.sources.photos.bringing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.icloud.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e69636c6f75642e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.bringing.icloud",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.offline",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e6f66666c696e65",
+      "namespace": "journal.window.sources.photos.bringing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "waiting",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.offline.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e6f66666c696e652e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.bringing.offline",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "waiting",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.pause.caption",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70617573652e63617074696f6e",
+      "namespace": "journal.window.sources.photos.bringing.pause",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.pause.caption.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70617573652e63617074696f6e2e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.bringing.pause.caption",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.progress",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70726f6772657373",
+      "namespace": "journal.window.sources.photos.bringing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.progress.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e70726f67726573732e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.bringing.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.status.active",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e616374697665",
+      "namespace": "journal.window.sources.photos.bringing.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.status.active.link",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e6163746976652e6c696e6b",
+      "namespace": "journal.window.sources.photos.bringing.status.active",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.status.paused",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e706175736564",
+      "namespace": "journal.window.sources.photos.bringing.status",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.status.paused.link",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e7061757365642e6c696e6b",
+      "namespace": "journal.window.sources.photos.bringing.status.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.bringing.status.paused.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6272696e67696e672e7374617475732e7061757365642e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.bringing.status.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.confirm",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e636f6e6669726d",
+      "namespace": "journal.window.sources.photos.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.choose.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e68656164696e67",
+      "namespace": "journal.window.sources.photos.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.range.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72616e67652e636f756e74",
+      "namespace": "journal.window.sources.photos.choose.range",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.choose.range.helper",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72616e67652e68656c706572",
+      "namespace": "journal.window.sources.photos.choose.range",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.range.none.count",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72616e67652e6e6f6e652e636f756e74",
+      "namespace": "journal.window.sources.photos.choose.range.none",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.rules",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e72756c6573",
+      "namespace": "journal.window.sources.photos.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d617279",
+      "namespace": "journal.window.sources.photos.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "earliest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.summary.bare",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d6172792e62617265",
+      "namespace": "journal.window.sources.photos.choose.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.summary.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d6172792e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.choose.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "earliest",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.choose.summary.noearliest",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e63686f6f73652e73756d6d6172792e6e6f6561726c69657374",
+      "namespace": "journal.window.sources.photos.choose.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.devices.multi",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e646576696365732e6d756c7469",
+      "namespace": "journal.window.sources.photos.devices",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "devices",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.error.action",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6572726f722e616374696f6e",
+      "namespace": "journal.window.sources.photos.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.error.load",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6572726f722e6c6f6164",
+      "namespace": "journal.window.sources.photos.error",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.gloss1",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f737331",
+      "namespace": "journal.window.sources.photos.estimate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.gloss2.after",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f7373322e6166746572",
+      "namespace": "journal.window.sources.photos.estimate.gloss2",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.gloss2.before",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f7373322e6265666f7265",
+      "namespace": "journal.window.sources.photos.estimate.gloss2",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.gloss2.link",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e676c6f7373322e6c696e6b",
+      "namespace": "journal.window.sources.photos.estimate.gloss2",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.more.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e6d6f72652e70686f746f73",
+      "namespace": "journal.window.sources.photos.estimate.more",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.no.thinking",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e6e6f2e7468696e6b696e67",
+      "namespace": "journal.window.sources.photos.estimate.no",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e70686f746f73",
+      "namespace": "journal.window.sources.photos.estimate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.zero.days",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e7a65726f2e64617973",
+      "namespace": "journal.window.sources.photos.estimate.zero",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.zero.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e7a65726f2e70686f746f73",
+      "namespace": "journal.window.sources.photos.estimate.zero",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.estimate.zero.thoughts",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e657374696d6174652e7a65726f2e74686f7567687473",
+      "namespace": "journal.window.sources.photos.estimate.zero",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.device",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e646576696365",
+      "namespace": "journal.window.sources.photos.fact",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.devices",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e64657669636573",
+      "namespace": "journal.window.sources.photos.fact",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.in.journal",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e696e2e6a6f75726e616c",
+      "namespace": "journal.window.sources.photos.fact.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.in.journal.value",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e696e2e6a6f75726e616c2e76616c7565",
+      "namespace": "journal.window.sources.photos.fact.in.journal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.fact.last.added",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e6c6173742e6164646564",
+      "namespace": "journal.window.sources.photos.fact.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.last.scan",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e6c6173742e7363616e",
+      "namespace": "journal.window.sources.photos.fact.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.range",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e72616e6765",
+      "namespace": "journal.window.sources.photos.fact",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.range.since",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e72616e67652e73696e6365",
+      "namespace": "journal.window.sources.photos.fact.range",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "start",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.range.today",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e72616e67652e746f646179",
+      "namespace": "journal.window.sources.photos.fact.range",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.fact.trashed",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e666163742e74726173686564",
+      "namespace": "journal.window.sources.photos.fact",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.choose.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e63686f6f73652e73756d6d617279",
+      "namespace": "journal.window.sources.photos.leftout.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "range",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.choose.summary.all",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e63686f6f73652e73756d6d6172792e616c6c",
+      "namespace": "journal.window.sources.photos.leftout.choose.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.none.body.faces",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e626f64792e6661636573",
+      "namespace": "journal.window.sources.photos.leftout.none.body",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.none.body.nofaces",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e626f64792e6e6f6661636573",
+      "namespace": "journal.window.sources.photos.leftout.none.body",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.none.footer",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e666f6f746572",
+      "namespace": "journal.window.sources.photos.leftout.none",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.none.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f6e652e73756d6d617279",
+      "namespace": "journal.window.sources.photos.leftout.none",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.note.choose.faces",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e63686f6f73652e6661636573",
+      "namespace": "journal.window.sources.photos.leftout.note.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.note.choose.nofaces",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e63686f6f73652e6e6f6661636573",
+      "namespace": "journal.window.sources.photos.leftout.note.choose",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.note.steady.faces",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e7374656164792e6661636573",
+      "namespace": "journal.window.sources.photos.leftout.note.steady",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.note.steady.nofaces",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e6e6f74652e7374656164792e6e6f6661636573",
+      "namespace": "journal.window.sources.photos.leftout.note.steady",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.leftout.steady.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6c6566746f75742e7374656164792e73756d6d617279",
+      "namespace": "journal.window.sources.photos.leftout.steady",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.off.note.none",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e6e6f74652e6e6f6e65",
+      "namespace": "journal.window.sources.photos.off.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.off.note.stay",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e6e6f74652e73746179",
+      "namespace": "journal.window.sources.photos.off.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.off.reentry",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e7265656e747279",
+      "namespace": "journal.window.sources.photos.off",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.off.reentry.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e6f66662e7265656e7472792e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.off.reentry",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.paused.backfill",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7061757365642e6261636b66696c6c",
+      "namespace": "journal.window.sources.photos.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.paused.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7061757365642e68656164696e67",
+      "namespace": "journal.window.sources.photos.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.paused.steady",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7061757365642e737465616479",
+      "namespace": "journal.window.sources.photos.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.bar.clear",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e636c656172",
+      "namespace": "journal.window.sources.photos.picker.bar",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.bar.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e656d707479",
+      "namespace": "journal.window.sources.photos.picker.bar",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.bar.move",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e6d6f7665",
+      "namespace": "journal.window.sources.photos.picker.bar",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.picker.bar.selected",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6261722e73656c6563746564",
+      "namespace": "journal.window.sources.photos.picker.bar",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e656d707479",
+      "namespace": "journal.window.sources.photos.picker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e68656164696e67",
+      "namespace": "journal.window.sources.photos.picker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.intro",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e696e74726f",
+      "namespace": "journal.window.sources.photos.picker",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.load.more",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6c6f61642e6d6f7265",
+      "namespace": "journal.window.sources.photos.picker.load",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.month.all",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6d6f6e74682e616c6c",
+      "namespace": "journal.window.sources.photos.picker.month",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.month.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6d6f6e74682e6c6162656c",
+      "namespace": "journal.window.sources.photos.picker.month",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.open.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e6f70656e2e646179",
+      "namespace": "journal.window.sources.photos.picker.open",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.picker.select.aria",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7069636b65722e73656c6563742e61726961",
+      "namespace": "journal.window.sources.photos.picker.select",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "when",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.ready.lede",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e72656164792e6c656465",
+      "namespace": "journal.window.sources.photos.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.ready.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e72656164792e6e6f7465",
+      "namespace": "journal.window.sources.photos.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.reason.busy.moments",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e627573792e6d6f6d656e7473",
+      "namespace": "journal.window.sources.photos.reason.busy",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.reason.near.duplicates",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e6e6561722e6475706c696361746573",
+      "namespace": "journal.window.sources.photos.reason.near",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.reason.noise",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e6e6f697365",
+      "namespace": "journal.window.sources.photos.reason",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.reason.saved.shared",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e73617665642e736861726564",
+      "namespace": "journal.window.sources.photos.reason.saved",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.reason.screenshots",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e73637265656e73686f7473",
+      "namespace": "journal.window.sources.photos.reason",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.reason.videos",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726561736f6e2e766964656f73",
+      "namespace": "journal.window.sources.photos.reason",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.attention.access",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e617474656e74696f6e2e616363657373",
+      "namespace": "journal.window.sources.photos.row.attention",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.attention.access.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e617474656e74696f6e2e6163636573732e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.row.attention.access",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.attention.album",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e617474656e74696f6e2e616c62756d",
+      "namespace": "journal.window.sources.photos.row.attention",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.bringing.in",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6272696e67696e672e696e",
+      "namespace": "journal.window.sources.photos.row.bringing",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.row.choose",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e63686f6f7365",
+      "namespace": "journal.window.sources.photos.row",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.follow.status",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e666f6c6c6f772e737461747573",
+      "namespace": "journal.window.sources.photos.row.follow",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.in.journal",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e696e2e6a6f75726e616c",
+      "namespace": "journal.window.sources.photos.row.in",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.row.last.scan",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6c6173742e7363616e",
+      "namespace": "journal.window.sources.photos.row.last",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "when",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.left.out.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6c6566742e6f75742e6e6f7465",
+      "namespace": "journal.window.sources.photos.row.left.out",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.left.out.summary",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6c6566742e6f75742e73756d6d617279",
+      "namespace": "journal.window.sources.photos.row.left.out",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.manage",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6d616e616765",
+      "namespace": "journal.window.sources.photos.row",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.off.none",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6f66662e6e6f6e65",
+      "namespace": "journal.window.sources.photos.row.off",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.off.stay",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6f66662e73746179",
+      "namespace": "journal.window.sources.photos.row.off",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.row.open",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e6f70656e",
+      "namespace": "journal.window.sources.photos.row",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.paused.backfill",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7061757365642e6261636b66696c6c",
+      "namespace": "journal.window.sources.photos.row.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "done",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.row.paused.steady",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7061757365642e737465616479",
+      "namespace": "journal.window.sources.photos.row.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.ready",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7265616479",
+      "namespace": "journal.window.sources.photos.row",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.ready.device",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e72656164792e646576696365",
+      "namespace": "journal.window.sources.photos.row.ready",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device_kind",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scan.done",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e646f6e65",
+      "namespace": "journal.window.sources.photos.row.scan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.row.scan.done.generic",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e646f6e652e67656e65726963",
+      "namespace": "journal.window.sources.photos.row.scan.done",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scan.paused",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e706175736564",
+      "namespace": "journal.window.sources.photos.row.scan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scan.paused.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e2e7061757365642e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.row.scan.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scanning",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e67",
+      "namespace": "journal.window.sources.photos.row",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scanning.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e672e656d707479",
+      "namespace": "journal.window.sources.photos.row.scanning",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scanning.rescan",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e672e72657363616e",
+      "namespace": "journal.window.sources.photos.row.scanning",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.row.scanning.rescan.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e726f772e7363616e6e696e672e72657363616e2e656d707479",
+      "namespace": "journal.window.sources.photos.row.scanning.rescan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e68656164696e67",
+      "namespace": "journal.window.sources.photos.scan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.note",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e6e6f7465",
+      "namespace": "journal.window.sources.photos.scan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.note.rescan",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e6e6f74652e72657363616e",
+      "namespace": "journal.window.sources.photos.scan.note",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.paused",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e706175736564",
+      "namespace": "journal.window.sources.photos.scan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.paused.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e7061757365642e656d707479",
+      "namespace": "journal.window.sources.photos.scan.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.paused.empty.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e7061757365642e656d7074792e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.scan.paused.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.paused.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e7061757365642e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.scan.paused",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.progress",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f6772657373",
+      "namespace": "journal.window.sources.photos.scan",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.progress.empty",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f67726573732e656d707479",
+      "namespace": "journal.window.sources.photos.scan.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.progress.empty.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f67726573732e656d7074792e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.scan.progress.empty",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.progress.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e70726f67726573732e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.scan.progress",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "checked",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "total",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.stat.brought",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e62726f75676874",
+      "namespace": "journal.window.sources.photos.scan.stat",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.stat.brought.zero",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e62726f756768742e7a65726f",
+      "namespace": "journal.window.sources.photos.scan.stat.brought",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.stat.checked",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e636865636b6564",
+      "namespace": "journal.window.sources.photos.scan.stat",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.scan.stat.earliest",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7363616e2e737461742e6561726c69657374",
+      "namespace": "journal.window.sources.photos.scan.stat",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7469746c65",
+      "namespace": "journal.window.sources.photos",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.trash.modal.body",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e6d6f64616c2e626f6479",
+      "namespace": "journal.window.sources.photos.trash.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.trash.modal.confirm",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e6d6f64616c2e636f6e6669726d",
+      "namespace": "journal.window.sources.photos.trash.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.trash.modal.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e6d6f64616c2e7469746c65",
+      "namespace": "journal.window.sources.photos.trash.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.trash.receipt",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e72656365697074",
+      "namespace": "journal.window.sources.photos.trash",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.trash.receipt.open",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e74726173682e726563656970742e6f70656e",
+      "namespace": "journal.window.sources.photos.trash.receipt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.turnoff.modal.body",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7475726e6f66662e6d6f64616c2e626f6479",
+      "namespace": "journal.window.sources.photos.turnoff.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.turnoff.modal.body.nodevice",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7475726e6f66662e6d6f64616c2e626f64792e6e6f646576696365",
+      "namespace": "journal.window.sources.photos.turnoff.modal.body",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.turnoff.modal.title",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e7475726e6f66662e6d6f64616c2e7469746c65",
+      "namespace": "journal.window.sources.photos.turnoff.modal",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.unavailable.lede",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e756e617661696c61626c652e6c656465",
+      "namespace": "journal.window.sources.photos.unavailable",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.widen.confirm",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e636f6e6669726d",
+      "namespace": "journal.window.sources.photos.widen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.widen.delta",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e64656c7461",
+      "namespace": "journal.window.sources.photos.widen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.photos.widen.estimate.gloss",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e657374696d6174652e676c6f7373",
+      "namespace": "journal.window.sources.photos.widen.estimate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.widen.estimate.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e657374696d6174652e68656164696e67",
+      "namespace": "journal.window.sources.photos.widen.estimate",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.widen.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e68656164696e67",
+      "namespace": "journal.window.sources.photos.widen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.widen.intro",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e696e74726f",
+      "namespace": "journal.window.sources.photos.widen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.photos.widen.total",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e70686f746f732e776964656e2e746f74616c",
+      "namespace": "journal.window.sources.photos.widen",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.sources.selective.action.cancel",
       "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e73656c6563746976652e616374696f6e2e63616e63656c",
       "namespace": "journal.window.sources.selective.action",
@@ -157966,6 +160759,18 @@
     {
       "id": "journal.window.sources.source.or.date.unit.label.obsidian",
       "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e6f6273696469616e",
+      "namespace": "journal.window.sources.source.or.date.unit.label",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.source.or.date.unit.label.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e70686f746f73",
       "namespace": "journal.window.sources.source.or.date.unit.label",
       "owner": "journal",
       "tombstone": false,

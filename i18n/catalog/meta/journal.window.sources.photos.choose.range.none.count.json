@@ -1,0 +1,16 @@
+{
+  "description": "Right-hand label for the nothing-from-before-today range option.",
+  "context": "Journal window, /app/sources/photos range chooser.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2a6ae5247dc70fca822189db03c958d927868d13055e31dd5e648d835ad29590",
+  "max_length": 134,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

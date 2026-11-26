@@ -1,0 +1,21 @@
+{
+  "description": "Caption beneath the source pause button for a named device.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "ae5a10b985f404fdb47d7de1ea3c4826973c94f84b730fef8d03602728975e15",
+  "max_length": 218,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Left-out bucket label for burst and close-shot collapses.",
+  "context": "Journal window, photos left-out breakdown.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "02b8d1263a8da9db5c1b1e699223f52b5aa87427d85877ef978b826fc23303f0",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

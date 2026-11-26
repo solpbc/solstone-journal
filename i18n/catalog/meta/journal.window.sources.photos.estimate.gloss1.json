@@ -1,0 +1,16 @@
+{
+  "description": "First gloss line below the three-unit estimate.",
+  "context": "Journal window, /app/sources/photos estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b3a89b98a10a3b0a00204a1c7aa3bc3a9c38edfc5f28fa29fb41b81d4865ef30",
+  "max_length": 170,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

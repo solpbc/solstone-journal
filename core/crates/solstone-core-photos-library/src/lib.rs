@@ -759,4 +759,60 @@ mod tests {
         assert_eq!(after_rescan.wanted.len(), 1);
         assert_eq!(after_rescan.wanted[0].asset_id, "asset-brand-new");
     }
+
+    #[test]
+    fn turn_off_before_any_photo_lands_persists_off_state_and_blocks_changes_until_rescan() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+
+        scan_start(
+            journal,
+            "dev-iphone-1",
+            "Test Phone",
+            "iphone",
+            "authorized",
+            1,
+            std_catalog(),
+        )
+        .unwrap();
+        let p1 = make_row(
+            "asset-own-1",
+            "2026-11-19T18:00:00Z",
+            &[SMART_CAPTURED_BY_ME],
+        );
+        scan_batch(journal, "dev-iphone-1", 0, vec![p1], Some(1)).unwrap();
+        scan_finish(
+            journal,
+            "dev-iphone-1",
+            Some(1),
+            None,
+            Some("authorized"),
+            Some(0),
+        )
+        .unwrap();
+
+        // Turn off directly from the choose screen (zero photos landed, no received/ dir).
+        let off = turn_off(journal).unwrap();
+        assert!(!holding_root(journal).exists());
+        assert_eq!(off.state, "off");
+        assert_eq!(off.substate, "off");
+        assert_eq!(off.progress.in_journal, 0);
+
+        // Incremental scan_changes cannot resurrect the holding area while turned off.
+        assert!(scan_changes(journal, "dev-iphone-1", vec![], vec![], None, None, None).is_err());
+        assert_eq!(dashboard_state(journal).unwrap().state, "off");
+
+        // Re-enabling via an explicit scan_start clears the off marker cleanly.
+        scan_start(
+            journal,
+            "dev-iphone-1",
+            "Test Phone",
+            "iphone",
+            "authorized",
+            1,
+            std_catalog(),
+        )
+        .unwrap();
+        assert_eq!(dashboard_state(journal).unwrap().state, "setting_up");
+    }
 }

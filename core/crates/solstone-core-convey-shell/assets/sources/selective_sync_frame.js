@@ -280,6 +280,9 @@
   function renderRangeChooser(doc, opts) {
     const sec = el(doc, 'section', 'ss-choice-sec');
     sec.appendChild(text(doc, 'h2', null, opts.heading || t('journal.window.sources.selective.range.heading')));
+    if (opts.intro) {
+      sec.appendChild(text(doc, 'p', 'ss-detail-lede', opts.intro));
+    }
     const list = el(doc, 'div', 'ss-choice-list', { role: 'radiogroup', 'aria-label': opts.heading || t('journal.window.sources.selective.range.heading') });
 
     (opts.options || []).forEach((opt) => {
@@ -299,8 +302,12 @@
       });
       input.checked = selected;
       if (selected) input.setAttribute('checked', 'checked');
+      if (opt.disabled) {
+        input.disabled = true;
+        input.setAttribute('disabled', 'disabled');
+      }
       input.addEventListener('change', () => {
-        if (typeof opts.onChange === 'function') opts.onChange(opt.value);
+        if (!opt.disabled && typeof opts.onChange === 'function') opts.onChange(opt.value);
       });
       left.appendChild(input);
 

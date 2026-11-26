@@ -1,0 +1,16 @@
+{
+  "description": "Re-entry instructions on the turned-off state when no device name is stored.",
+  "context": "Journal window, /app/sources/photos off state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e2835dc119fb4e797d87175dd18dbcb3554280a567db45c8d2f10f99e6b289e4",
+  "max_length": 187,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

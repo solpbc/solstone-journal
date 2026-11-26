@@ -1,0 +1,16 @@
+{
+  "description": "Action link on the photos sync row in steady state.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ed03b71a578bbbb07cbf1a9a10bad83f7c7889f15641bc2e15177866fdd96d90",
+  "max_length": 133,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

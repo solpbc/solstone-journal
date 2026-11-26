@@ -1,0 +1,16 @@
+{
+  "description": "Status relationship note when older-history processing is paused on status without a device name.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cbbd39ef6418caea1de1039bfb527e6514aef463a8ded7715e17a67469e81ca0",
+  "max_length": 250,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -105,7 +105,7 @@ fn owner_required() -> Response {
     error_envelope(
         "owner_required",
         "Forbidden",
-        "Sign in to the journal to manage photos.",
+        "Open this from your journal or a paired device to manage photos.",
         StatusCode::FORBIDDEN,
     )
     .into_response()

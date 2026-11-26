@@ -1,0 +1,16 @@
+{
+  "description": "Section heading while scanning photo library metadata.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b24c377a21847f5070367bf271c973550e6506ed136b9974ba1f39cdfb2be4ed",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

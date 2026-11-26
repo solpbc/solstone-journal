@@ -1,0 +1,16 @@
+{
+  "description": "Fallback line if /app/sources/photos is reached while disabled.",
+  "context": "Journal window, /app/sources/photos disabled fallback.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "960074a1f88432a3906ee91b56539f07a841371bc38ce0a79dfd22bd3ed8be92",
+  "max_length": 157,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

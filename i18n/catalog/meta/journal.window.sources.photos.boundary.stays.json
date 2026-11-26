@@ -1,0 +1,16 @@
+{
+  "description": "Quiet boundary note on the steady detail view.",
+  "context": "Journal window, /app/sources/photos steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3cbb052a0d0055441ee850fc3625ad3569c2d8fed255875106a1e184feec10da",
+  "max_length": 187,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

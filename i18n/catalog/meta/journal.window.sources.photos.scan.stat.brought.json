@@ -1,0 +1,16 @@
+{
+  "description": "Stat label for photos brought in during metadata scan.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4cc67e8eb8e8fcc0e51ab06909f94a168a144c16f11154324133c11bbdf467da",
+  "max_length": 144,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

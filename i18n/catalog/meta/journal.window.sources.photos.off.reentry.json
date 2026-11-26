@@ -1,0 +1,21 @@
+{
+  "description": "Re-entry instructions on the turned-off state for a named device.",
+  "context": "Journal window, /app/sources/photos off state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "625896369e2a4c6822b5be8fdcb6963ed08fca2dbf93ce739a3c49bf0ed00c17",
+  "max_length": 187,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

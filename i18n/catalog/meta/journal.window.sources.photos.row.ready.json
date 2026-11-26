@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line when photos is ready to set up.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "139fe4b7db92f596fe6d36dd7e0ccf0624a07866ac1df349480eea615d00c504",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

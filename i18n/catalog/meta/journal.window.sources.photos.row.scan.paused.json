@@ -1,0 +1,29 @@
+{
+  "description": "Sync row sub-line when metadata scan paused mid-way on a named device.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "checked",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "3447f27361d1f2446fb28870423417f1856ff8d0640eaee64354347d39e77eda",
+  "max_length": 227,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

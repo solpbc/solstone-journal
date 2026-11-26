@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line when scan finished with zero photos in the default last-year range.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5b7c3ea1938c7c0b185fb7141ab138c775e2e30bc1f41f5281f915ea3bc70d17",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

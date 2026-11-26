@@ -1,0 +1,16 @@
+{
+  "description": "Label for the month filter dropdown on the photo picker.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b1d6bbebcedcfbd26abbc0092bd5c7bb1ec4e8b76c1bdbffb20724dd56b3f03c",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Footer note inside the steady-state left-out breakdown when profile pic suggestions are off.",
+  "context": "Journal window, /app/sources/photos steady state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1da27aa177b3ce415486aed9a3f4a09cd1b279fc88b8d2046c2e86637e859389",
+  "max_length": 391,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

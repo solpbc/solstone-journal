@@ -1,0 +1,16 @@
+{
+  "description": "Closing punctuation after the status link in the estimate gloss.",
+  "context": "Journal window, /app/sources/photos estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "702615945d6b893b4f162d2b87d06ec623ce99e0e6733e84e4a9a727850b45bb",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

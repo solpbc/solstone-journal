@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the inline widen-range panel.",
+  "context": "Journal window, /app/sources/photos widen panel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c610f33cafc44773a3be323cd82ddbd38f46ed2116ba555b32c921caf0351a84",
+  "max_length": 138,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

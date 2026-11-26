@@ -1,6 +1,8 @@
-<!-- first-read: /app/sources/ -> /app/network/api/clients /app/settings/api/plaud /app/settings/api/granola /app/settings/api/garmin /app/sources/api/email -->
+<!-- first-read: /app/sources/ -> /app/network/api/clients /app/settings/api/plaud /app/settings/api/granola /app/settings/api/garmin /app/sources/api/email /app/sources/photos/api/state -->
 <!-- first-read: /app/sources/email -> /app/sources/api/email -->
 <!-- first-read: /app/sources/email/ -> /app/sources/api/email -->
+<!-- first-read: /app/sources/photos -> /app/sources/photos/api/state -->
+<!-- first-read: /app/sources/photos/ -> /app/sources/photos/api/state -->
 <!-- view-contract -->
 <style>
   .sources-page {
@@ -681,6 +683,7 @@
     background: var(--cream);
     border-color: var(--hairline);
     opacity: 0.85;
+    cursor: default;
   }
   .ss-choice-row-l {
     display: flex;
@@ -828,6 +831,14 @@
     border-color: var(--danger);
     color: var(--ink-on-danger);
   }
+  .ss-btn.danger-outline {
+    background: var(--paper);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .ss-btn.danger-outline:hover:not(:disabled) {
+    background: var(--danger-wash);
+  }
   .ss-btn.quiet {
     background: transparent;
     border-color: var(--hairline-2);
@@ -956,14 +967,142 @@
     color: var(--ink-soft);
     line-height: 1.5;
   }
+  .ph-picker-card {
+    max-width: 740px;
+  }
+  .ph-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .ph-month-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+  .ph-month-select {
+    min-height: 44px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline-2);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.88rem;
+  }
+  .ph-month-select:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .ph-picker-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: var(--cream);
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+  .ph-picker-bar-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ph-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+    gap: 12px;
+  }
+  .ph-pick-card {
+    background: var(--paper);
+    border: 1.5px solid var(--hairline);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.15s ease;
+  }
+  .ph-pick-card.picked {
+    border-color: var(--orange-ink);
+    box-shadow: 0 0 0 2px var(--orange-wash);
+  }
+  .ph-pick-thumb {
+    position: relative;
+    display: block;
+    aspect-ratio: 4 / 3;
+    background: var(--cream);
+    overflow: hidden;
+  }
+  .ph-pick-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .ph-pick-chk {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .ph-pick-chk input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--orange-ink);
+    cursor: pointer;
+  }
+  .ph-pick-meta {
+    padding: 8px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    line-height: 1.35;
+  }
+  .ph-pick-date {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .ph-pick-caption {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ph-pick-day-link {
+    font-size: 0.82rem;
+    min-height: 32px;
+    align-self: flex-start;
+  }
   @media (max-width: 768px) {
     .sources-page { padding: 1rem; }
     .sources-devices-band, .sources-syncs, .sources-detail-card { padding: 16px; }
     .ss-input-grid, .ss-stat-row, .ss-est-units { grid-template-columns: 1fr; }
     dl.ss-facts-dl > div { grid-template-columns: 1fr; gap: 2px; }
+    .ph-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 </style>
 <main id="sources-root" class="sources-page" tabindex="-1"></main>
 <script src="/app/sources/static/selective_sync_frame.js"></script>
 <script src="/app/sources/static/email_source.js" data-route-prefix="/app/sources/email"></script>
+<script src="/app/sources/static/photos_source.js" data-route-prefix="/app/sources/photos"></script>
 <script src="/app/sources/static/sources.js"></script>

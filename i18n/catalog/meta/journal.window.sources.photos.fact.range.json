@@ -1,0 +1,16 @@
+{
+  "description": "Fact label for chosen historical range.",
+  "context": "Journal window, /app/sources/photos facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "40d3c27305fb1f5256341a775404bfc6edc8672e56ffa213d9e02de3b7a78f42",
+  "max_length": 125,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

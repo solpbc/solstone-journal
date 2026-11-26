@@ -1,0 +1,16 @@
+{
+  "description": "Device-table source row label for the photos library source.",
+  "context": "Journal window, sources devices matrix.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84def6dfe44253e83d20a9d65236dd39317d78be94530ee00dc07af408799de2",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

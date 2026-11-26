@@ -1,0 +1,16 @@
+{
+  "description": "Safe-to-leave note while scanning a library when a range is already active.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4a04b510a5569a5d175a59ff91fa88c6c2e10f6be7efad5c2357736359f52d84",
+  "max_length": 194,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

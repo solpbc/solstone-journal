@@ -1,0 +1,16 @@
+{
+  "description": "Alert when iOS photo access is limited or off without a device name.",
+  "context": "Journal window, /app/sources/photos needs-attention state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8e63a2fe6610997cf727131fca9c46ab0bd7b137a70b97287587d6b1581020e2",
+  "max_length": 290,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Notice shown in the estimate band when thinking is not configured yet.",
+  "context": "Journal window, /app/sources/photos estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d8e7ad7e1b2e38b80691155c475e732d9b82e8d0c5dd6d6407b6a534c7918d75",
+  "max_length": 206,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

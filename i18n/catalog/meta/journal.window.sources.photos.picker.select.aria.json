@@ -1,0 +1,21 @@
+{
+  "description": "Accessible label for a photo selection checkbox.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "when",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e9b67bb79c90be60d8128f501c5ae78c444948032b93418a1833e425816b01ed",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

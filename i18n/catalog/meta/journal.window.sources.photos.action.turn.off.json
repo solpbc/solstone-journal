@@ -1,0 +1,16 @@
+{
+  "description": "Action button to turn off the photos source and remove scanned library details.",
+  "context": "Journal window, /app/sources/photos.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8003491866bc8959f7d125b18a1e0fb1605d4212c4ac95d153919c249c99152e",
+  "max_length": 135,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

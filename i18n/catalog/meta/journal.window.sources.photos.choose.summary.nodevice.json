@@ -1,0 +1,25 @@
+{
+  "description": "Scan completion summary with count and earliest month, without device name.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "total",
+      "type": "string"
+    },
+    {
+      "name": "earliest",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2eab472a24e1bddf98bfd39ef0eeff729a5a4f07ddf716aa07bb2380f0c37778",
+  "max_length": 203,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

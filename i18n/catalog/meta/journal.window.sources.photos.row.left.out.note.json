@@ -1,0 +1,16 @@
+{
+  "description": "Footer note inside the left-out disclosure on the photos sync row.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e6f56c5d81bee3a9b775b6d5f3af4cdbfad89f0952f26104f0bd988a9dce7a1d",
+  "max_length": 167,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

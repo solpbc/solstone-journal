@@ -1,0 +1,16 @@
+{
+  "description": "Reassurance note on the ready-to-set-up detail state.",
+  "context": "Journal window, /app/sources/photos ready state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "430de7f31c078a15f3c02ac7e113aa2adceea2fe42660b47e952167e2a6543a2",
+  "max_length": 191,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

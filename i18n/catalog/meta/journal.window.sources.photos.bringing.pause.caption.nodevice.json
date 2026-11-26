@@ -1,0 +1,16 @@
+{
+  "description": "Caption beneath the source pause button without a device name.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8c98be4b5b94bdebee1194af912c4de7a7a174cf45cb48b3e12e6b754c653a89",
+  "max_length": 218,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

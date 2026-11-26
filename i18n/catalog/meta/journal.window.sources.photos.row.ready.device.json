@@ -1,0 +1,21 @@
+{
+  "description": "Sync row sub-line when photos is ready to set up and a paired device kind is known.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device_kind",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "729083b818942217dc448e798a10e73a0c856aca509bf6a149a8f0ff17f37109",
+  "max_length": 201,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

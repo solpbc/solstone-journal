@@ -1,0 +1,16 @@
+{
+  "description": "Gloss line under the widen-range estimate.",
+  "context": "Journal window, /app/sources/photos widen panel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "ff270e53cec69731a4bad88ddc8370caea4ce91283db48847065b50daf401b4d",
+  "max_length": 226,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

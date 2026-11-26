@@ -1,0 +1,16 @@
+{
+  "description": "Safe-to-leave note during photo library scan.",
+  "context": "Journal window, /app/sources/photos scanning state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c07c8838a642345ec9609dea6bdbff548965c8494bcb5e4f42558edcb170b1c6",
+  "max_length": 244,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

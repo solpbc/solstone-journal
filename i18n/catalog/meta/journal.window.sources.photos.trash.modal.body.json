@@ -1,0 +1,26 @@
+{
+  "description": "Confirmation dialog body explaining what moving chosen photos to trash does.",
+  "context": "Journal window, /app/sources/photos trash modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "5a6ee4a89bf4c979b5cd16a8c217a5e895e9e45b74bccdfe956750cf5f9dbcce",
+  "max_length": 700,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

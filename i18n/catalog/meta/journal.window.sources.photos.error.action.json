@@ -1,0 +1,16 @@
+{
+  "description": "Error message when an action on /app/sources/photos fails.",
+  "context": "Journal window, /app/sources/photos.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4607a5190d2ab1b4c4ed68aa9ff6fd3b995db2d90f25a04685d9c97de8681c6",
+  "max_length": 154,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "description": "Disclosure summary for left-out items in a chosen historical range.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "range",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "73c23a3780b90d7f7d1bf0492c994d91446dd14af1a70e0e96e4cd502d2085dd",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

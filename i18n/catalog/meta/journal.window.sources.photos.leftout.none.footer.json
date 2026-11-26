@@ -1,0 +1,16 @@
+{
+  "description": "Footer line inside the automatic-exclusions disclosure.",
+  "context": "Journal window, /app/sources/photos choose state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "44d0376e156da1f500a84199adac9a98be2728904a97426af269144ab38b61b7",
+  "max_length": 197,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

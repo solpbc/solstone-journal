@@ -1,0 +1,16 @@
+{
+  "description": "Foreground-activity honesty line while bringing in photos.",
+  "context": "Journal window, /app/sources/photos bringing-in state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "10e3df5c7d09823ba6017d3123794596a53807de5863b0c3a2c4dd837d39b3e6",
+  "max_length": 230,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

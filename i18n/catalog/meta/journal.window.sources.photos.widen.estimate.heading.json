@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the widen-range three-unit estimate.",
+  "context": "Journal window, /app/sources/photos widen panel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2991ecd41f9a971d5e46c309173491370e3ec9eb43edc9bfbac0aa71625358e8",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1874,6 +1874,8 @@ fn router_with_roots(
         .route("/app/sources/", get(sources_shell))
         .route("/app/sources/email", get(sources_shell))
         .route("/app/sources/email/", get(sources_shell))
+        .route("/app/sources/photos", get(photos_sources_shell))
+        .route("/app/sources/photos/", get(photos_sources_shell))
         .route("/app/sources/workspace", get(sources_workspace))
         .route("/app/sources/static/{*rest}", get(sources_static))
         .merge(photos_library::router())
@@ -2081,6 +2083,13 @@ async fn more_static(Path(rest): Path<String>) -> Response {
 }
 
 async fn sources_shell() -> Response {
+    asset_response("/static/shell.html")
+}
+
+async fn photos_sources_shell(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    if !solstone_core_photos_library::photos_library_enabled(&root.0) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     asset_response("/static/shell.html")
 }
 
@@ -2309,6 +2318,7 @@ mod tests {
             "/app/sources/workspace",
             "/app/sources/static/selective_sync_frame.js",
             "/app/sources/static/email_source.js",
+            "/app/sources/static/photos_source.js",
             "/app/sources/static/sources.js",
         ] {
             let response = app
@@ -2325,6 +2335,29 @@ mod tests {
             if path.ends_with("workspace") {
                 assert!(text.contains("id=\"sources-root\""), "{path}");
             }
+        }
+        // `/app/sources/photos` is strictly 404 while `photos_library.enabled` is off.
+        for path in ["/app/sources/photos", "/app/sources/photos/"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+                .await
+                .expect("router responds");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        }
+        // Once enabled in config, `/app/sources/photos` serves the shell.
+        fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000},"photos_library":{"enabled":true}}"#,
+        )
+        .expect("journal config with photos enabled");
+        for path in ["/app/sources/photos", "/app/sources/photos/"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+                .await
+                .expect("router responds");
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
     }
 

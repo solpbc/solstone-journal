@@ -139,6 +139,7 @@ fn main() {
     let sources_static = manifest.join("assets/sources/sources.js");
     let sources_frame_static = manifest.join("assets/sources/selective_sync_frame.js");
     let sources_email_static = manifest.join("assets/sources/email_source.js");
+    let sources_photos_static = manifest.join("assets/sources/photos_source.js");
     let year_workspace = manifest.join("assets/year/workspace.html");
     let year_static = manifest.join("assets/year/year.js");
 
@@ -164,6 +165,7 @@ fn main() {
         &sources_static,
         &sources_frame_static,
         &sources_email_static,
+        &sources_photos_static,
         &year_workspace,
         &year_static,
     ] {
@@ -223,6 +225,10 @@ fn main() {
     assets.push((
         "/app/sources/static/email_source.js".to_owned(),
         sources_email_static,
+    ));
+    assets.push((
+        "/app/sources/static/photos_source.js".to_owned(),
+        sources_photos_static,
     ));
     assets.push(("/app/year/workspace".to_owned(), year_workspace));
     assets.push(("/app/year/static/year.js".to_owned(), year_static));

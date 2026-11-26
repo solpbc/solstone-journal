@@ -1,0 +1,16 @@
+{
+  "description": "Default dropdown option showing photos from all months.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "63f6c00288ae93a97439792e2d21cadaabb150c3d791f9c8e5d69ab073412e53",
+  "max_length": 130,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

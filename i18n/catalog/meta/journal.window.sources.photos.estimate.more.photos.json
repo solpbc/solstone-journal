@@ -1,0 +1,30 @@
+{
+  "description": "Added photos unit inside the widen-range processing estimate.",
+  "context": "Journal window, /app/sources/photos widen estimate band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "a4cd1e99f8e75498896e99a9c7193c8941d96206a66a80bcccf3545b13b02fe5",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

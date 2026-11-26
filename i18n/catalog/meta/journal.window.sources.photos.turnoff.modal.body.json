@@ -1,0 +1,21 @@
+{
+  "description": "Confirmation dialog body when turning off photos for a named device.",
+  "context": "Journal window, /app/sources/photos turn-off modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "8b4ddd4ce0e0c097d0cb9f0074cf9646d72acef44acaed1aa4bc2d54fc1dfeea",
+  "max_length": 319,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

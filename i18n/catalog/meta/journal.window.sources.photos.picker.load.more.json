@@ -1,0 +1,16 @@
+{
+  "description": "Pagination button to load the next page of landed photos.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f95e2a97cd85b49d35c190abf876c373e2e14553dfb6e6013a626ee9b328db58",
+  "max_length": 129,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

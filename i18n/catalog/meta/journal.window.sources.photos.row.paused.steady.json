@@ -1,0 +1,16 @@
+{
+  "description": "Sync row sub-line when photo sync is paused in steady state.",
+  "context": "Journal window, /app/sources/ photos row.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d9c657728a6109057bbfb9ec96721f7bd2173a0e68081b09a4e8f663a348b64a",
+  "max_length": 152,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

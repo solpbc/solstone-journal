@@ -1,0 +1,16 @@
+{
+  "description": "Section heading for the chosen-set photo trash picker.",
+  "context": "Journal window, /app/sources/photos picker.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0bcaeee604b796a8de80c29bf9851a4e23ed2d8444a837f18bc8a64e541c5021",
+  "max_length": 142,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

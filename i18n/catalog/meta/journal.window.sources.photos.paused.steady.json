@@ -1,0 +1,16 @@
+{
+  "description": "Paused status line in steady state.",
+  "context": "Journal window, /app/sources/photos paused state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af7243734bbc2d1e276b3aca34c1a839a641f799731de51f15d595e676e20b49",
+  "max_length": 202,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

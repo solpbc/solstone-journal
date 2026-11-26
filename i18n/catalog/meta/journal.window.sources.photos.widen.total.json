@@ -1,0 +1,21 @@
+{
+  "description": "Sub-tag showing total photos for a wider range option.",
+  "context": "Journal window, /app/sources/photos widen panel.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "b12034a2af409bfd566525f4b5d4ae2078be65dfc702b629ec087f87d03d3173",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

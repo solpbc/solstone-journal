@@ -1,0 +1,16 @@
+{
+  "description": "Detail view explanation when photos has not been scanned yet.",
+  "context": "Journal window, /app/sources/photos ready state.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "d28b794d8330399e2c8d275350f5af3d63b69926b9dea4b98d5d89d361207b88",
+  "max_length": 259,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

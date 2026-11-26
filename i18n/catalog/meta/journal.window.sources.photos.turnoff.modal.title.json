@@ -1,0 +1,16 @@
+{
+  "description": "Confirmation dialog title when turning off the photos source.",
+  "context": "Journal window, /app/sources/photos turn-off modal.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cd62fb2202d9a964f09437eb112dbb394745602f606d44c0ebc925264f0786fb",
+  "max_length": 136,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
