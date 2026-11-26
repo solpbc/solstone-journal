@@ -1,0 +1,16 @@
+{
+  "description": "How-this-works bullet explaining reading pace for meetings and photos.",
+  "context": "Journal window, settings view. Disclosure bullet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4df7959569c111b11782a49b864925b17beeeea59ff65939119274cdc3d3f8b6",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

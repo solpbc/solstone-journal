@@ -61138,6 +61138,13 @@
       ]
     },
     {
+      "id": "journal.window.entities.copy.faces.suggested.lede.photos",
+      "source": "b48b246151b3fd4257345491197e0d5d4597805d98ddde7217307638e81dc643",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.copy.faces.suggested.title",
       "source": "dbef1e0ad8474dcf4a5954e4f1b80741baed52cd63f0e591ad6ff2961cfb9811",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -66240,6 +66247,20 @@
       ]
     },
     {
+      "id": "journal.window.entities.faces.from.photo.day",
+      "source": "19ec54d412d6c640fdf6fce00105fe3483ee6b795d1339d06372894da6586e44",
+      "contract": "460f2592217cc7e5103ae548a926bb7f8a950673ca010f6b0c527d2de0f6eef8",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.entities.faces.meeting.alt.photos",
+      "source": "b261efc75f85031e634ff86a3cb102f6770ca4f8b8b9264a4f57cad6f2ad1f6e",
+      "contract": "38f6a428f1ec5f4ca08ac5b3b0868b5c8ab3c607eff47279e76061f48dad1f25",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.faces.not.them",
       "source": "ebdafad960f263411e7f57e2d62e3b5ec0701dc332c0ce0f5b2bde0e18c3f2d9",
       "contract": "f35824030dc1de8542465c13033e9ab4307f15bc5f27df57cea9ae30a5173838",
@@ -66272,6 +66293,13 @@
       ]
     },
     {
+      "id": "journal.window.entities.faces.photo.alt",
+      "source": "2988479db2136a040b7b1a3afeb2c5b40875e8c8a68814ee02feb2244a20e8f6",
+      "contract": "38f6a428f1ec5f4ca08ac5b3b0868b5c8ab3c607eff47279e76061f48dad1f25",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.entities.faces.possible.lede",
       "source": "564f406238062085832dbd49d299c524e3f62ddfeaa41297d64bad2e131ec7ac",
       "contract": "f35824030dc1de8542465c13033e9ab4307f15bc5f27df57cea9ae30a5173838",
@@ -66302,6 +66330,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.entities.faces.possible.lede.photos",
+      "source": "59ca6b5bad7fd85f5b1a33eec173544f361f0653efba12b04bacdf513c6eca91",
+      "contract": "f35824030dc1de8542465c13033e9ab4307f15bc5f27df57cea9ae30a5173838",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.entities.faces.possible.title",
@@ -66398,6 +66433,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.entities.faces.unconfirmed.alt.photos",
+      "source": "7caa257b0c809bc369f73738022d840ba674c16d79b975aaaf5de9d7361b66db",
+      "contract": "f35824030dc1de8542465c13033e9ab4307f15bc5f27df57cea9ae30a5173838",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.entities.facet.detach.confirm",
@@ -192330,6 +192372,13 @@
       ]
     },
     {
+      "id": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos",
+      "source": "b8c7d98f70232742bcec1fd6c3288174d7eca1e238de434fb2ef8680677e6523",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.settings.field.label.suggest.profile.pics.from.your.meetings",
       "source": "a7d0d3b10be9c02d2ba147ec0493d3d116da34cc068ed4b43f03eea7ccd6b212",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
@@ -211164,6 +211213,55 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.clear.body",
+      "source": "a765cb289f2de37d8cea30231f9e02ff859b94eeec7016a5cc7844560744d7c0",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.clear.stays",
+      "source": "04832c6da7408f540777264906e1021a14a53d56a3e6a718e56fffbbb5ed4cfa",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.description",
+      "source": "cc852512cd053277bab3532e5f356a570a5755bf893007e245e3c493cc8ba8af",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.agents",
+      "source": "4c7b3ba1c317ec0d1274e96a2a3844be6e1cb78ae3d4257faef2385a081e64f9",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.matching",
+      "source": "a88aabac40e7731a465f4cae5842b82ee04d4211e0402026904bfcf009c89839",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.pace",
+      "source": "4df7959569c111b11782a49b864925b17beeeea59ff65939119274cdc3d3f8b6",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.runs",
+      "source": "25792adbf438503ac0a8a763370b5022a12e7d8a3c441e9ce0793f737c821e6f",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.settings.visible.text.facet",
@@ -280071,6 +280169,13 @@
       ]
     },
     {
+      "id": "journal.window.transcripts.consent.trash.photo.library.stays",
+      "source": "42fd91608dc4f8e445abfa5deb0ae07296609924c528f474e23d741023170f44",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.transcripts.consent.trash.selection.erase.title",
       "source": "ff4695f6314b32a9bda9f49509d16396e5078cd0047ec81e1fcc248caf428000",
       "contract": "c09fc4afd81b7ea24ad17ddd0695320456aacf264ffc4a0396ce004f04fbc571",
@@ -284091,6 +284196,13 @@
           "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
         }
       ]
+    },
+    {
+      "id": "journal.window.transcripts.photo.copy.pending",
+      "source": "9ef3216665b95f095b44ede464e6f6674012f09bcc16d0ef082aa938289ef452",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
     },
     {
       "id": "journal.window.transcripts.photo.copy.unavailable.this.photo.couldn.t.be.described",

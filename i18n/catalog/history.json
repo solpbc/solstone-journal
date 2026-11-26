@@ -37136,6 +37136,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.entities.copy.faces.suggested.lede.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+      "namespace": "journal.window.entities.copy.faces.suggested.lede",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.entities.copy.faces.suggested.title",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e7469746c65",
       "namespace": "journal.window.entities.copy.faces.suggested",
@@ -41005,6 +41017,53 @@
       "selector": null
     },
     {
+      "id": "journal.window.entities.faces.from.photo.day",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+      "namespace": "journal.window.entities.faces.from.photo",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.faces.meeting.alt.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+      "namespace": "journal.window.entities.faces.meeting.alt",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entity_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.entities.faces.not.them",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6e6f742e7468656d",
       "namespace": "journal.window.entities.faces.not",
@@ -41025,9 +41084,56 @@
       "selector": null
     },
     {
+      "id": "journal.window.entities.faces.photo.alt",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+      "namespace": "journal.window.entities.faces.photo",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "day",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "entity_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.entities.faces.possible.lede",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c656465",
       "namespace": "journal.window.entities.faces.possible",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "entity_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.faces.possible.lede.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
+      "namespace": "journal.window.entities.faces.possible.lede",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
@@ -41088,6 +41194,26 @@
       "id": "journal.window.entities.faces.unconfirmed.alt",
       "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74",
       "namespace": "journal.window.entities.faces.unconfirmed",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "entity_name",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.entities.faces.unconfirmed.alt.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
+      "namespace": "journal.window.entities.faces.unconfirmed.alt",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
@@ -131671,6 +131797,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+      "namespace": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.settings.field.label.suggest.profile.pics.from.your.meetings",
       "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e796f75722e6d656574696e6773",
       "namespace": "journal.window.settings.field.label.suggest.profile.pics.from.your",
@@ -146092,6 +146230,90 @@
       "id": "journal.window.settings.visible.text.errors",
       "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e6572726f7273",
       "namespace": "journal.window.settings.visible.text",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.clear.body",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+      "namespace": "journal.window.settings.visible.text.faces.photos.clear",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.clear.stays",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+      "namespace": "journal.window.settings.visible.text.faces.photos.clear",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.description",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+      "namespace": "journal.window.settings.visible.text.faces.photos",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.agents",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+      "namespace": "journal.window.settings.visible.text.faces.photos.how",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.matching",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+      "namespace": "journal.window.settings.visible.text.faces.photos.how",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.pace",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+      "namespace": "journal.window.settings.visible.text.faces.photos.how",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.settings.visible.text.faces.photos.how.runs",
+      "resource": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
+      "namespace": "journal.window.settings.visible.text.faces.photos.how",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,
@@ -187516,6 +187738,18 @@
       "selector": null
     },
     {
+      "id": "journal.window.transcripts.consent.trash.photo.library.stays",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+      "namespace": "journal.window.transcripts.consent.trash.photo.library",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.window.transcripts.consent.trash.selection.erase.title",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e73656c656374696f6e2e65726173652e7469746c65",
       "namespace": "journal.window.transcripts.consent.trash.selection.erase",
@@ -190299,6 +190533,18 @@
       "id": "journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e6e6f70726f63657373696e67616374696f6e2e7365742e75702e7468696e6b696e67",
       "namespace": "journal.window.transcripts.photo.copy.noprocessingaction.set.up",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.photo.copy.pending",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
+      "namespace": "journal.window.transcripts.photo.copy",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,

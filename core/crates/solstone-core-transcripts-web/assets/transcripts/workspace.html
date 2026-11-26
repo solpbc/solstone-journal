@@ -1559,6 +1559,11 @@
   background: var(--ink);
 }
 
+.tr-modal-img-wrap img.tr-modal-img-cap-512,
+.tr-modal-img-wrap canvas.tr-modal-img-cap-512 {
+  max-width: min(512px, 92vw);
+}
+
 .tr-modal-img-wrap canvas.loading {
   animation: tr-pulse 1.5s ease-in-out infinite;
 }

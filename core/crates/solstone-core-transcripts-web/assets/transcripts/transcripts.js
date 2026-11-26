@@ -176,6 +176,7 @@
         messages: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.messages.messages'),
         conversation: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.conversation.conversation'),
       },
+      photoLibraryStays: window.JournalI18n.render('journal.window.transcripts.consent.trash.photo.library.stays'),
       buttons: {
         eraseNow: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.erasenow.erase.now'),
         cancel: window.JournalI18n.render('journal.window.transcripts.trash.copy.cancel.cancel'),
@@ -623,6 +624,7 @@
       viewerLabel: window.JournalI18n.render('journal.window.transcripts.photo.copy.viewerlabel.photo.viewer'),
       captionLabel: window.JournalI18n.render('journal.window.transcripts.photo.copy.captionlabel.your.note'),
       descriptionLabel: window.JournalI18n.render('journal.window.transcripts.photo.copy.descriptionlabel.generated.description'),
+      pending: window.JournalI18n.render('journal.window.transcripts.photo.copy.pending'),
       noProcessing: window.JournalI18n.render('journal.window.transcripts.photo.copy.noprocessing.thinking.isn.t.set.up.yet'),
       noProcessingAction: window.JournalI18n.render('journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking'),
       unavailable: window.JournalI18n.render('journal.window.transcripts.photo.copy.unavailable.this.photo.couldn.t.be.described'),
@@ -631,16 +633,40 @@
     const PHOTO_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20.5 16l-4.5-4.5-6.5 6.5"/></svg>';
 
     const screenshotStreamKind = 'screenshots';
+    const photosStreamKind = 'photos';
 
     // A screenshots stream, by what its label says.
     function isScreenshotsStream(stream) {
       return Boolean(stream) && window.JournalFormat.streamSays(stream).what === screenshotStreamKind;
     }
 
-    // A photo moment: an imported image segment or an image-only zero-duration segment.
+    function isPhotosLibraryStream(stream) {
+      if (!stream) return false;
+      if (stream === photosStreamKind) return true;
+      return window.JournalFormat.streamSays(stream).what === photosStreamKind;
+    }
+
+    function photosStreamDevice(stream) {
+      if (!stream || stream === photosStreamKind) return '';
+      const label = humanizeStreamName(stream);
+      const suffix = ' · ' + photosStreamKind;
+      return label.endsWith(suffix) ? label.slice(0, -suffix.length) : '';
+    }
+
+    function photoEntryLabel(photo, seg) {
+      if (photo && photo.is_screenshot) return SCREENSHOT_COPY.J1;
+      const isLibrary = Boolean((photo && photo.source_kind === photosStreamKind) || isPhotosLibraryStream(seg && seg.stream));
+      if (!isLibrary) return PHOTO_COPY.label;
+      const device = (photo && typeof photo.device_name === 'string' && photo.device_name.trim())
+        ? photo.device_name.trim()
+        : photosStreamDevice(seg && seg.stream);
+      return device ? `${PHOTO_COPY.label} · ${device}` : PHOTO_COPY.label;
+    }
+
+    // A photo moment: an imported image segment, library photo segment, or image-only zero-duration segment.
     function isPhotoSegment(seg) {
       if (!seg) return false;
-      if (seg.stream === 'import.image') return true;
+      if (seg.stream === 'import.image' || isPhotosLibraryStream(seg.stream)) return true;
       const types = seg.types || [];
       return types.includes('image') && !types.includes('audio') && !types.includes('screen') && seg.start === seg.end;
     }
@@ -5277,8 +5303,7 @@
       const timeStr = chunk.time || '';
       const imageUrl = getImageUrlForChunk(chunk);
       const frameIdx = findFrameIndex(chunk);
-      const isShot = Boolean(photo && photo.is_screenshot);
-      const label = isShot ? SCREENSHOT_COPY.J1 : PHOTO_COPY.label;
+      const label = photoEntryLabel(photo, selectedSegment);
       const caption = photo && typeof photo.caption === 'string' && photo.caption.trim()
         ? photo.caption.trim()
         : '';
@@ -5319,6 +5344,8 @@
             + `<div class="tr-photo-part-label">${escapeHtml(PHOTO_COPY.descriptionLabel)}</div>`
             + `<div class="tr-image-text">${descHtml}</div>`
             + '</div>';
+        } else if (photo.description_state === 'pending' && photo.source_kind === photosStreamKind) {
+          html += `<div class="tr-shot-final" data-photo-state="pending"><p>${escapeHtml(PHOTO_COPY.pending)}</p></div>`;
         } else if (photo.description_state === 'no_processing') {
           html += `<div class="tr-shot-final" data-photo-state="no_processing"><p>${escapeHtml(PHOTO_COPY.noProcessing)}</p>`
             + `<p class="tr-shot-action"><a href="/app/thinking/">${escapeHtml(PHOTO_COPY.noProcessingAction)}</a></p></div>`;
@@ -5697,7 +5724,9 @@
         const device = shot ? screenshotDevice(frame.seg && frame.seg.stream) : '';
         const shotLabel = shot
           ? (device ? `${SCREENSHOT_COPY.J1} · ${device}` : SCREENSHOT_COPY.J1)
-          : (f.type === 'image' ? (photo && photo.is_screenshot ? SCREENSHOT_COPY.J1 : PHOTO_COPY.label) : '');
+          : (f.type === 'image' ? photoEntryLabel(photo, frame.seg) : '');
+        const modalImgCapClass = photo && photo.library_copy ? ' class="tr-modal-img-cap-512"' : '';
+        const modalCanvasCapClass = photo && photo.library_copy ? 'loading tr-modal-img-cap-512' : 'loading';
         const hasPrev = index > 0 || hasNeighbour(-1);
         const hasNext = index < frames.length - 1 || hasNeighbour(1);
         const modalFooter = (photoCaption || description)
@@ -5718,8 +5747,8 @@
             </div>
             <div class="tr-modal-img-wrap">
               ${imageUrl && !f.source_ref?.objects?.items?.length
-                ? `<img id="trModalImage" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}">`
-                : `<canvas id="trModalCanvas" class="loading" role="img" aria-label="${escapeHtml(altText)}"></canvas>`}
+                ? `<img id="trModalImage"${modalImgCapClass} src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}">`
+                : `<canvas id="trModalCanvas" class="${modalCanvasCapClass}" role="img" aria-label="${escapeHtml(altText)}"></canvas>`}
             </div>
             ${modalFooter}
           </div>
@@ -6853,6 +6882,8 @@
     }
 
     function isPhotoSegment(seg) {
+      if (!seg) return false;
+      if (seg.stream === 'import.image' || isPhotosLibraryStream(seg.stream)) return true;
       const types = Array.isArray(seg.types) ? seg.types : [];
       return types.includes('image') && !['audio', 'screen', 'markdown', 'browser'].some((kind) => types.includes(kind));
     }
@@ -7013,6 +7044,9 @@
         list,
         deleteDialogElement('p', 'tr-delete-stays', copy.stays),
         deleteDialogElement('p', 'tr-delete-found', copy.found),
+        ...(isPhotosLibraryStream(seg.stream)
+          ? [deleteDialogElement('p', 'tr-delete-photo-library', TRASH_COPY.photoLibraryStays)]
+          : []),
       );
       const totalBytes = (ownData?.media_sizes?.audio || 0) + (ownData?.media_sizes?.screen || 0);
       if (!erasing && !isLocRow && totalBytes > 0) {
@@ -8000,6 +8034,9 @@
         list,
         deleteDialogElement('p', 'tr-delete-stays', erasing ? copy.eraseStays : copy.moveStays),
         deleteDialogElement('p', 'tr-delete-found', erasing ? copy.eraseFound : copy.moveFound),
+        ...(segs.some((seg) => isPhotosLibraryStream(seg.stream))
+          ? [deleteDialogElement('p', 'tr-delete-photo-library', TRASH_COPY.photoLibraryStays)]
+          : []),
       );
       const sizes = segs.map(knownSegmentBytes);
       const total = sizes.every((bytes) => bytes !== null) ? sizes.reduce((sum, bytes) => sum + bytes, 0) : 0;

@@ -1,0 +1,16 @@
+{
+  "description": "Description for profile pic suggestions covering meetings and photos in settings.",
+  "context": "Journal window, settings view. Field note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "cc852512cd053277bab3532e5f356a570a5755bf893007e245e3c493cc8ba8af",
+  "max_length": 320,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

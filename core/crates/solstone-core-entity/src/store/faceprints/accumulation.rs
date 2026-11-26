@@ -488,6 +488,9 @@ pub fn clear(
                         remove_path(journal, io, &p)?;
                         count += 1;
                     }
+                    if scrub_live_photo_observation(segment.path())? {
+                        count += 1;
+                    }
                 }
             }
             for entry in solstone_core_journal_io::list_dir_entries(&journal.join("entities"))
@@ -515,9 +518,89 @@ pub fn clear(
                     }
                 })
                 .map_err(|e| e.to_string())?;
+            count += trash
+                .rewrite_files(
+                    |relative| {
+                        let components: Vec<_> = relative.split('/').collect();
+                        matches!(
+                            components.as_slice(),
+                            ["chronicle", .., PHOTO_OBSERVATION_FILE]
+                        )
+                    },
+                    scrub_photo_observation_bytes,
+                )
+                .map_err(|e| e.to_string())?;
             Ok(count)
         },
     )
+}
+
+const PHOTO_OBSERVATION_FILE: &str = "photo_observation.json";
+
+/// Strip stored face links (`faces`) and `faces_checked` from a serialized
+/// `photo_observation.json` while keeping the photo's description, caption,
+/// and all non-face fields intact. Returns `Ok(None)` if no face data was set.
+fn scrub_photo_observation_bytes(bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+    let mut value: Value = match serde_json::from_slice(bytes) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let Some(obj) = value.as_object_mut() else {
+        return Ok(None);
+    };
+    let has_faces = obj
+        .get("faces")
+        .and_then(Value::as_array)
+        .is_some_and(|arr| !arr.is_empty());
+    let checked = obj
+        .get("faces_checked")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !has_faces && !checked {
+        return Ok(None);
+    }
+    obj.insert("faces".to_owned(), Value::Array(Vec::new()));
+    obj.insert("faces_checked".to_owned(), Value::Bool(false));
+    serde_json::to_vec_pretty(&value)
+        .map(Some)
+        .map_err(|e| format!("serialize scrubbed photo_observation.json: {e}"))
+}
+
+fn scrub_live_photo_observation(segment_dir: &Path) -> Result<bool> {
+    let entries =
+        solstone_core_journal_io::list_dir_entries(segment_dir).map_err(|e| e.to_string())?;
+    let Some(entry) = entries
+        .into_iter()
+        .find(|e| e.name.to_str() == Some(PHOTO_OBSERVATION_FILE))
+    else {
+        return Ok(false);
+    };
+    match entry.kind {
+        solstone_core_journal_io::DirEntryKind::File => {}
+        solstone_core_journal_io::DirEntryKind::Other => return Err(LINKED_FACE_PATH.into()),
+        solstone_core_journal_io::DirEntryKind::Directory => return Ok(false),
+    }
+    let obs_path = entry.path;
+    let canonical =
+        solstone_core_journal_io::realpath_non_strict(&obs_path).map_err(|e| e.to_string())?;
+    if canonical != obs_path {
+        return Err(LINKED_FACE_PATH.into());
+    }
+    let bytes =
+        solstone_core_journal_io::read_bytes(&obs_path, Vec::new()).map_err(|e| e.to_string())?;
+    if bytes.is_empty() {
+        return Ok(false);
+    }
+    let Some(updated) = scrub_photo_observation_bytes(&bytes)? else {
+        return Ok(false);
+    };
+    solstone_core_journal_io::atomic_replace(
+        &obs_path,
+        &updated,
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 fn face_sidecar_name(name: &str) -> bool {

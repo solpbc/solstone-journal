@@ -1,0 +1,25 @@
+{
+  "description": "Entities view. Alt text for a candidate profile pic taken from a photo.",
+  "context": "Journal window. Entities view. Image alt text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    },
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "2988479db2136a040b7b1a3afeb2c5b40875e8c8a68814ee02feb2244a20e8f6",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

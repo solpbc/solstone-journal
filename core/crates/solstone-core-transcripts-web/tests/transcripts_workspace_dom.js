@@ -5058,3 +5058,66 @@ test('unrecorded missing original adds distinct warning class while recorded rem
   assert.ok(html.includes('tr-purge-notice--unrecorded') && html.includes('data-missing-unrecorded="true"'), html);
   assert.ok(html.includes('MISSING-UNRECORDED-REASON'), html);
 });
+
+test('library photo: shows device label, pending slot, 512 px lightbox cap class, and library-stays trash line', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115',
+    'analyzed',
+    false,
+    [
+      {
+        key: '141200_0',
+        stream: 'photos',
+        start: '14:12',
+        end: '14:12',
+        types: ['image'],
+        data_state: { image: 'analyzed' },
+      },
+    ],
+  );
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: { image: 'analyzed' },
+    image_files: { 'original.jpg': '/app/transcripts/api/media/20200115/photos/141200_0/original.jpg' },
+    chunks: [
+      {
+        type: 'image',
+        time: '14:12:00',
+        markdown: '',
+        source_ref: { raw: 'original.jpg' },
+        photo: {
+          width: 512,
+          height: 384,
+          caption: null,
+          description: null,
+          description_state: 'pending',
+          time_source: 'library_metadata',
+          is_screenshot: false,
+          source_kind: 'photos',
+          device_name: 'Test Phone',
+          library_copy: true,
+        },
+      },
+    ],
+  });
+
+  const entry = env.doc.querySelector('#trPanel .tr-entry-photo');
+  assert.ok(entry, 'library photo renders in transcript panel');
+  const label = entry.querySelector('.tr-shot-label');
+  assert.ok(label && label.textContent.includes('Test Phone'), 'library photo label includes device name');
+  const pending = entry.querySelector('[data-photo-state="pending"]');
+  assert.ok(pending && pending.textContent.trim().length > 0, 'pending library photo renders pending description slot');
+
+  entry.querySelector('button.tr-entry-shot-open').dispatchEvent({ type: 'click', bubbles: true });
+  const modalImg = env.doc.querySelector('#trModalImage');
+  assert.ok(modalImg && modalImg.classList.contains('tr-modal-img-cap-512'), '512 px library copy carries lightbox cap class');
+  const modalBadge = env.doc.querySelector('.tr-modal-badge');
+  assert.ok(modalBadge && modalBadge.textContent.includes('Test Phone'), 'lightbox header carries library photo label');
+  env.doc.querySelector('.tr-modal-close').dispatchEvent({ type: 'click', bubbles: true });
+
+  const trashBtn = env.doc.querySelector('#trDeleteBtn');
+  assert.ok(trashBtn && trashBtn.classList.contains('visible'), 'library photo segment offers single-photo delete');
+  trashBtn.dispatchEvent({ type: 'click', bubbles: true });
+  const libraryLine = env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-photo-library');
+  assert.ok(libraryLine && libraryLine.textContent.trim().length > 0, 'delete dialog includes library-stays boundary line');
+});

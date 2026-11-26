@@ -47,6 +47,7 @@ pub enum WhatWord {
     Calendar,
     Notes,
     Screenshots,
+    Photos,
 }
 
 impl WhatWord {
@@ -59,6 +60,7 @@ impl WhatWord {
             Self::Calendar => "calendar",
             Self::Notes => "Obsidian notes",
             Self::Screenshots => "screenshots",
+            Self::Photos => "photos",
         }
     }
 }
@@ -68,6 +70,7 @@ pub enum ProvenancePart {
     Import {
         source: String,
     },
+    Photos,
     Agent,
     Bound {
         device: Option<DeviceWord>,
@@ -215,6 +218,13 @@ fn classify_record(
         };
     }
 
+    // 3b. Synced photo-library stream (`photos` or source == "photos" without a single device cid).
+    if stem == solstone_core_segment::PHOTOS_SOURCE
+        || record.source.as_deref() == Some(solstone_core_segment::PHOTOS_SOURCE)
+    {
+        return ProvenancePart::Photos;
+    }
+
     // 4. Otherwise: unbound
     if record.kind == "browser" {
         return ProvenancePart::Unbound {
@@ -338,7 +348,7 @@ fn classify_bound_source(
         // An empty source is what ingest stores when a client names none: the
         // device's own recording, with nothing read about what it recorded.
         "" | "audio" | "screen" | "camera" | "location" | "calendar" | "obsidian"
-        | "screenshots" | "mobile-segment" | "mobile" => {
+        | "screenshots" | "photos" | "mobile-segment" | "mobile" => {
             let device_word = resolve_platform_device_word(record, description, ledger_entry);
             let what_word = match source {
                 "audio" => Some(WhatWord::Audio),
@@ -348,6 +358,7 @@ fn classify_bound_source(
                 "calendar" => Some(WhatWord::Calendar),
                 "obsidian" => Some(WhatWord::Notes),
                 "screenshots" => Some(WhatWord::Screenshots),
+                "photos" => Some(WhatWord::Photos),
                 _ => None,
             };
             (device_word, what_word)
@@ -478,6 +489,7 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
             };
             format!("{words} · imported")
         }
+        ProvenancePart::Photos => "photos".to_owned(),
         ProvenancePart::Agent => "your agent".to_owned(),
         ProvenancePart::Bound {
             device: Some(device),
@@ -559,6 +571,7 @@ fn agent_provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) ->
             "document" => ("PDF".to_owned(), true),
             _ => (provenance_label(part, parenthetical), false),
         },
+        ProvenancePart::Photos => ("photos".to_owned(), true),
         ProvenancePart::Bound {
             what: Some(WhatWord::Notes),
             ..
@@ -640,6 +653,10 @@ pub fn rendered_stream_says(table: &StreamLabelTable) -> Option<BTreeMap<String,
                     ProvenancePart::Import { .. } => StreamLabelSays {
                         what: None,
                         imported: true,
+                    },
+                    ProvenancePart::Photos => StreamLabelSays {
+                        what: Some("photos"),
+                        imported: false,
                     },
                     ProvenancePart::Bound { what, .. } => StreamLabelSays {
                         what: what.map(|what| what.as_str()),
@@ -2206,5 +2223,42 @@ mod tests {
         assert_eq!(dashboard["mac_obsidian"], "your device · Obsidian notes");
         assert_eq!(dashboard["import.evernote"], "Evernote · imported");
         assert_eq!(dashboard["import.document"], "documents · imported");
+    }
+
+    #[test]
+    fn photos_stream_resolves_to_photos_label_and_what_word() {
+        let root = tempfile::tempdir().unwrap();
+        let obj = json!({
+            "name": "photos",
+            "kind": "import",
+            "host": null,
+            "platform": null,
+            "created_at": 1,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1
+        });
+        write_file(root.path(), "streams/photos.json", &obj.to_string());
+        write_stream(
+            root.path(),
+            "iphone_photos",
+            "observer",
+            Some("sha256:ph1"),
+            Some("photos"),
+            Some("ios"),
+        );
+        let table = load_stream_labels(root.path());
+        let dashboard = rendered_stream_labels(&table).unwrap();
+        let says = rendered_stream_says(&table).unwrap();
+        let agent = agent_stream_labels(&table);
+        assert_eq!(dashboard.get("photos").map(String::as_str), Some("photos"));
+        assert_eq!(agent.get("photos").map(String::as_str), Some("photos"));
+        assert_eq!(says["photos"].what, Some("photos"));
+        assert!(!says["photos"].imported);
+        assert_eq!(
+            dashboard.get("iphone_photos").map(String::as_str),
+            Some("your device · photos")
+        );
+        assert_eq!(says["iphone_photos"].what, Some("photos"));
     }
 }

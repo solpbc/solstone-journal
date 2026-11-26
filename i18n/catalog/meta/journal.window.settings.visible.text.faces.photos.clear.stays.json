@@ -1,0 +1,16 @@
+{
+  "description": "Confirmation dialog note explaining what stays after erasing face data when photos are included.",
+  "context": "Journal window, settings view. Confirmation dialog body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "04832c6da7408f540777264906e1021a14a53d56a3e6a718e56fffbbb5ed4cfa",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

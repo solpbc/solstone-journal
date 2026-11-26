@@ -52,6 +52,8 @@ pub(crate) fn normalize_markdown_only_segments(
 ) {
     for segment in segments {
         let holds_notes = segment.stream.starts_with("import.")
+            || segment.stream == "photos"
+            || solstone_core_segment::is_photos_stream(journal_root, &segment.stream)
             || solstone_core_format::obsidian::is_obsidian_stream_name(&segment.stream);
         if !holds_notes {
             continue;

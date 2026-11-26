@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. Candidate profile pic provenance link for a photo on a given day.",
+  "context": "Journal window. Entities view. Profile pic provenance link.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "day",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "19ec54d412d6c640fdf6fce00105fe3483ee6b795d1339d06372894da6586e44",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -65,6 +65,8 @@ pub struct Panel {
     pub default: Option<fp::FaceKey>,
     pub looks: usize,
     pub last_action: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub photo_match_enabled: bool,
 }
 pub struct Photo {
     pub state: State,
@@ -174,8 +176,10 @@ pub fn panel(journal: &Path, entity: &str) -> Result<Panel, Error> {
             default: None,
             looks: 0,
             last_action: None,
+            photo_match_enabled: false,
         });
     }
+    let photo_match_enabled = fp::photo_match_enabled(journal)?;
     let c = context(journal, entity)?;
     let faces = c
         .panel
@@ -202,6 +206,7 @@ pub fn panel(journal: &Path, entity: &str) -> Result<Panel, Error> {
         default: c.panel.default,
         looks: c.panel.looks,
         last_action: c.state.last.map(|u| u.token),
+        photo_match_enabled,
     })
 }
 

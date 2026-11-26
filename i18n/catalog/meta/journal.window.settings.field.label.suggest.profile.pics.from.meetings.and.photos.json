@@ -1,0 +1,16 @@
+{
+  "description": "Field label in the journal's settings view for profile pic suggestions covering meetings and photos.",
+  "context": "Journal window, settings view. Field label.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b8c7d98f70232742bcec1fd6c3288174d7eca1e238de434fb2ef8680677e6523",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

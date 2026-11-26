@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. Boundary line in the delete segment dialog when deleting a photo from the Photos Library source.",
+  "context": "Journal window. Transcripts view. Delete confirmation note.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "42fd91608dc4f8e445abfa5deb0ae07296609924c528f474e23d741023170f44",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -24237,3 +24237,35 @@ journal.window.year.source.or.date.unit.label.experience = experience
 journal.window.year.source.or.date.unit.label.experiences = experiences
 
 journal.window.year.source.or.date.unit.label.no.experiences = no experiences
+
+journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos = suggest profile pics from meetings and photos
+
+journal.window.settings.visible.text.faces.photos.description = your journal looks for faces in your meeting recordings and photos, links people it recognizes from meetings to those photos, and suggests profile pics for them. you choose the picture, or none.
+
+journal.window.settings.visible.text.faces.photos.how.runs = it runs where your journal lives, on frames from your meeting recordings and on photos your journal checks or keeps.
+
+journal.window.settings.visible.text.faces.photos.how.pace = your past meeting recordings are read a little at a time in the background while they're still in your journal, and photos are checked as they come in.
+
+journal.window.settings.visible.text.faces.photos.how.agents = agents you connect to your journal can receive a person's profile pic, and a suggested one arrives marked as suggested. you can turn profile pics off for each agent. a connected agent that may see only some facets gets one only when it came from a meeting or photo in one of them.
+
+journal.window.settings.visible.text.faces.photos.how.matching = in meetings, it matches a face to a person only when the face sits beside their name or alone in their video tile. in photos, it matches only against people your journal already knows from meetings. when photos is on, this also checks saved or shared photos others took near your moments to decide whether to bring them in. a picture is theirs only once you choose it.
+
+journal.window.settings.visible.text.faces.photos.clear.body = this erases all face data your journal found in your meeting recordings and photos, the profile pics you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.
+
+journal.window.settings.visible.text.faces.photos.clear.stays = your people, their names, your recordings and your photos stay. a backup made before now may still hold face data.
+
+journal.window.entities.faces.from.photo.day = from a photo on { $day }
+
+journal.window.entities.faces.photo.alt = a profile pic from a photo on { $day } that might be { $entity_name }
+
+journal.window.entities.faces.meeting.alt.photos = a profile pic from a meeting on { $day } that might be { $entity_name }
+
+journal.window.entities.faces.possible.lede.photos = these profile pics from your meetings or photos might be { $entity_name }. none is used until you pick one.
+
+journal.window.entities.copy.faces.suggested.lede.photos = your journal picked this profile pic from your meetings. it's only a suggestion until you say yes.
+
+journal.window.entities.faces.unconfirmed.alt.photos = a profile pic from a meeting or photo that might be { $entity_name }, not confirmed
+
+journal.window.transcripts.photo.copy.pending = this photo hasn't been described yet. today's photos come first, then earlier ones.
+
+journal.window.transcripts.consent.trash.photo.library.stays = nothing changes in your photo library. deleted photos don't come back on a later sync.

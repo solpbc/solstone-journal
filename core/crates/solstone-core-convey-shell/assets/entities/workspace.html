@@ -9346,12 +9346,17 @@ const ENTITY_FACE_MESSAGES = {
   ENT_FACES_NOT_THEM: 'journal.window.entities.faces.not.them',
   ENT_FACES_POSSIBLE_TITLE: 'journal.window.entities.faces.possible.title',
   ENT_FACES_POSSIBLE_LEDE: 'journal.window.entities.faces.possible.lede',
+  ENT_FACES_POSSIBLE_LEDE_PHOTOS: 'journal.window.entities.faces.possible.lede.photos',
   ENT_FACES_CONFIRMED_LEDE: 'journal.window.entities.faces.confirmed.lede',
   ENT_FACES_DISMISSED_LEDE: 'journal.window.entities.faces.dismissed.lede',
   ENT_FACES_FROM_DAY: 'journal.window.entities.faces.from.day',
+  ENT_FACES_FROM_PHOTO_DAY: 'journal.window.entities.faces.from.photo.day',
   ENT_FACES_FACE_ALT: 'journal.window.entities.faces.face.alt',
+  ENT_FACES_PHOTO_ALT: 'journal.window.entities.faces.photo.alt',
+  ENT_FACES_MEETING_ALT_PHOTOS: 'journal.window.entities.faces.meeting.alt.photos',
   ENT_FACES_CHOSEN_ALT: 'journal.window.entities.faces.chosen.alt',
   ENT_FACES_UNCONFIRMED_ALT: 'journal.window.entities.faces.unconfirmed.alt',
+  ENT_FACES_UNCONFIRMED_ALT_PHOTOS: 'journal.window.entities.faces.unconfirmed.alt.photos',
   ENT_FACES_DONE_CHOSEN: 'journal.window.entities.faces.done.chosen',
   ENT_FACES_DONE_REJECTED: 'journal.window.entities.faces.done.rejected',
   ENT_FACES_DONE_DISMISSED: 'journal.window.entities.faces.done.dismissed',
@@ -9360,9 +9365,23 @@ const ENTITY_FACE_MESSAGES = {
 function facesCopy(key, { name = '', day = '' } = {}) {
   const id = ENTITY_FACE_MESSAGES[key];
   if (!id) return ENT_COPY[key] || '';
-  if (key === 'ENT_FACES_FROM_DAY') return entityWindowText(id, { day });
-  if (key === 'ENT_FACES_FACE_ALT') return entityWindowText(id, { day, entity_name: name });
+  if (key === 'ENT_FACES_FROM_DAY' || key === 'ENT_FACES_FROM_PHOTO_DAY') return entityWindowText(id, { day });
+  if (key === 'ENT_FACES_FACE_ALT' || key === 'ENT_FACES_PHOTO_ALT' || key === 'ENT_FACES_MEETING_ALT_PHOTOS') {
+    return entityWindowText(id, { day, entity_name: name });
+  }
   return entityWindowText(id, { entity_name: name });
+}
+
+function facesPhotoMatchActive(data) {
+  if (!data) return false;
+  if (data.photo_match_enabled) return true;
+  return Array.isArray(data.faces) && data.faces.some((face) => face?.source === 'photo');
+}
+
+function facesAlt(face, name, photoMatch) {
+  const day = facesDayText(face.day);
+  if (face.source === 'photo') return facesCopy('ENT_FACES_PHOTO_ALT', {name, day});
+  return facesCopy(photoMatch ? 'ENT_FACES_MEETING_ALT_PHOTOS' : 'ENT_FACES_FACE_ALT', {name, day});
 }
 
 function facesBase(entityId) {
@@ -9394,16 +9413,19 @@ function faceRecording(face) {
 /// meeting it was taken from, and whether the face sat by the person's name
 /// or in their own video tile.
 function facesProvenance(face) {
-  const where = face.source === 'anchored'
-    ? ENT_COPY.ENT_FACES_SOURCE_ANCHORED
-    : ENT_COPY.ENT_FACES_SOURCE_BOX;
+  const isPhoto = face.source === 'photo';
+  const where = isPhoto
+    ? ''
+    : (face.source === 'anchored'
+      ? ENT_COPY.ENT_FACES_SOURCE_ANCHORED
+      : ENT_COPY.ENT_FACES_SOURCE_BOX);
   const day = facesDayText(face.day);
   const parts = [];
   if (day) {
     const link = document.createElement('a');
     link.className = 'entity-face-day';
     link.href = transcriptsHref(face.day, faceRecording(face));
-    link.textContent = facesCopy('ENT_FACES_FROM_DAY', {day});
+    link.textContent = facesCopy(isPhoto ? 'ENT_FACES_FROM_PHOTO_DAY' : 'ENT_FACES_FROM_DAY', {day});
     parts.push(link);
   }
   if (where) {
@@ -9438,12 +9460,13 @@ function facesImage(src, alt, className) {
 /// can give about it.
 function facesTile(face) {
   const name = facesPanel.name;
+  const photoMatch = facesPhotoMatchActive(facesPanel.data);
   const figure = document.createElement('figure');
   figure.className = 'entity-face';
   figure.dataset.faceSource = face.source;
   figure.append(facesImage(
     face.crop_url,
-    facesCopy('ENT_FACES_FACE_ALT', {name, day: facesDayText(face.day)}),
+    facesAlt(face, name, photoMatch),
     'entity-face-img'
   ));
   const caption = facesCaption(face, false);
@@ -9564,6 +9587,7 @@ function renderFacesPanel() {
   heading.textContent = ENT_COPY.ENT_FACES_HEADING || '';
   section.append(heading);
   const faces = Array.isArray(data?.faces) ? data.faces : [];
+  const photoMatch = facesPhotoMatchActive(data);
   const lede = (key) => {
     const p = document.createElement('p');
     p.className = 'entity-faces-lede';
@@ -9597,18 +9621,20 @@ function renderFacesPanel() {
       more.append(pick);
     }
     more.append(facesButton(ENT_COPY.ENT_FACES_NONE || '', () => facesAct('dismiss'), {action: 'dismiss'}));
+    const suggestedLedeKey = photoMatch ? 'ENT_FACES_SUGGESTED_LEDE_PHOTOS' : 'ENT_FACES_SUGGESTED_LEDE';
     if (hero) {
-      const img = facesImage(hero.crop_url, facesCopy('ENT_FACES_FACE_ALT', {name, day: facesDayText(hero.day)}), 'entity-face-img');
-      section.append(facesAsk(img, title, lede('ENT_FACES_SUGGESTED_LEDE'), facesCaption(hero, true), answers, more));
+      const img = facesImage(hero.crop_url, facesAlt(hero, name, photoMatch), 'entity-face-img');
+      section.append(facesAsk(img, title, lede(suggestedLedeKey), facesCaption(hero, true), answers, more));
     } else {
-      section.append(title, lede('ENT_FACES_SUGGESTED_LEDE'), more);
+      section.append(title, lede(suggestedLedeKey), more);
     }
     if (facesPanel.picking && others.length) section.append(facesGrid(others));
   } else if (state === 'possible') {
     const title = document.createElement('p');
     title.className = 'entity-faces-title';
     title.textContent = facesCopy('ENT_FACES_POSSIBLE_TITLE', {name});
-    section.append(title, lede('ENT_FACES_POSSIBLE_LEDE'), facesGrid(faces));
+    const possibleLedeKey = photoMatch ? 'ENT_FACES_POSSIBLE_LEDE_PHOTOS' : 'ENT_FACES_POSSIBLE_LEDE';
+    section.append(title, lede(possibleLedeKey), facesGrid(faces));
     section.append(actions(facesButton(ENT_COPY.ENT_FACES_NONE || '', () => facesAct('dismiss'), {action: 'dismiss'})));
   } else if (state === 'confirmed') {
     // The chosen photo is the owner's own copy, read fresh after every change.
@@ -9900,7 +9926,7 @@ async function facesPreview(entityId) {
     if (data?.state === 'confirmed') return {src: `${facesBase(entityId)}/photo`, confirmed: true};
     const face = faces.find((f) => sameFaceKey(f.key, data?.default)) || faces[0];
     if (face && (data?.state === 'suggested' || data?.state === 'possible')) {
-      return {src: face.crop_url, confirmed: false};
+      return {src: face.crop_url, confirmed: false, photoMatch: facesPhotoMatchActive(data)};
     }
   } catch (err) {
     // A missing preview leaves the suggestion's words to stand on their own.
@@ -9925,9 +9951,12 @@ function facesMergeReason(item) {
     facesPreview(entityId).then((preview) => {
       if (!preview) { slot.remove(); return; }
       const name = item.names[index] || entityId;
+      const altKey = preview.confirmed
+        ? 'ENT_FACES_CHOSEN_ALT'
+        : (preview.photoMatch ? 'ENT_FACES_UNCONFIRMED_ALT_PHOTOS' : 'ENT_FACES_UNCONFIRMED_ALT');
       slot.append(facesImage(
         preview.src,
-        facesCopy(preview.confirmed ? 'ENT_FACES_CHOSEN_ALT' : 'ENT_FACES_UNCONFIRMED_ALT', {name}),
+        facesCopy(altKey, {name}),
         'journal-dup-face-img'
       ));
       if (!preview.confirmed) {

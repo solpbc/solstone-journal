@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. Intro text above possible profile pics from meetings or photos.",
+  "context": "Journal window. Entities view. Panel lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "59ca6b5bad7fd85f5b1a33eec173544f361f0653efba12b04bacdf513c6eca91",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

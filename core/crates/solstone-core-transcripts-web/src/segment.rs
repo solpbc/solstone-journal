@@ -963,6 +963,14 @@ fn imported_image_entry(
             ),
         }
     };
+    let is_library_photo = context.stream == "photos"
+        || solstone_core_segment::is_photos_stream(context.root, context.stream);
+    let device_name = is_library_photo
+        .then(|| {
+            meta.as_ref()
+                .and_then(|value| non_empty_str(value.get("device_name")))
+        })
+        .flatten();
     let legacy_markdown = match (&caption, &description) {
         (Some(cap), Some(desc)) => format!("{cap}\n\n{desc}"),
         (Some(cap), None) => cap.clone(),
@@ -990,6 +998,9 @@ fn imported_image_entry(
             "time_source": time_source,
             "original_filename": original_filename,
             "is_screenshot": is_screenshot,
+            "source_kind": if is_library_photo { "photos" } else { "import" },
+            "device_name": device_name,
+            "library_copy": is_library_photo,
             "faces": faces,
         },
     }));
@@ -4650,5 +4661,102 @@ mod tests {
         assert_eq!(chunks[0]["photo"]["description_state"], "no_processing");
         assert!(chunks[0]["photo"]["description"].is_null());
         assert_eq!(chunks[0]["photo"]["time_source"], "upload_fallback");
+        assert_eq!(chunks[0]["photo"]["source_kind"], "import");
+        assert_eq!(chunks[0]["photo"]["library_copy"], false);
+    }
+
+    #[test]
+    fn library_photo_segment_reports_photos_source_device_pending_state_and_copy_flag() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let seg_dir = root.join("chronicle/20261119/photos/141200_0");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        let mut jpg = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image::ImageBuffer::from_pixel(
+            512,
+            384,
+            image::Rgb([40, 80, 120]),
+        ))
+        .write_to(&mut jpg, image::ImageFormat::Jpeg)
+        .unwrap();
+        std::fs::write(seg_dir.join("original.jpg"), jpg.into_inner()).unwrap();
+        std::fs::write(
+            seg_dir.join("image_meta.json"),
+            r#"{"schema":1,"time_source":"library_metadata","device_name":"Test Phone"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            seg_dir.join("image_transcript.md"),
+            "# IMG_1001\n\n**Type:** Image\n**Format:** JPEG\n**Dimensions:** 512×384\n**Date:** 2026-11-19\n",
+        )
+        .unwrap();
+        let obs = solstone_core_segment::photo_observation::PhotoObservation {
+            schema: 1,
+            observation_revision: 1,
+            source: solstone_core_segment::photo_observation::PhotoObservationSource {
+                day: "20261119".to_owned(),
+                stream: "photos".to_owned(),
+                segment: "141200_0".to_owned(),
+                artifact_selector: "original.jpg".to_owned(),
+                source_sha256: None,
+                original_filename: Some("IMG_1001.HEIC".to_owned()),
+                asset_id: Some("asset-1".to_owned()),
+                import_id: None,
+            },
+            width: Some(512),
+            height: Some(384),
+            format: Some("jpeg".to_owned()),
+            time: solstone_core_segment::photo_observation::PhotoObservationTime {
+                captured_at: Some("2026-11-19T14:12:00-07:00".to_owned()),
+                placed_at: "2026-11-19T14:12:00".to_owned(),
+                utc_offset_seconds: Some(-25200),
+                time_source: "capture".to_owned(),
+                precision: solstone_core_segment::photo_observation::PhotoTimePrecision::Second,
+                provenance:
+                    solstone_core_segment::photo_observation::PhotoTimeProvenance::LibraryMetadata,
+                tz: Some("America/Denver".to_owned()),
+            },
+            state: solstone_core_segment::photo_observation::PhotoObservationState::Pending,
+            state_reason: None,
+            retry_count: 0,
+            owner_caption: None,
+            description: None,
+            visible_text: None,
+            belonging_class: None,
+            faces: Vec::new(),
+            faces_checked: false,
+            updated_at: "2026-11-19T21:12:05Z".to_owned(),
+        };
+        solstone_core_segment::photo_observation::write_photo_observation(&seg_dir, &obs).unwrap();
+
+        let prepared_day =
+            crate::day::prepare_day(root, "20261119", jiff::Timestamp::now()).unwrap();
+        let day_seg = prepared_day
+            .segments
+            .iter()
+            .find(|s| s.stream == "photos" && s.key == "141200_0")
+            .expect("photos segment listed on day");
+        assert_eq!(day_seg.types, vec!["image"]);
+        assert_eq!(
+            day_seg.data_state.get("image").map(String::as_str),
+            Some("analyzed")
+        );
+
+        let value = super::prepare_segment(
+            root,
+            "20261119",
+            "photos",
+            "141200_0",
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0]["photo"]["source_kind"], "photos");
+        assert_eq!(chunks[0]["photo"]["device_name"], "Test Phone");
+        assert_eq!(chunks[0]["photo"]["library_copy"], true);
+        assert_eq!(chunks[0]["photo"]["description_state"], "pending");
+        assert_eq!(chunks[0]["photo"]["width"], 512);
+        assert_eq!(chunks[0]["photo"]["height"], 384);
     }
 }

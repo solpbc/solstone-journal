@@ -1,0 +1,21 @@
+{
+  "description": "Entities view. Alt text for an unconfirmed profile pic preview in a merge suggestion.",
+  "context": "Journal window. Entities view. Image alt text.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "entity_name",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "7caa257b0c809bc369f73738022d840ba674c16d79b975aaaf5de9d7361b66db",
+  "max_length": 200,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

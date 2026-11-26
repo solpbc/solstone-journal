@@ -1,0 +1,16 @@
+{
+  "description": "How-this-works bullet explaining matching rules in meetings and photos.",
+  "context": "Journal window, settings view. Disclosure bullet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a88aabac40e7731a465f4cae5842b82ee04d4211e0402026904bfcf009c89839",
+  "max_length": 520,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -609,7 +609,15 @@ fn project_faces(faces: Option<&Value>, available: bool) -> Option<Value> {
             None => true,
             Some(value) => value == &Value::Bool(true),
         };
-    Some(json!({"enabled": enabled, "available": available}))
+    let photo_match_enabled =
+        available && faces.and_then(|f| f.get("photo_match_enabled")) == Some(&Value::Bool(true));
+    let mut obj = Map::new();
+    obj.insert("enabled".to_owned(), Value::Bool(enabled));
+    obj.insert("available".to_owned(), Value::Bool(available));
+    if photo_match_enabled {
+        obj.insert("photo_match_enabled".to_owned(), Value::Bool(true));
+    }
+    Some(Value::Object(obj))
 }
 
 /// A known backend this host cannot run. A mac has no parakeet.cpp server, so
@@ -1077,6 +1085,27 @@ mod tests {
         assert_eq!(super::project_faces(None, true), None);
         assert_eq!(
             super::project_faces(None, false),
+            Some(json!({"enabled": false, "available": false}))
+        );
+        assert_eq!(
+            super::project_faces(
+                Some(&json!({"enabled": true, "photo_match_enabled": true})),
+                true
+            ),
+            Some(json!({"enabled": true, "available": true, "photo_match_enabled": true}))
+        );
+        assert_eq!(
+            super::project_faces(
+                Some(&json!({"enabled": true, "photo_match_enabled": false})),
+                true
+            ),
+            Some(json!({"enabled": true, "available": true}))
+        );
+        assert_eq!(
+            super::project_faces(
+                Some(&json!({"enabled": true, "photo_match_enabled": true})),
+                false
+            ),
             Some(json!({"enabled": false, "available": false}))
         );
     }

@@ -540,4 +540,140 @@ mod disk {
         assert_eq!(s.decision.dismissed_looks, vec![face(0).embedding]);
         assert!(s.decision.photo.is_none());
     }
+
+    #[test]
+    fn clear_scrubs_photo_observation_faces_in_live_chronicle_and_trash() {
+        struct DummyHold;
+        impl solstone_core_trash::Hold for DummyHold {}
+        struct DummyKind;
+        impl solstone_core_trash::Kind for DummyKind {
+            fn handles(&self, _: &solstone_core_removals::Unit) -> bool {
+                true
+            }
+            fn hold<'a>(
+                &'a self,
+                _: &Path,
+                _: &solstone_core_trash::Item,
+            ) -> std::result::Result<Box<dyn solstone_core_trash::Hold + 'a>, String> {
+                Ok(Box::new(DummyHold))
+            }
+            fn present(&self, _: &Path, _: &str) -> bool {
+                true
+            }
+            fn references(
+                &self,
+                _: &Path,
+                _: &solstone_core_trash::Item,
+                _: solstone_core_trash::Change,
+                _: &[String],
+            ) -> std::result::Result<(), String> {
+                Ok(())
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            br#"{"faces":{"enabled":false}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("entities")).unwrap();
+
+        let make_obs = |day: &str, seg: &str| {
+            serde_json::json!({
+                "schema": 1,
+                "observation_revision": 1,
+                "source": {
+                    "day": day,
+                    "stream": "photos",
+                    "segment": seg,
+                    "artifact_selector": "original.jpg"
+                },
+                "time": {
+                    "placed_at": format!("{}-{}-{}T12:00:00", &day[0..4], &day[4..6], &day[6..8]),
+                    "precision": "second",
+                    "provenance": "library_metadata",
+                    "time_source": "capture"
+                },
+                "state": "ready",
+                "retry_count": 0,
+                "description": { "text": "sunny park", "attribution": "model" },
+                "faces": [{
+                    "entity_id": "person_a",
+                    "face_idx": 0,
+                    "bbox": [1.0, 2.0, 30.0, 40.0],
+                    "det_score": 0.98,
+                    "similarity": 0.87,
+                    "margin": 0.14
+                }],
+                "faces_checked": true,
+                "updated_at": "2026-11-19T12:00:00Z"
+            })
+        };
+
+        // 1. Live photo segment in chronicle/
+        let live_seg = root.join("chronicle/20261119/photos/120000_0");
+        std::fs::create_dir_all(&live_seg).unwrap();
+        std::fs::write(
+            live_seg.join("photo_observation.json"),
+            serde_json::to_vec_pretty(&make_obs("20261119", "120000_0")).unwrap(),
+        )
+        .unwrap();
+
+        // 2. Trashed photo segment in trash/
+        let trash_seg = root.join("chronicle/20261118/photos/090000_0");
+        std::fs::create_dir_all(&trash_seg).unwrap();
+        std::fs::write(
+            trash_seg.join("photo_observation.json"),
+            serde_json::to_vec_pretty(&make_obs("20261118", "090000_0")).unwrap(),
+        )
+        .unwrap();
+        let trashed_item = solstone_core_trash::detach(
+            root,
+            &DummyKind,
+            solstone_core_removals::Unit::Segment {
+                day: "20261118".into(),
+                stream: "photos".into(),
+                segment: "090000_0".into(),
+            },
+            solstone_core_removals::Action::SegmentDelete,
+            solstone_core_removals::Surface::Web,
+            vec!["chronicle/20261118/photos/090000_0".into()],
+        )
+        .unwrap();
+
+        let count = accumulation::clear(root, solstone_core_removals::Surface::Web).unwrap();
+        assert!(
+            count >= 2,
+            "expected both live and trashed photo observations scrubbed, got {count}"
+        );
+
+        let live_after: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(live_seg.join("photo_observation.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(live_after["faces"], serde_json::json!([]));
+        assert_eq!(live_after["faces_checked"], serde_json::json!(false));
+        assert_eq!(
+            live_after["description"]["text"],
+            serde_json::json!("sunny park")
+        );
+
+        let trashed_obs = solstone_core_trash::held_file(
+            root,
+            &trashed_item.id,
+            "chronicle/20261118/photos/090000_0/photo_observation.json",
+        )
+        .unwrap();
+        let trashed_after: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&trashed_obs).unwrap()).unwrap();
+        assert_eq!(trashed_after["faces"], serde_json::json!([]));
+        assert_eq!(trashed_after["faces_checked"], serde_json::json!(false));
+        assert_eq!(
+            trashed_after["description"]["text"],
+            serde_json::json!("sunny park")
+        );
+    }
 }

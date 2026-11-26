@@ -2946,7 +2946,7 @@ button:focus:not(:focus-visible) {
         <small>{{journal.window.settings.visible.text.about.this.many.for.each.screen}}</small>
       </div>
 
-      <!-- Profile pics, from faces in meetings: on by default, desktop journals only. -->
+      <!-- Profile pics, from faces in meetings (and photos when photo matching is enabled): on by default, desktop journals only. -->
       <div class="settings-field" id="facesField" hidden>
         <small id="facesStatus"></small>
         <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
@@ -2954,17 +2954,17 @@ button:focus:not(:focus-visible) {
             <input type="checkbox" id="facesEnabled" disabled aria-describedby="facesDescription">
             <span class="slider"></span>
           </label>
-          <label for="facesEnabled" class="toggle-label" style="cursor: pointer;">{{journal.window.settings.field.label.suggest.profile.pics.from.your.meetings}}</label>
+          <label for="facesEnabled" id="facesToggleLabel" class="toggle-label" style="cursor: pointer;">{{journal.window.settings.field.label.suggest.profile.pics.from.your.meetings}}</label>
         </div>
         <p class="settings-field-note" id="facesDescription">{{journal.window.settings.visible.text.your.journal.looks.for.faces.in}}</p>
         <details class="faces-more" id="facesMore">
           <summary>{{journal.window.settings.disclosure.label.how.this.works}}</summary>
           <ul class="faces-more-list">
-            <li>{{journal.window.settings.visible.text.it.runs.on.this.computer.on}}</li>
+            <li id="facesHowRuns">{{journal.window.settings.visible.text.it.runs.on.this.computer.on}}</li>
             <li>{{journal.window.settings.visible.text.the.face.details.it.uses.to}}</li>
-            <li>{{journal.window.settings.visible.text.your.past.meeting.recordings.are.read}}</li>
-            <li>{{journal.window.settings.visible.text.agents.you.connect.to.your.journal}}</li>
-            <li>{{journal.window.settings.visible.text.it.matches.a.face.to.a}}</li>
+            <li id="facesHowPace">{{journal.window.settings.visible.text.your.past.meeting.recordings.are.read}}</li>
+            <li id="facesHowAgents">{{journal.window.settings.visible.text.agents.you.connect.to.your.journal}}</li>
+            <li id="facesHowMatching">{{journal.window.settings.visible.text.it.matches.a.face.to.a}}</li>
             <li>{{journal.window.settings.visible.text.turning.this.off.stops.new.reading}}</li>
           </ul>
         </details>
@@ -3435,8 +3435,8 @@ button:focus:not(:focus-visible) {
     <div class="color-modal-content" style="max-width: 480px;">
       <h3 id="facesClearHeading">{{journal.window.settings.section.heading.erase.all.face.data}}</h3>
       <div id="facesClearBody">
-        <p>{{journal.window.settings.visible.text.this.erases.every.face.your.journal}}</p>
-        <p>{{journal.window.settings.visible.text.your.people.their.names.and.your}}</p>
+        <p id="facesClearIntro">{{journal.window.settings.visible.text.this.erases.every.face.your.journal}}</p>
+        <p id="facesClearStays">{{journal.window.settings.visible.text.your.people.their.names.and.your}}</p>
       </div>
       <div style="display: flex; gap: 0.75em; justify-content: flex-end; margin-top: 1em;">
         <button type="button" id="facesClearCancel">{{journal.window.settings.button.label.cancel}}</button>
@@ -4763,6 +4763,7 @@ async function loadConfig() {
     // On unless the owner turned it off; a journal that never set it is on.
     facesSetting.stored = configData?.faces?.enabled !== false;
     facesSetting.available = configData?.faces?.available !== false;
+    facesSetting.photoMatchEnabled = configData?.faces?.photo_match_enabled === true;
     facesSetting.known = true;
     renderFacesSetting();
   } catch (err) {
@@ -6668,16 +6669,37 @@ const facesSetting = {
   stored: false,
   known: false,
   available: false,
+  photoMatchEnabled: false,
   busy: false,
   clearing: false,
   result: null,   // {text, retry}
 };
+
+const FACES_COPY_SLOTS = [
+  ['facesToggleLabel', 'journal.window.settings.field.label.suggest.profile.pics.from.your.meetings', 'journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos'],
+  ['facesDescription', 'journal.window.settings.visible.text.your.journal.looks.for.faces.in', 'journal.window.settings.visible.text.faces.photos.description'],
+  ['facesHowRuns', 'journal.window.settings.visible.text.it.runs.on.this.computer.on', 'journal.window.settings.visible.text.faces.photos.how.runs'],
+  ['facesHowPace', 'journal.window.settings.visible.text.your.past.meeting.recordings.are.read', 'journal.window.settings.visible.text.faces.photos.how.pace'],
+  ['facesHowAgents', 'journal.window.settings.visible.text.agents.you.connect.to.your.journal', 'journal.window.settings.visible.text.faces.photos.how.agents'],
+  ['facesHowMatching', 'journal.window.settings.visible.text.it.matches.a.face.to.a', 'journal.window.settings.visible.text.faces.photos.how.matching'],
+  ['facesClearIntro', 'journal.window.settings.visible.text.this.erases.every.face.your.journal', 'journal.window.settings.visible.text.faces.photos.clear.body'],
+  ['facesClearStays', 'journal.window.settings.visible.text.your.people.their.names.and.your', 'journal.window.settings.visible.text.faces.photos.clear.stays'],
+];
+
+function applyFacesCopy(photoMatchEnabled) {
+  if (!window.JournalI18n || typeof window.JournalI18n.render !== 'function') return;
+  for (const [id, meetingKey, photoKey] of FACES_COPY_SLOTS) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = window.JournalI18n.render(photoMatchEnabled ? photoKey : meetingKey);
+  }
+}
 
 function renderFacesSetting() {
   const field = document.getElementById('facesField');
   const toggle = document.getElementById('facesEnabled');
   if (!field || !toggle) return;
   field.hidden = facesSetting.known && !facesSetting.available;
+  applyFacesCopy(facesSetting.photoMatchEnabled);
   const show = (id, visible) => {
     const el = document.getElementById(id);
     if (el) el.style.display = visible ? '' : 'none';
@@ -6740,6 +6762,7 @@ async function saveFacesSetting(value) {
     if (!response.ok || !result.success) throw new Error(result.error || window.JournalI18n.render('journal.window.settings.save.not.saved'));
     configData = result.config;
     facesSetting.stored = result.config?.faces?.enabled !== false;
+    facesSetting.photoMatchEnabled = result.config?.faces?.photo_match_enabled === true;
     facesSetting.known = true;
     showFieldStatus(toggle, 'saved');
   } catch (err) {
@@ -6748,6 +6771,7 @@ async function saveFacesSetting(value) {
       const stored = await settingsApi('/app/settings/api/config');
       configData = stored;
       facesSetting.stored = stored?.faces?.enabled !== false;
+      facesSetting.photoMatchEnabled = stored?.faces?.photo_match_enabled === true;
       facesSetting.known = true;
     } catch (readError) {
       facesSetting.known = false;

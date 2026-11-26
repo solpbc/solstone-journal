@@ -136,6 +136,7 @@
   "ENT_FACES_HEADING": "journal.window.entities.copy.faces.heading",
   "ENT_FACES_SUGGESTED_TITLE": "journal.window.entities.copy.faces.suggested.title",
   "ENT_FACES_SUGGESTED_LEDE": "journal.window.entities.copy.faces.suggested.lede",
+  "ENT_FACES_SUGGESTED_LEDE_PHOTOS": "journal.window.entities.copy.faces.suggested.lede.photos",
   "ENT_FACES_YES": "journal.window.entities.copy.faces.yes",
   "ENT_FACES_NOT_THEM": "journal.window.entities.copy.faces.not.them",
   "ENT_FACES_SEE_OTHERS": "journal.window.entities.copy.faces.see.others",

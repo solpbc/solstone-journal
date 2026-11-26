@@ -149,7 +149,7 @@ module.exports = async function facesCases(manifestDir) {
     vm.runInContext(copyHelpers, context);
     const linkHelpers = workspace.slice(workspace.indexOf("// A recording's key"), workspace.indexOf('function activeObservationGridDays('));
     vm.runInContext(linkHelpers, context);
-    vm.runInContext(`${block}\nthis.api = {openFacesPanel, resetFacesPanel, facesPanel, entityPhotoThumb, facesMergeReason, renderFacetPhotoHint};`, context, {filename: 'entities-faces.js'});
+    vm.runInContext(`${block}\nthis.api = {openFacesPanel, resetFacesPanel, facesPanel, entityPhotoThumb, facesMergeReason, renderFacetPhotoHint, facesCopy, facesDayText};`, context, {filename: 'entities-faces.js'});
     return {context, section, list, calls, api: context.api, doc};
   }
   const face = (n, extra = {}) => ({
@@ -323,6 +323,52 @@ module.exports = async function facesCases(manifestDir) {
     check(reason.dataset.mergeBasis === 'meeting-face' && reason.textContent.includes(copy.ENT_FACES_MERGE_REASON), 'a face-based pair says faces suggested it');
     const unconfirmed = reason.all((node) => node.dataset.facesLabel === 'unconfirmed');
     check(unconfirmed.length === 1, 'only the face that is not a chosen photo is marked not confirmed');
+  }
+
+  // Photo matching gate: off keeps meeting-only keys; on switches to photo-aware keys and renders photo provenance without meeting suffixes.
+  {
+    const photoFace = face(9, {
+      source: 'photo',
+      key: {day: '20261105', stream: 'photos', stream_layout: 'named', segment_key: '141200_0', source_name: 'original.jpg', frame_id: 0, face_idx: 0},
+    });
+    const meetingFace = face(1, {source: 'anchored'});
+    const mOff = mount(() => ({state: 'possible', faces: [meetingFace], default: null, looks: 1, last_action: null}));
+    mOff.api.openFacesPanel({id: 'ada', name: 'Ada', photo_state: 'possible'});
+    await settle();
+    const offLede = mOff.section.all((node) => node.className === 'entity-faces-lede')[0];
+    const offImg = mOff.section.all((node) => node.tagName === 'IMG')[0];
+    const offCaption = mOff.section.all((node) => node.className === 'entity-face-caption')[0];
+    check(offLede && offLede.textContent === mOff.api.facesCopy('ENT_FACES_POSSIBLE_LEDE', {name: 'Ada'}), 'meeting-only lede when photo matching is off');
+    check(offImg && offImg.alt === mOff.api.facesCopy('ENT_FACES_FACE_ALT', {name: 'Ada', day: mOff.api.facesDayText(meetingFace.day)}), 'meeting-only alt when photo matching is off');
+    check(offCaption && offCaption.textContent.includes(copy.ENT_FACES_SOURCE_ANCHORED), 'meeting face keeps its meeting source suffix');
+
+    const mOn = mount(() => ({state: 'possible', photo_match_enabled: true, faces: [photoFace, meetingFace], default: null, looks: 2, last_action: null}));
+    mOn.api.openFacesPanel({id: 'ada', name: 'Ada', photo_state: 'possible'});
+    await settle();
+    const onLede = mOn.section.all((node) => node.className === 'entity-faces-lede')[0];
+    check(onLede && onLede.textContent === mOn.api.facesCopy('ENT_FACES_POSSIBLE_LEDE_PHOTOS', {name: 'Ada'}), 'widened lede when photo matching is on');
+    const photoTile = mOn.section.all((node) => node.tagName === 'FIGURE' && node.dataset.faceSource === 'photo')[0];
+    check(Boolean(photoTile), 'photo candidate renders with photo source marker');
+    const photoLink = photoTile.all((node) => node.tagName === 'A' && node.className === 'entity-face-day')[0];
+    check(photoLink && photoLink.textContent === mOn.api.facesCopy('ENT_FACES_FROM_PHOTO_DAY', {day: mOn.api.facesDayText(photoFace.day)}), 'photo candidate uses photo day label');
+    check(!photoTile.textContent.includes(copy.ENT_FACES_SOURCE_ANCHORED) && !photoTile.textContent.includes(copy.ENT_FACES_SOURCE_BOX), 'photo candidate omits meeting position suffixes');
+    const photoImg = photoTile.all((node) => node.tagName === 'IMG')[0];
+    check(photoImg && photoImg.alt === mOn.api.facesCopy('ENT_FACES_PHOTO_ALT', {name: 'Ada', day: mOn.api.facesDayText(photoFace.day)}), 'photo candidate uses photo alt key');
+
+    const mSug = mount(() => ({state: 'suggested', photo_match_enabled: true, faces: [meetingFace, photoFace], default: meetingFace.key, looks: 2, last_action: null}));
+    mSug.api.openFacesPanel({id: 'ada', name: 'Ada', photo_state: 'suggested'});
+    await settle();
+    const sugLede = mSug.section.all((node) => node.className === 'entity-faces-lede')[0];
+    check(sugLede && sugLede.textContent === copy.ENT_FACES_SUGGESTED_LEDE_PHOTOS, 'suggested lede uses photo-enabled key when flag is on');
+
+    const mMerge = mount((url) => (url.includes('/entity/a/')
+      ? {state: 'suggested', photo_match_enabled: true, faces: [meetingFace], default: meetingFace.key}
+      : {state: 'confirmed', photo_match_enabled: true, faces: [], default: face(2).key}));
+    const reasonOn = mMerge.api.facesMergeReason({pair: ['a', 'b'], names: ['A', 'B']});
+    await settle();
+    await settle();
+    const unconfirmedImg = reasonOn.all((node) => node.tagName === 'IMG')[0];
+    check(unconfirmedImg && unconfirmedImg.alt === mMerge.api.facesCopy('ENT_FACES_UNCONFIRMED_ALT_PHOTOS', {name: 'A'}), 'unconfirmed merge preview uses widened alt when photo matching is on');
   }
 
   return cases;

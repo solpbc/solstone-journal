@@ -1,0 +1,16 @@
+{
+  "description": "How-this-works bullet explaining agent profile pic sharing and facet scoping for meetings and photos.",
+  "context": "Journal window, settings view. Disclosure bullet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "4c7b3ba1c317ec0d1274e96a2a3844be6e1cb78ae3d4257faef2385a081e64f9",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

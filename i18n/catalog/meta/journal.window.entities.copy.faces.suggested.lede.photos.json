@@ -1,0 +1,16 @@
+{
+  "description": "Entities view. Intro text for a suggested profile pic from meetings or photos.",
+  "context": "Journal window. Entities view. Panel lede.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b48b246151b3fd4257345491197e0d5d4597805d98ddde7217307638e81dc643",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

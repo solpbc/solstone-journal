@@ -1,0 +1,16 @@
+{
+  "description": "How-this-works bullet explaining where face matching runs for meetings and photos.",
+  "context": "Journal window, settings view. Disclosure bullet.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "25792adbf438503ac0a8a763370b5022a12e7d8a3c441e9ce0793f737c821e6f",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

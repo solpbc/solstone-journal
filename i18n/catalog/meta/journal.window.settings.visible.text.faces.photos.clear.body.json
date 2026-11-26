@@ -1,0 +1,16 @@
+{
+  "description": "Confirmation dialog body explaining what erasing all face data removes when photos are included.",
+  "context": "Journal window, settings view. Confirmation dialog body.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a765cb289f2de37d8cea30231f9e02ff859b94eeec7016a5cc7844560744d7c0",
+  "max_length": 420,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

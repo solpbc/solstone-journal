@@ -66092,6 +66092,36 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.copy.faces.suggested.lede.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.copy.faces.suggested.lede.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal picked this profile pic from your meetings. it's only a suggestion until you say yes.",
+      "message_id": "journal.window.entities.copy.faces.suggested.lede.photos",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.copy.faces.suggested.lede.photos\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.entities.copy.faces.suggested.title\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e7469746c65",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e7469746c65_plural",
         "gettext_unsigned_quantity": null,
@@ -71873,6 +71903,88 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.from.photo.day\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.from.photo.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "from a photo on ⁨sample⁩",
+      "message_id": "journal.window.entities.faces.from.photo.day",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.from.photo.day\", [[\"day\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.meeting.alt.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.meeting.alt.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a profile pic from a meeting on ⁨sample⁩ that might be ⁨sample⁩",
+      "message_id": "journal.window.entities.faces.meeting.alt.photos",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.meeting.alt.photos\", [[\"day\", \"sample\"], [\"entity_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "entity_name",
             "type": "string",
             "value": "sample"
@@ -71911,6 +72023,50 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.photo.alt\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.photo.alt",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a profile pic from a photo on ⁨sample⁩ that might be ⁨sample⁩",
+      "message_id": "journal.window.entities.faces.photo.alt",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.photo.alt\", [[\"day\", \"sample\"], [\"entity_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "entity_name",
             "type": "string",
             "value": "sample"
@@ -71942,6 +72098,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.possible.lede\", [[\"entity_name\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c656465",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.possible.lede.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.possible.lede.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "these profile pics from your meetings or photos might be ⁨sample⁩. none is used until you pick one.",
+      "message_id": "journal.window.entities.faces.possible.lede.photos",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.possible.lede.photos\", [[\"entity_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
       "target": "classic"
     },
     {
@@ -72056,6 +72250,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.unconfirmed.alt\", [[\"entity_name\", \"sample\"]])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.unconfirmed.alt.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.unconfirmed.alt.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a profile pic from a meeting or photo that might be ⁨sample⁩, not confirmed",
+      "message_id": "journal.window.entities.faces.unconfirmed.alt.photos",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.unconfirmed.alt.photos\", [[\"entity_name\", \"sample\"]])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
       "target": "classic"
     },
     {
@@ -220218,6 +220450,36 @@
         "entry": "render(locale, dotted_id, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "suggest profile pics from meetings and photos",
+      "message_id": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.settings.field.label.suggest.profile.pics.from.your.meetings\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e796f75722e6d656574696e6773",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e796f75722e6d656574696e6773_plural",
         "gettext_unsigned_quantity": null,
@@ -242842,6 +243104,216 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.errors\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e6572726f7273",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.clear.body\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.clear.body",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this erases all face data your journal found in your meeting recordings and photos, the profile pics you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.clear.body",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.clear.body\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.clear.stays\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.clear.stays",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your people, their names, your recordings and your photos stay. a backup made before now may still hold face data.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.clear.stays",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.clear.stays\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.description\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.description",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal looks for faces in your meeting recordings and photos, links people it recognizes from meetings to those photos, and suggests profile pics for them. you choose the picture, or none.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.description",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.description\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.agents\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.agents",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "agents you connect to your journal can receive a person's profile pic, and a suggested one arrives marked as suggested. you can turn profile pics off for each agent. a connected agent that may see only some facets gets one only when it came from a meeting or photo in one of them.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.agents",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.agents\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.matching\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.matching",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "in meetings, it matches a face to a person only when the face sits beside their name or alone in their video tile. in photos, it matches only against people your journal already knows from meetings. when photos is on, this also checks saved or shared photos others took near your moments to decide whether to bring them in. a picture is theirs only once you choose it.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.matching",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.matching\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.pace\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.pace",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your past meeting recordings are read a little at a time in the background while they're still in your journal, and photos are checked as they come in.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.pace",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.pace\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.runs\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.runs",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "it runs where your journal lives, on frames from your meeting recordings and on photos your journal checks or keeps.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.runs",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.runs\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
       "target": "classic"
     },
     {
@@ -317219,6 +317691,36 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.consent.trash.photo.library.stays\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.consent.trash.photo.library.stays",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "nothing changes in your photo library. deleted photos don't come back on a later sync.",
+      "message_id": "journal.window.transcripts.consent.trash.photo.library.stays",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.consent.trash.photo.library.stays\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "segments_quantity",
@@ -322902,6 +323404,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking\", [])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e6e6f70726f63657373696e67616374696f6e2e7365742e75702e7468696e6b696e67",
+      "target": "classic"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, dotted_id, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.photo.copy.pending\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.photo.copy.pending",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "native-reader-required",
+      "expected": null,
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this photo hasn't been described yet. today's photos come first, then earlier ones.",
+      "message_id": "journal.window.transcripts.photo.copy.pending",
+      "own_reader": "fluent-js",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.photo.copy.pending\", [])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
       "target": "classic"
     },
     {
@@ -404028,6 +404560,36 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.copy.faces.suggested.lede.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.copy.faces.suggested.lede.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal picked this profile pic from your meetings. it's only a suggestion until you say yes.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal picked this profile pic from your meetings. it's only a suggestion until you say yes.",
+      "message_id": "journal.window.entities.copy.faces.suggested.lede.photos",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.copy.faces.suggested.lede.photos\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e6c6564652e70686f746f73",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.entities.copy.faces.suggested.title\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e7469746c65",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e636f70792e66616365732e7375676765737465642e7469746c65_plural",
         "gettext_unsigned_quantity": null,
@@ -409809,6 +410371,88 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.from.photo.day\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.from.photo.day",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "from a photo on ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "from a photo on ⁨sample⁩",
+      "message_id": "journal.window.entities.faces.from.photo.day",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.from.photo.day\", &[(\"day\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e66726f6d2e70686f746f2e646179",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.meeting.alt.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.meeting.alt.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "a profile pic from a meeting on ⁨sample⁩ that might be ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a profile pic from a meeting on ⁨sample⁩ that might be ⁨sample⁩",
+      "message_id": "journal.window.entities.faces.meeting.alt.photos",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.meeting.alt.photos\", &[(\"day\", Value::String(\"sample\")), (\"entity_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e6d656574696e672e616c742e70686f746f73",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "entity_name",
             "type": "string",
             "value": "sample"
@@ -409847,6 +410491,50 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "day",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.photo.alt\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.photo.alt",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "a profile pic from a photo on ⁨sample⁩ that might be ⁨sample⁩",
+      "folder": null,
+      "inputs": {
+        "day": "sample",
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a profile pic from a photo on ⁨sample⁩ that might be ⁨sample⁩",
+      "message_id": "journal.window.entities.faces.photo.alt",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.photo.alt\", &[(\"day\", Value::String(\"sample\")), (\"entity_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e70686f746f2e616c74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "entity_name",
             "type": "string",
             "value": "sample"
@@ -409878,6 +410566,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.possible.lede\", &[(\"entity_name\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c656465",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.possible.lede.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.possible.lede.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "these profile pics from your meetings or photos might be ⁨sample⁩. none is used until you pick one.",
+      "folder": null,
+      "inputs": {
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "these profile pics from your meetings or photos might be ⁨sample⁩. none is used until you pick one.",
+      "message_id": "journal.window.entities.faces.possible.lede.photos",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.possible.lede.photos\", &[(\"entity_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e706f737369626c652e6c6564652e70686f746f73",
       "target": "rust"
     },
     {
@@ -409992,6 +410718,44 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.unconfirmed.alt\", &[(\"entity_name\", Value::String(\"sample\"))])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c74",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "entity_name",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.entities.faces.unconfirmed.alt.photos\u0004m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.entities.faces.unconfirmed.alt.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "a profile pic from a meeting or photo that might be ⁨sample⁩, not confirmed",
+      "folder": null,
+      "inputs": {
+        "entity_name": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "a profile pic from a meeting or photo that might be ⁨sample⁩, not confirmed",
+      "message_id": "journal.window.entities.faces.unconfirmed.alt.photos",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.entities.faces.unconfirmed.alt.photos\", &[(\"entity_name\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e656e7469746965732e66616365732e756e636f6e6669726d65642e616c742e70686f746f73",
       "target": "rust"
     },
     {
@@ -558154,6 +558918,36 @@
         "entry": "render(locale, MessageId, named_args)",
         "enum_argument": null,
         "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "suggest profile pics from meetings and photos",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "suggest profile pics from meetings and photos",
+      "message_id": "journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.field.label.suggest.profile.pics.from.meetings.and.photos\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e6d656574696e67732e616e642e70686f746f73",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
         "gettext_lookup_key": "journal.window.settings.field.label.suggest.profile.pics.from.your.meetings\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e796f75722e6d656574696e6773",
         "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e6669656c642e6c6162656c2e737567676573742e70726f66696c652e706963732e66726f6d2e796f75722e6d656574696e6773_plural",
         "gettext_unsigned_quantity": null,
@@ -580778,6 +581572,216 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.errors\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e6572726f7273",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.clear.body\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.clear.body",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "this erases all face data your journal found in your meeting recordings and photos, the profile pics you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this erases all face data your journal found in your meeting recordings and photos, the profile pics you chose for people and your answers about faces, and the merge suggestions that came from faces, including any copies in the trash. it can't be undone.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.clear.body",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.clear.body\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e626f6479",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.clear.stays\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.clear.stays",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your people, their names, your recordings and your photos stay. a backup made before now may still hold face data.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your people, their names, your recordings and your photos stay. a backup made before now may still hold face data.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.clear.stays",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.clear.stays\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e636c6561722e7374617973",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.description\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.description",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your journal looks for faces in your meeting recordings and photos, links people it recognizes from meetings to those photos, and suggests profile pics for them. you choose the picture, or none.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your journal looks for faces in your meeting recordings and photos, links people it recognizes from meetings to those photos, and suggests profile pics for them. you choose the picture, or none.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.description",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.description\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e6465736372697074696f6e",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.agents\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.agents",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "agents you connect to your journal can receive a person's profile pic, and a suggested one arrives marked as suggested. you can turn profile pics off for each agent. a connected agent that may see only some facets gets one only when it came from a meeting or photo in one of them.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "agents you connect to your journal can receive a person's profile pic, and a suggested one arrives marked as suggested. you can turn profile pics off for each agent. a connected agent that may see only some facets gets one only when it came from a meeting or photo in one of them.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.agents",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.agents\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6167656e7473",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.matching\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.matching",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "in meetings, it matches a face to a person only when the face sits beside their name or alone in their video tile. in photos, it matches only against people your journal already knows from meetings. when photos is on, this also checks saved or shared photos others took near your moments to decide whether to bring them in. a picture is theirs only once you choose it.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "in meetings, it matches a face to a person only when the face sits beside their name or alone in their video tile. in photos, it matches only against people your journal already knows from meetings. when photos is on, this also checks saved or shared photos others took near your moments to decide whether to bring them in. a picture is theirs only once you choose it.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.matching",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.matching\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e6d61746368696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.pace\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.pace",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "your past meeting recordings are read a little at a time in the background while they're still in your journal, and photos are checked as they come in.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "your past meeting recordings are read a little at a time in the background while they're still in your journal, and photos are checked as they come in.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.pace",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.pace\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e70616365",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.settings.visible.text.faces.photos.how.runs\u0004m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.settings.visible.text.faces.photos.how.runs",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "it runs where your journal lives, on frames from your meeting recordings and on photos your journal checks or keeps.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "it runs where your journal lives, on frames from your meeting recordings and on photos your journal checks or keeps.",
+      "message_id": "journal.window.settings.visible.text.faces.photos.how.runs",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.settings.visible.text.faces.photos.how.runs\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e73657474696e67732e76697369626c652e746578742e66616365732e70686f746f732e686f772e72756e73",
       "target": "rust"
     },
     {
@@ -655155,6 +656159,36 @@
     {
       "bundle": "journal-window",
       "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.consent.trash.photo.library.stays\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.consent.trash.photo.library.stays",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "nothing changes in your photo library. deleted photos don't come back on a later sync.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "nothing changes in your photo library. deleted photos don't come back on a later sync.",
+      "message_id": "journal.window.transcripts.consent.trash.photo.library.stays",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.consent.trash.photo.library.stays\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e636f6e73656e742e74726173682e70686f746f2e6c6962726172792e7374617973",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
         "arguments": [
           {
             "name": "segments_quantity",
@@ -660838,6 +661872,36 @@
       "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.photo.copy.noprocessingaction.set.up.thinking\", &[])",
       "platform_reader": "pending",
       "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e6e6f70726f63657373696e67616374696f6e2e7365742e75702e7468696e6b696e67",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-window",
+      "call_contract": {
+        "arguments": [],
+        "bundle": "journal-window",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.window.transcripts.photo.copy.pending\u0004m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
+        "gettext_plural_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67_plural",
+        "gettext_unsigned_quantity": null,
+        "locale": "en-US",
+        "message_id": "journal.window.transcripts.photo.copy.pending",
+        "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
+        "signed_quantity": null
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "this photo hasn't been described yet. today's photos come first, then earlier ones.",
+      "folder": null,
+      "inputs": {},
+      "locale": "en-US",
+      "logical_expected": "this photo hasn't been described yet. today's photos come first, then earlier ones.",
+      "message_id": "journal.window.transcripts.photo.copy.pending",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.window.transcripts.photo.copy.pending\", &[])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e70686f746f2e636f70792e70656e64696e67",
       "target": "rust"
     },
     {

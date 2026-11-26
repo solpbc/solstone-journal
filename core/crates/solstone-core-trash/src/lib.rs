@@ -1237,6 +1237,70 @@ impl PayloadScrub<'_> {
         }
         Ok(removed)
     }
+
+    /// Rewrite matching regular files inside trash payloads in place, preserving
+    /// item records and recoverability. Symlinks are refused. Returning `Ok(None)`
+    /// leaves the file untouched.
+    pub fn rewrite_files(
+        &self,
+        accept: impl Fn(&str) -> bool,
+        transform: impl Fn(&[u8]) -> Result<Option<Vec<u8>>, String>,
+    ) -> Result<usize, TrashError> {
+        let mut rewritten = 0;
+        for item in every_item(self.journal, true)? {
+            for part in [FILES_DIR, DISPLACED_DIR] {
+                let base = format!("{}/{part}", item.id);
+                let mut pending = vec![(base, String::new())];
+                while let Some((relative, original)) = pending.pop() {
+                    let path = trash_entry(self.journal, &relative)?;
+                    let metadata = match std::fs::symlink_metadata(&path) {
+                        Ok(m) => m,
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(e) => return Err(TrashError::Io(e.to_string())),
+                    };
+                    if metadata.file_type().is_symlink() {
+                        if accept(&original) {
+                            return Err(TrashError::Io(format!(
+                                "refusing to rewrite linked trash file: {relative}"
+                            )));
+                        }
+                        continue;
+                    }
+                    if metadata.is_dir() {
+                        for entry in
+                            std::fs::read_dir(&path).map_err(|e| TrashError::Io(e.to_string()))?
+                        {
+                            let entry = entry.map_err(|e| TrashError::Io(e.to_string()))?;
+                            let name = entry
+                                .file_name()
+                                .into_string()
+                                .map_err(|_| TrashError::Io("invalid trash filename".into()))?;
+                            let original = if original.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{original}/{name}")
+                            };
+                            pending.push((format!("{relative}/{name}"), original));
+                        }
+                    } else if metadata.is_file() && accept(&original) {
+                        let bytes =
+                            std::fs::read(&path).map_err(|e| TrashError::Io(e.to_string()))?;
+                        if let Some(updated) = transform(&bytes).map_err(TrashError::Io)? {
+                            atomic_replace(
+                                &path,
+                                &updated,
+                                solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+                            )
+                            .map_err(|e| TrashError::Io(e.to_string()))?;
+                            sync_trash_parent(self.journal, &relative);
+                            rewritten += 1;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(rewritten)
+    }
 }
 
 /// Where an item keeps its own copy of journal-relative `path`, for a kind that
@@ -2783,6 +2847,52 @@ mod tests {
                 .join("entities/person");
             assert!(!dir.join("derived.bin").exists());
             assert!(dir.join("keep.txt").is_file());
+        }
+    }
+
+    #[test]
+    fn domain_scrub_rewrites_matching_payload_files_and_leaves_others_untouched() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = detach(
+            &root,
+            &kind,
+            unit(),
+            Action::SegmentDelete,
+            web(),
+            vec![SEGMENT.into()],
+        )
+        .unwrap();
+        let obs_rel = "chronicle/20261108/photos/141200_0/photo_observation.json";
+        for part in [FILES_DIR, DISPLACED_DIR] {
+            let path = trash_root(&root).join(&item.id).join(part).join(obs_rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(
+                &path,
+                br#"{"faces":[{"entity_id":"p1"}],"faces_checked":true,"keep":"ok"}"#,
+            )
+            .unwrap();
+        }
+        let scrub = hold_payload_scrub(&root).unwrap();
+        let rewritten = scrub
+            .rewrite_files(
+                |p| p == obs_rel,
+                |bytes| {
+                    let mut val: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                    val["faces"] = serde_json::json!([]);
+                    val["faces_checked"] = serde_json::json!(false);
+                    Ok(Some(serde_json::to_vec(&val).unwrap()))
+                },
+            )
+            .unwrap();
+        assert_eq!(rewritten, 2);
+        drop(scrub);
+        for part in [FILES_DIR, DISPLACED_DIR] {
+            let path = trash_root(&root).join(&item.id).join(part).join(obs_rel);
+            let val: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert_eq!(val["faces"], serde_json::json!([]));
+            assert_eq!(val["faces_checked"], serde_json::json!(false));
+            assert_eq!(val["keep"], serde_json::json!("ok"));
         }
     }
 

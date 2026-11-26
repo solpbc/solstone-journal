@@ -1,0 +1,16 @@
+{
+  "description": "Transcripts view. Placeholder note shown on a library photo waiting for its description.",
+  "context": "Journal window. Transcripts view. Pending photo description.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ef3216665b95f095b44ede464e6f6674012f09bcc16d0ef082aa938289ef452",
+  "max_length": 180,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
