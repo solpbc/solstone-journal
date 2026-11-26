@@ -2087,7 +2087,7 @@ async fn sources_shell() -> Response {
 }
 
 async fn photos_sources_shell(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    if !solstone_core_photos_library::photos_library_enabled(&root.0) {
+    if !solstone_core_photos_library::photos_library_visible(&root.0) {
         return StatusCode::NOT_FOUND.into_response();
     }
     asset_response("/static/shell.html")
@@ -2336,7 +2336,7 @@ mod tests {
                 assert!(text.contains("id=\"sources-root\""), "{path}");
             }
         }
-        // `/app/sources/photos` is strictly 404 while `photos_library.enabled` is off.
+        // `/app/sources/photos` is 404 on a fresh journal until a capable iPhone/iPad reports in.
         for path in ["/app/sources/photos", "/app/sources/photos/"] {
             let response = app
                 .clone()
@@ -2345,12 +2345,14 @@ mod tests {
                 .expect("router responds");
             assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         }
-        // Once enabled in config, `/app/sources/photos` serves the shell.
-        fs::write(
-            journal.path().join("config/journal.json"),
-            br#"{"setup":{"completed_at":1700000000000},"photos_library":{"enabled":true}}"#,
+        // Once a capable iPhone reports in, `/app/sources/photos` serves the shell.
+        solstone_core_photos_library::record_capable_device(
+            journal.path(),
+            "sha256:capable-iphone",
+            Some("Test iPhone"),
+            Some("iphone"),
         )
-        .expect("journal config with photos enabled");
+        .expect("record capable iphone");
         for path in ["/app/sources/photos", "/app/sources/photos/"] {
             let response = app
                 .clone()
@@ -2358,6 +2360,20 @@ mod tests {
                 .await
                 .expect("router responds");
             assert_eq!(response.status(), StatusCode::OK, "{path}");
+        }
+        // Explicit `photos_library.enabled: false` still hides `/app/sources/photos`.
+        fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000},"photos_library":{"enabled":false}}"#,
+        )
+        .expect("journal config with photos disabled");
+        for path in ["/app/sources/photos", "/app/sources/photos/"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+                .await
+                .expect("router responds");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         }
     }
 

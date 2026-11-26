@@ -647,7 +647,14 @@
     return best;
   }
 
-  function readyPhotosDeviceKind(clientsEntry) {
+  function readyPhotosDeviceKind(photosData, clientsEntry) {
+    const capable = photosData && Array.isArray(photosData.capable_device_kinds)
+      ? photosData.capable_device_kinds
+      : null;
+    if (capable && capable.length > 0) {
+      if (capable.indexOf('iphone') !== -1) return 'iphone';
+      if (capable.indexOf('ipad') !== -1) return 'ipad';
+    }
     const clients = clientsEntry && clientsEntry.body && Array.isArray(clientsEntry.body.clients)
       ? clientsEntry.body.clients
       : [];
@@ -685,7 +692,7 @@
     const lo = data.left_out || { total: 0, reasons: {} };
 
     if (topState === 'ready_to_set_up') {
-      const kind = readyPhotosDeviceKind(clientsEntry);
+      const kind = readyPhotosDeviceKind(data, clientsEntry);
       const statusText = kind
         ? t('journal.window.sources.photos.row.ready.device', [['device_kind', kind]])
         : t('journal.window.sources.photos.row.ready');

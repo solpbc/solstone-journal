@@ -179,7 +179,7 @@ pub fn panel(journal: &Path, entity: &str) -> Result<Panel, Error> {
             photo_match_enabled: false,
         });
     }
-    let photo_match_enabled = fp::photo_match_enabled(journal)?;
+    let photo_match_enabled = fp::photo_faces_active(journal)?;
     let c = context(journal, entity)?;
     let faces = c
         .panel

@@ -474,6 +474,8 @@ pub struct DeviceState {
     /// `"authorized"`, `"limited"`, `"denied"`, `"restricted"`, `"not_determined"`.
     pub access_state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_scan_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_upload_at: Option<String>,
@@ -574,6 +576,8 @@ pub struct PhotosDashboardState {
     pub band4_paused: bool,
     pub thinking_ready: bool,
     pub profile_pics_enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capable_device_kinds: Vec<String>,
 }
 
 /// One landed library photo item returned by `GET /app/sources/photos/api/photos`.

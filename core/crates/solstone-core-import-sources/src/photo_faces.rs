@@ -280,17 +280,13 @@ impl PhotoFaceDetector for SystemPhotoFaceDetector {
 /// selection to check whether someone from the owner's meeting faceprints
 /// appears in a photo without writing crops, sidecars, or entity rows).
 ///
-/// Honors `faces.enabled` (desktop only); does NOT require the photo-pass write
-/// flag because it performs zero mutations and only answers a selection query.
+/// Honors both `faces.enabled` and `faces.photo_match_enabled` (desktop only).
 pub fn query_photo_faces_against_journal(
     journal: &Path,
     image_path: &Path,
     detector: &dyn PhotoFaceDetector,
 ) -> Result<Vec<PhotoFaceMatch>, String> {
-    if cfg!(any(target_os = "ios", target_os = "android")) {
-        return Ok(Vec::new());
-    }
-    if !faceprints::enabled(journal)? {
+    if !faceprints::photo_faces_active(journal)? {
         return Ok(Vec::new());
     }
     let index = load_meeting_face_index(journal)?;
@@ -307,10 +303,10 @@ pub fn query_photo_faces_batch_against_journal(
     image_paths: &[PathBuf],
     detector: &dyn PhotoFaceDetector,
 ) -> Result<Vec<(PathBuf, Vec<PhotoFaceMatch>)>, String> {
-    if cfg!(any(target_os = "ios", target_os = "android")) || image_paths.is_empty() {
+    if image_paths.is_empty() {
         return Ok(Vec::new());
     }
-    if !faceprints::enabled(journal)? {
+    if !faceprints::photo_faces_active(journal)? {
         return Ok(image_paths
             .iter()
             .map(|p| (p.clone(), Vec::new()))
@@ -357,7 +353,8 @@ pub struct PhotoFacePassOutcome {
 }
 
 /// Run the desktop photo face pass for one kept photo segment, gated behind
-/// BOTH `faces.enabled` and `faces.photo_match_enabled` (OFF by default).
+/// BOTH `faces.enabled` and `faces.photo_match_enabled` (both ON by default on
+/// desktop, desktop-only).
 ///
 /// Only matched faces write a private crop under `.faces-v1-<prefix>-crops/`
 /// and a `Source::Photo` row into the matched entity's `faceprints.npz`.

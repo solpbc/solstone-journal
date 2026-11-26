@@ -513,11 +513,23 @@ async fn photos_cross_rules_use_the_durable_id_for_every_read_surface() {
 }
 
 #[tokio::test]
-async fn photos_panel_exposes_photo_match_enabled_only_when_flag_is_on() {
+async fn photos_panel_exposes_photo_match_enabled_by_default_and_omits_when_off() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let _faces = seed(root);
 
+    let (status, _, bytes) = call(root, "GET", &format!("{BASE}/faces"), Value::Null).await;
+    assert_eq!(status, 200);
+    let default_panel: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(default_panel["photo_match_enabled"], json!(true));
+
+    write(
+        root,
+        "config/journal.json",
+        json!({"faces": {"enabled": true, "photo_match_enabled": false}})
+            .to_string()
+            .as_bytes(),
+    );
     let (status, _, bytes) = call(root, "GET", &format!("{BASE}/faces"), Value::Null).await;
     assert_eq!(status, 200);
     let off_panel: Value = serde_json::from_slice(&bytes).unwrap();
@@ -526,12 +538,12 @@ async fn photos_panel_exposes_photo_match_enabled_only_when_flag_is_on() {
     write(
         root,
         "config/journal.json",
-        json!({"faces": {"enabled": true, "photo_match_enabled": true}})
+        json!({"faces": {"enabled": false, "photo_match_enabled": true}})
             .to_string()
             .as_bytes(),
     );
     let (status, _, bytes) = call(root, "GET", &format!("{BASE}/faces"), Value::Null).await;
     assert_eq!(status, 200);
-    let on_panel: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(on_panel["photo_match_enabled"], json!(true));
+    let faces_off_panel: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(faces_off_panel.get("photo_match_enabled").is_none());
 }

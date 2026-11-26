@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! HTTP routes for the Photos Library source (phase 1).
+//! HTTP routes for the Photos Library source (phase 1, iPhone/iPad).
 //!
-//! All routes are strictly gated behind `photos_library.enabled == Some(true)`
-//! in `config/journal.json` (OFF by default until owner screens and copy land).
+//! Device routes (`/app/devices/photos-library/*`) are gated by
+//! `photos_library.enabled` (ON by default unless explicitly set `false`).
+//! Dashboard routes (`/app/sources/photos/api/*`) additionally require
+//! `photos_library_visible`: either a paired iPhone or iPad running a
+//! photos-capable app has reported in, or the journal already has photos state.
 //!
 //! - Device channel (`/app/devices/photos-library/*`): paired devices only
 //!   (`AccessBasis::LinkedDevice`). Every connection is initiated by the app.
@@ -29,9 +32,9 @@ use solstone_core_photos_library::keep::{
 };
 use solstone_core_photos_library::types::{RangeSpec, ScanAssetRow, SmartAlbumCatalogEntry};
 use solstone_core_photos_library::{
-    choose_range, dashboard_state, lease_wanted, list_landed_photos, mark_wanted_non_copy,
-    photos_library_enabled, scan_batch, scan_changes, scan_finish, scan_start, set_paused,
-    turn_off, update_device_status, widen_range,
+    choose_range, dashboard_state_with_live_seen, lease_wanted, list_landed_photos,
+    mark_wanted_non_copy, photos_library_enabled, photos_library_visible, scan_batch, scan_changes,
+    scan_finish, scan_start, set_paused, turn_off, update_device_status, widen_range,
 };
 
 use crate::JournalRoot;
@@ -349,6 +352,8 @@ struct DeviceStatusBody {
     icloud_waiting_count: Option<u64>,
     #[serde(default)]
     scan_paused: Option<bool>,
+    #[serde(default)]
+    source_enabled: Option<bool>,
 }
 
 async fn device_status(
@@ -372,6 +377,7 @@ async fn device_status(
             body.access_state.as_deref(),
             body.icloud_waiting_count,
             body.scan_paused,
+            body.source_enabled,
         )
     })
     .await
@@ -484,13 +490,18 @@ async fn api_state(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
         return *r;
     }
-    match tokio::task::spawn_blocking(move || dashboard_state(&root.0)).await {
+    match tokio::task::spawn_blocking(move || {
+        let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
+        dashboard_state_with_live_seen(&root.0, &live_seen)
+    })
+    .await
+    {
         Ok(Ok(state)) => Json(state).into_response(),
         Ok(Err(e)) => internal_error(e),
         Err(_) => internal_error("photos state task failed"),
@@ -507,13 +518,19 @@ async fn api_choose_range(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<RangeBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
         return *r;
     }
-    match tokio::task::spawn_blocking(move || choose_range(&root.0, &body.range)).await {
+    match tokio::task::spawn_blocking(move || {
+        let _ = choose_range(&root.0, &body.range)?;
+        let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
+        dashboard_state_with_live_seen(&root.0, &live_seen)
+    })
+    .await
+    {
         Ok(Ok(state)) => Json(state).into_response(),
         Ok(Err(e)) => bad_request(e),
         Err(_) => internal_error("choose range task failed"),
@@ -525,13 +542,19 @@ async fn api_widen_range(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<RangeBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
         return *r;
     }
-    match tokio::task::spawn_blocking(move || widen_range(&root.0, &body.range)).await {
+    match tokio::task::spawn_blocking(move || {
+        let _ = widen_range(&root.0, &body.range)?;
+        let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
+        dashboard_state_with_live_seen(&root.0, &live_seen)
+    })
+    .await
+    {
         Ok(Ok(state)) => Json(state).into_response(),
         Ok(Err(e)) => bad_request(e),
         Err(_) => internal_error("widen range task failed"),
@@ -542,13 +565,19 @@ async fn api_pause(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
         return *r;
     }
-    match tokio::task::spawn_blocking(move || set_paused(&root.0, true)).await {
+    match tokio::task::spawn_blocking(move || {
+        let _ = set_paused(&root.0, true)?;
+        let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
+        dashboard_state_with_live_seen(&root.0, &live_seen)
+    })
+    .await
+    {
         Ok(Ok(state)) => Json(state).into_response(),
         Ok(Err(e)) => internal_error(e),
         Err(_) => internal_error("pause task failed"),
@@ -559,13 +588,19 @@ async fn api_resume(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
         return *r;
     }
-    match tokio::task::spawn_blocking(move || set_paused(&root.0, false)).await {
+    match tokio::task::spawn_blocking(move || {
+        let _ = set_paused(&root.0, false)?;
+        let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
+        dashboard_state_with_live_seen(&root.0, &live_seen)
+    })
+    .await
+    {
         Ok(Ok(state)) => Json(state).into_response(),
         Ok(Err(e)) => internal_error(e),
         Err(_) => internal_error("resume task failed"),
@@ -576,13 +611,19 @@ async fn api_turn_off(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
         return *r;
     }
-    match tokio::task::spawn_blocking(move || turn_off(&root.0)).await {
+    match tokio::task::spawn_blocking(move || {
+        let _ = turn_off(&root.0)?;
+        let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
+        dashboard_state_with_live_seen(&root.0, &live_seen)
+    })
+    .await
+    {
         Ok(Ok(state)) => Json(state).into_response(),
         Ok(Err(e)) => internal_error(e),
         Err(_) => internal_error("turn off task failed"),
@@ -604,7 +645,7 @@ async fn api_photos(
     Extension(basis): Extension<AccessBasis>,
     Query(query): Query<PhotosListQuery>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
@@ -637,7 +678,7 @@ async fn api_trash(
     headers: HeaderMap,
     Json(body): Json<TrashBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
+    if !photos_library_visible(&root.0) {
         return disabled_response();
     }
     if let Err(r) = require_owner_or_device(&basis) {
@@ -696,35 +737,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn routes_return_404_when_flag_is_off_and_enforce_device_basis_when_on() {
+    async fn routes_honor_row_visibility_flag_override_and_device_basis() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
 
-        // Default OFF -> 404 on both dashboard and device routes.
+        // Case (a): fresh journal with no capable device -> dashboard route is 404,
+        // while device route is enabled (default ON) and rejects Localhost with 403.
         let owner_app = test_app(root.clone(), AccessBasis::Localhost);
         let (st, _) = send_json(&owner_app, "GET", "/app/sources/photos/api/state", None).await;
         assert_eq!(st, StatusCode::NOT_FOUND);
-
-        let dev_basis = AccessBasis::LinkedDevice {
-            carrier: Carrier::Direct,
-            cid: LinkedDeviceCid::try_from(
-                "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            )
-            .unwrap(),
-            leaf_spki: Vec::new(),
-        };
-        let dev_app = test_app(root.clone(), dev_basis);
-        let (st, _) = send_json(&dev_app, "GET", "/app/devices/photos-library/wanted", None).await;
-        assert_eq!(st, StatusCode::NOT_FOUND);
-
-        // Turn ON flag -> Localhost refused on device routes, allowed on dashboard routes.
-        std::fs::create_dir_all(root.join("config")).unwrap();
-        std::fs::write(
-            root.join("config/journal.json"),
-            r#"{"photos_library":{"enabled":true}}"#,
-        )
-        .unwrap();
-
         let (st, _) = send_json(
             &owner_app,
             "GET",
@@ -734,10 +755,65 @@ mod tests {
         .await;
         assert_eq!(st, StatusCode::FORBIDDEN);
 
+        // Case (b): paired old iOS app (authorized_clients.json entry, no check-in) -> still 404!
+        let old_cid = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let new_cid = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        std::fs::create_dir_all(root.join("link")).unwrap();
+        std::fs::write(
+            root.join("link/authorized_clients.json"),
+            serde_json::to_vec(&json!([
+                {"kind":"cert","fingerprint":old_cid,"device_label":"Old iPhone","paired_at":"2026-11-01T00:00:00Z","instance_id":"old-1"},
+                {"kind":"cert","fingerprint":new_cid,"device_label":"Test Phone","paired_at":"2026-11-25T00:00:00Z","instance_id":"new-1"}
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+        let (st, _) = send_json(&owner_app, "GET", "/app/sources/photos/api/state", None).await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+
+        let dev_basis = AccessBasis::LinkedDevice {
+            carrier: Carrier::Direct,
+            cid: LinkedDeviceCid::try_from(new_cid).unwrap(),
+            leaf_spki: Vec::new(),
+        };
+        let dev_app = test_app(root.clone(), dev_basis);
+
+        // Explicit `photos_library.enabled: false` returns 404 on BOTH device and dashboard routes.
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            r#"{"photos_library":{"enabled":false}}"#,
+        )
+        .unwrap();
+        let (st, _) = send_json(&dev_app, "GET", "/app/devices/photos-library/wanted", None).await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+        let (st, _) = send_json(&owner_app, "GET", "/app/sources/photos/api/state", None).await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+
+        // Remove explicit false -> default ON; capable iPhone checks in with source_enabled=false.
+        std::fs::write(root.join("config/journal.json"), r#"{}"#).unwrap();
+        let (st, _) = send_json(
+            &dev_app,
+            "POST",
+            "/app/devices/photos-library/status",
+            Some(json!({
+                "device_name": "Test Phone",
+                "device_kind": "iphone",
+                "access_state": "not_determined",
+                "icloud_waiting_count": 0,
+                "scan_paused": false,
+                "source_enabled": false
+            })),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        assert!(!root.join("config/photos-library").exists());
+
         let (st, body) = send_json(&owner_app, "GET", "/app/sources/photos/api/state", None).await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(body["source"], "photos");
         assert_eq!(body["state"], "ready_to_set_up");
+        assert_eq!(body["capable_device_kinds"], json!(["iphone"]));
 
         // LinkedDevice drives full scan -> choose-range -> wanted -> pause -> resume -> turn-off.
         let (st, _) = send_json(

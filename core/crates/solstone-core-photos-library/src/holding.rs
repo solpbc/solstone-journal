@@ -41,6 +41,8 @@ use crate::types::{
 
 pub const HOLDING_DIR_REL: &str = "config/photos-library";
 const TURNED_OFF_MARKER_REL: &str = "config/photos/turned_off.json";
+const CAPABLE_DEVICES_REL: &str = "config/photos/capable_devices.json";
+const CAPABLE_DEVICES_LOCK_REL: &str = "config/photos/.capable-devices.lock";
 const LOCK_NAME: &str = ".photos-library.lock";
 const PRIVATE_DIR_MODE: u32 = 0o700;
 const PRIVATE_FILE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
@@ -48,21 +50,213 @@ const DEFAULT_LEASE_SECONDS: i64 = 300;
 const MAX_BATCH_ROWS: usize = 5_000;
 const MAX_WANTED_LIMIT: usize = 100;
 const PHOTOS_PAGE_SIZE: usize = 60;
+/// Presence window matching `solstone_core_sol_link::CLIENT_STALE_MS` (120 s).
+pub const DEVICE_CONNECTED_WINDOW_SECS: i64 = 120;
+const DEVICE_CONNECTED_WINDOW_MS: i64 = DEVICE_CONNECTED_WINDOW_SECS * 1_000;
+const DEVICE_FUTURE_CLOCK_DRIFT_MS: i64 = 60_000;
 
-/// Feature flag in `config/journal.json` (`photos_library.enabled == Some(true)`).
-/// Strictly OFF by default until screens and voice-checked copy land.
+/// Feature flag in `config/journal.json` (`photos_library.enabled`).
+/// ON by default: absent config or absent key reads as on, `false` or any
+/// non-boolean value reads as off.
 #[must_use]
 pub fn photos_library_enabled(journal: &Path) -> bool {
-    let Ok(bytes) = fs::read(journal.join("config/journal.json")) else {
-        return false;
+    let bytes = match fs::read(journal.join("config/journal.json")) {
+        Ok(b) => b,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return true,
+        Err(_) => return false,
     };
     let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
         return false;
     };
-    val.get("photos_library")
-        .and_then(|s| s.get("enabled"))
-        .and_then(serde_json::Value::as_bool)
-        == Some(true)
+    match val.get("photos_library").and_then(|s| s.get("enabled")) {
+        None => true,
+        Some(v) => v == &serde_json::Value::Bool(true),
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct CapableDeviceRecord {
+    cid: String,
+    name: String,
+    /// Normalized `"iphone"` or `"ipad"` (phase 1 is iPhone/iPad only).
+    kind: String,
+    last_seen_at: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct CapableDevicesFile {
+    schema: u32,
+    devices: BTreeMap<String, CapableDeviceRecord>,
+}
+
+fn normalize_capable_device_kind(kind: Option<&str>) -> Option<&'static str> {
+    match kind.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        Some("iphone") => Some("iphone"),
+        Some("ipad") => Some("ipad"),
+        _ => None,
+    }
+}
+
+fn lock_capable_devices(journal: &Path) -> Result<FileLock, String> {
+    let photos_dir = journal.join("config/photos");
+    create_directory_with_mode(&photos_dir, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    hold_lock(
+        journal.join(CAPABLE_DEVICES_LOCK_REL),
+        LockOptions {
+            timeout: Duration::from_secs(15),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Record that a paired iPhone or iPad running a photos-capable app reported in.
+/// Stored outside `config/photos-library/` so reporting capability never creates
+/// a holding area before the owner turns Photos on, and survives `turn_off()`.
+pub fn record_capable_device(
+    journal: &Path,
+    cid: &str,
+    device_name: Option<&str>,
+    device_kind: Option<&str>,
+) -> Result<bool, String> {
+    let Some(kind) = normalize_capable_device_kind(device_kind) else {
+        return Ok(false);
+    };
+    let _lock = lock_capable_devices(journal)?;
+    let path = journal.join(CAPABLE_DEVICES_REL);
+    let mut file: CapableDevicesFile =
+        read_json_optional(&path)?.unwrap_or_else(|| CapableDevicesFile {
+            schema: 1,
+            devices: BTreeMap::new(),
+        });
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+    let entry = file.devices.entry(cid.to_owned()).or_default();
+    entry.cid = cid.to_owned();
+    if let Some(n) = device_name
+        && !n.trim().is_empty()
+    {
+        entry.name = n.trim().to_owned();
+    }
+    entry.kind = kind.to_owned();
+    entry.last_seen_at = now;
+    write_json_private(&path, &file)?;
+    Ok(true)
+}
+
+/// Remove a device from the capable-device registry (e.g. on unpair).
+pub fn remove_capable_device(journal: &Path, cid: &str) -> Result<bool, String> {
+    let path = journal.join(CAPABLE_DEVICES_REL);
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let _lock = lock_capable_devices(journal)?;
+    let mut file: CapableDevicesFile = match read_json_optional(&path)? {
+        Some(f) => f,
+        None => return Ok(false),
+    };
+    let removed = file.devices.remove(cid).is_some();
+    if removed {
+        write_json_private(&path, &file)?;
+    }
+    Ok(removed)
+}
+
+fn read_authorized_client_cids(journal: &Path) -> Option<BTreeSet<String>> {
+    let path = journal.join("link/authorized_clients.json");
+    let bytes = fs::read(path).ok()?;
+    let arr = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()?
+        .as_array()?
+        .clone();
+    let mut cids = BTreeSet::new();
+    for item in arr {
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        if obj.get("kind").is_some_and(|k| k != "cert") {
+            continue;
+        }
+        if let Some(fp) = obj.get("fingerprint").and_then(serde_json::Value::as_str) {
+            cids.insert(fp.to_owned());
+        }
+    }
+    Some(cids)
+}
+
+fn read_link_device_last_seen(journal: &Path) -> BTreeMap<String, String> {
+    let path = journal.join("link/devices.json");
+    let Ok(bytes) = fs::read(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return BTreeMap::new();
+    };
+    let Some(obj) = val.as_object() else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for (cid, entry) in obj {
+        if let Some(ts) = entry
+            .get("last_seen_at")
+            .and_then(serde_json::Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+        {
+            out.insert(cid.clone(), ts.to_owned());
+        }
+    }
+    out
+}
+
+/// Distinct capable device kinds (`"iphone"`, `"ipad"`) among currently paired
+/// devices that have reported in.
+#[must_use]
+pub fn capable_device_kinds(journal: &Path) -> Vec<String> {
+    let path = journal.join(CAPABLE_DEVICES_REL);
+    let Ok(Some(file)) = read_json_optional::<CapableDevicesFile>(&path) else {
+        return Vec::new();
+    };
+    let authorized = read_authorized_client_cids(journal);
+    let mut has_iphone = false;
+    let mut has_ipad = false;
+    for rec in file.devices.values() {
+        if let Some(auth) = authorized.as_ref()
+            && !auth.contains(&rec.cid)
+        {
+            continue;
+        }
+        match normalize_capable_device_kind(Some(&rec.kind)) {
+            Some("iphone") => has_iphone = true,
+            Some("ipad") => has_ipad = true,
+            _ => {}
+        }
+    }
+    let mut kinds = Vec::new();
+    if has_iphone {
+        kinds.push("iphone".to_owned());
+    }
+    if has_ipad {
+        kinds.push("ipad".to_owned());
+    }
+    kinds
+}
+
+fn has_existing_photos_state(journal: &Path) -> bool {
+    holding_root(journal).is_dir()
+        || journal.join("config/photos/received").is_dir()
+        || journal.join(TURNED_OFF_MARKER_REL).is_file()
+        || count_live_photos_in_journal(journal) > 0
+}
+
+/// Whether the Photos row (`/app/sources/`) and page (`/app/sources/photos`)
+/// are visible on this journal: requires `photos_library.enabled` AND either a
+/// paired photos-capable iPhone/iPad that has reported in, or existing photos
+/// holding/landed/turned-off state.
+#[must_use]
+pub fn photos_library_visible(journal: &Path) -> bool {
+    if !photos_library_enabled(journal) {
+        return false;
+    }
+    !capable_device_kinds(journal).is_empty() || has_existing_photos_state(journal)
 }
 
 #[must_use]
@@ -496,6 +690,8 @@ pub fn scan_start(
     }
     write_json_private(&scan_dir.join("smart_albums.json"), &smart_albums)?;
 
+    let _ = record_capable_device(journal, cid, Some(device_name), Some(device_kind));
+
     let mut devices = load_devices(journal)?;
     let dev = devices.devices.entry(cid.to_owned()).or_default();
     dev.cid = cid.to_owned();
@@ -506,6 +702,7 @@ pub fn scan_start(
         device_kind.to_owned()
     };
     dev.connected = true;
+    dev.last_seen_at = Some(now.clone());
     dev.access_state = access_state.to_owned();
     save_devices(journal, &devices)?;
 
@@ -575,12 +772,14 @@ pub fn scan_batch(
     {
         state.scan_earliest_item_at = Some(e);
     }
-    state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+    state.updated_at = Some(now.clone());
     save_holding_state(journal, &state)?;
 
     let mut devices = load_devices(journal)?;
     if let Some(dev) = devices.devices.get_mut(cid) {
         dev.connected = true;
+        dev.last_seen_at = Some(now);
         save_devices(journal, &devices)?;
     }
 
@@ -627,6 +826,7 @@ pub fn scan_finish(
     let mut devices = load_devices(journal)?;
     if let Some(dev) = devices.devices.get_mut(cid) {
         dev.connected = true;
+        dev.last_seen_at = Some(now.clone());
         dev.last_scan_at = Some(now);
         if let Some(acc) = access_state {
             dev.access_state = acc.to_owned();
@@ -731,6 +931,7 @@ pub fn scan_changes(
     let mut devices = load_devices(journal)?;
     if let Some(dev) = devices.devices.get_mut(cid) {
         dev.connected = true;
+        dev.last_seen_at = Some(now.clone());
         dev.last_scan_at = Some(now);
         if let Some(acc) = access_state {
             dev.access_state = acc.to_owned();
@@ -745,7 +946,12 @@ pub fn scan_changes(
     Ok(out.summary)
 }
 
-/// Update paired device status (access state, iCloud waiting count, scan pause).
+/// Update paired device status (capability check-in, access state, iCloud waiting count, scan pause).
+///
+/// When `source_enabled == Some(false)`, this records the paired iPhone/iPad as
+/// photos-capable without creating the `config/photos-library/` holding area or
+/// raising access attention before the owner turns Photos on.
+#[allow(clippy::too_many_arguments)]
 pub fn update_device_status(
     journal: &Path,
     cid: &str,
@@ -754,7 +960,41 @@ pub fn update_device_status(
     access_state: Option<&str>,
     icloud_waiting_count: Option<u64>,
     scan_paused: Option<bool>,
+    source_enabled: Option<bool>,
 ) -> Result<(), String> {
+    let _ = record_capable_device(journal, cid, device_name, device_kind)?;
+    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+
+    if source_enabled == Some(false) {
+        if !holding_root(journal).is_dir() {
+            return Ok(());
+        }
+        let _lock = lock_holding(journal)?;
+        let mut devices = load_devices(journal)?;
+        if let Some(dev) = devices.devices.get_mut(cid) {
+            if let Some(n) = device_name
+                && !n.trim().is_empty()
+            {
+                dev.name = n.to_owned();
+            }
+            if let Some(k) = device_kind
+                && !k.trim().is_empty()
+            {
+                dev.kind = k.to_owned();
+            }
+            dev.connected = true;
+            dev.last_seen_at = Some(now);
+            if let Some(acc) = access_state {
+                dev.access_state = acc.to_owned();
+            }
+            if let Some(cnt) = icloud_waiting_count {
+                dev.icloud_waiting_count = cnt;
+            }
+            save_devices(journal, &devices)?;
+        }
+        return Ok(());
+    }
+
     let _lock = lock_holding(journal)?;
     let _ = ensure_holding_dirs(journal)?;
     let mut devices = load_devices(journal)?;
@@ -773,6 +1013,7 @@ pub fn update_device_status(
         dev.kind = "iphone".to_owned();
     }
     dev.connected = true;
+    dev.last_seen_at = Some(now.clone());
     if let Some(acc) = access_state {
         dev.access_state = acc.to_owned();
     }
@@ -791,7 +1032,7 @@ pub fn update_device_status(
             state.attention_reason = attention_for_access(acc);
         }
     }
-    state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+    state.updated_at = Some(now);
     save_holding_state(journal, &state)?;
     Ok(())
 }
@@ -962,11 +1203,8 @@ fn decision_in_window(d: &AssetDecision, start_ts: Option<f64>, end_ts: Option<f
 }
 
 /// Whether the journal can currently run face matching for the others'-photos rung.
-fn can_run_others_face_check(journal: &Path) -> bool {
-    if cfg!(any(target_os = "ios", target_os = "android")) {
-        return false;
-    }
-    if !faceprints::enabled(journal).unwrap_or(false) {
+pub fn can_run_others_face_check(journal: &Path) -> bool {
+    if !faceprints::photo_faces_active(journal).unwrap_or(false) {
         return false;
     }
     faceprints::photo_match::load_meeting_face_index(journal)
@@ -990,6 +1228,15 @@ pub fn lease_wanted(
     lease_seconds: Option<i64>,
 ) -> Result<WantedResponse, String> {
     let _lock = lock_holding(journal)?;
+    let now = Timestamp::now();
+    let now_iso = solstone_core_time::utc_rfc3339(now);
+    let mut devices = load_devices(journal)?;
+    if let Some(dev) = devices.devices.get_mut(cid) {
+        dev.connected = true;
+        dev.last_seen_at = Some(now_iso.clone());
+        save_devices(journal, &devices)?;
+    }
+
     let state = load_holding_state(journal)?;
     let range = state.chosen_range.clone();
 
@@ -1011,10 +1258,8 @@ pub fn lease_wanted(
     let mut wanted_state = load_wanted_state(journal)?;
     let others_enabled = can_run_others_face_check(journal);
 
-    let now = Timestamp::now();
     let now_ts = now.as_second() as f64;
     let lease_secs = lease_seconds.unwrap_or(DEFAULT_LEASE_SECONDS).max(30);
-    let now_iso = solstone_core_time::utc_rfc3339(now);
     let expires_iso = solstone_core_time::utc_rfc3339(
         now.checked_add(SignedDuration::from_secs(lease_secs))
             .unwrap_or(now),
@@ -1116,6 +1361,12 @@ pub fn mark_wanted_non_copy(
 ) -> Result<(), String> {
     let _lock = lock_holding(journal)?;
     let now = solstone_core_time::utc_rfc3339(Timestamp::now());
+    let mut devices = load_devices(journal)?;
+    if let Some(dev) = devices.devices.get_mut(cid) {
+        dev.connected = true;
+        dev.last_seen_at = Some(now.clone());
+        save_devices(journal, &devices)?;
+    }
     let mut wanted = load_wanted_state(journal)?;
     match status {
         "gone" => {
@@ -1259,12 +1510,69 @@ fn read_thinking_and_band4(journal: &Path) -> (bool, bool) {
     (thinking_ready, band4_paused)
 }
 
+fn parse_rfc3339_ts(raw: &str) -> Option<Timestamp> {
+    let trimmed = raw.trim();
+    trimmed.parse::<Timestamp>().ok().or_else(|| {
+        solstone_core_time::parse_rfc3339(trimmed)
+            .ok()
+            .map(|z| z.timestamp())
+    })
+}
+
+fn device_is_connected(
+    dev: &DeviceState,
+    authorized_cids: Option<&BTreeSet<String>>,
+    live_seen: Option<&BTreeMap<String, String>>,
+    link_last_seen: &BTreeMap<String, String>,
+    now: Timestamp,
+) -> bool {
+    if let Some(auth) = authorized_cids
+        && !auth.contains(&dev.cid)
+    {
+        return false;
+    }
+    let freshest = [
+        live_seen.and_then(|m| m.get(&dev.cid).map(String::as_str)),
+        link_last_seen.get(&dev.cid).map(String::as_str),
+        dev.last_seen_at.as_deref(),
+        dev.last_upload_at.as_deref(),
+        dev.last_scan_at.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(parse_rfc3339_ts)
+    .max();
+    let Some(ts) = freshest else {
+        return false;
+    };
+    let age_ms = now.as_millisecond() - ts.as_millisecond();
+    (-DEVICE_FUTURE_CLOCK_DRIFT_MS..DEVICE_CONNECTED_WINDOW_MS).contains(&age_ms)
+}
+
 /// Build the complete dashboard state snapshot for `GET /app/sources/photos/api/state`.
 pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
+    dashboard_state_at(journal, None, Timestamp::now())
+}
+
+/// Build the complete dashboard state snapshot using live in-process link presence.
+pub fn dashboard_state_with_live_seen(
+    journal: &Path,
+    live_seen: &BTreeMap<String, String>,
+) -> Result<PhotosDashboardState, String> {
+    dashboard_state_at(journal, Some(live_seen), Timestamp::now())
+}
+
+/// Build the dashboard state snapshot at an explicit timestamp `now` (deterministic for tests).
+pub fn dashboard_state_at(
+    journal: &Path,
+    live_seen: Option<&BTreeMap<String, String>>,
+    now: Timestamp,
+) -> Result<PhotosDashboardState, String> {
     let root = holding_root(journal);
     let (thinking_ready, band4_paused) = read_thinking_and_band4(journal);
     let profile_pics_enabled = can_run_others_face_check(journal);
     let live_in_journal = count_live_photos_in_journal(journal);
+    let capable_kinds = capable_device_kinds(journal);
 
     if !root.is_dir() {
         let is_off = live_in_journal > 0
@@ -1295,6 +1603,7 @@ pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
             band4_paused,
             thinking_ready,
             profile_pics_enabled,
+            capable_device_kinds: capable_kinds,
         });
     }
 
@@ -1302,7 +1611,6 @@ pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
     let devices_file = load_devices(journal)?;
     let decisions = load_decisions(journal)?;
     let wanted = load_wanted_state(journal)?;
-    let now = Timestamp::now();
 
     let has_active_choice = state.chosen_range.is_some();
     let current_range_is_all = state.chosen_range.as_deref() == Some("all");
@@ -1387,23 +1695,43 @@ pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
                 let receipt = lookup_received(journal, &d.id, d.cloud_id.as_deref())
                     .ok()
                     .flatten();
-                if let Some(rec) = receipt {
-                    if has_active_choice {
-                        chosen_total += 1;
-                        arrived += 1;
-                        if is_segment_live(journal, &rec) {
-                            in_journal_in_range += 1;
-                        } else {
-                            moved_to_trash += 1;
+                match (receipt, wanted.assets.get(&d.id)) {
+                    (Some(rec), _) => {
+                        if has_active_choice {
+                            chosen_total += 1;
+                            arrived += 1;
+                            if is_segment_live(journal, &rec) {
+                                in_journal_in_range += 1;
+                            } else {
+                                moved_to_trash += 1;
+                            }
                         }
                     }
-                } else if matches!(
-                    wanted.assets.get(&d.id),
-                    Some(WantedAssetStatus::NoiseDropped { .. })
-                ) {
-                    active_left_out_reasons.push("read_as_noise");
-                } else {
-                    active_left_out_reasons.push("others_no_face_match");
+                    (None, Some(WantedAssetStatus::NoiseDropped { .. })) => {
+                        active_left_out_reasons.push("read_as_noise");
+                    }
+                    (None, Some(WantedAssetStatus::OthersNoFaceMatch { .. })) => {
+                        active_left_out_reasons.push("others_no_face_match");
+                    }
+                    (
+                        None,
+                        Some(WantedAssetStatus::Gone { .. } | WantedAssetStatus::Landed { .. }),
+                    ) => {}
+                    (
+                        None,
+                        None
+                        | Some(
+                            WantedAssetStatus::Leased { .. }
+                            | WantedAssetStatus::IcloudWaiting { .. },
+                        ),
+                    ) => {
+                        if has_active_choice && profile_pics_enabled {
+                            chosen_total += 1;
+                            waiting_on_phone += 1;
+                        } else {
+                            active_left_out_reasons.push(d.reason.as_str());
+                        }
+                    }
                 }
             }
             DecisionKind::LeftOut => {
@@ -1443,7 +1771,22 @@ pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
         ("on", "steady")
     };
 
-    let mut devices: Vec<DeviceState> = devices_file.devices.into_values().collect();
+    let authorized_cids = read_authorized_client_cids(journal);
+    let link_last_seen = read_link_device_last_seen(journal);
+    let mut devices: Vec<DeviceState> = devices_file
+        .devices
+        .into_values()
+        .map(|mut dev| {
+            dev.connected = device_is_connected(
+                &dev,
+                authorized_cids.as_ref(),
+                live_seen,
+                &link_last_seen,
+                now,
+            );
+            dev
+        })
+        .collect();
     devices.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.cid.cmp(&b.cid)));
 
     let in_journal_display = if has_active_choice {
@@ -1482,6 +1825,7 @@ pub fn dashboard_state(journal: &Path) -> Result<PhotosDashboardState, String> {
         band4_paused,
         thinking_ready,
         profile_pics_enabled,
+        capable_device_kinds: capable_kinds,
     })
 }
 

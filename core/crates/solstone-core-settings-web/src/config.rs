@@ -609,13 +609,19 @@ fn project_faces(faces: Option<&Value>, available: bool) -> Option<Value> {
             None => true,
             Some(value) => value == &Value::Bool(true),
         };
-    let photo_match_enabled =
-        available && faces.and_then(|f| f.get("photo_match_enabled")) == Some(&Value::Bool(true));
+    let photo_match_enabled = available
+        && match faces.and_then(|f| f.get("photo_match_enabled")) {
+            None => true,
+            Some(value) => value == &Value::Bool(true),
+        };
     let mut obj = Map::new();
     obj.insert("enabled".to_owned(), Value::Bool(enabled));
     obj.insert("available".to_owned(), Value::Bool(available));
-    if photo_match_enabled {
-        obj.insert("photo_match_enabled".to_owned(), Value::Bool(true));
+    if available {
+        obj.insert(
+            "photo_match_enabled".to_owned(),
+            Value::Bool(photo_match_enabled),
+        );
     }
     Some(Value::Object(obj))
 }
@@ -1078,7 +1084,7 @@ mod tests {
         ] {
             assert_eq!(
                 super::project_faces(Some(&value), true),
-                Some(json!({"enabled": on, "available": true})),
+                Some(json!({"enabled": on, "available": true, "photo_match_enabled": true})),
                 "{value}"
             );
         }
@@ -1099,7 +1105,14 @@ mod tests {
                 Some(&json!({"enabled": true, "photo_match_enabled": false})),
                 true
             ),
-            Some(json!({"enabled": true, "available": true}))
+            Some(json!({"enabled": true, "available": true, "photo_match_enabled": false}))
+        );
+        assert_eq!(
+            super::project_faces(
+                Some(&json!({"enabled": true, "photo_match_enabled": "true"})),
+                true
+            ),
+            Some(json!({"enabled": true, "available": true, "photo_match_enabled": false}))
         );
         assert_eq!(
             super::project_faces(

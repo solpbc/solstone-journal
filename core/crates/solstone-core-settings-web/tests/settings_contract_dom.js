@@ -2456,7 +2456,7 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.ok(p.doc.activeElement === toggle, `kept: ${at(p)}`);
   });
 
-  await test('photos of people switches its copy slots only when photo_match_enabled is true', async () => {
+  await test('photos of people uses widened copy by default on desktop and reverts when photo_match_enabled is false or unavailable', async () => {
     const slotIds = [
       'facesToggleLabel',
       'facesDescription',
@@ -2470,7 +2470,7 @@ module.exports = async function settingsContractCases(crateDir) {
     const baseCfg = {
       identity: { name: 'owner', timezone: 'UTC' },
       transcribe: {},
-      faces: { enabled: false },
+      faces: { enabled: false, photo_match_enabled: false },
       env: {},
       runtime_env: {},
       key_validation: {},
@@ -2481,18 +2481,30 @@ module.exports = async function settingsContractCases(crateDir) {
     });
     const offTexts = Object.fromEntries(slotIds.map((id) => [id, pOff.byId(id).textContent]));
 
-    const pOn = await boot(env, '/app/settings/#vision', {
+    const pDefault = await boot(env, '/app/settings/#vision', {
       answers: journal({
         '/app/settings/api/config': {
           ...baseCfg,
-          faces: { enabled: false, photo_match_enabled: true },
+          faces: undefined,
         },
       }),
     });
     for (const id of slotIds) {
-      const onText = pOn.byId(id).textContent;
-      assert.ok(onText && onText.length > 0, `slot ${id} renders text when photo_match_enabled is true`);
-      assert.notStrictEqual(onText, offTexts[id], `slot ${id} switches to widened key when photo_match_enabled is true`);
+      const onText = pDefault.byId(id).textContent;
+      assert.ok(onText && onText.length > 0, `slot ${id} renders text by default on desktop`);
+      assert.notStrictEqual(onText, offTexts[id], `slot ${id} uses widened key by default on desktop`);
+    }
+
+    const pMobile = await boot(env, '/app/settings/#vision', {
+      answers: journal({
+        '/app/settings/api/config': {
+          ...baseCfg,
+          faces: { enabled: false, available: false },
+        },
+      }),
+    });
+    for (const id of slotIds) {
+      assert.strictEqual(pMobile.byId(id).textContent, offTexts[id], `slot ${id} keeps meeting-only copy when unavailable`);
     }
   });
 

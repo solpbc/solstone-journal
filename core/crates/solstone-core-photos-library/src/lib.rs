@@ -13,10 +13,12 @@ pub mod selection;
 pub mod types;
 
 pub use holding::{
-    HOLDING_DIR_REL, choose_range, dashboard_state, holding_root, lease_wanted, list_landed_photos,
-    mark_wanted_non_copy, photos_library_enabled, rebuild_from_plain_json, rebuild_sqlite_index,
-    scan_batch, scan_changes, scan_finish, scan_start, set_paused, sqlite_cache_path, turn_off,
-    update_device_status, widen_range,
+    DEVICE_CONNECTED_WINDOW_SECS, HOLDING_DIR_REL, can_run_others_face_check, capable_device_kinds,
+    choose_range, dashboard_state, dashboard_state_at, dashboard_state_with_live_seen,
+    holding_root, lease_wanted, list_landed_photos, mark_wanted_non_copy, photos_library_enabled,
+    photos_library_visible, rebuild_from_plain_json, rebuild_sqlite_index, record_capable_device,
+    remove_capable_device, scan_batch, scan_changes, scan_finish, scan_start, set_paused,
+    sqlite_cache_path, turn_off, update_device_status, widen_range,
 };
 pub use keep::{
     CopyIngestOutcome, CopyMetadataOverride, TrashPhotosResult, TrashSegmentRef, ingest_photo_copy,
@@ -259,13 +261,21 @@ mod tests {
     }
 
     #[test]
-    fn feature_flag_is_off_by_default() {
+    fn feature_flag_is_on_by_default_and_honors_explicit_false() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(!photos_library_enabled(dir.path()));
+        assert!(photos_library_enabled(dir.path()));
         fs::create_dir_all(dir.path().join("config")).unwrap();
+        fs::write(dir.path().join("config/journal.json"), r#"{}"#).unwrap();
+        assert!(photos_library_enabled(dir.path()));
         fs::write(
             dir.path().join("config/journal.json"),
             r#"{"photos_library":{"enabled":false}}"#,
+        )
+        .unwrap();
+        assert!(!photos_library_enabled(dir.path()));
+        fs::write(
+            dir.path().join("config/journal.json"),
+            r#"{"photos_library":{"enabled":"true"}}"#,
         )
         .unwrap();
         assert!(!photos_library_enabled(dir.path()));
@@ -814,5 +824,202 @@ mod tests {
         )
         .unwrap();
         assert_eq!(dashboard_state(journal).unwrap().state, "setting_up");
+    }
+
+    #[test]
+    fn others_face_check_respects_photo_match_enabled_and_counts_pending_as_waiting() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+        let _encoder = seed_meeting_person(journal, "ent-alice", "Alice", 3);
+
+        // With faces.enabled=true and photo_match_enabled=false, selection face queries stay OFF.
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"faces":{"enabled":true,"photo_match_enabled":false}}"#,
+        )
+        .unwrap();
+        assert!(!can_run_others_face_check(journal));
+
+        scan_start(
+            journal,
+            "dev-iphone-1",
+            "Test Phone",
+            "iphone",
+            "authorized",
+            2,
+            std_catalog(),
+        )
+        .unwrap();
+        let own = make_row(
+            "asset-own-1",
+            "2026-11-19T18:00:00Z",
+            &[SMART_CAPTURED_BY_ME],
+        );
+        let other_pending = make_row(
+            "asset-others-pending",
+            "2026-11-19T18:20:00Z",
+            &[SMART_RECENTLY_SAVED],
+        );
+        scan_batch(
+            journal,
+            "dev-iphone-1",
+            0,
+            vec![own, other_pending],
+            Some(2),
+        )
+        .unwrap();
+        scan_finish(
+            journal,
+            "dev-iphone-1",
+            Some(2),
+            None,
+            Some("authorized"),
+            Some(0),
+        )
+        .unwrap();
+        choose_range(journal, &RangeSpec::Preset("all".to_owned())).unwrap();
+
+        // While photo_match_enabled is false, only asset-own-1 is leased (NOT StageOthersFaceCheck).
+        let wanted_off = lease_wanted(journal, "dev-iphone-1", 10, Some(300)).unwrap();
+        assert_eq!(wanted_off.wanted.len(), 1);
+        assert_eq!(wanted_off.wanted[0].asset_id, "asset-own-1");
+        let st_off = dashboard_state(journal).unwrap();
+        assert!(!st_off.profile_pics_enabled);
+        assert_eq!(st_off.progress.waiting_on_phone, 1);
+        assert_eq!(
+            st_off.left_out.reasons.get("saved_and_shared").copied(),
+            Some(1)
+        );
+
+        // Turn photo_match_enabled ON (default when omitted): StageOthersFaceCheck is leased AND
+        // counts toward waiting_on_phone rather than left_out saved_and_shared / others_no_face_match.
+        fs::write(journal.join("config/journal.json"), r#"{}"#).unwrap();
+        assert!(can_run_others_face_check(journal));
+        let wanted_on = lease_wanted(journal, "dev-iphone-1", 10, Some(300)).unwrap();
+        assert!(
+            wanted_on
+                .wanted
+                .iter()
+                .any(|w| w.asset_id == "asset-others-pending"
+                    && w.reason_kind == "others_face_check")
+        );
+        let st_pending = dashboard_state(journal).unwrap();
+        assert!(st_pending.profile_pics_enabled);
+        assert_eq!(st_pending.progress.chosen_total, 2);
+        assert_eq!(st_pending.progress.waiting_on_phone, 2);
+        assert_eq!(st_pending.left_out.total, 0);
+        assert!(!st_pending.left_out.reasons.contains_key("saved_and_shared"));
+    }
+
+    #[test]
+    fn device_connected_reflects_freshness_window_live_seen_and_unpairing() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+
+        scan_start(
+            journal,
+            "sha256:dev-1",
+            "Test Phone",
+            "iphone",
+            "authorized",
+            1,
+            std_catalog(),
+        )
+        .unwrap();
+
+        let now = jiff::Timestamp::now();
+        let fresh = dashboard_state_at(journal, None, now).unwrap();
+        assert_eq!(fresh.devices.len(), 1);
+        assert!(fresh.devices[0].connected);
+
+        // After >= DEVICE_CONNECTED_WINDOW_SECS with no report, connected becomes false.
+        let later = now
+            .checked_add(jiff::SignedDuration::from_secs(
+                DEVICE_CONNECTED_WINDOW_SECS + 5,
+            ))
+            .unwrap();
+        let stale = dashboard_state_at(journal, None, later).unwrap();
+        assert!(!stale.devices[0].connected);
+
+        // Fresh in-process live_seen keeps connected true even if no photos route fired recently.
+        let mut live = std::collections::BTreeMap::new();
+        live.insert(
+            "sha256:dev-1".to_owned(),
+            solstone_core_time::utc_rfc3339(later),
+        );
+        let live_state = dashboard_state_at(journal, Some(&live), later).unwrap();
+        assert!(live_state.devices[0].connected);
+
+        // Unpairing (absent from link/authorized_clients.json) forces connected false immediately.
+        fs::create_dir_all(journal.join("link")).unwrap();
+        fs::write(journal.join("link/authorized_clients.json"), b"[]").unwrap();
+        let unpaired = dashboard_state_at(journal, Some(&live), later).unwrap();
+        assert!(!unpaired.devices[0].connected);
+    }
+
+    #[test]
+    fn row_visibility_requires_capable_ios_device_or_existing_photos_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+
+        // Case (a): fresh journal with no paired devices -> enabled, NOT visible.
+        assert!(photos_library_enabled(journal));
+        assert!(!photos_library_visible(journal));
+
+        // Case (b): paired old iOS app (in authorized_clients.json, never checked in) -> NOT visible.
+        fs::create_dir_all(journal.join("link")).unwrap();
+        fs::write(
+            journal.join("link/authorized_clients.json"),
+            r#"[{"kind":"cert","fingerprint":"sha256:old-iphone","device_label":"Old Phone","paired_at":"2026-11-01T00:00:00Z","instance_id":"old-1"}]"#,
+        )
+        .unwrap();
+        assert!(!photos_library_visible(journal));
+
+        // Non-iOS device kinds (mac/android) do not unlock phase-1 iOS/iPadOS visibility.
+        update_device_status(
+            journal,
+            "sha256:old-iphone",
+            Some("Test Mac"),
+            Some("mac"),
+            Some("not_determined"),
+            Some(0),
+            Some(false),
+            Some(false),
+        )
+        .unwrap();
+        assert!(!photos_library_visible(journal));
+        assert!(!holding_root(journal).exists());
+
+        // Capable iPad checks in with source_enabled=false -> visible, holding dir NOT created!
+        fs::write(
+            journal.join("link/authorized_clients.json"),
+            r#"[
+                {"kind":"cert","fingerprint":"sha256:old-iphone","device_label":"Old Phone","paired_at":"2026-11-01T00:00:00Z","instance_id":"old-1"},
+                {"kind":"cert","fingerprint":"sha256:new-ipad","device_label":"New iPad","paired_at":"2026-11-25T00:00:00Z","instance_id":"new-1"}
+            ]"#,
+        )
+        .unwrap();
+        update_device_status(
+            journal,
+            "sha256:new-ipad",
+            Some("New iPad"),
+            Some("ipad"),
+            Some("denied"),
+            Some(0),
+            Some(false),
+            Some(false),
+        )
+        .unwrap();
+        assert!(photos_library_visible(journal));
+        assert!(!holding_root(journal).exists());
+        let st = dashboard_state(journal).unwrap();
+        assert_eq!(st.state, "ready_to_set_up");
+        assert!(st.attention_reason.is_none());
+        assert_eq!(st.capable_device_kinds, vec!["ipad".to_owned()]);
+
+        // Unpairing the capable device hides the row again when no photos state exists.
+        remove_capable_device(journal, "sha256:new-ipad").unwrap();
+        assert!(!photos_library_visible(journal));
     }
 }

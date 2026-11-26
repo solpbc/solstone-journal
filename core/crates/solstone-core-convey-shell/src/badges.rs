@@ -109,7 +109,7 @@ pub(crate) fn badges_payload_in(
 
     let email_attention = usize::from(solstone_core_settings_web::email_needs_attention(root));
     let photos_attention = usize::from(
-        solstone_core_photos_library::photos_library_enabled(root)
+        solstone_core_photos_library::photos_library_visible(root)
             && solstone_core_photos_library::dashboard_state(root)
                 .is_ok_and(|s| s.state == "needs_attention"),
     );
@@ -417,7 +417,8 @@ mod tests {
         fs::write(
             dir.path().join("config/journal.json"),
             serde_json::to_vec(&json!({
-                "setup": { "completed_at": now.as_second() }
+                "setup": { "completed_at": now.as_second() },
+                "photos_library": { "enabled": false }
             }))
             .unwrap(),
         )

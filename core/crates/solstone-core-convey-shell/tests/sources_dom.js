@@ -1043,6 +1043,40 @@ test('photos sync row stays hidden when disabled (404) and renders every enabled
     photos: { status: 503, body: null },
   });
   assert.notStrictEqual(broken.querySelector('.sources-sync-unavailable-photos'), null);
+
+  // Case (b): old iOS app paired (in clients list) + journal returns 404 -> no photos row.
+  const oldIphoneClient = {
+    display_label: 'Old Phone',
+    reported: { platform: 'ios', device_type: 'phone' },
+    sources: [],
+  };
+  const hiddenWithOldIos = render({
+    clients: ok([oldIphoneClient]),
+    photos: { status: 404, body: { code: 'photos_library_disabled' } },
+  });
+  assert.strictEqual(hiddenWithOldIos.querySelector('[data-sync="photos"]'), null);
+
+  // Capable iPad reported in while an old iPhone is also paired -> names ipad, not old iphone.
+  const capableIpad = render({
+    clients: ok([oldIphoneClient]),
+    photos: {
+      status: 200,
+      body: {
+        source: 'photos',
+        state: 'ready_to_set_up',
+        substate: 'never_set_up',
+        capable_device_kinds: ['ipad'],
+        devices: [],
+        scan: {},
+        ranges: {},
+        left_out: { total: 0, reasons: {} },
+        progress: {},
+      },
+    },
+  });
+  const ipadStatus = capableIpad.querySelector('[data-sync="photos"]').textContent;
+  assert.ok(ipadStatus.includes('ipad'), 'expected ready row to name capable ipad, got: ' + ipadStatus);
+  assert.ok(!ipadStatus.includes('iphone'), 'expected ready row not to name old iphone, got: ' + ipadStatus);
 });
 
 (async () => {

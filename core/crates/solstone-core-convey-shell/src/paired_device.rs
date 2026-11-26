@@ -16,6 +16,9 @@ pub(crate) fn remove_paired_device(
     if let Err(_error) = solstone_core_push::remove_cid_registrations(journal_root, cid) {
         log::error!("push registrations for an unpaired device could not be removed");
     }
+    if let Err(_error) = solstone_core_photos_library::remove_capable_device(journal_root, cid) {
+        log::error!("photos library capability record for an unpaired device could not be removed");
+    }
     if outcome.authorized_removed {
         end_device_notices(journal_root, cid);
     }

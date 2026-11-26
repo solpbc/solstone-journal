@@ -463,6 +463,7 @@ fn update_device_last_upload(journal: &Path, cid: &str, now_iso: &str) {
     };
     if let Some(dev) = file.devices.get_mut(cid) {
         dev.connected = true;
+        dev.last_seen_at = Some(now_iso.to_owned());
         dev.last_upload_at = Some(now_iso.to_owned());
         if let Ok(mut out) = serde_json::to_vec_pretty(&file) {
             out.push(b'\n');

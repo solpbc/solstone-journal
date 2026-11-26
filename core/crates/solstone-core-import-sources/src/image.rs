@@ -5045,7 +5045,32 @@ mod tests {
             .unwrap();
         assert_eq!(before_archive, after_query_archive);
 
-        // 2. Default config (photo_match_enabled absent -> OFF by default): photo pass does NOT run!
+        // 2. Explicit faces.photo_match_enabled: false (while faces.enabled is true)
+        // disables BOTH side-effect-free selection queries and the photo face pass.
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"faces":{"enabled":true,"photo_match_enabled":false}}"#,
+        )
+        .unwrap();
+        assert!(
+            crate::photo_faces::query_photo_faces_against_journal(
+                journal.path(),
+                &photo_path,
+                &detector,
+            )
+            .unwrap()
+            .is_empty()
+        );
+        let batch_off = crate::photo_faces::query_photo_faces_batch_against_journal(
+            journal.path(),
+            std::slice::from_ref(&photo_path),
+            &detector,
+        )
+        .unwrap();
+        assert_eq!(batch_off.len(), 1);
+        assert!(batch_off[0].1.is_empty());
+
         let wire = SequenceWire::new(vec![
             Ok(generated(
                 r#"{"description":"Alice smiling outdoors.","visible_text":null,"belonging_class":"lived_moment"}"#,
@@ -5091,13 +5116,8 @@ mod tests {
             3
         );
 
-        // 3. Turn ON faces.photo_match_enabled (while faces.enabled is true) -> links Alice & adds photo tile!
-        fs::create_dir_all(journal.path().join("config")).unwrap();
-        fs::write(
-            journal.path().join("config/journal.json"),
-            r#"{"faces":{"enabled":true,"photo_match_enabled":true}}"#,
-        )
-        .unwrap();
+        // 3. Default config (photo_match_enabled absent -> ON by default on desktop) links Alice & adds photo tile!
+        fs::write(journal.path().join("config/journal.json"), r#"{}"#).unwrap();
         let photo_path_2 = src_dir.path().join("portrait2.jpg");
         fs::write(&photo_path_2, distinct_jpeg(8)).unwrap();
         let prep_on = prepare_manual_image_with_options(

@@ -222,23 +222,31 @@ pub fn enabled(journal: &std::path::Path) -> Result<bool> {
     )
 }
 
-/// Matching faces in still photos against meeting faceprints is gated behind
-/// its own explicit opt-in switch (`faces.photo_match_enabled`), OFF by default
-/// when absent or anything other than `true`.
+/// Matching faces in still photos against meeting faceprints is on unless
+/// the owner turned it off (`faces.photo_match_enabled`): an absent switch is
+/// on, `false` is off, and any other stored value is off.
 pub fn photo_match_enabled(journal: &std::path::Path) -> Result<bool> {
     let config =
         solstone_core_journal_config::read_journal_config(journal).map_err(|e| e.to_string())?;
-    Ok(config
-        .config
-        .as_ref()
-        .and_then(|v| v.get("faces"))
-        .and_then(|v| v.get("photo_match_enabled"))
-        == Some(&serde_json::Value::Bool(true)))
+    Ok(
+        match config
+            .config
+            .as_ref()
+            .and_then(|v| v.get("faces").and_then(|v| v.get("photo_match_enabled")))
+        {
+            None => true,
+            Some(value) => value == &serde_json::Value::Bool(true),
+        },
+    )
 }
 
-/// Whether still-photo face matching is active for this journal: both the
-/// owner's face recognition switch and the photo-matching flag must be on.
+/// Whether still-photo face matching is active for this journal: desktop-only,
+/// and both the owner's face recognition switch and `faces.photo_match_enabled`
+/// must be on.
 pub fn photo_faces_active(journal: &std::path::Path) -> Result<bool> {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Ok(false);
+    }
     Ok(enabled(journal)? && photo_match_enabled(journal)?)
 }
 
