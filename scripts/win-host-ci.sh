@@ -79,10 +79,41 @@ if [ -n "$winbuild_train" ]; then
 "
 fi
 
+# Caller metadata for remote build-fence attribution and local lock diagnostics.
+# Explicit SOLPBC_BOOTSTRAP_HOLDER wins; otherwise fall back to an ambient
+# session/job identifier if present, or an explicit untracked local label.
+bootstrap_holder=${SOLPBC_BOOTSTRAP_HOLDER:-${SOLPBC_CI_CALLER:-${EXTRO_SESSION:-${HOPPER_LID:+lode:$HOPPER_LID}}}}
+if [ -z "$bootstrap_holder" ]; then
+  local_user=${USER:-$(id -un 2>/dev/null || printf 'unknown')}
+  local_host=$(uname -n 2>/dev/null || printf 'unknown')
+  bootstrap_holder="untracked:${local_user}@${local_host}"
+fi
+case "$bootstrap_holder" in
+  *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:@-]*)
+    echo "ERROR: win-host-ci: SOLPBC_BOOTSTRAP_HOLDER must be letters, digits, '.', '_', ':', '@' or '-'" >&2
+    exit 1
+    ;;
+esac
+bootstrap_operator_host=${SOLPBC_BOOTSTRAP_OPERATOR_HOST:-${SOLPBC_CI_OPERATOR_HOST:-$(uname -n 2>/dev/null || printf 'unknown')}}
+case "$bootstrap_operator_host" in
+  ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+    echo "ERROR: win-host-ci: SOLPBC_BOOTSTRAP_OPERATOR_HOST must be letters, digits, '.', '_' or '-'" >&2
+    exit 1
+    ;;
+esac
+host_lock_held=0
+sync_lock_held=0
+
 cleanup() {
   original_status=$1
   trap - EXIT HUP INT TERM
   set +e
+  if [ "$sync_lock_held" -eq 1 ] && [ -n "${sync_lock_path:-}" ]; then
+    : > "$sync_lock_path"
+  fi
+  if [ "$host_lock_held" -eq 1 ] && [ -n "${host_lock_path:-}" ]; then
+    : > "$host_lock_path"
+  fi
   if [ -n "$ssh_output_file" ]; then
     rm -f "$ssh_output_file"
   fi
@@ -148,34 +179,58 @@ host_key=$(printf '%s' "$WIN_REMOTE_HOST" | tr '@' '_')
 host_lock_path=$git_common_dir/solstone-journal-win-host-ci.$host_key.lock
 sync_lock_path=$git_common_dir/solstone-journal-win-host-ci.lock
 
-if exec 9>"$host_lock_path"; then
+if exec 9>>"$host_lock_path"; then
   :
 else
   echo "ERROR: win-host-ci: lock file open failed: $host_lock_path" >&2
   exit 1
 fi
-echo "win-host-ci: waiting for lock $host_lock_path"
-if flock 9; then
-  :
+if flock -n 9; then
+  echo "win-host-ci: waiting for lock $host_lock_path"
 else
-  echo "ERROR: win-host-ci: lock acquisition failed: $host_lock_path" >&2
-  exit 1
+  existing_holder=$(tr '\r\n' '  ' < "$host_lock_path" 2>/dev/null || true)
+  if [ -n "$existing_holder" ]; then
+    echo "win-host-ci: waiting for lock $host_lock_path (held by $existing_holder)"
+  else
+    echo "win-host-ci: waiting for lock $host_lock_path (held by unknown)"
+  fi
+  if flock 9; then
+    :
+  else
+    echo "ERROR: win-host-ci: lock acquisition failed: $host_lock_path" >&2
+    exit 1
+  fi
 fi
+host_lock_held=1
+printf 'holder=%s operator_host=%s pid=%s started=%s\n' \
+  "$bootstrap_holder" "$bootstrap_operator_host" "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$host_lock_path"
 echo "win-host-ci: acquired lock $host_lock_path"
 
-if exec 8>"$sync_lock_path"; then
+if exec 8>>"$sync_lock_path"; then
   :
 else
   echo "ERROR: win-host-ci: lock file open failed: $sync_lock_path" >&2
   exit 1
 fi
-echo "win-host-ci: waiting for lock $sync_lock_path"
-if flock 8; then
-  :
+if flock -n 8; then
+  echo "win-host-ci: waiting for lock $sync_lock_path"
 else
-  echo "ERROR: win-host-ci: lock acquisition failed: $sync_lock_path" >&2
-  exit 1
+  existing_holder=$(tr '\r\n' '  ' < "$sync_lock_path" 2>/dev/null || true)
+  if [ -n "$existing_holder" ]; then
+    echo "win-host-ci: waiting for lock $sync_lock_path (held by $existing_holder)"
+  else
+    echo "win-host-ci: waiting for lock $sync_lock_path (held by unknown)"
+  fi
+  if flock 8; then
+    :
+  else
+    echo "ERROR: win-host-ci: lock acquisition failed: $sync_lock_path" >&2
+    exit 1
+  fi
 fi
+sync_lock_held=1
+printf 'holder=%s operator_host=%s pid=%s started=%s\n' \
+  "$bootstrap_holder" "$bootstrap_operator_host" "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$sync_lock_path"
 echo "win-host-ci: acquired lock $sync_lock_path"
 
 if WIN_REMOTE_HOST="${WIN_REMOTE_HOST:-}" \
@@ -216,6 +271,8 @@ if [ "$binding_valid" -ne 1 ]; then
   exit 1
 fi
 # The binding is read; nothing local is shared from here on.
+: > "$sync_lock_path"
+sync_lock_held=0
 flock -u 8
 exec 8>&-
 echo "win-host-ci: released lock $sync_lock_path"
@@ -232,6 +289,8 @@ $backup_environment
 \$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '$cloud_sync_test'
 \$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = '$refs_root'
 \$env:SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT = '$owner_account'
+\$env:SOLPBC_BOOTSTRAP_HOLDER = '$bootstrap_holder'
+\$env:SOLPBC_BOOTSTRAP_OPERATOR_HOST = '$bootstrap_operator_host'
 & 'C:\\sol\\sj-ci.cmd'
 exit \$LASTEXITCODE"
 if "$SSH" \

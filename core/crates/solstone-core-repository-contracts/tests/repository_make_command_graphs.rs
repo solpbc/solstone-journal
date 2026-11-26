@@ -2190,6 +2190,12 @@ fn run_native_receipt_driver(
         .env_remove("SOLSTONE_NATIVE_RESTIC")
         .env_remove("SOLSTONE_NATIVE_RCLONE")
         .env_remove("SOLPBC_WINBUILD_TRAIN")
+        .env_remove("SOLPBC_BOOTSTRAP_HOLDER")
+        .env_remove("SOLPBC_BOOTSTRAP_OPERATOR_HOST")
+        .env_remove("SOLPBC_CI_CALLER")
+        .env_remove("SOLPBC_CI_OPERATOR_HOST")
+        .env_remove("EXTRO_SESSION")
+        .env_remove("HOPPER_LID")
         .envs(extra_environment.iter().copied())
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild")
         .env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", "C:\\refs")
@@ -2278,6 +2284,106 @@ fn windows_native_driver_carries_a_reservation_name_only_when_set() {
                 );
                 assert!(!ssh_log.exists(), "{name} reached the host");
             }
+        }
+    }
+}
+
+#[test]
+fn windows_native_driver_forwards_caller_identity_and_marks_untracked_callers() {
+    let valid = native_receipt_scenarios()
+        .into_iter()
+        .find(|scenario| scenario.name == "valid")
+        .expect("positive receipt fixture");
+    for (name, extra_env) in [
+        (
+            "explicit",
+            vec![
+                ("SOLPBC_BOOTSTRAP_HOLDER", "sess1234"),
+                ("SOLPBC_BOOTSTRAP_OPERATOR_HOST", "driver-box"),
+            ],
+        ),
+        (
+            "ambient-session",
+            vec![
+                ("EXTRO_SESSION", "sess5678"),
+                ("SOLPBC_BOOTSTRAP_OPERATOR_HOST", "driver-box"),
+            ],
+        ),
+        (
+            "untracked",
+            vec![
+                ("USER", "tester"),
+                ("SOLPBC_BOOTSTRAP_OPERATOR_HOST", "driver-box"),
+            ],
+        ),
+        (
+            "unsafe-holder",
+            vec![("SOLPBC_BOOTSTRAP_HOLDER", "bad'; Remove-Item C:\\")],
+        ),
+        (
+            "unsafe-host",
+            vec![("SOLPBC_BOOTSTRAP_OPERATOR_HOST", "bad;host")],
+        ),
+    ] {
+        let temp = windows_transport_fixture(&format!("windows-caller-id-{name}"));
+        let (scp, scp_log) = write_transport_scp_shim(&temp);
+        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp, &valid);
+        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, &extra_env);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        match name {
+            "explicit" => {
+                assert!(output.status.success(), "{name}: {stderr}");
+                let forwarded = fs::read_to_string(&ssh_log).expect("read forwarded SSH command");
+                assert!(
+                    forwarded.contains("$env:SOLPBC_BOOTSTRAP_HOLDER = 'sess1234'"),
+                    "{forwarded}"
+                );
+                assert!(
+                    forwarded.contains("$env:SOLPBC_BOOTSTRAP_OPERATOR_HOST = 'driver-box'"),
+                    "{forwarded}"
+                );
+            }
+            "ambient-session" => {
+                assert!(output.status.success(), "{name}: {stderr}");
+                let forwarded = fs::read_to_string(&ssh_log).expect("read forwarded SSH command");
+                assert!(
+                    forwarded.contains("$env:SOLPBC_BOOTSTRAP_HOLDER = 'sess5678'"),
+                    "{forwarded}"
+                );
+                assert!(
+                    forwarded.contains("$env:SOLPBC_BOOTSTRAP_OPERATOR_HOST = 'driver-box'"),
+                    "{forwarded}"
+                );
+            }
+            "untracked" => {
+                assert!(output.status.success(), "{name}: {stderr}");
+                let forwarded = fs::read_to_string(&ssh_log).expect("read forwarded SSH command");
+                assert!(
+                    forwarded.contains("$env:SOLPBC_BOOTSTRAP_HOLDER = 'untracked:tester@"),
+                    "{forwarded}"
+                );
+                assert!(
+                    forwarded.contains("$env:SOLPBC_BOOTSTRAP_OPERATOR_HOST = 'driver-box'"),
+                    "{forwarded}"
+                );
+            }
+            "unsafe-holder" => {
+                assert!(!output.status.success(), "{name} was accepted");
+                assert!(
+                    stderr.contains("SOLPBC_BOOTSTRAP_HOLDER must be"),
+                    "{stderr}"
+                );
+                assert!(!ssh_log.exists(), "{name} reached the host");
+            }
+            "unsafe-host" => {
+                assert!(!output.status.success(), "{name} was accepted");
+                assert!(
+                    stderr.contains("SOLPBC_BOOTSTRAP_OPERATOR_HOST must be"),
+                    "{stderr}"
+                );
+                assert!(!ssh_log.exists(), "{name} reached the host");
+            }
+            _ => unreachable!(),
         }
     }
 }
