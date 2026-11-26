@@ -486,8 +486,9 @@ fn read_daily_coverage_unlocked(
         maintenance_pass_day.is_none_or(|pass_day| day == pass_day || day == today);
     let mut backfill_only: Option<bool> = None;
     let mut is_backfill_only = || -> bool {
-        *backfill_only
-            .get_or_insert_with(|| solstone_core_segment::day_is_backfill_only(journal, day))
+        *backfill_only.get_or_insert_with(|| {
+            solstone_core_segment::day_holds_only_backfill_streams(journal, day)
+        })
     };
     let mut units = Vec::new();
     let mut maintenance = None;
@@ -588,8 +589,10 @@ fn read_daily_coverage_unlocked(
 /// coverage checks.
 ///
 /// Today (`age == 0`), yesterday (`age == 1`), and days holding live capture
-/// apply. Historical backfilled days (`age > 1` and `day_is_backfill_only`)
-/// skip automatic morning-briefing generation unless an accepted or on-disk
+/// apply. So does a day held only by import or syncing streams that arrived
+/// as it happened, through [`CONTRACT_REOWE_CLOSED_DAYS`]. Any other day held
+/// only by those streams (`age > 1`) skips automatic morning-briefing
+/// generation unless an accepted or on-disk
 /// briefing already exists (preserving frozen reuse and delete-rebuild
 /// scrubbing), the owner explicitly thawed the day, or a recovery-pinned unit
 /// record is open.
@@ -600,7 +603,7 @@ pub fn morning_briefing_applies(journal: &Path, day: &str) -> bool {
 
 pub fn morning_briefing_applies_at(journal: &Path, day: &str, today: &str) -> bool {
     morning_briefing_applies_with_backfill(journal, day, today, &mut || {
-        solstone_core_segment::day_is_backfill_only(journal, day)
+        solstone_core_segment::day_holds_only_backfill_streams(journal, day)
     })
 }
 
@@ -618,6 +621,14 @@ fn morning_briefing_applies_with_backfill(
     };
     let age = today_date.duration_since(day_date).as_hours() / 24;
     if age <= 1 || !is_backfill_only() {
+        return true;
+    }
+    // A day the owner captured only through a synced source, as it happened,
+    // is owed its briefing like any other day while it is recent. Past that
+    // it is never newly owed, so no older day becomes work.
+    if age <= CONTRACT_REOWE_CLOSED_DAYS
+        && !solstone_core_segment::day_is_backfill_only(journal, day)
+    {
         return true;
     }
     if crate::owner_ask::thawed(journal, day) {
@@ -672,7 +683,7 @@ pub fn historical_entity_daily_applies_at(
         &today_str,
         talent,
         facet,
-        &mut || solstone_core_segment::day_is_backfill_only(journal, day),
+        &mut || solstone_core_segment::day_holds_only_backfill_streams(journal, day),
     )
 }
 
@@ -723,7 +734,7 @@ pub fn read_unit_coverage(
         config,
         facet,
         &mut DayProjectionCache::new(journal, day),
-        &mut || solstone_core_segment::day_is_backfill_only(journal, day),
+        &mut || solstone_core_segment::day_holds_only_backfill_streams(journal, day),
     )
 }
 
@@ -2399,5 +2410,49 @@ mod tests {
             pass_today.maintenance.is_some(),
             "pass_day keeps daily_schedule maintenance"
         );
+    }
+    #[test]
+    fn a_day_captured_only_through_a_synced_source_is_owed_its_briefing_while_recent() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+        utc_journal(journal, serde_json::json!({}));
+        fs::create_dir_all(journal.join("streams")).unwrap();
+        // The stream began on 2026-06-01; from then on every screenshot
+        // arrived the day it was taken.
+        fs::write(journal.join("streams/phone_shots.json"), r#"{"name":"phone_shots","kind":"observer","host":null,"platform":null,"created_at":1780315200,"last_day":null,"last_segment":null,"seq":1,"source":"screenshots","cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#).unwrap();
+        for day in [
+            "20260530", "20260601", "20260602", "20260603", "20260608", "20260609",
+        ] {
+            let seg = journal.join(format!("chronicle/{day}/phone_shots/101500_1"));
+            fs::create_dir_all(&seg).unwrap();
+            fs::write(seg.join("screenshot_screen.png"), "png").unwrap();
+        }
+        let today = "20260610";
+        assert!(morning_briefing_applies_at(journal, "20260609", today));
+        assert!(morning_briefing_applies_at(journal, "20260608", today));
+        assert!(morning_briefing_applies_at(journal, "20260603", today));
+        // Past the last closed week no day is newly owed anything, so a
+        // change of rule never turns older days into work.
+        assert!(!morning_briefing_applies_at(journal, "20260602", today));
+        // A screenshot from before the stream began is history it brought in.
+        assert!(!morning_briefing_applies_at(
+            journal, "20260530", "20260602"
+        ));
+        let now: Timestamp = "2026-06-10T12:00:00Z".parse().unwrap();
+        let observer = "entities:entity_observer";
+        assert!(historical_entity_daily_applies_at(
+            journal,
+            "20260603",
+            observer,
+            Some("work"),
+            now
+        ));
+        assert!(!historical_entity_daily_applies_at(
+            journal,
+            "20260602",
+            observer,
+            Some("work"),
+            now
+        ));
     }
 }

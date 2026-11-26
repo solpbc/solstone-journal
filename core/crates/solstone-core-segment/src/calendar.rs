@@ -63,25 +63,64 @@ pub fn is_backfill_stream(journal: &Path, stream: &str) -> bool {
 }
 
 /// Whether `day` holds at least one segment and every segment sits in a
-/// backfill stream (`import.*` or a syncing source). Days holding no segments
-/// (or holding day-level live artifacts alone) return `false`.
+/// backfill stream (`import.*` or a syncing source), whenever it arrived. Days
+/// holding no segments (or holding day-level live artifacts alone) return
+/// `false`.
+#[must_use]
+pub fn day_holds_only_backfill_streams(journal: &Path, day: &str) -> bool {
+    backfill_only_streams(journal, day).is_some()
+}
+
+/// Whether everything `day` holds arrived as history: every segment sits in a
+/// backfill stream, and the day is before that stream began.
+///
+/// A syncing source keeps delivering after it is connected, so its stream
+/// alone does not make a day history: a day the owner captured only through
+/// a synced source is as much a day of the journal as any other. A stream
+/// began on the day its record was created; one with no record began when
+/// the journal was set up. With neither known, the day reads as history.
 #[must_use]
 pub fn day_is_backfill_only(journal: &Path, day: &str) -> bool {
-    iter_segments(journal, PathOrDay::Day(day)).is_ok_and(|segments| {
-        let mut saw_live = false;
-        segments
-            .iter()
-            .filter(|segment| !segment.path().join("tombstone.json").is_file())
-            .all(|segment| {
-                saw_live = true;
-                segment
-                    .stream()
-                    .directory()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| is_backfill_stream(journal, name))
+    let Some(streams) = backfill_only_streams(journal, day) else {
+        return false;
+    };
+    let setup_ms = setup_completed_at_ms(journal);
+    streams.iter().all(|stream| {
+        let created_ms = match read_typed_stream_record(&stream_record_path(journal, stream)) {
+            Ok(Some(record)) if record.created_at > 0 => {
+                i64::try_from(record.created_at.saturating_mul(1_000)).ok()
+            }
+            _ => None,
+        };
+        created_ms
+            .or(setup_ms)
+            .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+            .is_none_or(|began| {
+                day < solstone_core_journal_config::owner_day(journal, began).as_str()
             })
-            && saw_live
     })
+}
+
+/// The streams of a day whose every live segment sits in a backfill stream,
+/// or `None` when the day holds no segment or holds a captured one.
+fn backfill_only_streams(journal: &Path, day: &str) -> Option<std::collections::BTreeSet<String>> {
+    let segments = iter_segments(journal, PathOrDay::Day(day)).ok()?;
+    let mut streams = std::collections::BTreeSet::new();
+    for segment in segments
+        .iter()
+        .filter(|segment| !segment.path().join("tombstone.json").is_file())
+    {
+        let name = segment.stream().directory()?.to_str()?;
+        // One read of a stream's record, however many segments it holds.
+        if streams.contains(name) {
+            continue;
+        }
+        if !is_backfill_stream(journal, name) {
+            return None;
+        }
+        streams.insert(name.to_owned());
+    }
+    (!streams.is_empty()).then_some(streams)
 }
 
 /// Read the realistic setup-completion epoch millisecond timestamp from
@@ -256,5 +295,49 @@ mod tests {
         )
         .unwrap();
         assert!(!day_is_backfill_only(root, "20150412"));
+    }
+    #[test]
+    fn a_synced_day_is_history_only_before_its_stream_began() {
+        let journal = TempDir::new();
+        let root = journal.path();
+        fs::create_dir_all(root.join("config")).unwrap();
+        // Set up on 2026-03-01; the screenshots stream began on 2026-06-01.
+        fs::write(
+            root.join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"},"setup":{"completed_at":1772366400000}}"#,
+        )
+        .unwrap();
+        stream(root, "shots", Some("screenshots"));
+        let record = root.join("streams/shots.json");
+        let began = fs::read_to_string(&record)
+            .unwrap()
+            .replace(r#""created_at":0"#, r#""created_at":1780315200"#);
+        fs::write(&record, began).unwrap();
+        let shot = |day: &str, stream: &str| {
+            let dir = root
+                .join("chronicle")
+                .join(day)
+                .join(stream)
+                .join("101500_1");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("screenshot_screen.png"), "png").unwrap();
+        };
+        shot("20260531", "shots");
+        shot("20260601", "shots");
+        assert!(day_is_backfill_only(root, "20260531"));
+        assert!(!day_is_backfill_only(root, "20260601"));
+        // Whenever it arrived, each of those days holds only a syncing stream.
+        assert!(day_holds_only_backfill_streams(root, "20260531"));
+        assert!(day_holds_only_backfill_streams(root, "20260601"));
+        // A stream with no record began when the journal was set up.
+        shot("20260228", "import.image");
+        shot("20260301", "import.image");
+        assert!(day_is_backfill_only(root, "20260228"));
+        assert!(!day_is_backfill_only(root, "20260301"));
+        // A day both streams hold is history only if it is before both.
+        shot("20260301", "shots");
+        assert!(!day_is_backfill_only(root, "20260301"));
+        shot("20260228", "shots");
+        assert!(day_is_backfill_only(root, "20260228"));
     }
 }

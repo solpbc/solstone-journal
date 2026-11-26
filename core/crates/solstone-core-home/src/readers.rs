@@ -3414,4 +3414,30 @@ mod tests {
             "awaiting_first_delivery"
         );
     }
+    #[test]
+    fn days_captured_only_through_a_synced_source_age_the_journal() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        write(
+            root.path(),
+            "config/journal.json",
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        );
+        // The stream began on 2026-05-28 and every screenshot arrived the day
+        // it was taken, so the owner's first day is 2026-05-28.
+        write(
+            root.path(),
+            "streams/phone_shots.json",
+            r#"{"name":"phone_shots","kind":"observer","host":null,"platform":null,"created_at":1779969600,"last_day":null,"last_segment":null,"seq":1,"source":"screenshots","cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+        );
+        // Screenshots from before the stream began are history it brought in.
+        for day in ["20250101", "20260528", "20260529", "20260601"] {
+            write(
+                root.path(),
+                &format!("chronicle/{day}/phone_shots/101500_1/screenshot_screen.png"),
+                "png",
+            );
+        }
+        assert_eq!(count_journal_age_days(&context), 5);
+    }
 }
