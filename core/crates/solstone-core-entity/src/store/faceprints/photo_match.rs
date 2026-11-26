@@ -5,9 +5,10 @@
 //! owner's existing meeting faceprints.
 //!
 //! Thresholds were calibrated on an owner-consented evaluation comparing real
-//! library photos against real meeting faceprint panels (46/46 decided
-//! precision, 0 wrong-person false positives across principal and non-principal
-//! meeting identities at cosine >= 0.50).
+//! library photos against real meeting faceprint panels (at cosine >= 0.55 with
+//! margin >= 0.08: 100% precision and 0 wrong-person false positives across
+//! principal and non-principal meeting identities on both 256 px and 1,063-photo
+//! 512 px evaluations, rejecting a sharp lookalike false positive at 0.5324).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -15,7 +16,7 @@ use std::path::Path;
 use super::{Encoder, Result, cross, load_in_dir, panel, valid_embedding};
 
 /// Minimum SFace cosine similarity to link a still-photo face to a meeting person.
-pub const PHOTO_MATCH_COSINE_MIN: f32 = 0.50;
+pub const PHOTO_MATCH_COSINE_MIN: f32 = 0.55;
 /// Minimum YuNet face detector confidence score.
 pub const PHOTO_MATCH_DET_SCORE_MIN: f32 = 0.80;
 /// Minimum detected face bounding-box width in image pixels.
@@ -154,7 +155,7 @@ pub fn load_meeting_face_index(journal: &Path) -> Result<MeetingFaceIndex> {
 
 /// Match detected still-photo faces against `index` with zero side effects.
 ///
-/// Applies the calibrated precision gate (`cosine >= 0.50`, `det_score >= 0.80`,
+/// Applies the calibrated precision gate (`cosine >= 0.55`, `det_score >= 0.80`,
 /// `bbox_w >= 20.0`, `margin >= 0.08`, and owner-centroid exclusion for
 /// non-principal identities). At most one detection per photo is linked to a
 /// given entity (highest similarity wins).
@@ -281,7 +282,7 @@ mod tests {
         };
 
         let clear_alice = mix(&alice, &unit_vec(10), 0.72);
-        let low_sim = mix(&alice, &unit_vec(11), 0.45);
+        let low_sim = mix(&alice, &unit_vec(11), 0.53); // below 0.55 cosine gate (rejects lookalikes in [0.50, 0.55))
         let ambiguous = mix(&alice, &bob, 0.72); // ~0.72 alice, ~0.69 bob -> margin < 0.08
         let small_box = mix(&bob, &unit_vec(12), 0.85);
         let low_det = mix(&bob, &unit_vec(13), 0.85);
