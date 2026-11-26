@@ -62,7 +62,7 @@ pub(crate) fn run(
     }
     // Thinking that is already current is skipped, so a segment owed only its
     // publication is published without a model call.
-    segment::run_with(
+    let mut result = segment::run_with(
         context,
         log,
         segment,
@@ -73,6 +73,28 @@ pub(crate) fn run(
         false,
         &[],
         segment::CurrentSegment::Skip,
-    )
-    .map_err(Into::into)
+    )?;
+    if result.failed == 0 && !result.timed_out {
+        let now = jiff::Timestamp::from_millisecond(context.now_ms)
+            .unwrap_or_else(|_| jiff::Timestamp::now());
+        let today = solstone_core_system::daily_coverage::local_day(&context.journal, now);
+        if context.day < today
+            && matches!(
+                solstone_core_system_health::day_segments_ready_typed(
+                    &context.journal,
+                    &context.day
+                ),
+                Ok(true)
+            )
+            && let Err(error) = segment::ensure_historical_day_activities(
+                context,
+                log,
+                args.jobs,
+                args.no_activity_prompts,
+            )
+        {
+            crate::dispatch::record_followup_failure(&mut result, "activity replay", &error);
+        }
+    }
+    Ok(result)
 }

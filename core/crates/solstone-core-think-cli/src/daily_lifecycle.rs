@@ -261,11 +261,32 @@ fn run_with_phase_process(
                         &context.day,
                     ) {
                         Ok(true) => {
+                            let now = jiff::Timestamp::from_millisecond(context.now_ms)
+                                .unwrap_or_else(|_| jiff::Timestamp::now());
+                            let today = solstone_core_system::daily_coverage::local_day(
+                                &context.journal,
+                                now,
+                            );
+                            let mut outcome = ModeResult::default();
+                            if context.day < today
+                                && let Err(error) = crate::segment::ensure_historical_day_activities(
+                                    context,
+                                    phase_log,
+                                    args.jobs,
+                                    args.no_activity_prompts,
+                                )
+                            {
+                                crate::dispatch::record_followup_failure(
+                                    &mut outcome,
+                                    "activity replay",
+                                    &error,
+                                );
+                            }
                             segment_outcome.replace(SegmentPhaseOutcome {
-                                result: ModeResult::default(),
+                                result: outcome.clone(),
                                 blockers: Some(BTreeSet::new()),
                             });
-                            ModeResult::default()
+                            outcome
                         }
                         Ok(false) => {
                             let result = phase_failure(

@@ -3028,11 +3028,12 @@ fn populate_backfill_activity_defaults(
     }
 }
 
-// No caller since train 261126: run from the history walk's daily-only run and
-// from segment repair, it replayed whole streams on older days and rewrote
-// activity files the owner already had. Give it a caller again only once it
-// adds just the activities a day is missing.
-#[allow(dead_code)]
+/// Fill in the activities an older day's history lacks.
+///
+/// Only streams that arrived as history are read: an import or a syncing
+/// source. A stream captured live is never replayed here. Only thought, active
+/// segments that no activity of the day holds are replayed, so every activity
+/// this writes is new and every row the day already has stays as written.
 pub(crate) fn ensure_historical_day_activities(
     context: &ThinkContext,
     log: &mut RunLogWriter,
@@ -3047,7 +3048,8 @@ pub(crate) fn ensure_historical_day_activities(
         .chain(&inventory.muted)
         .cloned()
         .collect();
-    let mut covered_segments: std::collections::BTreeSet<(Option<String>, String)> =
+    // A row that names no stream may be an older record of any stream.
+    let mut covered: std::collections::BTreeSet<(Option<String>, String)> =
         std::collections::BTreeSet::new();
     for facet in &declared_facets {
         if let Ok(rows) = solstone_core_facets::load_activity_records_readable(
@@ -3064,7 +3066,7 @@ pub(crate) fn ensure_historical_day_activities(
                     .map(str::to_owned);
                 if let Some(segs) = row.get("segments").and_then(Value::as_array) {
                     for seg in segs.iter().filter_map(Value::as_str) {
-                        covered_segments.insert((row_stream.clone(), seg.to_owned()));
+                        covered.insert((row_stream.clone(), seg.to_owned()));
                     }
                 }
             }
@@ -3073,9 +3075,7 @@ pub(crate) fn ensure_historical_day_activities(
 
     let segments =
         iter_segments(&context.journal, PathOrDay::Day(&context.day)).map_err(|e| e.to_string())?;
-    let mut streams_with_unmaterialized = std::collections::BTreeSet::new();
-    let mut by_stream: BTreeMap<Option<String>, Vec<String>> = BTreeMap::new();
-
+    let mut uncovered = Vec::new();
     for seg in segments {
         if solstone_core_segment::is_body_only_segment(&seg)
             || solstone_core_segment::is_calendar_segment(&context.journal, &seg)
@@ -3084,25 +3084,29 @@ pub(crate) fn ensure_historical_day_activities(
         {
             continue;
         }
-        let stream_opt = seg
+        let Some(stream) = seg
             .stream()
             .directory()
             .and_then(|s| s.to_str())
             .filter(|s| !s.is_empty() && *s != DEFAULT_STREAM)
-            .map(str::to_owned);
-        if stream_opt.as_deref() == Some(STRAVA_STREAM)
-            || crate::planner::is_mcp_audit_segment(stream_opt.as_deref())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        if stream == STRAVA_STREAM
+            || crate::planner::is_mcp_audit_segment(Some(&stream))
+            || !solstone_core_segment::is_backfill_stream(&context.journal, &stream)
         {
             continue;
         }
         let Some(seg_key) = seg.name().to_str().map(str::to_owned) else {
             continue;
         };
-        by_stream
-            .entry(stream_opt.clone())
-            .or_default()
-            .push(seg_key.clone());
-
+        if covered.contains(&(Some(stream.clone()), seg_key.clone()))
+            || covered.contains(&(None, seg_key.clone()))
+        {
+            continue;
+        }
         let sense_path = seg.path().join("talents/sense.json");
         let Ok(solstone_core_journal_io::durability::DurableRead::Present(sense)) =
             solstone_core_journal_io::durability::read_json_durable::<Value>(
@@ -3130,50 +3134,23 @@ pub(crate) fn ensure_historical_day_activities(
                                 .is_some_and(|f| declared_facets.contains(f))
                     })
                 });
-        if has_declared_active_facet && !covered_segments.contains(&(stream_opt.clone(), seg_key)) {
-            streams_with_unmaterialized.insert(stream_opt);
+        if has_declared_active_facet {
+            uncovered.push((seg_key, Some(stream)));
         }
     }
 
-    if streams_with_unmaterialized.is_empty() {
-        if solstone_core_segment::day_is_backfill_only(&context.journal, &context.day) {
-            consolidate_historical_backfill_span(&context.journal);
-        }
-        return Ok(());
+    if !uncovered.is_empty() {
+        replay_activity_state_selected(
+            context,
+            log,
+            &uncovered,
+            false,
+            max_concurrency,
+            skip_activity_prompts,
+            false,
+            None,
+        )?;
     }
-
-    let mut to_replay = Vec::new();
-    for stream_opt in streams_with_unmaterialized {
-        let settle_name = stream_opt.as_deref().unwrap_or(DEFAULT_STREAM);
-        if context
-            .journal
-            .join("awareness/activity_settle")
-            .join(format!("{settle_name}.json"))
-            .is_file()
-        {
-            continue;
-        }
-        if let Some(mut keys) = by_stream.remove(&stream_opt) {
-            keys.sort();
-            for key in keys {
-                to_replay.push((key, stream_opt.clone()));
-            }
-        }
-    }
-    if to_replay.is_empty() {
-        return Ok(());
-    }
-
-    replay_activity_state_selected(
-        context,
-        log,
-        &to_replay,
-        false,
-        max_concurrency,
-        skip_activity_prompts,
-        false,
-        None,
-    )?;
     if solstone_core_segment::day_is_backfill_only(&context.journal, &context.day) {
         consolidate_historical_backfill_span(&context.journal);
     }

@@ -765,3 +765,140 @@ fn history_walk_daily_run_on_an_older_day_does_not_rewrite_its_activity_files() 
         "the stream's activity state was not replayed"
     );
 }
+
+fn syncing_stream(journal: &Path, name: &str, source: &str) {
+    fs::create_dir_all(journal.join("streams")).unwrap();
+    fs::write(
+        journal.join("streams").join(format!("{name}.json")),
+        serde_json::json!({
+            "name": name, "kind": "observer", "host": null, "platform": null,
+            "created_at": 0, "last_day": null, "last_segment": null, "seq": 1,
+            "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source": source,
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
+/// On an older day the history walk adds an activity for a screenshot that
+/// has none, after everything the day's file already held, and adds it once.
+/// A live stream's segment without an activity is left alone.
+#[test]
+fn history_walk_daily_run_adds_only_the_activities_an_older_days_history_lacks() {
+    let (_journal, _roots, context, recorder) = journal();
+    syncing_stream(&context.journal, "shots", "screenshots");
+    let work = serde_json::json!({"density":"active","content_type":"work","activity_summary":"work",
+        "facets":[{"facet":"work","level":"high","activity":"work"}]});
+    write_sense(&context.journal, "default", "090000_300", &work);
+    write_sense(&context.journal, "default", "091000_300", &work);
+    write_sense(&context.journal, "shots", "100000_1", &work);
+    let file = context
+        .journal
+        .join("facets/work/activities")
+        .join(format!("{DAY}.jsonl"));
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let existing = concat!(
+        "{\"id\":\"work_090000_300\",\"activity\":\"work\",\"facet\":\"work\",",
+        "\"title\":\"Garden planning\",\"description\":\"Planning the garden beds.\",",
+        "\"segments\":[\"090000_300\"]}\n"
+    );
+    fs::write(&file, existing).unwrap();
+
+    let mut later = with_clock(&context, NOW + 7 * 86_400_000);
+    later.phase_runner = Some(Arc::new(PhasesExitCleanly));
+    let walk = || {
+        let mut log = test_log(&later, "daily");
+        let result = crate::daily_lifecycle::run(
+            &later,
+            &mut log,
+            &crate::args::ThinkArgs {
+                day: Some(DAY.to_owned()),
+                daily_only: true,
+                ..crate::args::ThinkArgs::default()
+            },
+            1,
+            Some(std::time::Duration::from_secs(610)),
+            &solstone_core_system::process::ChildLaunchContext::default(),
+        )
+        .unwrap();
+        assert_eq!(result.failed, 0, "{:?}", result.failed_names);
+        fs::read_to_string(&file).unwrap()
+    };
+
+    let after = walk();
+    let added = after
+        .strip_prefix(existing)
+        .expect("what the day held is unchanged, byte for byte");
+    let added = added
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["stream"], "shots");
+    assert_eq!(added[0]["segments"], serde_json::json!(["100000_1"]));
+    assert!(
+        !context.journal.join("awareness/activity_settle").exists(),
+        "no stream's day was left to settle"
+    );
+    assert!(recorder.requests.lock().unwrap().is_empty());
+
+    assert_eq!(walk(), after, "a second run adds nothing");
+}
+
+/// Repairing one older segment of a syncing source gives it its activity the
+/// same way: after what the day's file held, with a live stream's segment
+/// left alone.
+#[test]
+fn repairing_an_older_history_segment_adds_its_activity_and_changes_nothing_else() {
+    let (_journal, _roots, context, _recorder) = journal();
+    syncing_stream(&context.journal, "shots", "screenshots");
+    let work = serde_json::json!({"density":"active","content_type":"work","activity_summary":"work",
+        "facets":[{"facet":"work","level":"high","activity":"work"}]});
+    write_sense(&context.journal, "default", "090000_300", &work);
+    write_sense(&context.journal, "default", "091000_300", &work);
+    write_sense(&context.journal, "shots", "100000_1", &work);
+    let file = context
+        .journal
+        .join("facets/work/activities")
+        .join(format!("{DAY}.jsonl"));
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let existing = concat!(
+        "{\"id\":\"work_090000_300\",\"activity\":\"work\",\"facet\":\"work\",",
+        "\"title\":\"Garden planning\",\"description\":\"Planning the garden beds.\",",
+        "\"segments\":[\"090000_300\"]}\n"
+    );
+    fs::write(&file, existing).unwrap();
+
+    let later = with_clock(&context, NOW + 7 * 86_400_000);
+    let result = crate::repair::run(
+        &later,
+        &mut test_log(&later, "segment"),
+        &crate::args::ThinkArgs {
+            day: Some(DAY.to_owned()),
+            segment: Some("100000_1".to_owned()),
+            stream: Some("shots".to_owned()),
+            repair_segment: true,
+            ..crate::args::ThinkArgs::default()
+        },
+        None,
+        &solstone_core_system::process::ChildLaunchContext::default(),
+    )
+    .unwrap();
+
+    assert_eq!(result.failed, 0, "{:?}", result.failed_names);
+    let after = fs::read_to_string(&file).unwrap();
+    let added = after
+        .strip_prefix(existing)
+        .expect("what the day held is unchanged, byte for byte")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["stream"], "shots");
+    assert_eq!(added[0]["segments"], serde_json::json!(["100000_1"]));
+    assert!(
+        !context.journal.join("awareness/activity_settle").exists(),
+        "no stream's day was left to settle"
+    );
+}
