@@ -1806,6 +1806,25 @@ pub fn write_bytes_exclusive(
     windows_create_only::write_bytes_exclusive(path.as_ref(), contents, options)
 }
 
+/// Failure returned by [`write_file_exclusive`].
+#[cfg(windows)]
+#[derive(Debug)]
+pub enum ExclusiveWriteError<E> {
+    /// The caller's writer or pre-publish check failed and the stage file was
+    /// cleaned up cleanly.
+    Write(E),
+    /// The caller's writer or pre-publish check failed and deleting the stage
+    /// handle also failed.
+    WriteCleanup {
+        write: E,
+        stage: OsString,
+        cleanup: io::Error,
+    },
+    /// The create-only publication protocol failed (path admission, collision,
+    /// stage allocation, flush, move, or post-move verification).
+    Publish(AtomicWriteError),
+}
+
 /// Create and durably fill a new file from a bounded-memory reader.
 #[cfg(windows)]
 pub fn write_reader_exclusive(
@@ -1814,6 +1833,19 @@ pub fn write_reader_exclusive(
     options: AtomicWriteOptions,
 ) -> Result<u64, AtomicWriteError> {
     windows_create_only::write_reader_exclusive(path, reader, options)
+}
+
+/// Create one exclusive stage handle beneath the admitted parent, let `writer`
+/// populate it directly (avoiding a second scratch copy), flush it, run
+/// `before_publish`, and publish create-only via `MoveFileExW(..., 0)`.
+#[cfg(windows)]
+pub fn write_file_exclusive<T, E>(
+    path: &Path,
+    options: AtomicWriteOptions,
+    writer: impl FnOnce(&mut File) -> Result<T, E>,
+    before_publish: impl FnOnce() -> Result<(), E>,
+) -> Result<T, ExclusiveWriteError<E>> {
+    windows_create_only::write_file_exclusive(path, options, writer, before_publish)
 }
 
 /// Publish `contents` only when `path` does not yet exist, reporting each

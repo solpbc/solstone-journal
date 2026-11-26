@@ -131,6 +131,11 @@ pub use atomic::{
     ExclusivePublication, FinalNameConfirmation, MetadataDurability, StageCleanup,
     write_bytes_exclusive_detailed, write_reader_exclusive_detailed,
 };
+#[cfg(windows)]
+pub use atomic::{
+    ExclusiveWriteError, atomic_replace_detailed_bound, atomic_replace_detailed_bound_checked,
+    write_file_exclusive,
+};
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use atomic::{
     WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
@@ -141,8 +146,6 @@ pub use atomic::{
     WindowsInstallPrimitive, WindowsInstallTrace, run_with_windows_install_barrier,
     run_with_windows_install_faults, run_with_windows_install_faults_and_barrier,
 };
-#[cfg(windows)]
-pub use atomic::{atomic_replace_detailed_bound, atomic_replace_detailed_bound_checked};
 #[cfg(any(unix, windows))]
 pub use atomic::{install_file, install_retained_file};
 pub use atomic::{is_incidental_file_name, is_publication_candidate_name};
@@ -303,8 +306,9 @@ pub use windows_disk_space::{WindowsDiskSpace, windows_available_disk_bytes, win
 pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
 #[cfg(windows)]
 pub use windows_inventory::{
-    WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry, WindowsInventoryError,
-    enumerate_windows_inventory, read_windows_inventory_file,
+    WindowsCheckedFileReader, WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry,
+    WindowsInventoryError, enumerate_windows_inventory, enumerate_windows_inventory_pruned,
+    open_windows_inventory_file_reader, read_windows_inventory_file,
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_inventory::{

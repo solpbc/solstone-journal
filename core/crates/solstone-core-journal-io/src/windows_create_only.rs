@@ -31,9 +31,9 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use super::{
-    ATOMIC_CANDIDATE_MARKER, DetailedAtomicError, ExclusivePublication, MetadataDurability,
-    StageCleanup, TEMP_SEQUENCE, detailed_error, io_error, publication_candidate_name,
-    select_exclusive_final_name,
+    ATOMIC_CANDIDATE_MARKER, DetailedAtomicError, ExclusivePublication, ExclusiveWriteError,
+    MetadataDurability, StageCleanup, TEMP_SEQUENCE, detailed_error, io_error,
+    publication_candidate_name, select_exclusive_final_name,
 };
 use crate::create_only_retry::{
     CREATE_ONLY_MAX_ATTEMPTS, CreateOnlyMoveFailure, CreateOnlyReclass, CreateOnlyRetry,
@@ -237,61 +237,106 @@ pub(super) fn write_reader_exclusive(
     reader: &mut impl Read,
     options: crate::atomic::AtomicWriteOptions,
 ) -> Result<u64, AtomicWriteError> {
+    match write_file_exclusive(
+        path,
+        options,
+        |stage| copy_exclusive(reader, stage),
+        || Ok(()),
+    ) {
+        Ok(copied) => Ok(copied),
+        Err(ExclusiveWriteError::Publish(error)) => Err(error),
+        Err(ExclusiveWriteError::Write(source)) => Err(io_error(path, source)),
+        Err(ExclusiveWriteError::WriteCleanup {
+            write,
+            stage,
+            cleanup,
+        }) => Err(io_error(
+            path,
+            compose_exclusive_cleanup(write, &stage, cleanup),
+        )),
+    }
+}
+
+pub(super) fn write_file_exclusive<T, E>(
+    path: &Path,
+    options: crate::atomic::AtomicWriteOptions,
+    writer: impl FnOnce(&mut File) -> Result<T, E>,
+    before_publish: impl FnOnce() -> Result<(), E>,
+) -> Result<T, ExclusiveWriteError<E>> {
     if let Some(mode) = options.mode
         && mode > 0o777
     {
-        return Err(io_error(
+        return Err(ExclusiveWriteError::Publish(io_error(
             path,
             io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
-        ));
+        )));
     }
     let input = path.to_str().ok_or_else(|| {
-        io_error(
+        ExclusiveWriteError::Publish(io_error(
             path,
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "publication path is not valid UTF-8",
             ),
-        )
+        ))
     })?;
     let leaf = path.file_name().ok_or_else(|| {
-        io_error(
+        ExclusiveWriteError::Publish(io_error(
             path,
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "destination has no normal name",
             ),
-        )
+        ))
     })?;
     let stage_shape =
         publication_candidate_name(leaf, ATOMIC_CANDIDATE_MARKER, &[u128::MAX, u128::MAX]);
     let stage_shape = stage_shape.to_str().ok_or_else(|| {
-        io_error(
+        ExclusiveWriteError::Publish(io_error(
             path,
             io::Error::new(io::ErrorKind::InvalidInput, "stage name is not valid UTF-8"),
-        )
+        ))
     })?;
     let capability = prepare_publication_path_with_terminals(input, &[stage_shape])
-        .map_err(|error| map_prepare_error(path, error))?;
+        .map_err(|error| ExclusiveWriteError::Publish(map_prepare_error(path, error)))?;
     let dest_name = capability.leaf_name();
     if destination_present(capability.terminal_parent(), dest_name)
-        .map_err(|source| io_error(path, source))?
+        .map_err(|source| ExclusiveWriteError::Publish(io_error(path, source)))?
     {
-        return Err(already_exists(path));
+        return Err(ExclusiveWriteError::Publish(already_exists(path)));
     }
 
     let (stage_name, mut stage) = allocate_stage(capability.terminal_parent(), dest_name)
-        .map_err(|source| io_error(path, source))?;
-    let copied = match copy_and_flush(reader, &mut stage) {
-        Ok(copied) => copied,
-        Err(source) => {
-            return Err(fail_with_cleanup(path, &stage_name, &stage, source));
+        .map_err(|source| ExclusiveWriteError::Publish(io_error(path, source)))?;
+    let value = match writer(&mut stage) {
+        Ok(value) => value,
+        Err(write) => {
+            return Err(fail_write_with_cleanup(&stage_name, &stage, write));
         }
     };
+    if let Err(source) = stage
+        .flush()
+        .and_then(|()| flush_handle(stage.as_raw_handle()))
+    {
+        return Err(ExclusiveWriteError::Publish(fail_with_cleanup(
+            path,
+            &stage_name,
+            &stage,
+            source,
+        )));
+    }
+    if let Err(write) = before_publish() {
+        return Err(fail_write_with_cleanup(&stage_name, &stage, write));
+    }
     let stage_identity = match file_identity(stage.as_raw_handle()) {
         Ok(identity) => identity,
         Err(source) => {
-            return Err(fail_with_cleanup(path, &stage_name, &stage, source));
+            return Err(ExclusiveWriteError::Publish(fail_with_cleanup(
+                path,
+                &stage_name,
+                &stage,
+                source,
+            )));
         }
     };
 
@@ -299,11 +344,17 @@ pub(super) fn write_reader_exclusive(
         if let Err(source) =
             admit_before_move(&capability, dest_name, &stage_name, &stage, stage_identity)
         {
-            return Err(fail_with_cleanup(path, &stage_name, &stage, source));
+            return Err(ExclusiveWriteError::Publish(fail_with_cleanup(
+                path,
+                &stage_name,
+                &stage,
+                source,
+            )));
         }
         match move_stage(&capability, &stage_name, dest_name) {
             Ok(()) => {
-                return finish_published(path, &capability, dest_name, &stage, copied);
+                return finish_published(path, &capability, dest_name, &stage, value)
+                    .map_err(ExclusiveWriteError::Publish);
             }
             Err(source) => {
                 match classify_after_failed_move(
@@ -314,7 +365,8 @@ pub(super) fn write_reader_exclusive(
                     &source,
                 ) {
                     AfterMove::Published => {
-                        return finish_published(path, &capability, dest_name, &stage, copied);
+                        return finish_published(path, &capability, dest_name, &stage, value)
+                            .map_err(ExclusiveWriteError::Publish);
                     }
                     AfterMove::Retry(failure, reclass) => {
                         match decide_create_only_retry(failure, reclass, attempt) {
@@ -323,14 +375,14 @@ pub(super) fn write_reader_exclusive(
                             }
                             CreateOnlyRetry::Retry { wait: false } => {}
                             CreateOnlyRetry::Stop => {
-                                return Err(stop_after_move(
+                                return Err(ExclusiveWriteError::Publish(stop_after_move(
                                     path,
                                     &stage_name,
                                     &stage,
                                     failure,
                                     reclass,
                                     source,
-                                ));
+                                )));
                             }
                         }
                     }
@@ -338,12 +390,12 @@ pub(super) fn write_reader_exclusive(
             }
         }
     }
-    Err(fail_with_cleanup(
+    Err(ExclusiveWriteError::Publish(fail_with_cleanup(
         path,
         &stage_name,
         &stage,
         io::Error::new(io::ErrorKind::TimedOut, "create-only publication exhausted"),
-    ))
+    )))
 }
 
 pub(super) fn write_bytes_exclusive_detailed(
@@ -749,13 +801,13 @@ fn stop_after_move(
     fail_with_cleanup(path, stage_name, stage, source)
 }
 
-fn finish_published(
+fn finish_published<T>(
     path: &Path,
     capability: &crate::windows_publication_path::WindowsPublicationPath,
     dest_name: &OsStr,
     stage: &File,
-    copied: u64,
-) -> Result<u64, AtomicWriteError> {
+    value: T,
+) -> Result<T, AtomicWriteError> {
     if let Err(source) = checkpoint(WindowsCreateOnlyPrimitive::PostMoveCapability)
         .and_then(|()| capability.revalidate().map_err(io::Error::other))
     {
@@ -778,7 +830,7 @@ fn finish_published(
     match checkpoint(WindowsCreateOnlyPrimitive::PostMoveDestination)
         .and_then(|()| destination_identity(capability.terminal_parent(), dest_name))
     {
-        Ok(Some(identity)) if identity == live => Ok(copied),
+        Ok(Some(identity)) if identity == live => Ok(value),
         Ok(Some(_)) => Err(AtomicWriteError::PublicationUncertain {
             path: path.to_path_buf(),
             operation: "observe published destination after move",
@@ -947,6 +999,21 @@ fn flush_handle(handle: RawHandle) -> io::Result<()> {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
+    }
+}
+
+fn fail_write_with_cleanup<E>(
+    stage_name: &OsStr,
+    stage: &File,
+    write: E,
+) -> ExclusiveWriteError<E> {
+    match delete_by_handle(stage) {
+        Ok(()) => ExclusiveWriteError::Write(write),
+        Err(cleanup) => ExclusiveWriteError::WriteCleanup {
+            write,
+            stage: stage_name.to_os_string(),
+            cleanup,
+        },
     }
 }
 

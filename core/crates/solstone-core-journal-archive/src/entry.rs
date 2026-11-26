@@ -4,6 +4,9 @@
 use std::ffi::OsString;
 #[cfg(unix)]
 use std::fs::File;
+use std::io::{self, Read, Seek, SeekFrom};
+#[cfg(unix)]
+use std::marker::PhantomData;
 
 /// One portable archive member name, always a UTF-8 relative name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -166,27 +169,37 @@ impl Inventory {
 }
 
 /// A verified regular file opened from an inventory entry.
-pub struct OpenedInventoryFile {
+pub struct OpenedInventoryFile<'a> {
     #[cfg(unix)]
     file: File,
+    #[cfg(unix)]
+    _source: PhantomData<&'a ()>,
     #[cfg(windows)]
-    bytes: Vec<u8>,
+    reader: solstone_core_journal_io::WindowsCheckedFileReader<'a>,
+    #[cfg(windows)]
+    root: &'a solstone_core_journal_io::JournalRoot,
     inventoried_size: u64,
 }
 
-impl OpenedInventoryFile {
+impl<'a> OpenedInventoryFile<'a> {
     #[cfg(unix)]
     pub(crate) fn new(file: File, inventoried_size: u64) -> Self {
         Self {
             file,
+            _source: PhantomData,
             inventoried_size,
         }
     }
 
     #[cfg(windows)]
-    pub(crate) fn from_bytes(bytes: Vec<u8>, inventoried_size: u64) -> Self {
+    pub(crate) fn new(
+        reader: solstone_core_journal_io::WindowsCheckedFileReader<'a>,
+        root: &'a solstone_core_journal_io::JournalRoot,
+        inventoried_size: u64,
+    ) -> Self {
         Self {
-            bytes,
+            reader,
+            root,
             inventoried_size,
         }
     }
@@ -202,9 +215,58 @@ impl OpenedInventoryFile {
         self.file
     }
 
-    /// Consume this wrapper and return its already-verified complete contents.
-    #[cfg(windows)]
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.bytes
+    /// Complete the verified read. On Windows this rechecks leaf metadata,
+    /// retained root identity, and the recursive namespace witness before
+    /// releasing the stream.
+    pub fn finish(self) -> Result<(), crate::ArchiveError> {
+        #[cfg(unix)]
+        {
+            Ok(())
+        }
+        #[cfg(windows)]
+        {
+            self.reader
+                .finish()
+                .map_err(|error| crate::windows_source::map_windows_error(self.root, error, true))
+        }
+    }
+
+    #[cfg(all(windows, test))]
+    pub(crate) fn read_all_checked(mut self) -> Result<Vec<u8>, crate::ArchiveError> {
+        let mut bytes = Vec::new();
+        self.read_to_end(&mut bytes)
+            .map_err(|source| crate::ArchiveError::SourceIo {
+                operation: "read observed file",
+                member: None,
+                source,
+            })?;
+        self.finish()?;
+        Ok(bytes)
+    }
+}
+
+impl Read for OpenedInventoryFile<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        #[cfg(unix)]
+        {
+            self.file.read(buf)
+        }
+        #[cfg(windows)]
+        {
+            self.reader.read(buf)
+        }
+    }
+}
+
+impl Seek for OpenedInventoryFile<'_> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        #[cfg(unix)]
+        {
+            self.file.seek(pos)
+        }
+        #[cfg(windows)]
+        {
+            self.reader.seek(pos)
+        }
     }
 }

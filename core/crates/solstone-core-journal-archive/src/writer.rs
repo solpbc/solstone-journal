@@ -129,14 +129,10 @@ pub(crate) fn write_archive<W: Write + Seek>(
         let member = entry.member_name();
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_before_source_open(member);
-        let opened = source
+        let mut opened = source
             .open_file(entry)
             .map_err(|source| source_error(Some(member), source))?;
         let expected_size = opened.inventoried_size();
-        #[cfg(unix)]
-        let mut file = opened.into_file();
-        #[cfg(windows)]
-        let mut file = std::io::Cursor::new(opened.into_bytes());
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         crate::encode::test_set_boundary(if test_first_entry {
             crate::encode::TestBoundary::SourceStart
@@ -149,7 +145,10 @@ pub(crate) fn write_archive<W: Write + Seek>(
         }
         zip.start_file(member.as_str(), file_options(manifest.timestamp))
             .map_err(|source| zip_error(Some(member), source))?;
-        copy_inventoried(&mut file, zip, expected_size, member)?;
+        copy_inventoried(&mut opened, zip, expected_size, member)?;
+        opened
+            .finish()
+            .map_err(|source| source_error(Some(member), source))?;
         #[cfg(all(unix, any(test, feature = "test-hooks")))]
         if crate::encode::test_take_body_write_failure(member) {
             return Err(io_error(

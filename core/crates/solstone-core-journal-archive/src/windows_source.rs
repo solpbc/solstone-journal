@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use solstone_core_journal_io::{
     InventoryBudget, JournalEntryKind, JournalRoot, WindowsInventoryEntry, WindowsInventoryError,
-    enumerate_windows_inventory, read_windows_inventory_file,
+    enumerate_windows_inventory_pruned, open_windows_inventory_file_reader,
 };
 
 use crate::deny::{DenyAction, deny_member, deny_top_level};
@@ -19,8 +19,18 @@ use crate::{
     OpenedInventoryFile, SkippedRootName,
 };
 
-const ARCHIVE_INVENTORY_BUDGET: InventoryBudget =
-    InventoryBudget::new(100_000, 64, 255, 32 * 1024, 64 * 1024 * 1024);
+// Streaming member reads do not allocate whole files in memory, so
+// `maximum_checked_read_bytes` no longer bounds per-member archive size.
+// `maximum_entries` (1_000_000, post-directory-prune) and
+// `maximum_member_utf8_bytes` (ZIP u16::MAX) remain finite bounds alongside
+// Windows' 32 KiB UTF-16 relative-path ceiling and depth 64 limit.
+const ARCHIVE_INVENTORY_BUDGET: InventoryBudget = InventoryBudget::new(
+    1_000_000,
+    64,
+    u16::MAX as usize,
+    32 * 1024,
+    64 * 1024 * 1024,
+);
 
 /// A frozen, capability-rooted portable archive source on Windows.
 pub struct ArchiveSource {
@@ -38,9 +48,10 @@ impl ArchiveSource {
 
     fn open_with_budget(root: &Path, budget: InventoryBudget) -> Result<Self, ArchiveError> {
         let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
-        let observed = enumerate_windows_inventory(&retained_root, budget)
-            .map_err(|error| map_windows_error(&retained_root, error, false))?
-            .into_entries();
+        let observed =
+            enumerate_windows_inventory_pruned(&retained_root, budget, should_prune_directory)
+                .map_err(|error| map_windows_error(&retained_root, error, false))?
+                .into_entries();
         let (inventory, observed) = build_inventory(&observed)?;
         Ok(Self {
             root: retained_root,
@@ -60,25 +71,33 @@ impl ArchiveSource {
         self.root.canonical_path()
     }
 
-    /// Return a fully checked copy of one frozen regular archive member.
-    pub fn open_file(&self, entry: &InventoryEntry) -> Result<OpenedInventoryFile, ArchiveError> {
-        let bytes =
-            read_windows_inventory_file(&self.root, &entry.proof().file.observed, self.budget)
-                .map_err(|error| map_windows_error(&self.root, error, true))?;
-        Ok(OpenedInventoryFile::from_bytes(bytes, entry.size()))
+    /// Open a witnessed, bounded-memory streaming reader for one frozen regular archive member.
+    pub fn open_file(
+        &self,
+        entry: &InventoryEntry,
+    ) -> Result<OpenedInventoryFile<'_>, ArchiveError> {
+        let reader = open_windows_inventory_file_reader(&self.root, &entry.proof().file.observed)
+            .map_err(|error| map_windows_error(&self.root, error, true))?;
+        Ok(OpenedInventoryFile::new(reader, &self.root, entry.size()))
     }
 
     /// Confirm the complete frozen observed inventory remains unchanged.
     pub fn revalidate(&self) -> Result<(), ArchiveError> {
-        let observed = enumerate_windows_inventory(&self.root, self.budget)
-            .map_err(|error| map_windows_error(&self.root, error, true))?
-            .into_entries();
+        let observed =
+            enumerate_windows_inventory_pruned(&self.root, self.budget, should_prune_directory)
+                .map_err(|error| map_windows_error(&self.root, error, true))?
+                .into_entries();
         let (_, observed) = build_inventory(&observed)?;
         if observed != self.observed {
             return Err(ArchiveError::SourceChanged { member: None });
         }
         Ok(())
     }
+}
+
+fn should_prune_directory(member: &str) -> bool {
+    let top_level = !member.contains('/');
+    (top_level && deny_top_level(member) == DenyAction::TreePrune) || deny_member(member, false)
 }
 
 fn build_inventory(
@@ -247,7 +266,7 @@ fn component_equals(component: &OsString, expected: &str) -> bool {
     component.to_str() == Some(expected)
 }
 
-fn map_windows_error(
+pub(crate) fn map_windows_error(
     root: &JournalRoot,
     error: WindowsInventoryError,
     after_observation: bool,
@@ -465,7 +484,7 @@ mod tests {
                 .find(|entry| entry.member_name().as_str() == member)
                 .expect(member);
             assert_eq!(
-                source.open_file(entry).unwrap().into_bytes(),
+                source.open_file(entry).unwrap().read_all_checked().unwrap(),
                 b"owner bytes"
             );
         }
@@ -619,14 +638,18 @@ mod tests {
             .find(|entry| entry.member_name().as_str() == "chronicle/20260101/segment.jsonl")
             .expect("segment entry");
         assert_eq!(
-            source.open_file(entry).expect("checked read").into_bytes(),
+            source
+                .open_file(entry)
+                .expect("checked read")
+                .read_all_checked()
+                .expect("complete checked read"),
             b"segment"
         );
         source.revalidate().expect("revalidate frozen source");
     }
 
     #[test]
-    fn inventory_and_checked_read_budget_refusals_do_not_construct_partial_results() {
+    fn inventory_budget_refusals_do_not_construct_partial_results_and_streaming_ignores_read_cap() {
         let (_temporary, root) = fixture("budget");
         for budget in [
             InventoryBudget::new(0, 64, 255, 32 * 1024, 64 * 1024 * 1024),
@@ -659,13 +682,12 @@ mod tests {
             .entries()
             .first()
             .expect("inventory entry");
-        assert!(matches!(
-            source.open_file(entry),
-            Err(ArchiveError::UnsupportedJournal {
-                reason: "archive source exceeds its supported inventory budget",
-                ..
-            })
-        ));
+        let bytes = source
+            .open_file(entry)
+            .expect("streaming reader does not apply checked-read buffer cap")
+            .read_all_checked()
+            .expect("verified stream finishes");
+        assert!(!bytes.is_empty());
     }
 
     #[test]
@@ -704,7 +726,8 @@ mod tests {
             source
                 .open_file(&entry)
                 .expect("read retained root")
-                .into_bytes(),
+                .read_all_checked()
+                .expect("complete retained root read"),
             b"segment"
         );
 
@@ -719,7 +742,8 @@ mod tests {
                     source
                         .open_file(&entry)
                         .expect("retained source")
-                        .into_bytes(),
+                        .read_all_checked()
+                        .expect("complete retained source read"),
                     b"segment"
                 );
                 return;
@@ -794,18 +818,79 @@ mod tests {
             .entries()
             .first()
             .expect("inventory entry");
-        // `WindowsCheckedReadSession::read` reaches its first `WitnessCheck` only
-        // after a successful exact read and leaf metadata comparison. Injecting
-        // this failure therefore proves the checked-read boundary returns an
-        // error instead of releasing those already-read bytes.
+        // `WindowsCheckedFileReader::finish` reaches its first `WitnessCheck` only
+        // after reading the member and re-checking leaf metadata. Injecting this
+        // failure therefore proves the streaming checked-read boundary returns an
+        // error instead of releasing already-read bytes.
         let (result, consumed) =
             run_with_windows_inventory_fault(WindowsInventoryPrimitive::WitnessCheck, 1, 1, || {
-                source.open_file(entry)
+                source
+                    .open_file(entry)
+                    .and_then(|file| file.read_all_checked())
             });
         assert!(consumed);
         assert!(matches!(
             result,
             Err(ArchiveError::UnsupportedJournal { .. })
         ));
+    }
+
+    #[test]
+    fn pruned_directories_do_not_consume_inventory_entry_budget() {
+        let (_temporary, root) = fixture("pruned-budget");
+        for index in 0..40 {
+            write(
+                &root,
+                &format!("indexer/shard-{index:02}.sqlite"),
+                b"rebuildable",
+            );
+            write(
+                &root,
+                &format!("imports/archive-merge-work/extract-{index:02}.bin"),
+                b"scratch",
+            );
+        }
+        // Only the 4 fixture files + their parents + pruned roots/dirs are visited (~16 entries),
+        // well below 30 even though 80 throwaway files sit inside pruned subtrees.
+        let tight = InventoryBudget::new(30, 64, u16::MAX as usize, 32 * 1024, 64 * 1024 * 1024);
+        let source =
+            ArchiveSource::open_with_budget(&root, tight).expect("pruned trees do not count");
+        assert!(
+            source
+                .inventory()
+                .skipped_root_names()
+                .iter()
+                .any(|name| name.as_str() == "indexer")
+        );
+        source.revalidate().expect("revalidate keeps pruning");
+    }
+
+    #[test]
+    fn member_paths_over_255_utf8_bytes_are_inventoried_and_exported() {
+        let (_temporary, root) = fixture("long-member-path");
+        let deep = format!(
+            "imports/{}/{}/{}/{}/artifact.txt",
+            "segment-a".repeat(8),
+            "segment-b".repeat(8),
+            "segment-c".repeat(8),
+            "segment-d".repeat(8),
+        );
+        assert!(deep.len() > 255, "test path must exceed 255 bytes");
+        write(&root, &deep, b"deep-member-bytes");
+        let source = ArchiveSource::open(&root).expect("open source with >255-byte member path");
+        let entry = source
+            .inventory()
+            .entries()
+            .iter()
+            .find(|entry| entry.member_name().as_str() == deep)
+            .expect("deep member inventoried");
+        assert_eq!(
+            source
+                .open_file(entry)
+                .expect("open deep member")
+                .read_all_checked()
+                .expect("read deep member"),
+            b"deep-member-bytes"
+        );
     }
 }

@@ -338,7 +338,10 @@ impl ArchiveSource {
     }
 
     /// Re-open a frozen entry through the retained journal descriptor.
-    pub fn open_file(&self, entry: &InventoryEntry) -> Result<OpenedInventoryFile, ArchiveError> {
+    pub fn open_file(
+        &self,
+        entry: &InventoryEntry,
+    ) -> Result<OpenedInventoryFile<'_>, ArchiveError> {
         let (file, proof) = open_verified_file(&self.root, entry.member_name(), entry.proof())?;
         Ok(OpenedInventoryFile::new(File::from(file), proof.size))
     }

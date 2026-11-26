@@ -6,9 +6,11 @@
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::mem::{offset_of, size_of};
-use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
+use std::os::windows::io::{
+    AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle, RawHandle,
+};
 use std::path::{Path, PathBuf};
 
 use windows_sys::Wdk::Storage::FileSystem::{
@@ -459,6 +461,23 @@ pub fn enumerate_windows_inventory(
     root: &JournalRoot,
     budget: InventoryBudget,
 ) -> Result<WindowsInventory, WindowsInventoryError> {
+    enumerate_windows_inventory_pruned(root, budget, |_| false)
+}
+
+/// Build one recursive Windows inventory while skipping descent into directories
+/// matched by `prune_directory`, or return no inventory.
+///
+/// A pruned directory entry itself is still validated and emitted so callers can
+/// distinguish pruned top-level roots from absent ones, while its descendants
+/// are never opened, listed, or charged against `budget`.
+pub fn enumerate_windows_inventory_pruned<F>(
+    root: &JournalRoot,
+    budget: InventoryBudget,
+    mut prune_directory: F,
+) -> Result<WindowsInventory, WindowsInventoryError>
+where
+    F: FnMut(&str) -> bool,
+{
     with_witness(root, |witness| {
         let mut usage = InventoryUsage::new();
         let mut entries = Vec::new();
@@ -477,6 +496,7 @@ pub fn enumerate_windows_inventory(
             &mut usage,
             &mut entries,
             witness,
+            &mut prune_directory,
         )?;
         entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         Ok(WindowsInventory { entries })
@@ -592,6 +612,112 @@ pub fn read_windows_inventory_file(
     budget: InventoryBudget,
 ) -> Result<Vec<u8>, WindowsInventoryError> {
     WindowsCheckedReadSession::new(budget).read(root, entry)
+}
+
+/// A witnessed, retained-handle streaming reader for one observed Windows file.
+///
+/// Unlike [`WindowsCheckedReadSession::read`], this reader does not buffer the
+/// full file in memory or impose `maximum_checked_read_bytes`. Callers stream
+/// with bounded buffers and must call [`WindowsCheckedFileReader::finish`]
+/// before treating the streamed bytes as valid; `finish` verifies that leaf
+/// identity, size, last-write time, the retained root, and the recursive
+/// namespace witness all remained unchanged across the read.
+pub struct WindowsCheckedFileReader<'root> {
+    file: std::fs::File,
+    before: WindowsFileMetadata,
+    relative_path: PathBuf,
+    witness: NamespaceWitness<'root>,
+    root: &'root JournalRoot,
+}
+
+impl Read for WindowsCheckedFileReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.file.read(buf)
+    }
+}
+
+impl Seek for WindowsCheckedFileReader<'_> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.file.seek(pos)
+    }
+}
+
+impl WindowsCheckedFileReader<'_> {
+    /// Complete the witnessed read, verifying metadata, root, and namespace
+    /// stability before draining the witness.
+    pub fn finish(mut self) -> Result<(), WindowsInventoryError> {
+        let verified = (|| {
+            test_hook_witness_progress("after-read");
+            let after = file_metadata_raw(self.file.as_raw_handle(), &self.relative_path)?;
+            test_hook_witness_progress("after-read-metadata");
+            if after != self.before {
+                return Err(WindowsInventoryError::IdentityChanged {
+                    path: self.relative_path.clone(),
+                });
+            }
+            self.witness.check()?;
+            test_hook_witness_progress("after-operation");
+            self.root
+                .revalidate()
+                .map_err(WindowsInventoryError::Root)?;
+            test_hook_witness_progress("after-revalidate");
+            self.witness.check()?;
+            test_hook_witness_progress("after-check");
+            Ok(())
+        })();
+        test_hook_witness_progress("before-drain");
+        let cleanup = self.witness.cancel_and_drain();
+        test_hook_witness_progress("after-drain");
+        verified.and(cleanup)
+    }
+}
+
+/// Open one observed regular entry for bounded-memory witnessed streaming.
+pub fn open_windows_inventory_file_reader<'root>(
+    root: &'root JournalRoot,
+    entry: &WindowsInventoryEntry,
+) -> Result<WindowsCheckedFileReader<'root>, WindowsInventoryError> {
+    if entry.kind != JournalEntryKind::RegularFile {
+        return Err(WindowsInventoryError::NotRegular {
+            path: entry.relative_path.clone(),
+        });
+    }
+    test_hook_witness_progress("before-revalidate");
+    root.revalidate().map_err(WindowsInventoryError::Root)?;
+    test_hook_witness_progress("before-arm");
+    let mut witness = NamespaceWitness::arm(root)?;
+    test_hook_witness_progress("after-arm");
+    let opened = (|| {
+        test_hook_witness_progress("before-route-reopen");
+        let handle = reopen_verified_route(root, entry, FILE_READ_DATA | FILE_READ_ATTRIBUTES)?;
+        test_hook_witness_progress("after-route-reopen");
+        let before = file_metadata(&handle, &entry.relative_path)?;
+        test_hook_witness_progress("after-before-metadata");
+        if before.identity != entry.identity
+            || before.size != entry.size
+            || before.last_write_time != entry.last_write_time
+        {
+            return Err(WindowsInventoryError::IdentityChanged {
+                path: entry.relative_path.clone(),
+            });
+        }
+        Ok((std::fs::File::from(handle), before))
+    })();
+    match opened {
+        Ok((file, before)) => Ok(WindowsCheckedFileReader {
+            file,
+            before,
+            relative_path: entry.relative_path.clone(),
+            witness,
+            root,
+        }),
+        Err(error) => {
+            test_hook_witness_progress("before-drain");
+            let _ = witness.cancel_and_drain();
+            test_hook_witness_progress("after-drain");
+            Err(error)
+        }
+    }
 }
 
 fn with_witness<'root, T>(
@@ -848,7 +974,7 @@ impl Drop for NamespaceWitness<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // recursive walk threads its budget, usage and witness state
+#[allow(clippy::too_many_arguments)] // recursive walk threads its budget, usage, witness, and prune state
 fn walk_directory(
     root: &JournalRoot,
     directory: std::os::windows::io::RawHandle,
@@ -860,6 +986,7 @@ fn walk_directory(
     usage: &mut InventoryUsage,
     entries: &mut Vec<WindowsInventoryEntry>,
     witness: &mut NamespaceWitness,
+    prune_directory: &mut impl FnMut(&str) -> bool,
 ) -> Result<(), WindowsInventoryError> {
     InventoryUsage::check_depth(budget, depth)
         .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
@@ -892,7 +1019,8 @@ fn walk_directory(
             JournalEntryKind::RegularFile
         };
         let metadata = file_metadata(&child, &child_path)?;
-        let listed_child = (kind == JournalEntryKind::Directory)
+        let should_descend = kind == JournalEntryKind::Directory && !prune_directory(&child_member);
+        let listed_child = should_descend
             .then(|| open_relative_for_directory_listing(directory, &name, identity, &child_path))
             .transpose()?;
         let mut child_route = route.clone();
@@ -921,6 +1049,7 @@ fn walk_directory(
                 usage,
                 entries,
                 witness,
+                prune_directory,
             )?;
         }
         witness.check()?;
@@ -1251,13 +1380,17 @@ fn attribute_tag(
 }
 
 fn file_id(handle: &OwnedHandle, path: &Path) -> Result<ObjectIdentity, WindowsInventoryError> {
+    file_id_raw(handle.as_raw_handle(), path)
+}
+
+fn file_id_raw(handle: RawHandle, path: &Path) -> Result<ObjectIdentity, WindowsInventoryError> {
     traced_inventory(WindowsInventoryPrimitive::DescendantFileId, || {
         let mut info = FILE_ID_INFO::default();
         // SAFETY: `info` is writable for its exact size and `handle` remains valid for this identity query.
         #[allow(unsafe_code)]
         let result = unsafe {
             GetFileInformationByHandleEx(
-                handle.as_raw_handle(),
+                handle,
                 FileIdInfo,
                 (&mut info as *mut FILE_ID_INFO).cast(),
                 size_of::<FILE_ID_INFO>() as u32,
@@ -1307,11 +1440,18 @@ fn file_metadata(
     handle: &OwnedHandle,
     path: &Path,
 ) -> Result<WindowsFileMetadata, WindowsInventoryError> {
-    let identity = file_id(handle, path)?;
+    file_metadata_raw(handle.as_raw_handle(), path)
+}
+
+fn file_metadata_raw(
+    handle: RawHandle,
+    path: &Path,
+) -> Result<WindowsFileMetadata, WindowsInventoryError> {
+    let identity = file_id_raw(handle, path)?;
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
     // SAFETY: `info` is writable for its exact size and `handle` remains valid for the metadata query.
     #[allow(unsafe_code)]
-    let result = unsafe { GetFileInformationByHandle(handle.as_raw_handle(), &mut info) };
+    let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
     if result == 0 {
         return Err(WindowsInventoryError::Io {
             operation: "query retained entry metadata",
@@ -2008,5 +2148,125 @@ mod tests {
                 Err(WindowsInventoryError::NamespaceChanged { .. })
             ));
         }
+    }
+
+    #[test]
+    fn streaming_checked_reader_reads_and_seeks_without_checked_read_budget_cap() {
+        let temporary = TempDir::new();
+        let root_path = temporary.path().join("journal");
+        fs::create_dir_all(root_path.join("media")).unwrap();
+        let payload = vec![0x5a_u8; 256 * 1024 + 13];
+        fs::write(root_path.join("media/clip.bin"), &payload).unwrap();
+        let root = JournalRoot::open(&root_path).unwrap();
+        // Checked-read budget is intentionally 1 byte: streaming reader must not apply it.
+        let tiny_read_budget = InventoryBudget::new(32, 8, 255, 1024, 1);
+        let inventory = enumerate_windows_inventory(&root, tiny_read_budget).unwrap();
+        let entry = inventory
+            .entries()
+            .iter()
+            .find(|entry| entry.relative_path() == Path::new("media/clip.bin"))
+            .unwrap();
+
+        let mut reader = open_windows_inventory_file_reader(&root, entry).unwrap();
+        let mut head = [0_u8; 16];
+        reader.read_exact(&mut head).unwrap();
+        assert_eq!(head, [0x5a_u8; 16]);
+        reader.seek(SeekFrom::Start(0)).unwrap();
+
+        let mut streamed = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        loop {
+            let n = reader.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+            streamed.extend_from_slice(&chunk[..n]);
+        }
+        assert_eq!(streamed.len(), payload.len());
+        assert_eq!(streamed, payload);
+        reader.finish().unwrap();
+    }
+
+    #[test]
+    fn streaming_checked_reader_finish_refuses_in_place_mutation_and_namespace_change() {
+        let (_temporary, root) = fixture();
+        let inventory = enumerate_windows_inventory(&root, budget()).unwrap();
+        let leaf = inventory
+            .entries()
+            .iter()
+            .find(|entry| entry.relative_path() == Path::new("one/two/leaf.txt"))
+            .unwrap()
+            .clone();
+
+        // In-place overwrite while streaming must be refused at finish().
+        let mut reader = open_windows_inventory_file_reader(&root, &leaf).unwrap();
+        let mut first = [0_u8; 2];
+        reader.read_exact(&mut first).unwrap();
+        fs::write(root.canonical_path().join("one/two/leaf.txt"), b"mutated").unwrap();
+        assert!(matches!(
+            reader.finish(),
+            Err(WindowsInventoryError::IdentityChanged { .. })
+                | Err(WindowsInventoryError::NamespaceChanged { .. })
+        ));
+
+        // Unrelated sibling creation under the root while streaming must be caught by witness.
+        let inventory = enumerate_windows_inventory(&root, budget()).unwrap();
+        let leaf = inventory
+            .entries()
+            .iter()
+            .find(|entry| entry.relative_path() == Path::new("one/two/leaf.txt"))
+            .unwrap()
+            .clone();
+        let mut reader = open_windows_inventory_file_reader(&root, &leaf).unwrap();
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).unwrap();
+        assert_eq!(buf, b"mutated");
+        fs::write(root.canonical_path().join("concurrent.txt"), b"new").unwrap();
+        assert!(matches!(
+            reader.finish(),
+            Err(WindowsInventoryError::NamespaceChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn pruned_inventory_skips_pruned_subtrees_without_charging_entry_budget() {
+        let temporary = TempDir::new();
+        let root_path = temporary.path().join("journal");
+        fs::create_dir_all(root_path.join("indexer/shards")).unwrap();
+        for index in 0..20 {
+            fs::write(
+                root_path.join(format!("indexer/shards/file-{index:02}.db")),
+                b"throwaway",
+            )
+            .unwrap();
+        }
+        fs::create_dir_all(root_path.join("chronicle")).unwrap();
+        fs::write(root_path.join("chronicle/day.txt"), b"keep").unwrap();
+        let root = JournalRoot::open(&root_path).unwrap();
+
+        // Tight budget admits root children + chronicle/day.txt (3 entries), never 20+ indexer files.
+        let tight = InventoryBudget::new(4, 8, 255, 1024, 1024);
+        assert!(matches!(
+            enumerate_windows_inventory(&root, tight),
+            Err(WindowsInventoryError::BudgetExceeded {
+                limit: InventoryBudgetLimit::Entries
+            })
+        ));
+
+        let pruned =
+            enumerate_windows_inventory_pruned(&root, tight, |member| member == "indexer").unwrap();
+        let paths = pruned
+            .entries()
+            .iter()
+            .map(|entry| entry.relative_path().to_path_buf())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("chronicle"),
+                PathBuf::from("chronicle/day.txt"),
+                PathBuf::from("indexer"),
+            ]
+        );
     }
 }
