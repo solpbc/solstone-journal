@@ -306,7 +306,7 @@ fn generation_completion(
     {
         return Ok((
             "sense",
-            r#"{"density":"idle","content_type":"idle","activity_summary":"Held a quiet synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Quiet interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
+            r#"{"density":"active","content_type":"work","activity_summary":"Held a synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Cleanroom interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
         ));
     }
     if prompt.contains("Maintenance Window Analysis")
@@ -592,6 +592,16 @@ mod tests {
             generation_completion("# Segment Sense meeting_detected speculative_facet", anchor)
                 .expect("sense response");
         assert_eq!(sense_name, "sense");
+        let sense_json: serde_json::Value =
+            serde_json::from_str(sense_text).expect("valid sense JSON");
+        assert_ne!(sense_json["density"], "idle");
+        assert_ne!(sense_json["content_type"], "idle");
+        assert!(
+            sense_json["facets"]
+                .as_array()
+                .is_some_and(|facets| facets.iter().any(|entry| entry["facet"] == "personal")),
+            "cleanroom Sense fixture must keep an active facet so daily entity_suggest runs"
+        );
         assert!(sense_text.contains(r#""topics":[]"#));
         assert!(sense_text.contains(r#""quotes":[]"#));
     }

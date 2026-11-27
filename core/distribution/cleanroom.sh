@@ -458,7 +458,9 @@ talent_orchestration_rung() {
 	done
 	endpoint=http://$(cat "$journal/generation.addr")
 	setup_fixture_journal "$journal"
-	# Keep cadence out of the controlled daily catchup batch.
+	# Keep cadence out of the controlled daily catchup batch. The non-idle
+	# Sense reply keeps the setup facet active so entity_suggest exercises
+	# the empty no-candidate publication path end to end.
 	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"talent_overrides\":{\"talent.system.pulse\":{\"disabled\":true}},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
 		>"$journal/config/journal.json"
 	export SOLSTONE_JOURNAL=$journal
@@ -504,12 +506,11 @@ talent_orchestration_rung() {
 		|| refuse "orchestration daily schedule metadata missing"
 	! grep -F 'fallback' "$journal/config/schedules.json" >/dev/null \
 		|| refuse "orchestration fallback leaked into schedule metadata"
-	# The fixture's Sense reply is idle, and idle hygiene (5fb055ad0) clears
-	# an idle answer's facets, so the reprocessed day has no active facet.
-	# The daily batch must still consider entity_suggest for the setup facet
-	# and skip it for that reason, without a model call or an output file.
-	# With an active facet it would still make no model call here: a fresh
-	# journal has no entity candidates, so cb3777ba2 writes the empty result.
+	# The fixture's Sense reply is non-idle and carries the setup facet, so
+	# idle hygiene retains it and the daily batch runs entity_suggest for that
+	# facet. With no entity candidates in a fresh journal, entity_suggest
+	# publishes the empty result without a model call (cb3777ba2), keeping the
+	# exact three-call generation set while proving end-to-end publication.
 	sorted=$(LC_ALL=C sort "$journal/generation-evidence")
 	[ "$sorted" = "daily_schedule
 morning_briefing
@@ -519,17 +520,22 @@ sense" ] || {
 	}
 	facets=$(tr -d '[:space:]' <"$target_segment/talents/facets.json") \
 		|| refuse "orchestration segment facets missing"
-	[ "$facets" = '[]' ] || refuse "orchestration idle sense kept facets: $facets"
+	printf '%s\n' "$facets" | grep -F '"personal"' >/dev/null \
+		|| refuse "orchestration non-idle sense dropped setup facet: $facets"
 	set -- "$journal/chronicle/$target_day/health"/oplog--think~*--daily~*.jsonl
 	[ -f "$1" ] || refuse "orchestration daily run log missing"
-	cat "$@" | grep -F '"event":"talent.skip"' \
+	if cat "$@" | grep -F '"event":"talent.skip"' \
 		| grep -F '"mode":"daily"' \
 		| grep -F '"name":"entities:entity_suggest"' \
-		| grep -F '"reason":"no_active_facets"' \
-		| grep -F '"facet":"personal"' >/dev/null \
-		|| refuse "orchestration daily batch did not skip entity_suggest for no active facet"
+		| grep -F '"reason":"no_active_facets"' >/dev/null; then
+		refuse "orchestration daily batch skipped entity_suggest for no active facet"
+	fi
 	set -- "$journal"/facets/*/entities/*_observer_suggestions.json
-	[ ! -e "$1" ] || refuse "orchestration skipped entity_suggest still published suggestions"
+	[ -f "$1" ] || refuse "orchestration empty entity suggestion was not published"
+	for suggestions in "$@"; do
+		tr -d '[:space:]' <"$suggestions" | grep -F '"entities":[]' >/dev/null \
+			|| refuse "orchestration entity suggestion was not the empty no-candidate result"
+	done
 	set -- "$journal"/talents/daily_schedule/*.jsonl
 	if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
 		refuse "orchestration daily_schedule terminal event log missing"
