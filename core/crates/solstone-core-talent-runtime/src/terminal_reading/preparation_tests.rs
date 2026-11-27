@@ -458,6 +458,61 @@ fn a_listed_session_is_the_agents_work_and_what_was_typed_there_is_the_owners_re
 }
 
 #[test]
+fn a_listed_session_the_owner_watched_throughout_still_gets_its_line() {
+    // The owner's client stays attached, so every capture carries the cursor;
+    // the producer's mark is what shows the owner listed the session.
+    let frame = |time: f64, content: &str, x: usize, marked: bool| -> String {
+        let pane = json!({"id":"%0","active":true,"content":content,"alternate_on":true,"pane_in_mode":false,"cursor_x":x,"cursor_y":1,"cursor_visible":true});
+        let mut tmux = json!({"session":"qa","window":{"id":"@0","name":"work"},"panes":[pane]});
+        if marked {
+            tmux["output_session"] = json!(true);
+        }
+        let raw = json!({"timestamp":time,"analysis":{"primary":"tmux"},"content":{"tmux":tmux}});
+        format!("{raw}\n")
+    };
+    for marked in [true, false] {
+        let frames = frame(0.0, "⏺ Ran five replays\n❯ ", 2, marked)
+            + &frame(5.0, "⏺ Ran five replays\n❯ now score them", 16, marked)
+            + &frame(
+                10.0,
+                "⏺ Ran five replays\n❯ now score them\n⏺ Scoring\n",
+                2,
+                marked,
+            );
+        let (_root, paths, context, request) = setup("");
+        fs::write(
+            context
+                .journal
+                .join("chronicle/20261021/device/100000_300/tmux_main_screen.jsonl"),
+            &frames,
+        )
+        .unwrap();
+        let prepared = crate::prepare::prepare(
+            request.clone(),
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Preview,
+        )
+        .unwrap();
+        let text = source_text(&prepared);
+        assert_eq!(
+            text.contains(&super::sample::typed_line("qa")),
+            marked,
+            "{frames}: {text}"
+        );
+        assert_eq!(
+            text.contains("new text from the agent in qa"),
+            marked,
+            "{frames}: {text}"
+        );
+        assert!(
+            !text.contains(&super::sample::output_only_line("qa")),
+            "{text}"
+        );
+    }
+}
+
+#[test]
 fn sense_and_screen_terminal_preparation_redacts_credentials_and_preserves_git_shas() {
     let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
     let screen = format!(

@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when you type requests to an agent in a tmux session you've listed in `output_sessions` while you stay attached to it, your journal now keeps those requests as yours and usually describes the work that follows as the agent's, once your solstone app for mac or linux is updated too. before, such a session read as your own. thanks @dvanduzer for the retest (#424).
 - your connected agent can get the first results faster when it searches a large journal for a common word. your agent can also look up a week faster when your journal has a lot of people in it.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can now import files that used to stop with a size error when you open your journal in a browser from journal setup on windows.

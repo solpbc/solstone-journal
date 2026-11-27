@@ -337,7 +337,11 @@ fn canonical_tmux(frame: &JsonObject) -> Option<TmuxEnvelope<'_>> {
         return None;
     }
     let tmux = content.get("tmux")?.as_object()?;
-    if tmux.len() != 4 {
+    let session_fields = super::TMUX_SESSION_CAPTURE_FIELDS
+        .iter()
+        .filter(|key| tmux.contains_key(**key))
+        .count();
+    if tmux.len() != 4 + session_fields {
         return None;
     }
     let session = nonempty_string(tmux.get("session"))?;
@@ -1334,6 +1338,7 @@ mod tests {
                 pane[key] = value;
             }
         }
+        extended["content"]["tmux"]["output_session"] = json!(true);
         let render = |frames: &[Value]| {
             render_for_screen_talent(
                 "20260903/device/102159_300/tmux_0_screen.jsonl",

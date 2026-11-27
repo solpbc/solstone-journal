@@ -92,8 +92,17 @@ pub const TMUX_PANE_CAPTURE_FIELDS: [&str; 5] = [
     "pane_in_mode",
 ];
 
+/// Optional tmux session metadata: `output_session` marks every frame of a
+/// session the owner listed in `output_sessions`, cursor or not.
+pub const TMUX_SESSION_CAPTURE_FIELDS: [&str; 1] = ["output_session"];
+
 /// Remove capture-only metadata from an in-memory tmux talent input view.
 pub fn omit_tmux_capture_fields(tmux: &mut Value) {
+    if let Some(tmux) = tmux.as_object_mut() {
+        for key in TMUX_SESSION_CAPTURE_FIELDS {
+            tmux.shift_remove(key);
+        }
+    }
     if let Some(panes) = tmux.get_mut("panes").and_then(Value::as_array_mut) {
         for pane in panes.iter_mut().filter_map(Value::as_object_mut) {
             for key in TMUX_PANE_CAPTURE_FIELDS {

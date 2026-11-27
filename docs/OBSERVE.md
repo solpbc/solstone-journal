@@ -195,5 +195,8 @@ defines `content.tmux.panes`. Alongside screen text and geometry, new frames may
 include `cursor_x`, `cursor_y`, `cursor_visible`, `alternate_on`, and
 `pane_in_mode`. Older frames omit them. These fields remain in stored originals;
 the native screen-talent projection ignores them, and terminal Sense reads the cursor and pane mode to find typed input ([THINK.md](THINK.md) § Terminal segments).
+Every frame of a session the owner listed in `output_sessions` may also carry
+`content.tmux.output_session: true`; the projection ignores it too, and terminal
+Sense reads it to tell the session is listed.
 The raw frame codec remains lossless. Cursor and mode changes alone do not make
 the producer save another screen.

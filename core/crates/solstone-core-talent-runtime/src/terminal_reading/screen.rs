@@ -304,6 +304,13 @@ fn output_only(frame: &Value) -> bool {
     })
 }
 
+/// The producer marks every frame of a session the owner listed in
+/// `output_sessions`, cursor or not. Producers from before the mark show it
+/// only through a capture taken in on output alone.
+fn listed(frame: &Value) -> bool {
+    frame["content"]["tmux"]["output_session"].as_bool() == Some(true) || output_only(frame)
+}
+
 /// Read one session's frames, in time order, into entries. `before` holds what
 /// each of its panes showed in the stream's segment before.
 pub(super) fn read(
@@ -423,9 +430,9 @@ pub(super) fn read(
         }
     }
     let mut typed = cursor::typed(frames);
-    // One capture on output alone shows the owner listed the session; a capture
-    // with the cursor only means a client used it.
-    session.listed = frames.iter().any(output_only);
+    // A capture with the cursor only means a client used the session; whether
+    // the owner listed it is what the producer marks.
+    session.listed = frames.iter().any(listed);
     session.typed = !typed.is_empty();
     let mut total = 0;
     let keep = typed
