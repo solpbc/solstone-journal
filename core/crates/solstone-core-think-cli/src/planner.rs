@@ -4796,6 +4796,10 @@ mod tests {
                 Ok(Backlog::default())
             },
         );
+        // Dropped before the worker, whose drop waits for its pass: if this
+        // test panics, the blocked pass ends and the test fails instead of
+        // waiting for a release that can no longer come.
+        let release = release;
         worker.request();
         received.recv_timeout(Duration::from_secs(5)).unwrap();
         for _ in 0..100 {
