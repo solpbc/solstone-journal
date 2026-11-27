@@ -673,6 +673,20 @@ impl MadeFrom for MadeFromIt {
         change: Change,
         segments: &[Target],
     ) -> Result<(), String> {
+        // An agent's memory: the names found in it leave with it and come
+        // back on recover, as any recording's do. Nothing else made from it
+        // is re-made, and its dialog says summaries stay.
+        if matches!(item.unit, solstone_core_removals::Unit::Memory { .. }) {
+            let result = match change {
+                Change::Detached => self.take_detections(journal, item, &origins_by_day(segments)),
+                Change::Attached => self.put_back_detections(journal, item),
+            };
+            if let Err(error) = result {
+                log::warn!("trash: what a memory found stays: {error}");
+                self.skipped.borrow_mut().insert("detections".to_owned());
+            }
+            return Ok(());
+        }
         // Nothing this handles is made from body data: a briefing never
         // reads it, and its records are read from the windows themselves.
         let segments = segments

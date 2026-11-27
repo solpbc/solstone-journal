@@ -30,6 +30,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when you type requests to an agent in a tmux session you've listed in `output_sessions` while you stay attached to it, your journal now keeps those requests as yours and usually describes the work that follows as the agent's, once your solstone app for mac or linux is updated too. before, such a session read as your own. thanks @dvanduzer for the retest (#424).
 - your connected agent can get the first results faster when it searches a large journal for a common word. your agent can also look up a week faster when your journal has a lot of people in it.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
+- deleting a memory an agent saved now also drops it from detected entities, as deleting a segment does, so a name found only in that memory leaves search. recovering the memory from the trash puts those names back. summaries made from it elsewhere in your journal still stay where they are.
 - you can now import files that used to stop with a size error when you open your journal in a browser from journal setup on windows.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.

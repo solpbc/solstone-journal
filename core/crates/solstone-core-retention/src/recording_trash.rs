@@ -16,7 +16,7 @@
 //! - **The day's stream marker**, which queues the day's follow-up processing
 //!   (location rebuilds from what remains).
 //! - **What was made from it**, through the [`MadeFrom`] the kind was built
-//!   with (a recording, not an agent's memory: nothing is made from a memory).
+//!   with. For an agent's memory that is only the names found in it.
 
 use std::path::Path;
 
@@ -163,11 +163,8 @@ impl Kind for Recordings<'_> {
         solstone_core_journal_io::bump_stream_marker(journal, &target.day)
             .map(|_| ())
             .map_err(|error| format!("the day was not queued for follow-up: {error}"))?;
-        if matches!(item.unit, Unit::Segment { .. }) {
-            self.made
-                .recordings_changed(journal, item, change, std::slice::from_ref(&target))?;
-        }
-        Ok(())
+        self.made
+            .recordings_changed(journal, item, change, std::slice::from_ref(&target))
     }
 }
 

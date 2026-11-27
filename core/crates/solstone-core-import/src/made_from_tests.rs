@@ -414,6 +414,123 @@ fn what_a_recording_found_and_the_voices_drawn_from_it_leave_with_it_and_come_ba
     assert_eq!(voice_keys(root.path(), "ann"), vec![B.to_owned()]);
 }
 
+const MEMORY: &str = "091500_1";
+
+fn memory_stream() -> String {
+    format!("agent-memory-{}", "ab".repeat(32))
+}
+
+/// The day's journal plus one agent memory: `word` found only in it, and
+/// Ann found in it and in A.
+fn memory_journal() -> (TempDir, String) {
+    let root = journal();
+    let stream = memory_stream();
+    write(
+        root.path(),
+        &format!("chronicle/{DAY}/{stream}/{MEMORY}/memory.md"),
+        b"saved a test note on the owner's word",
+    );
+    let noted = format!("{DAY}/{stream}/{MEMORY}");
+    let rows = [
+        json!({"id": "word", "type": "Tool", "name": "word", "description": "used to save the test note",
+            "described_by": noted, "segments": [noted], "updated_at": 1}),
+        json!({"id": "ann", "type": "Person", "name": "Ann", "description": "planned the launch",
+            "described_by": origin(A), "segments": [noted, origin(A)], "updated_at": 1}),
+    ];
+    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    write(
+        root.path(),
+        &format!("facets/work/entities/{DAY}.jsonl"),
+        text.as_bytes(),
+    );
+    (root, noted)
+}
+
+fn delete_memory(root: &Path, made: &dyn MadeFrom) -> solstone_core_trash::Item {
+    solstone_core_retention::recording_trash::Recordings::new(&NoIndex, made)
+        .trash(
+            root,
+            &solstone_core_retention::receipt::Target {
+                day: DAY.into(),
+                stream: memory_stream(),
+                dir: MEMORY.into(),
+            },
+            Unit::Memory {
+                day: DAY.into(),
+                segment: MEMORY.into(),
+            },
+            Action::MemoryDelete,
+            surface(),
+        )
+        .unwrap()
+}
+
+fn recover(root: &Path, item: &solstone_core_trash::Item) {
+    crate::trash_kinds::with_kinds(root, |kinds| {
+        solstone_core_trash::attach(root, kinds, &item.id, Action::Recover, surface())
+    })
+    .unwrap();
+}
+
+fn by_name(rows: &[Value], name: &str) -> Option<Value> {
+    rows.iter().find(|row| row["name"] == json!(name)).cloned()
+}
+
+#[test]
+fn what_an_agents_memory_found_leaves_with_it_and_comes_back() {
+    let (root, noted) = memory_journal();
+    let made = MadeFromIt::new();
+    let item = delete_memory(root.path(), &made);
+    assert!(made.skipped().is_empty(), "{:?}", made.skipped());
+
+    let after = detections(root.path());
+    assert!(by_name(&after, "word").is_none(), "found only in it: gone");
+    assert_eq!(
+        by_name(&after, "Ann").unwrap()["segments"],
+        json!([origin(A)])
+    );
+    // Nothing else is re-made from a memory, and nothing is asked for.
+    assert_eq!(records(root.path()).len(), 2);
+    assert!(
+        solstone_core_system::owner_ask::read(root.path())
+            .unwrap()
+            .is_empty()
+    );
+
+    recover(root.path(), &item);
+    let back = detections(root.path());
+    assert_eq!(by_name(&back, "word").unwrap()["segments"], json!([noted]));
+    assert_eq!(
+        by_name(&back, "Ann").unwrap()["segments"],
+        json!([noted, origin(A)])
+    );
+}
+
+#[test]
+fn a_memory_trashed_before_this_drops_what_it_found_when_recovered_and_deleted_again() {
+    let (root, noted) = memory_journal();
+    // As before: the memory left and what it found stayed.
+    let earlier = delete_memory(
+        root.path(),
+        &solstone_core_retention::made_from::NothingMade,
+    );
+    assert_eq!(
+        by_name(&detections(root.path()), "word").unwrap()["segments"],
+        json!([noted])
+    );
+
+    recover(root.path(), &earlier);
+    let made = MadeFromIt::new();
+    delete_memory(root.path(), &made);
+    assert!(made.skipped().is_empty(), "{:?}", made.skipped());
+    let after = detections(root.path());
+    assert!(by_name(&after, "word").is_none());
+    assert_eq!(
+        by_name(&after, "Ann").unwrap()["segments"],
+        json!([origin(A)])
+    );
+}
+
 #[test]
 fn erasing_a_recording_takes_a_late_runs_outputs_and_the_old_words_of_a_correction() {
     let root = journal();
