@@ -4078,6 +4078,10 @@ function renderTransferStrip() {
     const percent = total > 0 ? Math.min(100, Math.floor((sent / total) * 100)) : 0;
     const sentStr = formatTransferSize(sent);
     const totalStr = formatTransferSize(total);
+    const progressDetail = () => transferCopy(
+      'detail.progress',
+      [['filename', filename], ['sent', sentStr], ['total', totalStr], ['percent', String(percent)]]
+    );
     const profile = inspectLocalBrowserProfile(entry.clientItemId);
     const browserOrigin = isBrowserTransferOrigin(entry) || profile.hasResume;
     let phase = entry.phase || 'sending';
@@ -4109,10 +4113,10 @@ function renderTransferStrip() {
           detail.textContent = transferCopy('paused.retrying.detail', [['filename', filename], ['sent', sentStr], ['total', totalStr]]);
         } else if (profile.hasResume) {
           heading.textContent = transferCopy('paused.this.browser.heading');
-          detail.textContent = transferCopy('paused.this.browser.detail', [['filename', filename], ['sent', sentStr], ['total', totalStr]]);
+          detail.textContent = progressDetail();
         } else {
           heading.textContent = transferCopy('paused.other.browser.heading');
-          detail.textContent = transferCopy('paused.other.browser.detail', [['filename', filename], ['sent', sentStr], ['total', totalStr]]);
+          detail.textContent = progressDetail();
         }
       } else if (deviceNoun) {
         heading.textContent = transferCopy('paused.device.heading', [['device', deviceNoun]]);
@@ -4143,10 +4147,7 @@ function renderTransferStrip() {
       }
       const detail = document.createElement('div');
       detail.className = 'import-transfer-detail';
-      detail.textContent = transferCopy(
-        'detail.progress',
-        [['filename', filename], ['sent', sentStr], ['total', totalStr], ['percent', String(percent)]]
-      );
+      detail.textContent = progressDetail();
       main.appendChild(heading);
       main.appendChild(detail);
     }
@@ -4168,7 +4169,7 @@ function renderTransferStrip() {
     if (entry.localTab && phase === 'sending') {
       const note = document.createElement('div');
       note.className = 'import-transfer-note';
-      note.textContent = transferCopy('browser.note');
+      note.textContent = window.JournalI18n.render('journal.window.import.visible.text.uploading.your.file.keep.this.page');
       main.appendChild(note);
     }
 
@@ -4851,6 +4852,7 @@ function setupQuickImportForm() {
     const validateBtn = document.getElementById('validateBtn');
     // While its save is out, a second press or an Enter in the form sends nothing.
     if (window.SolFocus.isBusy(validateBtn)) return;
+    const revision = previewRevisions.quick;
     const hasFile = currentFile != null;
     const hasText = pasteText.value.trim().length > 0;
 
@@ -4895,6 +4897,7 @@ function setupQuickImportForm() {
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
 
+      if (ctx.disposed || revision !== previewRevisions.quick) return;
       if (!response.ok) {
         if (window.showError) {
           showError(importErrorMessage(data, window.JournalI18n.render('journal.window.import.import.view.validation.failed')));
@@ -4915,7 +4918,7 @@ function setupQuickImportForm() {
       window.SolFocus.setBusy(validateBtn, false);
       validateBtn.textContent = window.JournalI18n.render('journal.window.import.visible.text.validate');
       await loadImports();
-      if (_err?.cancelled) return;
+      if (_err?.cancelled || ctx.disposed || revision !== previewRevisions.quick) return;
       if (window.showError) {
         showError(_err instanceof Error && _err.message
           ? _err.message
@@ -5067,12 +5070,6 @@ function shouldUseResumableWebUpload(file) {
     && typeof file.slice === 'function'
     && Number(file.size) >= resumableUploadConfig.thresholdBytes
   );
-}
-
-async function computeFileFingerprintKey(file) {
-  const headBuf = await file.slice(0, Math.min(65536, file.size)).arrayBuffer();
-  const headHex = await sha256HexForChunk(new Uint8Array(headBuf));
-  return `${RESUMABLE_STORAGE_PREFIX}${file.name}:${file.size}:${Number(file.lastModified || 0)}:${headHex}`;
 }
 
 function resumableUploadError(status, body, fileSize) {
@@ -5244,11 +5241,12 @@ async function uploadBrowserFileResumable(file, options = {}) {
   }
 
   const submission = options.submission;
-  const fingerprintKey = submission?.fingerprintKey || await computeFileFingerprintKey(file);
+  // Each file selection receives a new item ID. Only a submission verified
+  // against the complete file can name a checkpoint from another selection.
+  let clientItemId = submission?.clientItemId || importDraft[options.clientItemIdKey] || crypto.randomUUID();
+  const checkpointKey = () => submission?.fingerprintKey || RESUMABLE_STORAGE_PREFIX + 'selection:' + clientItemId;
+  let fingerprintKey = checkpointKey();
   const stored = readLocalResumeState(fingerprintKey);
-  let clientItemId = submission?.clientItemId || stored?.clientItemId
-    || importDraft[options.clientItemIdKey]
-    || crypto.randomUUID();
   if (options.clientItemIdKey) {
     importDraft[options.clientItemIdKey] = clientItemId;
   }
@@ -5315,7 +5313,10 @@ async function uploadBrowserFileResumable(file, options = {}) {
         } else if (resyncResp.status === 404) {
           clearLocalResumeByClientItem(clientItemId);
           clientItemId = submission?.clientItemId || crypto.randomUUID();
-          if (!submission && options.clientItemIdKey) importDraft[options.clientItemIdKey] = clientItemId;
+          fingerprintKey = checkpointKey();
+          if (!submission && options.clientItemIdKey && importDraft[options.clientItemIdKey] === stored.clientItemId) {
+            importDraft[options.clientItemIdKey] = clientItemId;
+          }
           localBrowserUploads.delete(stored.clientItemId);
           localBrowserUploads.set(clientItemId, ctlRecord);
         }

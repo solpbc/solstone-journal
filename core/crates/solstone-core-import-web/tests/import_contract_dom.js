@@ -864,7 +864,7 @@ function makePage(env, address = '/app/import/', { answers, folders = false, loc
     addEventListener: window.addEventListener.bind(window),
     performance: { mark() {}, clearMarks() {} },
     fetch: window.fetch,
-    crypto: { randomUUID: (() => { let n = 0; return () => `uuid-${n += 1}`; })() },
+    crypto: { randomUUID: require('node:crypto').randomUUID },
     showError: window.showError,
     confirm: () => { throw new Error('browser confirm is forbidden'); },
   });
@@ -2311,23 +2311,25 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(strip.hidden, 'strip hides again after cancel');
   });
 
-  await test('resumable browser File.slice() uploader: streams chunks with X-Chunk-Sha256, handles bodyless 409 resync, resumes from localStorage midstate without re-sending completed chunks, and unwraps already_staged', async () => {
+  await test('resumable browser File.slice() uploader: streams chunks with X-Chunk-Sha256, handles bodyless 409 resync, starts fresh on unverified file reselection, and unwraps already_staged', async () => {
     const nodeCrypto = require('crypto');
     const sharedLocalStore = new Map();
     const threshold = 64 * 1024;
-    const chunkSize = 32 * 1024;
+    const chunkSize = 96 * 1024;
     const rawBytes = nodeCrypto.randomBytes(chunkSize * 2 + 5123);
-    const expectedWholeSha = nodeCrypto.createHash('sha256').update(rawBytes).digest('hex');
+    const pickedAgain = Buffer.from(rawBytes);
+    pickedAgain[65536] ^= 0xff; // Same metadata and first 64 KiB, different acknowledged bytes.
+    const expectedWholeSha = nodeCrypto.createHash('sha256').update(pickedAgain).digest('hex');
     const expectedChunk0Sha = nodeCrypto.createHash('sha256').update(rawBytes.subarray(0, chunkSize)).digest('hex');
 
-    function makeMockFile() {
+    function makeMockFile(bytes = rawBytes) {
       return {
         name: 'big-notes.md',
         size: rawBytes.length,
         type: 'text/markdown',
         lastModified: 1767225600000,
         slice(start = 0, end = rawBytes.length) {
-          const sub = rawBytes.subarray(start, end);
+          const sub = bytes.subarray(start, end);
           return {
             size: sub.length,
             async arrayBuffer() {
@@ -2341,6 +2343,9 @@ module.exports = async function importContractCases(crateDir) {
     // Run 1: upload chunk 0 (200 OK), then fail chunk 1 with journal_busy (409) to simulate interruption.
     let serverOffset = 0;
     const putOffsetsRun1 = [];
+    let firstItemId;
+    let retryOriginal = false;
+    let originalDigest;
     const p1 = makePage(env, '/app/import/#guide/quick', {
       localStore: sharedLocalStore,
       answers: journal({
@@ -2348,18 +2353,24 @@ module.exports = async function importContractCases(crateDir) {
           ...sourcesAnswer(),
           resumable: { threshold_bytes: threshold, chunk_bytes: chunkSize, max_file_bytes: 1024 * 1024 * 1024 },
         }),
-        'POST /app/import/api/uploads': () => ({
-          upload_id: 'browser-up-1',
-          client_item_id: 'uuid-1',
-          next_offset: 0,
-          total_bytes: rawBytes.length,
-          chunk_bytes: chunkSize,
-          expires_at: '2026-12-01T00:00:00Z',
+        'POST /app/import/api/uploads': (_url, opts) => {
+          assert.ok(!firstItemId, 'the original selection creates only once');
+          firstItemId = JSON.parse(opts.body).client_item_id;
+          return { upload_id: 'browser-up-1', client_item_id: firstItemId, next_offset: 0,
+            total_bytes: rawBytes.length, chunk_bytes: chunkSize };
+        },
+        'GET /app/import/api/uploads/browser-up-1': () => ({
+          upload_id: 'browser-up-1', next_offset: chunkSize, chunk_bytes: chunkSize,
         }),
+        'POST /app/import/api/uploads/browser-up-1/commit': (_url, opts) => {
+          originalDigest = JSON.parse(opts.body).sha256;
+          return { status: 'staged', path: '/journal/imports/original/big-notes.md' };
+        },
         'PUT /app/import/api/uploads/browser-up-1': (_url, opts) => {
           const u = new URL(_url, 'http://localhost');
           const off = Number(u.searchParams.get('offset'));
           putOffsetsRun1.push({ offset: off, sha: opts?.headers?.['X-Chunk-Sha256'], len: opts?.body?.byteLength });
+          if (retryOriginal) return { next_offset: off + opts.body.byteLength, total_bytes: rawBytes.length };
           if (off === 0) {
             serverOffset = chunkSize;
             return { upload_id: 'browser-up-1', next_offset: serverOffset, total_bytes: rawBytes.length, complete: false };
@@ -2368,7 +2379,7 @@ module.exports = async function importContractCases(crateDir) {
         },
       }),
     });
-    p1.statuses.push([c => c.method === 'PUT' && c.url.includes('offset=32768'), 409]);
+    p1.statuses.push([c => !retryOriginal && c.method === 'PUT' && c.url.endsWith('offset=' + chunkSize), 409]);
     p1.loadScripts();
     p1.place();
     await p1.mount();
@@ -2384,9 +2395,9 @@ module.exports = async function importContractCases(crateDir) {
     assert.strictEqual(putOffsetsRun1[0].sha, expectedChunk0Sha, 'chunk 0 carries exact X-Chunk-Sha256');
     assert.strictEqual(serverOffset, chunkSize, 'chunk 0 persisted before interruption');
 
-    // Run 2 (new page mount sharing localStore): re-selecting the same file resyncs GET /uploads/browser-up-1,
-    // skips chunk 0 completely, recovers from a bodyless 409 on chunk 1 via GET fallback, uploads chunks 1 & 2,
-    // and commits with exact whole-file SHA-256!
+    // A new selection must not reuse the previous upload, even in the same browser.
+    const stagedChunks = [];
+    let secondItemId;
     const putOffsetsRun2 = [];
     let bodyless409Injected = false;
     let committedBody = null;
@@ -2410,14 +2421,20 @@ module.exports = async function importContractCases(crateDir) {
             device_noun: 'browser',
           }],
         }),
-        'GET /app/import/api/uploads/browser-up-1': () => ({
-          upload_id: 'browser-up-1',
+        'POST /app/import/api/uploads': (_url, opts) => {
+          secondItemId = JSON.parse(opts.body).client_item_id;
+          assert.notStrictEqual(secondItemId, firstItemId);
+          serverOffset = 0;
+          return {upload_id: 'browser-up-2', next_offset: 0, chunk_bytes: chunkSize};
+        },
+        'GET /app/import/api/uploads/browser-up-2': () => ({
+          upload_id: 'browser-up-2',
           next_offset: serverOffset,
           total_bytes: rawBytes.length,
           chunk_bytes: chunkSize,
           phase: 'paused',
         }),
-        'PUT /app/import/api/uploads/browser-up-1': (_url, opts) => {
+        'PUT /app/import/api/uploads/browser-up-2': (_url, opts) => {
           const u = new URL(_url, 'http://localhost');
           const off = Number(u.searchParams.get('offset'));
           if (off === chunkSize && !bodyless409Injected) {
@@ -2425,15 +2442,16 @@ module.exports = async function importContractCases(crateDir) {
             return {};
           }
           putOffsetsRun2.push(off);
+          stagedChunks.push(Buffer.from(opts.body));
           serverOffset = off + opts.body.byteLength;
           return {
-            upload_id: 'browser-up-1',
+            upload_id: 'browser-up-2',
             next_offset: serverOffset,
             total_bytes: rawBytes.length,
             complete: serverOffset === rawBytes.length,
           };
         },
-        'POST /app/import/api/uploads/browser-up-1/commit': (_url, opts) => {
+        'POST /app/import/api/uploads/browser-up-2/commit': (_url, opts) => {
           committedBody = JSON.parse(opts.body);
           return {
             status: 'staged',
@@ -2446,10 +2464,10 @@ module.exports = async function importContractCases(crateDir) {
         },
       }),
     });
-    let firstPut32kSeen = false;
+    let conflictSent = false;
     p2.statuses.push([c => {
-      if (c.method === 'PUT' && c.url.includes('offset=32768') && !firstPut32kSeen) {
-        firstPut32kSeen = true;
+      if (c.method === 'PUT' && c.url.endsWith('offset=' + chunkSize) && !conflictSent) {
+        conflictSent = true;
         return true;
       }
       return false;
@@ -2464,7 +2482,7 @@ module.exports = async function importContractCases(crateDir) {
     assert.ok(!strip2.hidden && strip2.querySelector('.import-transfer-row.is-paused'), 'reopened browser shows paused state from localStorage');
 
     const fileInput2 = p2.byId('fileInput');
-    fileInput2.files = [makeMockFile()];
+    fileInput2.files = [makeMockFile(pickedAgain)];
     fileInput2.onchange({ target: fileInput2 });
     p2.byId('importForm').onsubmit({ preventDefault() {} });
     await settle();
@@ -2472,10 +2490,21 @@ module.exports = async function importContractCases(crateDir) {
     await settle();
 
     assert.strictEqual(bodyless409Injected, true, 'exercised bodyless 409 GET resync fallback');
-    assert.deepStrictEqual(putOffsetsRun2, [chunkSize, chunkSize * 2], 'zero completed chunks re-sent on resume');
+    assert.deepStrictEqual(putOffsetsRun2, [0, chunkSize, chunkSize * 2]);
+    assert.deepStrictEqual(Buffer.concat(stagedChunks), pickedAgain, 'only the newly selected bytes were staged');
+    assert.ok(secondItemId && firstItemId && secondItemId !== firstItemId);
     assert.ok(committedBody && committedBody.sha256 === expectedWholeSha, 'commit submitted exact streaming JsSha256 whole-file digest');
     assert.strictEqual(p2.byId('savedPath')?.value, '/journal/imports/20261124_180000/big-notes.md', 'commit handed off seamlessly to showDetect');
-    assert.ok(strip2.hidden, 'strip hides once browser upload commits');
+    assert.ok(strip2.querySelector('[data-transfer-item="' + firstItemId + '"]'), 'old upload remains available to its original tab');
+    assert.ok(!strip2.querySelector('[data-transfer-item="' + secondItemId + '"]'));
+
+
+    // Retrying the original selection in its original tab still uses its confirmed prefix.
+    retryOriginal = true;
+    const priorAttempts = putOffsetsRun1.length;
+    await p1.byId('importForm').onsubmit({ preventDefault() {} });
+    assert.deepStrictEqual(putOffsetsRun1.slice(priorAttempts).map(part => part.offset), [chunkSize, 2 * chunkSize]);
+    assert.strictEqual(originalDigest, nodeCrypto.createHash('sha256').update(rawBytes).digest('hex'));
 
     // Run 3: already_staged response from POST /uploads unwraps save_response directly into showDetect.
     const p3 = makePage(env, '/app/import/#guide/quick', {
@@ -2505,8 +2534,12 @@ module.exports = async function importContractCases(crateDir) {
     const fileInput3 = p3.byId('fileInput');
     fileInput3.files = [makeMockFile()];
     fileInput3.onchange({ target: fileInput3 });
-    p3.byId('importForm').onsubmit({ preventDefault() {} });
-    await settle();
+    const stale = p3.byId('importForm').onsubmit({ preventDefault() {} });
+    fileInput3.files = [makeMockFile(pickedAgain)];
+    fileInput3.onchange({ target: fileInput3 });
+    await stale;
+    assert.ok(!p3.byId('savedPath')?.value, 'a late success for the old selection cannot open its detection dialog');
+    await p3.byId('importForm').onsubmit({ preventDefault() {} });
     assert.strictEqual(p3.byId('savedPath')?.value, '/journal/imports/20261124_190000/big-notes.md', 'already_staged unwraps save_response');
   });
 
