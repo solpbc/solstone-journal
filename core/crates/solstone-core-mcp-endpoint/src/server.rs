@@ -74,6 +74,9 @@ impl<'a> MemoryAuthority<'a> {
     pub(crate) fn id(&self) -> &str {
         &self.verified.id
     }
+    pub(crate) fn agent_identity(&self) -> &str {
+        &self.verified.agent_identity
+    }
     pub(crate) fn label(&self) -> &str {
         &self.creation_label
     }
@@ -3009,14 +3012,12 @@ mod tests {
             )
             .await;
             assert_eq!(memory_result(&saved)["status"], "stored");
-            let pending = post_json(client, token, memory_call("recall_memory", json!({}))).await;
-            assert_eq!(memory_result(&pending)["complete"], false);
-            assert_eq!(memory_result(&pending)["reason"], "memory_index_pending");
+            assert_eq!(memory_result(&saved)["own_recall"], "ready");
+            assert_eq!(memory_result(&saved)["ordinary_readable"], posture == 3);
             assert_eq!(
                 memory_result(&saved)["origin"]["source_key"],
                 solstone_core_format::agent_memory::SourceKey::from_verified_id(identity).as_str()
             );
-            solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
             let recalled = post_json(
                 client,
                 token,
@@ -3151,7 +3152,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(activity.entries.len(), 13);
+        assert_eq!(activity.entries.len(), 8);
         assert!(
             activity.entries.iter().all(|entry| entry
                 .request
@@ -3653,6 +3654,465 @@ mod tests {
         );
         drop(client);
         server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn memory_wire_keyed_supersede_active_default_history_and_bounded_ready() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let writer = server.create_unpermissioned_token("primary agent");
+        let other = server.create_unpermissioned_token("other agent");
+        let reader = server.create_token("ordinary reader");
+        let reader_verified = TokenStore::open(server.journal.path())
+            .verify(&reader.token)
+            .unwrap();
+        crate::permissions::PermissionStore::open(server.journal.path())
+            .set_permission(
+                &reader_verified.id,
+                crate::permissions::ReadPermission {
+                    categories: vec!["notes".into()],
+                    scope: crate::permissions::ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        solstone_core_indexer_store::scan::scan_journal(server.journal.path(), true).unwrap();
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+
+        // Unkeyed legacy-shaped note: immediately own_recall: "ready" without manual scan.
+        let unkeyed = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "save_memory",
+                json!({"operation_id":"legacy-note","content":"standing legacy memory"}),
+            ),
+        )
+        .await;
+        let unkeyed_result = memory_result(&unkeyed);
+        assert_eq!(unkeyed_result["status"], "stored");
+        assert_eq!(unkeyed_result["own_recall"], "ready");
+        assert!(unkeyed_result.get("key").is_none());
+        assert!(unkeyed_result["origin"].get("key").is_none());
+
+        // Keyed v1: immediately own_recall: "ready" and immediately recallable by key.
+        let v1 = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "save_memory",
+                json!({
+                    "operation_id":"promises-v1",
+                    "key":"promises-2025-open",
+                    "content":"promises v1 kemp open alpha"
+                }),
+            ),
+        )
+        .await;
+        let v1_result = memory_result(&v1);
+        assert_eq!(v1_result["status"], "stored");
+        assert_eq!(v1_result["own_recall"], "ready");
+        assert_eq!(v1_result["key"], "promises-2025-open");
+        assert_eq!(v1_result["origin"]["key"], "promises-2025-open");
+
+        let v1_replay = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "save_memory",
+                json!({
+                    "operation_id":"promises-v1",
+                    "key":"promises-2025-open",
+                    "content":"promises v1 kemp open alpha"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(memory_result(&v1_replay)["status"], "replayed");
+        assert_eq!(memory_result(&v1_replay)["key"], "promises-2025-open");
+
+        for conflicting in [
+            json!({"operation_id":"promises-v1","key":"promises-2025-open","content":"changed content"}),
+            json!({"operation_id":"promises-v1","content":"promises v1 kemp open alpha"}),
+            json!({"operation_id":"promises-v1","key":"other-slot","content":"promises v1 kemp open alpha"}),
+        ] {
+            let conflict = post_json(
+                &mut client,
+                &writer.token,
+                memory_call("save_memory", conflicting),
+            )
+            .await;
+            assert_eq!(
+                conflict["error"]["data"]["reason"],
+                "memory_operation_conflict"
+            );
+        }
+
+        for invalid_args in [
+            json!({"operation_id":"bad-key-1","key":"has space","content":"note"}),
+            json!({"operation_id":"bad-key-2","key":"","content":"note"}),
+            json!({"operation_id":"bad-key-3","key":null,"content":"note"}),
+        ] {
+            let invalid = post_json(
+                &mut client,
+                &writer.token,
+                memory_call("save_memory", invalid_args),
+            )
+            .await;
+            assert_eq!(invalid["error"]["code"], -32602);
+        }
+
+        // Keyed v2 supersedes v1 on the same (source_key, key), immediately ready.
+        let v2 = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "save_memory",
+                json!({
+                    "operation_id":"promises-v2",
+                    "key":"promises-2025-open",
+                    "content":"promises v2 beta only"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(memory_result(&v2)["status"], "stored");
+        assert_eq!(memory_result(&v2)["own_recall"], "ready");
+
+        // Another connection using the same key stays isolated.
+        let other_save = post_json(
+            &mut client,
+            &other.token,
+            memory_call(
+                "save_memory",
+                json!({
+                    "operation_id":"other-promises",
+                    "key":"promises-2025-open",
+                    "content":"other connection private promises"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(memory_result(&other_save)["status"], "stored");
+        assert_eq!(memory_result(&other_save)["own_recall"], "ready");
+
+        // Default recall returns only active notes (v2 + unkeyed) without superseded flag.
+        let active = post_json(
+            &mut client,
+            &writer.token,
+            memory_call("recall_memory", json!({})),
+        )
+        .await;
+        let active_result = memory_result(&active);
+        assert_eq!(active_result["complete"], true);
+        let active_notes = active_result["notes"].as_array().unwrap();
+        assert_eq!(active_notes.len(), 2);
+        assert_eq!(active_notes[0]["content"], "promises v2 beta only");
+        assert_eq!(active_notes[0]["key"], "promises-2025-open");
+        assert!(active_notes[0].get("superseded").is_none());
+        assert_eq!(active_notes[1]["content"], "standing legacy memory");
+        assert!(active_notes[1].get("key").is_none());
+        assert!(active_notes[1].get("superseded").is_none());
+
+        // Key filter returns only v2 with complete: true and no bogus continuation.
+        let keyed = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "recall_memory",
+                json!({"key":"promises-2025-open","limit":1}),
+            ),
+        )
+        .await;
+        let keyed_result = memory_result(&keyed);
+        assert_eq!(keyed_result["complete"], true);
+        assert!(keyed_result["continuation"].is_null());
+        assert_eq!(keyed_result["notes"].as_array().unwrap().len(), 1);
+        assert_eq!(keyed_result["notes"][0]["content"], "promises v2 beta only");
+
+        // include_superseded: true returns full history with superseded markers.
+        let history = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "recall_memory",
+                json!({"key":"promises-2025-open","include_superseded":true}),
+            ),
+        )
+        .await;
+        let history_notes = memory_result(&history)["notes"].as_array().unwrap();
+        assert_eq!(history_notes.len(), 2);
+        assert_eq!(history_notes[0]["content"], "promises v2 beta only");
+        assert_eq!(history_notes[0]["superseded"], false);
+        assert_eq!(history_notes[1]["content"], "promises v1 kemp open alpha");
+        assert_eq!(history_notes[1]["superseded"], true);
+
+        // Term removed in v2 is hidden from default recall and visible with include_superseded.
+        let default_term = post_json(
+            &mut client,
+            &writer.token,
+            memory_call("recall_memory", json!({"query":"kemp"})),
+        )
+        .await;
+        assert_eq!(memory_result(&default_term)["complete"], true);
+        assert_eq!(memory_result(&default_term)["notes"], json!([]));
+        let history_term = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "recall_memory",
+                json!({"query":"kemp","include_superseded":true}),
+            ),
+        )
+        .await;
+        assert_eq!(
+            memory_result(&history_term)["notes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(memory_result(&history_term)["notes"][0]["superseded"], true);
+
+        // Ordinary search remains additive-only: both v1 and v2 are still retrievable under notes grant.
+        let search = post_json(
+            &mut client,
+            &reader.token,
+            memory_call("search", json!({"query":"kemp","kind":"notes"})),
+        )
+        .await;
+        assert!(
+            serde_json::to_string(&search)
+                .unwrap()
+                .contains("promises v1 kemp open alpha"),
+            "ordinary search must remain additive-only: {search}"
+        );
+
+        // Held index-writer lock: save_memory still succeeds durably with own_recall: "pending".
+        let lease = solstone_core_journal_io::hold_lock(
+            solstone_core_indexer_store::db::db_path(server.journal.path()),
+            Default::default(),
+        )
+        .unwrap();
+        let started = std::time::Instant::now();
+        let pending_save = post_json(
+            &mut client,
+            &writer.token,
+            memory_call(
+                "save_memory",
+                json!({
+                    "operation_id":"promises-v3-held-lock",
+                    "key":"promises-2025-open",
+                    "content":"promises v3 written while indexer busy"
+                }),
+            ),
+        )
+        .await;
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(4),
+            "bounded refresh must not stall indefinitely"
+        );
+        let pending_result = memory_result(&pending_save);
+        assert_eq!(pending_result["status"], "stored");
+        assert_eq!(pending_result["own_recall"], "pending");
+        drop(lease);
+        solstone_core_indexer_store::todo::drain(server.journal.path(), Default::default())
+            .unwrap();
+        let after_drain = post_json(
+            &mut client,
+            &writer.token,
+            memory_call("recall_memory", json!({"key":"promises-2025-open"})),
+        )
+        .await;
+        assert_eq!(memory_result(&after_drain)["complete"], true);
+        assert_eq!(
+            memory_result(&after_drain)["notes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            memory_result(&after_drain)["notes"][0]["content"],
+            "promises v3 written while indexer busy"
+        );
+
+        drop(client);
+        server.stop().await;
+    }
+
+    #[test]
+    fn memory_wire_oauth_agent_identity_matches_read_tools_and_keeps_source_key() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-memory-oauth-audit-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+        let oauth_client_id = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+        let verified = crate::tokens::VerifiedToken {
+            id: "oauth:audit-identity-grant".to_owned(),
+            agent_identity: oauth_client_id.to_owned(),
+        };
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_permission(
+                &verified.id,
+                crate::permissions::ReadPermission::default_whole_journal(),
+            )
+            .unwrap();
+        let expected_source_key =
+            crate::agent_state::memory_source(journal.path(), &verified.id).unwrap();
+
+        let sessions = SessionTable::new();
+        let post = |method: &str, params: Value, session: Option<&str>| {
+            let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+            if let Some(session) = session {
+                headers.push(("mcp-session-id".to_owned(), session.to_owned()));
+            }
+            super::post_json_rpc(
+                &crate::http1::HttpRequest::from_test_parts(
+                    crate::http1::HttpMethod::Post,
+                    headers,
+                    serde_json::to_vec(&json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": method,
+                        "params": params,
+                    }))
+                    .unwrap(),
+                ),
+                &sessions,
+                &verified,
+                journal.path(),
+            )
+        };
+
+        let init = post("initialize", json!({}), None);
+        assert_eq!(init.status, 200);
+        let session_id = init.session_id.unwrap();
+
+        let facets = post(
+            "tools/call",
+            json!({"name":"list_facets","arguments":{}}),
+            Some(&session_id),
+        );
+        assert_eq!(facets.status, 200);
+
+        let saved = post(
+            "tools/call",
+            json!({
+                "name":"save_memory",
+                "arguments":{
+                    "operation_id":"audit-op-1",
+                    "key":"promises-2025-open",
+                    "content":"oauth audit memory"
+                }
+            }),
+            Some(&session_id),
+        );
+        assert_eq!(saved.status, 200);
+        let saved_json: Value = serde_json::from_slice(&saved.body).unwrap();
+        assert_eq!(memory_result(&saved_json)["status"], "stored");
+        assert_eq!(memory_result(&saved_json)["own_recall"], "ready");
+
+        // Conflict error save: outcome.json has no result.origin, so source_key in interaction.json
+        // arguments preserves provenance on failed saves too.
+        let conflict = post(
+            "tools/call",
+            json!({
+                "name":"save_memory",
+                "arguments":{
+                    "operation_id":"audit-op-1",
+                    "key":"promises-2025-open",
+                    "content":"different content"
+                }
+            }),
+            Some(&session_id),
+        );
+        assert_eq!(conflict.status, 200);
+        let conflict_json: Value = serde_json::from_slice(&conflict.body).unwrap();
+        assert_eq!(
+            conflict_json["error"]["data"]["reason"],
+            "memory_operation_conflict"
+        );
+
+        let recalled = post(
+            "tools/call",
+            json!({
+                "name":"recall_memory",
+                "arguments":{"key":"promises-2025-open"}
+            }),
+            Some(&session_id),
+        );
+        assert_eq!(recalled.status, 200);
+        let recalled_json: Value = serde_json::from_slice(&recalled.body).unwrap();
+        assert_eq!(memory_result(&recalled_json)["complete"], true);
+        assert_eq!(
+            memory_result(&recalled_json)["notes"][0]["content"],
+            "oauth audit memory"
+        );
+
+        let activity = crate::activity::read_activity(
+            journal.path(),
+            &crate::activity::ActivityQuery {
+                limit: 20,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(activity.entries.len(), 4);
+        for entry in &activity.entries {
+            assert_eq!(entry.connection.as_deref(), Some(verified.id.as_str()));
+            assert_eq!(
+                entry.agent_identity, oauth_client_id,
+                "tool {:?} logged wrong agent_identity: {:?}",
+                entry.tool_name, entry.agent_identity
+            );
+        }
+
+        let save_entries: Vec<_> = activity
+            .entries
+            .iter()
+            .filter(|e| e.tool_name == solstone_core_mcp_audit::ToolName::SaveMemory)
+            .collect();
+        assert_eq!(save_entries.len(), 2);
+        for entry in &save_entries {
+            let args = &entry.request.as_ref().unwrap().arguments;
+            assert_eq!(args["source_key"], expected_source_key.as_str());
+            assert_eq!(args["key"], "promises-2025-open");
+        }
+        let stored_entry = save_entries
+            .iter()
+            .find(|e| e.outcome == crate::activity::RecordedOutcome::Stored)
+            .expect("stored entry");
+        assert_eq!(
+            stored_entry
+                .result
+                .as_ref()
+                .unwrap()
+                .origin
+                .as_ref()
+                .unwrap()["source_key"],
+            expected_source_key.as_str()
+        );
+        assert_eq!(
+            stored_entry
+                .result
+                .as_ref()
+                .unwrap()
+                .origin
+                .as_ref()
+                .unwrap()["key"],
+            "promises-2025-open"
+        );
+
+        let recall_entry = activity
+            .entries
+            .iter()
+            .find(|e| e.tool_name == solstone_core_mcp_audit::ToolName::RecallMemory)
+            .expect("recall entry");
+        let recall_args = &recall_entry.request.as_ref().unwrap().arguments;
+        assert_eq!(recall_args["source_key"], expected_source_key.as_str());
+        assert_eq!(recall_args["key"], "promises-2025-open");
     }
 
     #[tokio::test]
@@ -5799,11 +6259,13 @@ mod unit_tests {
             journal.path(),
             crate::memory::AuthenticatedMemorySource {
                 verified_id: "bearer:setup",
+                agent_identity: "bearer:setup",
                 creation_label: "setup label",
                 source: &key,
             },
             "north-star note",
             "op-1",
+            None,
             now,
         )
         .unwrap();
@@ -5921,11 +6383,13 @@ mod unit_tests {
             journal.path(),
             crate::memory::AuthenticatedMemorySource {
                 verified_id: "bearer:setup",
+                agent_identity: "bearer:setup",
                 creation_label: "setup label",
                 source: &key,
             },
             "different note text",
             "op-1",
+            None,
             now,
         ) {
             Err(e) => e,

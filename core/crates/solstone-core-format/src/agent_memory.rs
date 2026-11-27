@@ -77,6 +77,10 @@ pub struct Origin {
     pub created_at: Timestamp,
     pub stream: String,
     pub segment: String,
+    /// Optional logical slot name; a newer save with the same key supersedes
+    /// earlier live notes for the same source in default own-memory recall.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// The origin kind for a private connection-owned original.
@@ -131,6 +135,8 @@ pub struct OperationRecord {
     pub phase: Readiness,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chain: Option<ChainPredecessor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// Immutable readiness marker for one complete memory original.
@@ -151,6 +157,8 @@ pub struct ReadyDocument {
 pub enum FormatError {
     InvalidSourceKey,
     InvalidOperationId,
+    InvalidKey,
+    KeyMismatch,
     InvalidDigest,
     DigestMismatch,
     ByteCountMismatch,
@@ -165,6 +173,8 @@ impl std::fmt::Display for FormatError {
         formatter.write_str(match self {
             Self::InvalidSourceKey => "invalid memory source key",
             Self::InvalidOperationId => "invalid memory operation identifier",
+            Self::InvalidKey => "invalid memory key",
+            Self::KeyMismatch => "memory key does not match operation",
             Self::InvalidDigest => "invalid memory digest",
             Self::DigestMismatch => "memory digest does not match bytes",
             Self::ByteCountMismatch => "memory byte count does not match bytes",
@@ -195,6 +205,18 @@ pub fn validate_operation_id(value: &str) -> Result<(), FormatError> {
     Ok(())
 }
 
+pub fn validate_memory_key(value: &str) -> Result<(), FormatError> {
+    let bytes = value.as_bytes();
+    if !(1..=128).contains(&bytes.len())
+        || !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+    {
+        return Err(FormatError::InvalidKey);
+    }
+    Ok(())
+}
+
 /// Creation labels are server-authored descriptive values, never credentials.
 pub fn validate_creation_label(value: &str) -> Result<(), FormatError> {
     if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
@@ -207,10 +229,14 @@ pub fn validate_record(
     record: &OperationRecord,
     source_key: &SourceKey,
     operation_id: &str,
+    key: Option<&str>,
     bytes: &[u8],
 ) -> Result<(), FormatError> {
     validate_record_header(record, source_key)?;
     validate_operation_id(operation_id)?;
+    if let Some(key) = key {
+        validate_memory_key(key)?;
+    }
     if record.operation_id != operation_id {
         return Err(FormatError::BindingMismatch);
     }
@@ -219,6 +245,9 @@ pub fn validate_record(
     }
     if record.byte_count != bytes.len() {
         return Err(FormatError::ByteCountMismatch);
+    }
+    if record.key.as_deref() != key {
+        return Err(FormatError::KeyMismatch);
     }
     Ok(())
 }
@@ -240,6 +269,7 @@ pub fn ready_document(
         created_at: record.created_at,
         stream: record.coordinate.stream.clone(),
         segment: record.coordinate.segment.clone(),
+        key: record.key.clone(),
     };
     Ok(ReadyDocument {
         source_key: source_key.clone(),
@@ -305,6 +335,9 @@ pub fn validate_record_header(
 ) -> Result<(), FormatError> {
     source_key.validate()?;
     validate_operation_id(&record.operation_id)?;
+    if let Some(key) = &record.key {
+        validate_memory_key(key)?;
+    }
     if !is_lower_hex_64(&record.digest) {
         return Err(FormatError::InvalidDigest);
     }
@@ -343,6 +376,9 @@ pub fn validate_origin(origin: &Origin, source_key: &SourceKey) -> Result<(), Fo
     source_key.validate()?;
     origin.source_key.validate()?;
     validate_creation_label(&origin.creation_label)?;
+    if let Some(key) = &origin.key {
+        validate_memory_key(key)?;
+    }
     if &origin.source_key != source_key
         || origin.kind != OriginKind::AgentMemory
         || origin.stream != format!("agent-memory-{}", source_key.component())
@@ -410,9 +446,9 @@ mod tests {
     use jiff::Timestamp;
 
     use super::{
-        ChainPredecessor, Coordinate, OperationRecord, Origin, OriginKind, Readiness, SourceKey,
-        digest, ready_document, validate_complete_original, validate_origin,
-        validate_ready_document, validate_record,
+        ChainPredecessor, Coordinate, FormatError, OperationRecord, Origin, OriginKind, Readiness,
+        SourceKey, digest, ready_document, validate_complete_original, validate_memory_key,
+        validate_origin, validate_ready_document, validate_record,
     };
 
     fn created_at() -> Timestamp {
@@ -434,6 +470,7 @@ mod tests {
             },
             phase: Readiness::Reserved,
             chain: None,
+            key: None,
         }
     }
 
@@ -441,15 +478,19 @@ mod tests {
     fn validates_source_operation_and_exact_note_digest() {
         let source = SourceKey::from_verified_id("bearer:opaque");
         let mut record = record(&source, b"note");
-        validate_record(&record, &source, "op:1", b"note").unwrap();
-        assert!(validate_record(&record, &source, "op:1", b"other").is_err());
+        validate_record(&record, &source, "op:1", None, b"note").unwrap();
+        assert!(validate_record(&record, &source, "op:1", None, b"other").is_err());
+        assert_eq!(
+            validate_record(&record, &source, "op:1", Some("promises-2025"), b"note"),
+            Err(FormatError::KeyMismatch)
+        );
         record.digest = "0".repeat(64);
-        assert!(validate_record(&record, &source, "op:1", b"note").is_err());
+        assert!(validate_record(&record, &source, "op:1", None, b"note").is_err());
         record.digest = digest(b"note");
         record.byte_count += 1;
-        assert!(validate_record(&record, &source, "op:1", b"note").is_err());
+        assert!(validate_record(&record, &source, "op:1", None, b"note").is_err());
         let invalid_source: SourceKey = serde_json::from_str("\"sha256:ABC\"").unwrap();
-        assert!(validate_record(&record, &invalid_source, "op:1", b"note").is_err());
+        assert!(validate_record(&record, &invalid_source, "op:1", None, b"note").is_err());
         assert!(SourceKey::parse("sha256:ABC").is_err());
     }
 
@@ -463,13 +504,13 @@ mod tests {
             prev_segment: Some("030405_1".into()),
             seq: 2,
         });
-        validate_record(&record, &source, "op:1", b"note").unwrap();
+        validate_record(&record, &source, "op:1", None, b"note").unwrap();
         record.chain.as_mut().unwrap().prev_day = Some(record.coordinate.day.clone());
         record.chain.as_mut().unwrap().prev_segment = Some(record.coordinate.segment.clone());
-        assert!(validate_record(&record, &source, "op:1", b"note").is_err());
+        assert!(validate_record(&record, &source, "op:1", None, b"note").is_err());
         record.chain.as_mut().unwrap().prev_day = Some("20260101".into());
         record.chain.as_mut().unwrap().prev_segment = Some("../escape".into());
-        assert!(validate_record(&record, &source, "op:1", b"note").is_err());
+        assert!(validate_record(&record, &source, "op:1", None, b"note").is_err());
 
         record.phase = Readiness::Ready;
         record.chain = Some(ChainPredecessor {
@@ -477,7 +518,7 @@ mod tests {
             prev_segment: Some("030405_1".into()),
             seq: 2,
         });
-        validate_record(&record, &source, "op:1", b"note").unwrap();
+        validate_record(&record, &source, "op:1", None, b"note").unwrap();
     }
 
     #[test]
@@ -490,12 +531,13 @@ mod tests {
             created_at: created_at(),
             stream: format!("agent-memory-{}", source.component()),
             segment: "030405_1".into(),
+            key: None,
         };
         validate_origin(&origin, &source).unwrap();
         let encoded = serde_json::to_vec(&origin).unwrap();
-        assert!(
-            String::from_utf8_lossy(&encoded).contains(r#""created_at":"2026-01-02T03:04:05Z""#)
-        );
+        let encoded_text = String::from_utf8_lossy(&encoded);
+        assert!(encoded_text.contains(r#""created_at":"2026-01-02T03:04:05Z""#));
+        assert!(!encoded_text.contains(r#""key""#));
         let decoded: Origin = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded, origin);
         let mut record = record(&source, b"note");
@@ -549,5 +591,71 @@ mod tests {
             .is_err()
         );
         assert!(validate_origin(&origin, &SourceKey::from_verified_id("oauth:other")).is_err());
+    }
+
+    #[test]
+    fn keyed_origin_and_operation_validate_and_preserve_unkeyed_compatibility() {
+        let source = SourceKey::from_verified_id("oauth:grant");
+        assert!(validate_memory_key("promises-2025.open:v1_a").is_ok());
+        for bad in ["", "has space", "../escape", &"a".repeat(129)] {
+            assert_eq!(validate_memory_key(bad), Err(FormatError::InvalidKey));
+        }
+
+        let mut keyed = record(&source, b"note");
+        keyed.key = Some("promises-2025-open".into());
+        keyed.phase = Readiness::Chained;
+        keyed.chain = Some(ChainPredecessor {
+            prev_day: None,
+            prev_segment: None,
+            seq: 1,
+        });
+        validate_record(&keyed, &source, "op:1", Some("promises-2025-open"), b"note").unwrap();
+        assert_eq!(
+            validate_record(&keyed, &source, "op:1", None, b"note"),
+            Err(FormatError::KeyMismatch)
+        );
+        assert_eq!(
+            validate_record(&keyed, &source, "op:1", Some("other-slot"), b"note"),
+            Err(FormatError::KeyMismatch)
+        );
+
+        let ready = ready_document(&keyed, &source).unwrap();
+        assert_eq!(ready.origin.key.as_deref(), Some("promises-2025-open"));
+        validate_complete_original(
+            &ready,
+            &source,
+            &keyed.coordinate,
+            &ready.origin,
+            keyed.chain.as_ref().unwrap(),
+            b"note",
+        )
+        .unwrap();
+
+        let mut mismatched_origin = ready.origin.clone();
+        mismatched_origin.key = None;
+        assert_eq!(
+            validate_complete_original(
+                &ready,
+                &source,
+                &keyed.coordinate,
+                &mismatched_origin,
+                keyed.chain.as_ref().unwrap(),
+                b"note",
+            ),
+            Err(FormatError::BindingMismatch)
+        );
+
+        // Legacy JSON without a "key" field deserializes cleanly with key: None.
+        let legacy_origin_json = serde_json::json!({
+            "kind": "agent_memory",
+            "source_key": source.as_str(),
+            "creation_label": "Claude",
+            "created_at": "2025-03-15T21:16:00Z",
+            "stream": format!("agent-memory-{}", source.component()),
+            "segment": "211600_1",
+        });
+        let legacy: Origin = serde_json::from_value(legacy_origin_json).unwrap();
+        assert_eq!(legacy.key, None);
+        validate_origin(&legacy, &source).unwrap();
     }
 }

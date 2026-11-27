@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 use solstone_core_format::agent_memory::{
     ChainPredecessor, Coordinate, MAX_METADATA_BYTES, MAX_NOTE_BYTES, OperationRecord, Origin,
     OriginKind, Readiness, ReadyDocument, SourceKey, digest, ready_document,
-    validate_creation_label, validate_operation_id, validate_ready_document, validate_record,
-    validate_record_header,
+    validate_creation_label, validate_memory_key, validate_operation_id, validate_ready_document,
+    validate_record, validate_record_header,
 };
 use solstone_core_journal_io::atomic::{
     DetailedAtomicOutcome, ExclusivePublication, FinalNameConfirmation, MetadataDurability,
@@ -64,6 +64,7 @@ pub(crate) struct AppendReceipt {
 /// connection. This private input cannot grant owner-read append authority.
 pub(crate) struct AuthenticatedMemorySource<'a> {
     pub verified_id: &'a str,
+    pub agent_identity: &'a str,
     pub creation_label: &'a str,
     pub source: &'a SourceKey,
 }
@@ -81,11 +82,12 @@ pub(crate) fn prepare_connection_memory(
     source: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
+    key: Option<&str>,
     now: jiff::Timestamp,
 ) -> Result<PreparedAppend, AppendError> {
     let mut store = JournalStore::new(journal);
     store.defer_success = true;
-    let result = append_with_source(&mut store, source, text, operation_id, now)?;
+    let result = append_with_source(&mut store, source, text, operation_id, key, now)?;
     let prepared = PreparedAppend {
         result,
         audit: store.admission.take(),
@@ -118,7 +120,10 @@ impl Error for AppendError {}
 
 impl AppendError {
     pub(crate) fn wire_reason(&self) -> &'static str {
-        if matches!(self, Self::Recorded(Reason::DifferentBytes)) {
+        if matches!(
+            self,
+            Self::Recorded(Reason::DifferentBytes | Reason::OperationConflict)
+        ) {
             "memory_operation_conflict"
         } else {
             "memory_save_unavailable"
@@ -180,11 +185,17 @@ struct AuditLocation {
 
 trait AppendStore {
     fn hold_source(&mut self, source_component: &str) -> Result<(), StoreFailure>;
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "audit admission records verified connection, resolved client identity, memory source, operation, optional slot key and payload facts"
+    )]
     fn admit(
         &mut self,
         verified_id: &str,
+        agent_identity: &str,
         source: &SourceKey,
         operation_id: &str,
+        key: Option<&str>,
         note_digest: &str,
         byte_count: usize,
         now: jiff::Timestamp,
@@ -276,6 +287,26 @@ pub(crate) fn append_connection_memory(
         source,
         text,
         operation_id,
+        None,
+        now,
+    )
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn append_connection_memory_with_key(
+    journal: &Path,
+    source: AuthenticatedMemorySource<'_>,
+    text: &str,
+    operation_id: &str,
+    key: Option<&str>,
+    now: jiff::Timestamp,
+) -> Result<AppendResult, AppendError> {
+    append_with_source(
+        &mut JournalStore::new(journal),
+        source,
+        text,
+        operation_id,
+        key,
         now,
     )
 }
@@ -288,16 +319,30 @@ fn append_with<S: AppendStore>(
     operation_id: &str,
     now: jiff::Timestamp,
 ) -> Result<AppendResult, AppendError> {
+    append_with_key(store, verified_id, text, operation_id, None, now)
+}
+
+#[cfg(all(test, not(feature = "full-tests")))]
+fn append_with_key<S: AppendStore>(
+    store: &mut S,
+    verified_id: &str,
+    text: &str,
+    operation_id: &str,
+    key: Option<&str>,
+    now: jiff::Timestamp,
+) -> Result<AppendResult, AppendError> {
     let source = SourceKey::from_verified_id(verified_id);
     append_with_source(
         store,
         AuthenticatedMemorySource {
             verified_id,
+            agent_identity: verified_id,
             creation_label: "authenticated connection",
             source: &source,
         },
         text,
         operation_id,
+        key,
         now,
     )
 }
@@ -307,6 +352,7 @@ fn append_with_source<S: AppendStore>(
     source_input: AuthenticatedMemorySource<'_>,
     text: &str,
     operation_id: &str,
+    key: Option<&str>,
     now: jiff::Timestamp,
 ) -> Result<AppendResult, AppendError> {
     let note = text.as_bytes();
@@ -317,6 +363,9 @@ fn append_with_source<S: AppendStore>(
     }
     validate_operation_id(operation_id)
         .map_err(|_| AppendError::Storage("invalid memory operation identifier"))?;
+    if let Some(key) = key {
+        validate_memory_key(key).map_err(|_| AppendError::Storage("invalid memory slot key"))?;
+    }
     validate_creation_label(source_input.creation_label)
         .map_err(|_| AppendError::Storage("invalid memory creation label"))?;
 
@@ -329,8 +378,10 @@ fn append_with_source<S: AppendStore>(
 
     let audit = match store.admit(
         source_input.verified_id,
+        source_input.agent_identity,
         source,
         operation_id,
+        key,
         &note_digest,
         note.len(),
         now,
@@ -368,7 +419,7 @@ fn append_with_source<S: AppendStore>(
                     );
                 }
             };
-            match validate_record(&record, source, operation_id, note) {
+            match validate_record(&record, source, operation_id, key, note) {
                 Ok(()) => {}
                 Err(
                     solstone_core_format::agent_memory::FormatError::DigestMismatch
@@ -379,6 +430,15 @@ fn append_with_source<S: AppendStore>(
                         &audit,
                         now,
                         Reason::DifferentBytes,
+                        operation_id,
+                    );
+                }
+                Err(solstone_core_format::agent_memory::FormatError::KeyMismatch) => {
+                    return terminal_error(
+                        store,
+                        &audit,
+                        now,
+                        Reason::OperationConflict,
                         operation_id,
                     );
                 }
@@ -412,6 +472,7 @@ fn append_with_source<S: AppendStore>(
                     origin_kind: OriginKind::AgentMemory,
                     creation_label: source_input.creation_label.to_owned(),
                     coordinate,
+                    key: key.map(str::to_owned),
                     phase: Readiness::Reserved,
                     chain: None,
                 },
@@ -569,7 +630,7 @@ fn append_with_source<S: AppendStore>(
             seq: advance.seq,
         });
         record.phase = Readiness::Chained;
-        if validate_record(&record, source, operation_id, note).is_err() {
+        if validate_record(&record, source, operation_id, key, note).is_err() {
             return terminal_error(store, &audit, now, Reason::RecordValidation, operation_id);
         }
         match save_record(store, &address, &record, false) {
@@ -684,6 +745,7 @@ fn origin_for(record: &OperationRecord, source: &SourceKey) -> Origin {
         created_at: record.created_at,
         stream: record.coordinate.stream.clone(),
         segment: record.coordinate.segment.clone(),
+        key: record.key.clone(),
     }
 }
 
@@ -928,23 +990,32 @@ impl AppendStore for JournalStore<'_> {
     fn admit(
         &mut self,
         verified_id: &str,
+        agent_identity: &str,
         source: &SourceKey,
         operation_id: &str,
+        key: Option<&str>,
         note_digest: &str,
         byte_count: usize,
         now: jiff::Timestamp,
     ) -> Result<AuditLocation, AdmissionFailure> {
         let mut arguments = Map::new();
         arguments.insert(
+            "source_key".into(),
+            Value::String(source.as_str().to_owned()),
+        );
+        arguments.insert(
             "operation_id".into(),
             Value::String(operation_id.to_owned()),
         );
+        if let Some(key) = key {
+            arguments.insert("key".into(), Value::String(key.to_owned()));
+        }
         arguments.insert("digest".into(), Value::String(note_digest.to_owned()));
         arguments.insert("byte_count".into(), Value::from(byte_count));
         arguments.insert("authority".into(), Value::String("own_memory".into()));
         let admission = Admission {
             connection: verified_id,
-            agent_identity: source.as_str(),
+            agent_identity,
             tool_name: ToolName::SaveMemory,
             arguments,
             permission: None,
@@ -1330,6 +1401,7 @@ pub fn append_connection_memory_test_hook(
         journal,
         AuthenticatedMemorySource {
             verified_id,
+            agent_identity: verified_id,
             creation_label: "authenticated connection",
             source: &source,
         },
@@ -1360,9 +1432,9 @@ mod tests {
     use solstone_core_mcp_audit::{Outcome, ResultShape};
 
     use super::{
-        AdmissionFailure, AppendResult, AppendStore, AuditLocation, AuthenticatedMemorySource,
-        FilePublication, OperationAddress, Publication, SegmentObservation, StoreFailure,
-        append_with, append_with_source,
+        AdmissionFailure, AppendError, AppendResult, AppendStore, AuditLocation,
+        AuthenticatedMemorySource, FilePublication, OperationAddress, Publication,
+        SegmentObservation, StoreFailure, append_with, append_with_key, append_with_source,
     };
 
     #[derive(Default)]
@@ -1371,7 +1443,7 @@ mod tests {
         files: HashMap<(String, String), Vec<u8>>,
         observations: HashMap<String, SegmentObservation>,
         events: Vec<String>,
-        admissions: Vec<(String, String, usize)>,
+        admissions: Vec<(String, String, Option<String>, String, usize)>,
         admission: Option<Publication>,
         record_publications: VecDeque<Publication>,
         file_publications: VecDeque<FilePublication>,
@@ -1411,15 +1483,22 @@ mod tests {
         fn admit(
             &mut self,
             verified_id: &str,
+            agent_identity: &str,
             _: &SourceKey,
             operation_id: &str,
+            key: Option<&str>,
             note_digest: &str,
             byte_count: usize,
             _: jiff::Timestamp,
         ) -> Result<AuditLocation, AdmissionFailure> {
             self.events.push("admission".into());
-            self.admissions
-                .push((verified_id.into(), operation_id.into(), byte_count));
+            self.admissions.push((
+                verified_id.into(),
+                agent_identity.into(),
+                key.map(str::to_owned),
+                operation_id.into(),
+                byte_count,
+            ));
             match self.admission.take().unwrap_or(Publication::Confirmed) {
                 Publication::Confirmed => {
                     assert_eq!(note_digest.len(), 64);
@@ -1755,11 +1834,13 @@ mod tests {
             &mut store,
             AuthenticatedMemorySource {
                 verified_id: "oauth:grant",
+                agent_identity: "https://client.example/cimd.json",
                 creation_label: "original connection",
                 source: &source,
             },
             "note",
             "op",
+            None,
             now(),
         )
         .unwrap();
@@ -1767,11 +1848,13 @@ mod tests {
             &mut store,
             AuthenticatedMemorySource {
                 verified_id: "oauth:grant",
+                agent_identity: "https://client.example/cimd.json",
                 creation_label: "renamed connection",
                 source: &source,
             },
             "note",
             "op",
+            None,
             now() + jiff::SignedDuration::from_hours(24),
         )
         .unwrap();
@@ -1780,6 +1863,78 @@ mod tests {
         };
         assert_eq!(first.origin.creation_label, "original connection");
         assert_eq!(replay.origin, first.origin);
+        assert_eq!(store.admissions[0].1, "https://client.example/cimd.json");
+    }
+
+    #[test]
+    fn keyed_operation_replays_matching_key_and_conflicts_on_different_key_or_invalid_key() {
+        for bad_key in ["", &"k".repeat(129), "a b", "a/b"] {
+            let mut store = MemoryStore::default();
+            assert!(
+                append_with_key(&mut store, "bearer:x", "note", "op", Some(bad_key), now())
+                    .is_err()
+            );
+            assert!(store.events.is_empty());
+        }
+
+        let mut store = MemoryStore::default();
+        let AppendResult::Stored(first) = append_with_key(
+            &mut store,
+            "bearer:x",
+            "v1 note",
+            "op-1",
+            Some("promises-2025-open"),
+            now(),
+        )
+        .unwrap() else {
+            panic!("expected stored keyed note");
+        };
+        assert_eq!(first.origin.key.as_deref(), Some("promises-2025-open"));
+        assert_eq!(store.admissions[0].2.as_deref(), Some("promises-2025-open"));
+
+        let AppendResult::Replayed(replayed) = append_with_key(
+            &mut store,
+            "bearer:x",
+            "v1 note",
+            "op-1",
+            Some("promises-2025-open"),
+            now() + jiff::SignedDuration::from_mins(5),
+        )
+        .unwrap() else {
+            panic!("expected replayed keyed note");
+        };
+        assert_eq!(replayed, first);
+
+        for mismatched_key in [None, Some("other-slot")] {
+            let error = append_with_key(
+                &mut store,
+                "bearer:x",
+                "v1 note",
+                "op-1",
+                mismatched_key,
+                now() + jiff::SignedDuration::from_mins(10),
+            )
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                AppendError::Recorded(Reason::OperationConflict)
+            ));
+            assert_eq!(error.wire_reason(), "memory_operation_conflict");
+        }
+
+        let AppendResult::Stored(second) = append_with_key(
+            &mut store,
+            "bearer:x",
+            "v2 note",
+            "op-2",
+            Some("promises-2025-open"),
+            now() + jiff::SignedDuration::from_mins(15),
+        )
+        .unwrap() else {
+            panic!("expected second keyed note");
+        };
+        assert_eq!(second.origin.key.as_deref(), Some("promises-2025-open"));
+        assert_ne!(second.coordinate, first.coordinate);
     }
 
     #[test]
@@ -1956,6 +2111,7 @@ mod full_tests {
     ) -> AuthenticatedMemorySource<'a> {
         AuthenticatedMemorySource {
             verified_id,
+            agent_identity: verified_id,
             creation_label: "authenticated connection",
             source,
         }
@@ -2043,6 +2199,7 @@ mod full_tests {
                 stream: format!("agent-memory-{}", source.component()),
                 segment: "120000_1".into(),
             },
+            key: None,
             phase: Readiness::Reserved,
             chain: None,
         };
@@ -2249,6 +2406,7 @@ mod full_tests {
                 stream: format!("agent-memory-{}", source.component()),
                 segment: "120000_1".into(),
             },
+            key: None,
             phase: Readiness::Reserved,
             chain: None,
         };
@@ -2259,6 +2417,7 @@ mod full_tests {
                 journal.path(),
                 AuthenticatedMemorySource {
                     verified_id: "bearer:corrupt-coordinate",
+                    agent_identity: "bearer:corrupt-coordinate",
                     creation_label: "authenticated connection",
                     source: &source,
                 },
@@ -2301,6 +2460,7 @@ mod full_tests {
                 journal.path(),
                 AuthenticatedMemorySource {
                     verified_id: "bearer:symlink",
+                    agent_identity: "bearer:symlink",
                     creation_label: "authenticated connection",
                     source: &source,
                 },
@@ -2323,6 +2483,7 @@ mod full_tests {
                 &root,
                 AuthenticatedMemorySource {
                     verified_id: "bearer:multi-process",
+                    agent_identity: "bearer:multi-process",
                     creation_label: "authenticated connection",
                     source: &source,
                 },
@@ -2390,6 +2551,7 @@ mod full_tests {
             origin_kind: OriginKind::AgentMemory,
             creation_label: "authenticated connection".into(),
             coordinate: coordinate.clone(),
+            key: None,
             phase: Readiness::Reserved,
             chain: None,
         };

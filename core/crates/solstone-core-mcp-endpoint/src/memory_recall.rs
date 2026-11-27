@@ -3,6 +3,7 @@
 
 //! Private recall over the caller's own validated memory originals.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -18,7 +19,7 @@ use solstone_core_format::agent_memory::{
 use solstone_core_indexer_query::{
     MemoryOriginalRow, OwnMemoryDateFilters, OwnMemoryOpenError, OwnMemoryQuery,
     OwnMemoryQueryMode, QueryBoundary, compile_own_memory_query, inspect_own_memory_index,
-    open_own_memory_connection, own_memory_candidates, read_own_memory_row,
+    open_own_memory_connection, own_memory_candidate_paths, read_own_memory_row,
 };
 use solstone_core_journal_io::journal_root::JournalRoot;
 use solstone_core_journal_io::readers::read_relative_file_bounded;
@@ -33,7 +34,7 @@ pub(crate) const RECALL_DEADLINE: Duration = Duration::from_secs(5);
 const DEFAULT_LIMIT: usize = 5;
 const MAX_LIMIT: usize = 20;
 const MAX_PAGE_BYTES: usize = 65_536;
-const BATCH_SIZE: usize = 1;
+const BATCH_SIZE: usize = 32;
 const MAX_COVERAGE_COORDINATES: usize = 10_000;
 const MAX_EXAMINED_ROWS: usize = 1_000;
 
@@ -44,6 +45,7 @@ pub(crate) struct RecallNote {
     pub bytes: Vec<u8>,
     pub origin: Origin,
     pub ready: ReadyDocument,
+    pub superseded: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,6 +61,8 @@ pub(crate) struct RecallPage {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct RecallArgs {
     pub query: Option<String>,
+    pub key: Option<String>,
+    pub include_superseded: bool,
     pub limit: Option<usize>,
     pub day: Option<String>,
     pub day_from: Option<String>,
@@ -72,6 +76,63 @@ enum Coverage {
     Pending,
     SourceUnavailable,
     Budget,
+}
+
+/// Live-set key and supersession index derived during `coverage_in_view`.
+/// Within a single `source_key`, the latest live note per logical `key`
+/// (highest `(chain.seq, day, path)`) is active; older live notes with the same
+/// `key` are superseded. Deleted notes are absent from this live set.
+#[derive(Default)]
+struct LiveNoteIndex {
+    by_path: BTreeMap<String, Option<String>>,
+    active_by_key: BTreeMap<String, (u64, String, String)>,
+}
+
+impl LiveNoteIndex {
+    fn record(&mut self, path: String, day: String, key: Option<String>, seq: u64) {
+        if let Some(ref key_name) = key {
+            let candidate = (seq, day, path.clone());
+            match self.active_by_key.get_mut(key_name) {
+                Some(current) if candidate > *current => *current = candidate,
+                None => {
+                    self.active_by_key.insert(key_name.clone(), candidate);
+                }
+                Some(_) => {}
+            }
+        }
+        self.by_path.insert(path, key);
+    }
+
+    fn is_superseded(&self, path: &str) -> bool {
+        let Some(Some(key)) = self.by_path.get(path) else {
+            return false;
+        };
+        self.active_by_key
+            .get(key)
+            .is_some_and(|(_, _, active_path)| active_path != path)
+    }
+
+    fn matches_filter(
+        &self,
+        path: &str,
+        key_filter: Option<&str>,
+        include_superseded: bool,
+    ) -> bool {
+        let Some(note_key) = self.by_path.get(path) else {
+            // A path absent from live_index may be a stale index row for a deleted or
+            // unreadable segment; let validate_candidate resolve it fail-closed.
+            return true;
+        };
+        if let Some(expected_key) = key_filter
+            && note_key.as_deref() != Some(expected_key)
+        {
+            return false;
+        }
+        if !include_superseded && self.is_superseded(path) {
+            return false;
+        }
+        true
+    }
 }
 
 struct Watchdog {
@@ -163,6 +224,8 @@ pub(crate) fn recall_until(
         if cursor.source_key != source_key.as_str()
             || cursor.credential_lineage != credential_lineage
             || cursor.query != normalized_query
+            || cursor.key != args.key
+            || cursor.include_superseded != args.include_superseded
         {
             return failure("memory_recall_cursor_invalid");
         }
@@ -219,9 +282,8 @@ pub(crate) fn recall_until(
         Err(OwnMemoryOpenError::Pending) => return failure("memory_index_pending"),
         Err(OwnMemoryOpenError::Unavailable) => return failure("memory_index_unavailable"),
     }
-    if let Some(reason) =
-        coverage_failure_reason(coverage_in_view(journal, &connection, source_key, deadline))
-    {
+    let (coverage, live_index) = coverage_in_view(journal, &connection, source_key, deadline);
+    if let Some(reason) = coverage_failure_reason(coverage) {
         return failure(reason);
     }
     if deadline_passed(deadline) {
@@ -243,14 +305,18 @@ pub(crate) fn recall_until(
     let mut page_bytes = 0usize;
     let mut anchor = cursor_anchor;
     let mut inclusive = cursor_inclusive;
-    let mut examined = 0;
+    let mut examined = 0usize;
+    let mut scanned = 0usize;
     let mut continuation = None;
     let mut continuation_mint_failed = false;
     let mut reason = None;
     let mut exhausted = false;
 
-    loop {
-        if deadline_passed(deadline) || examined >= MAX_EXAMINED_ROWS {
+    'batches: loop {
+        if deadline_passed(deadline)
+            || examined >= MAX_EXAMINED_ROWS
+            || scanned >= MAX_COVERAGE_COORDINATES
+        {
             reason = Some("memory_recall_budget_exhausted");
             exhausted = true;
             break;
@@ -261,7 +327,7 @@ pub(crate) fn recall_until(
             exhausted = true;
             break;
         }
-        let candidates = own_memory_candidates(
+        let candidates = own_memory_candidate_paths(
             &connection,
             &boundary,
             &query,
@@ -271,8 +337,8 @@ pub(crate) fn recall_until(
             inclusive,
             BATCH_SIZE,
         );
-        let row = match candidates {
-            Ok(mut candidates) => candidates.pop(),
+        let batch = match candidates {
+            Ok(batch) => batch,
             Err(error) if is_interrupt(&error) => {
                 reason = Some("memory_recall_budget_exhausted");
                 exhausted = true;
@@ -284,51 +350,69 @@ pub(crate) fn recall_until(
                 break;
             }
         };
-        let Some(row) = row else {
-            break;
-        };
-        let row_anchor = (row.day.clone(), row.path.clone());
-        if deadline_passed(deadline) {
-            reason = Some("memory_recall_budget_exhausted");
-            exhausted = true;
+        if batch.is_empty() {
             break;
         }
-        let candidate = validate_candidate(journal, source_key, &row, deadline);
-        if deadline_passed(deadline) {
-            if matches!(candidate, Candidate::Ready(_)) {
-                continuation = match mint_cursor(
-                    codec,
-                    connection_identity,
-                    credential_lineage,
-                    source_key,
-                    normalized_query.clone(),
-                    &query,
-                    reference_date,
-                    row_anchor,
-                    true,
-                ) {
-                    Ok(token) => Some(token),
-                    Err(_) => {
-                        continuation_mint_failed = true;
-                        None
-                    }
-                };
+        let end_of_candidates = batch.len() < BATCH_SIZE;
+        for (row_day, row_path) in batch {
+            if deadline_passed(deadline)
+                || examined >= MAX_EXAMINED_ROWS
+                || scanned >= MAX_COVERAGE_COORDINATES
+            {
+                reason = Some("memory_recall_budget_exhausted");
+                exhausted = true;
+                break 'batches;
             }
-            reason = Some("memory_recall_budget_exhausted");
-            exhausted = true;
-            break;
-        }
-        match candidate {
-            Candidate::Ready(note) => {
-                if notes.len() >= limit
-                    || page_bytes.saturating_add(note.bytes.len()) > MAX_PAGE_BYTES
-                {
+            let row_anchor = (row_day, row_path);
+            if !live_index.matches_filter(
+                &row_anchor.1,
+                args.key.as_deref(),
+                args.include_superseded,
+            ) {
+                scanned += 1;
+                anchor = Some(row_anchor);
+                inclusive = false;
+                continue;
+            }
+            if let Err(error) = connection.busy_timeout(remaining(deadline)) {
+                let _ = error;
+                reason = Some("memory_recall_budget_exhausted");
+                exhausted = true;
+                break 'batches;
+            }
+            let row = match read_own_memory_row(&connection, source_key.as_str(), &row_anchor.1) {
+                Ok(Some(row)) => row,
+                Ok(None) => {
+                    reason = Some("memory_index_unavailable");
+                    break 'batches;
+                }
+                Err(error) if is_interrupt(&error) => {
+                    reason = Some("memory_recall_budget_exhausted");
+                    exhausted = true;
+                    break 'batches;
+                }
+                Err(error) => {
+                    solstone_core_indexer_query::report_memory_read_damage(journal, &error);
+                    reason = Some("memory_index_unavailable");
+                    break 'batches;
+                }
+            };
+            if deadline_passed(deadline) {
+                reason = Some("memory_recall_budget_exhausted");
+                exhausted = true;
+                break 'batches;
+            }
+            let candidate = validate_candidate(journal, source_key, &row, deadline);
+            if deadline_passed(deadline) {
+                if matches!(candidate, Candidate::Ready(_)) {
                     continuation = match mint_cursor(
                         codec,
                         connection_identity,
                         credential_lineage,
                         source_key,
                         normalized_query.clone(),
+                        args.key.clone(),
+                        args.include_superseded,
                         &query,
                         reference_date,
                         row_anchor,
@@ -340,29 +424,77 @@ pub(crate) fn recall_until(
                             None
                         }
                     };
-                    break;
                 }
-                page_bytes += note.bytes.len();
-                notes.push(*note);
-            }
-            Candidate::Deleted => {}
-            Candidate::Pending => {
-                reason = Some("memory_index_pending");
-                break;
-            }
-            Candidate::Incomplete => {
-                reason = Some("memory_source_unavailable");
-                break;
-            }
-            Candidate::Budget => {
                 reason = Some("memory_recall_budget_exhausted");
                 exhausted = true;
-                break;
+                break 'batches;
             }
+            match candidate {
+                Candidate::Ready(mut note) => {
+                    let superseded = live_index.is_superseded(&note.path);
+                    if args
+                        .key
+                        .as_deref()
+                        .is_some_and(|expected| note.origin.key.as_deref() != Some(expected))
+                        || (!args.include_superseded && superseded)
+                    {
+                        scanned += 1;
+                        examined += 1;
+                        anchor = Some(row_anchor);
+                        inclusive = false;
+                        continue;
+                    }
+                    note.superseded = superseded;
+                    if notes.len() >= limit
+                        || page_bytes.saturating_add(note.bytes.len()) > MAX_PAGE_BYTES
+                    {
+                        continuation = match mint_cursor(
+                            codec,
+                            connection_identity,
+                            credential_lineage,
+                            source_key,
+                            normalized_query.clone(),
+                            args.key.clone(),
+                            args.include_superseded,
+                            &query,
+                            reference_date,
+                            row_anchor,
+                            true,
+                        ) {
+                            Ok(token) => Some(token),
+                            Err(_) => {
+                                continuation_mint_failed = true;
+                                None
+                            }
+                        };
+                        break 'batches;
+                    }
+                    page_bytes += note.bytes.len();
+                    notes.push(*note);
+                }
+                Candidate::Deleted => {}
+                Candidate::Pending => {
+                    reason = Some("memory_index_pending");
+                    break 'batches;
+                }
+                Candidate::Incomplete => {
+                    reason = Some("memory_source_unavailable");
+                    break 'batches;
+                }
+                Candidate::Budget => {
+                    reason = Some("memory_recall_budget_exhausted");
+                    exhausted = true;
+                    break 'batches;
+                }
+            }
+            scanned += 1;
+            examined += 1;
+            anchor = Some(row_anchor);
+            inclusive = false;
         }
-        examined += 1;
-        anchor = Some(row_anchor);
-        inclusive = false;
+        if end_of_candidates {
+            break;
+        }
     }
     drop(watchdog);
     if exhausted
@@ -375,6 +507,8 @@ pub(crate) fn recall_until(
             credential_lineage,
             source_key,
             normalized_query,
+            args.key,
+            args.include_superseded,
             &query,
             reference_date,
             anchor,
@@ -436,7 +570,7 @@ fn is_interrupt(error: &rusqlite::Error) -> bool {
 
 #[allow(
     clippy::too_many_arguments,
-    reason = "one token binds identity, frozen query and continuation coordinate"
+    reason = "one token binds identity, frozen query, slot filter and continuation coordinate"
 )]
 fn mint_cursor(
     codec: &ReferenceCodec,
@@ -444,6 +578,8 @@ fn mint_cursor(
     credential_lineage: &str,
     source_key: &SourceKey,
     query: Option<String>,
+    key: Option<String>,
+    include_superseded: bool,
     compiled: &OwnMemoryQuery,
     reference_date: Date,
     anchor: (String, String),
@@ -456,6 +592,8 @@ fn mint_cursor(
             source_key: source_key.as_str().to_owned(),
             credential_lineage: credential_lineage.to_owned(),
             query,
+            key,
+            include_superseded,
             reference_date,
             compiled_mode: compiled.mode.clone(),
             effective_date: compiled.predicate.effective_date.clone(),
@@ -518,6 +656,7 @@ fn validate_candidate(
                 bytes,
                 origin,
                 ready,
+                superseded: false,
             }))
         }
     }
@@ -557,6 +696,19 @@ fn coverage_in_view(
     connection: &Connection,
     source_key: &SourceKey,
     deadline: Instant,
+) -> (Coverage, LiveNoteIndex) {
+    let mut live_index = LiveNoteIndex::default();
+    let coverage =
+        collect_coverage_in_view(journal, connection, source_key, deadline, &mut live_index);
+    (coverage, live_index)
+}
+
+fn collect_coverage_in_view(
+    journal: &Path,
+    connection: &Connection,
+    source_key: &SourceKey,
+    deadline: Instant,
+    live_index: &mut LiveNoteIndex,
 ) -> Coverage {
     if deadline_passed(deadline) {
         return Coverage::Budget;
@@ -809,6 +961,7 @@ fn coverage_in_view(
                 if bytes != row.bytes || !row_matches(&row, &coordinate, &origin, &ready) {
                     return Coverage::SourceUnavailable;
                 }
+                live_index.record(path, coordinate.day.clone(), origin.key, ready.chain.seq);
             }
             OriginalRead::Corrupt | OriginalRead::Unavailable { .. } => {
                 return Coverage::SourceUnavailable;
@@ -927,6 +1080,8 @@ mod tests {
                         source_key: source_key.as_str().to_owned(),
                         credential_lineage: credential_lineage.to_owned(),
                         query: query.as_deref().map(normalize_query),
+                        key: None,
+                        include_superseded: false,
                         reference_date: jiff::civil::date(2026, 9, 14),
                         compiled_mode: compile_own_memory_query(
                             args.query.as_deref(),
@@ -1114,6 +1269,7 @@ mod tests {
                 created_at,
                 stream: stream.clone(),
                 segment: coordinate.segment.clone(),
+                key: None,
             };
             let ready = ReadyDocument {
                 source_key: source.clone(),
@@ -1168,6 +1324,7 @@ mod tests {
                 origin_kind: OriginKind::AgentMemory,
                 creation_label: origin.creation_label.clone(),
                 coordinate: coordinate.clone(),
+                key: None,
                 phase: Readiness::Reserved,
                 chain: None,
             };
@@ -1232,7 +1389,8 @@ mod tests {
                 &actual,
                 &source,
                 Instant::now() + Duration::from_secs(5),
-            ),
+            )
+            .0,
             Coverage::Complete
         );
     }
@@ -1367,6 +1525,7 @@ mod tests {
             &journal,
             AuthenticatedMemorySource {
                 verified_id: "light-source",
+                agent_identity: "light-source",
                 creation_label: "light fixture",
                 source: &source,
             },
@@ -1434,6 +1593,7 @@ mod tests {
             &journal,
             AuthenticatedMemorySource {
                 verified_id: "scan-source",
+                agent_identity: "scan-source",
                 creation_label: "scan fixture",
                 source: &source,
             },
@@ -1625,6 +1785,7 @@ mod tests {
                 journal.path(),
                 AuthenticatedMemorySource {
                     verified_id: "measurement-source",
+                    agent_identity: "measurement-source",
                     creation_label: "measurement label",
                     source: &source,
                 },
@@ -1653,6 +1814,7 @@ mod tests {
                 journal.path(),
                 AuthenticatedMemorySource {
                     verified_id: "other-measurement-source",
+                    agent_identity: "other-measurement-source",
                     creation_label: "other source",
                     source: &other_source,
                 },
@@ -1681,6 +1843,7 @@ mod tests {
                 origin_kind: OriginKind::AgentMemory,
                 creation_label: "measurement label".into(),
                 coordinate,
+                key: None,
                 phase: Readiness::Reserved,
                 chain: None,
             };
@@ -1763,5 +1926,259 @@ mod tests {
         .collect::<Vec<_>>();
         assert!(plans[0].contains("memory_originals_source_day_path"));
         assert!(plans[1].contains("VIRTUAL TABLE INDEX"));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn keyed_supersede_defaults_to_active_supports_history_filter_cursor_and_owner_delete() {
+        use crate::memory::{
+            AppendResult, AuthenticatedMemorySource, append_connection_memory_with_key,
+        };
+        use solstone_core_indexer_store::scan::scan_journal;
+
+        let outer = tempfile::Builder::new()
+            .prefix("memory-keyed-supersede-")
+            .tempdir_in(test_scratch_root())
+            .unwrap();
+        let journal = outer.path().join("journal");
+        fs::create_dir(&journal).unwrap();
+        let source = SourceKey::from_verified_id("keyed-source");
+        let auth = || AuthenticatedMemorySource {
+            verified_id: "keyed-source",
+            agent_identity: "https://client.example/cimd.json",
+            creation_label: "keyed fixture",
+            source: &source,
+        };
+        let day1 = "2026-09-01T10:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        let day2 = "2026-09-02T10:00:00Z".parse::<jiff::Timestamp>().unwrap();
+
+        let AppendResult::Stored(unkeyed) = append_connection_memory_with_key(
+            &journal,
+            auth(),
+            "legacy unkeyed standing note",
+            "op-unkeyed",
+            None,
+            day1,
+        )
+        .unwrap() else {
+            panic!("store unkeyed");
+        };
+        let AppendResult::Stored(v1) = append_connection_memory_with_key(
+            &journal,
+            auth(),
+            "promises v1 kemp open alpha",
+            "op-v1",
+            Some("promises-2025-open"),
+            day1 + jiff::SignedDuration::from_secs(10),
+        )
+        .unwrap() else {
+            panic!("store v1");
+        };
+        let AppendResult::Stored(v2) = append_connection_memory_with_key(
+            &journal,
+            auth(),
+            "promises v2 beta only",
+            "op-v2",
+            Some("promises-2025-open"),
+            day2,
+        )
+        .unwrap() else {
+            panic!("store v2");
+        };
+        let AppendResult::Stored(other_key) = append_connection_memory_with_key(
+            &journal,
+            auth(),
+            "separate slot note gamma",
+            "op-other",
+            Some("other-slot"),
+            day2 + jiff::SignedDuration::from_secs(10),
+        )
+        .unwrap() else {
+            panic!("store other key");
+        };
+        scan_journal(&journal, true).unwrap();
+
+        let codec = ReferenceCodec::new().unwrap();
+        let run = |args: RecallArgs| {
+            recall(
+                &journal,
+                &codec,
+                "keyed-connection",
+                "keyed-source",
+                "keyed-credential",
+                args,
+                jiff::civil::date(2026, 9, 2),
+            )
+        };
+
+        // Default recall returns only active notes (v2, other_key, unkeyed) — v1 is omitted.
+        let active = run(RecallArgs::default());
+        assert!(active.complete, "{:?}", active.reason);
+        assert_eq!(active.notes.len(), 3);
+        let active_bodies: Vec<&str> = active
+            .notes
+            .iter()
+            .map(|n| std::str::from_utf8(&n.bytes).unwrap())
+            .collect();
+        assert_eq!(
+            active_bodies,
+            vec![
+                "separate slot note gamma",
+                "promises v2 beta only",
+                "legacy unkeyed standing note",
+            ]
+        );
+        assert!(active.notes.iter().all(|n| !n.superseded));
+
+        // Key filter returns only the active note for that slot, with complete: true and no continuation.
+        let by_key = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            limit: Some(1),
+            ..RecallArgs::default()
+        });
+        assert!(by_key.complete, "{:?}", by_key.reason);
+        assert!(by_key.continuation.is_none());
+        assert_eq!(by_key.notes.len(), 1);
+        assert_eq!(by_key.notes[0].bytes, b"promises v2 beta only");
+        assert_eq!(
+            by_key.notes[0].origin.key.as_deref(),
+            Some("promises-2025-open")
+        );
+        assert!(!by_key.notes[0].superseded);
+
+        // include_superseded returns v2 (superseded=false) then v1 (superseded=true).
+        let history = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            include_superseded: true,
+            ..RecallArgs::default()
+        });
+        assert!(history.complete, "{:?}", history.reason);
+        assert_eq!(history.notes.len(), 2);
+        assert_eq!(history.notes[0].bytes, b"promises v2 beta only");
+        assert!(!history.notes[0].superseded);
+        assert_eq!(history.notes[1].bytes, b"promises v1 kemp open alpha");
+        assert!(history.notes[1].superseded);
+
+        // FTS query for a term removed in v2 returns empty by default, and finds v1 with include_superseded.
+        let removed_term = run(RecallArgs {
+            query: Some("kemp".into()),
+            ..RecallArgs::default()
+        });
+        assert!(removed_term.complete);
+        assert!(removed_term.notes.is_empty());
+
+        let removed_term_history = run(RecallArgs {
+            query: Some("kemp".into()),
+            include_superseded: true,
+            ..RecallArgs::default()
+        });
+        assert!(removed_term_history.complete);
+        assert_eq!(removed_term_history.notes.len(), 1);
+        assert!(removed_term_history.notes[0].superseded);
+
+        // Cross-day supersession: querying day1 still treats v1 as superseded by day2's v2.
+        let day1_only = run(RecallArgs {
+            day: Some("20260901".into()),
+            ..RecallArgs::default()
+        });
+        assert!(day1_only.complete);
+        assert_eq!(day1_only.notes.len(), 1);
+        assert_eq!(day1_only.notes[0].bytes, b"legacy unkeyed standing note");
+        assert_eq!(day1_only.notes[0].origin.segment, unkeyed.origin.segment);
+
+        // Cursor binds key and include_superseded.
+        let paged = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            include_superseded: true,
+            limit: Some(1),
+            ..RecallArgs::default()
+        });
+        assert_eq!(paged.notes.len(), 1);
+        let cursor = paged.continuation.clone().expect("second page expected");
+        let changed_flag = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            include_superseded: false,
+            limit: Some(1),
+            continuation: Some(cursor.clone()),
+            ..RecallArgs::default()
+        });
+        assert_eq!(changed_flag.reason, Some("memory_recall_cursor_invalid"));
+        let changed_key = run(RecallArgs {
+            key: Some("other-slot".into()),
+            include_superseded: true,
+            limit: Some(1),
+            continuation: Some(cursor.clone()),
+            ..RecallArgs::default()
+        });
+        assert_eq!(changed_key.reason, Some("memory_recall_cursor_invalid"));
+        let page2 = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            include_superseded: true,
+            limit: Some(1),
+            continuation: Some(cursor),
+            ..RecallArgs::default()
+        });
+        assert!(page2.complete);
+        assert_eq!(page2.notes.len(), 1);
+        assert_eq!(page2.notes[0].bytes, b"promises v1 kemp open alpha");
+        assert!(page2.notes[0].superseded);
+
+        // Owner deletes v2: leaves zero ghost state; live v1 becomes the active note for the slot.
+        let target_v2 = solstone_core_retention::receipt::Target {
+            day: v2.coordinate.day.clone(),
+            stream: v2.coordinate.stream.clone(),
+            dir: v2.coordinate.segment.clone(),
+        };
+        let removed = solstone_core_retention::door::remove_segments(
+            &journal,
+            &[target_v2],
+            &solstone_core_time::utc_rfc3339(day2 + jiff::SignedDuration::from_mins(1)),
+            solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
+            "journal-owner",
+        );
+        assert!(removed.removed_paths().next().is_some());
+        let after_delete_v2 = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            ..RecallArgs::default()
+        });
+        assert!(after_delete_v2.complete, "{:?}", after_delete_v2.reason);
+        assert_eq!(after_delete_v2.notes.len(), 1);
+        assert_eq!(
+            after_delete_v2.notes[0].bytes,
+            b"promises v1 kemp open alpha"
+        );
+        assert!(!after_delete_v2.notes[0].superseded);
+
+        // Owner deletes v1 too: slot is now cleanly empty; other_slot remains unaffected.
+        let target_v1 = solstone_core_retention::receipt::Target {
+            day: v1.coordinate.day.clone(),
+            stream: v1.coordinate.stream.clone(),
+            dir: v1.coordinate.segment.clone(),
+        };
+        let removed_v1 = solstone_core_retention::door::remove_segments(
+            &journal,
+            &[target_v1],
+            &solstone_core_time::utc_rfc3339(day2 + jiff::SignedDuration::from_mins(2)),
+            solstone_core_retention::tombstone::RemovalReason::OwnerSegmentDelete,
+            "journal-owner",
+        );
+        assert!(removed_v1.removed_paths().next().is_some());
+        let after_delete_both = run(RecallArgs {
+            key: Some("promises-2025-open".into()),
+            ..RecallArgs::default()
+        });
+        assert!(after_delete_both.complete);
+        assert!(after_delete_both.notes.is_empty());
+
+        let other_remains = run(RecallArgs {
+            key: Some("other-slot".into()),
+            ..RecallArgs::default()
+        });
+        assert!(other_remains.complete);
+        assert_eq!(other_remains.notes.len(), 1);
+        assert_eq!(
+            other_remains.notes[0].origin.segment,
+            other_key.origin.segment
+        );
     }
 }

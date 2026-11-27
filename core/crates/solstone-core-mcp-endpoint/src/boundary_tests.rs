@@ -301,6 +301,7 @@ fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() 
         journal.path(),
         AuthenticatedMemorySource {
             verified_id: "bearer:other-memory-writer",
+            agent_identity: "bearer:other-memory-writer",
             creation_label: "other writer",
             source: &source,
         },
@@ -527,6 +528,7 @@ fn kinds_keep_old_grants_strict_across_segment_search_and_fetch() {
         root,
         AuthenticatedMemorySource {
             verified_id: "bearer:fixture-other-agent",
+            agent_identity: "bearer:fixture-other-agent",
             creation_label: "fixture other agent",
             source: &source,
         },
@@ -13207,6 +13209,7 @@ fn search_derived_flags_across_record_types() {
         journal.path(),
         AuthenticatedMemorySource {
             verified_id: "bearer:writer",
+            agent_identity: "bearer:writer",
             creation_label: "writer",
             source: &source,
         },
@@ -20452,6 +20455,7 @@ fn get_week_note_and_photo_summaries_carry_source_and_note_first_line_titles() {
         root,
         AuthenticatedMemorySource {
             verified_id: "bearer:memory-writer",
+            agent_identity: "bearer:memory-writer",
             creation_label: "memory writer",
             source: &mem_source,
         },

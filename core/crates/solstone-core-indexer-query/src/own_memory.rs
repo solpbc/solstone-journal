@@ -243,7 +243,53 @@ pub fn own_memory_candidates(
         .collect()
 }
 
+/// Fetch ordered `(day, path)` coordinates without reading cached note blobs,
+/// so the caller can skip superseded or non-matching keys cheaply.
+pub fn own_memory_candidate_paths(
+    connection: &Connection,
+    boundary: &QueryBoundary,
+    query: &OwnMemoryQuery,
+    anchor: Option<(&str, &str)>,
+    inclusive_anchor: bool,
+    limit: usize,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    let Some((sql, values)) = own_memory_candidate_select_statement(
+        "mo.day, mo.path",
+        boundary,
+        query,
+        anchor,
+        inclusive_anchor,
+        limit,
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection.prepare(&sql)?;
+    statement
+        .query_map(params_from_iter(values.iter()), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
+        .collect()
+}
+
 pub fn own_memory_candidate_statement(
+    boundary: &QueryBoundary,
+    query: &OwnMemoryQuery,
+    anchor: Option<(&str, &str)>,
+    inclusive_anchor: bool,
+    limit: usize,
+) -> Option<(String, Vec<Value>)> {
+    own_memory_candidate_select_statement(
+        "mo.path, mo.day, mo.stream, mo.segment, mo.source_key, mo.bytes, mo.origin_json, mo.digest, mo.byte_count, mo.created_at, mo.creation_label, mo.chain_json",
+        boundary,
+        query,
+        anchor,
+        inclusive_anchor,
+        limit,
+    )
+}
+
+fn own_memory_candidate_select_statement(
+    columns: &str,
     boundary: &QueryBoundary,
     query: &OwnMemoryQuery,
     anchor: Option<(&str, &str)>,
@@ -264,7 +310,8 @@ pub fn own_memory_candidate_statement(
     if matches!(&query.mode, OwnMemoryQueryMode::Terms(_)) {
         sql.push_str("DISTINCT ");
     }
-    sql.push_str("mo.path, mo.day, mo.stream, mo.segment, mo.source_key, mo.bytes, mo.origin_json, mo.digest, mo.byte_count, mo.created_at, mo.creation_label, mo.chain_json FROM memory_originals mo ");
+    sql.push_str(columns);
+    sql.push_str(" FROM memory_originals mo ");
     if matches!(&query.mode, OwnMemoryQueryMode::Terms(_)) {
         sql.push_str("JOIN (SELECT DISTINCT path, stream FROM chunks WHERE chunks MATCH ?) matched ON matched.path=mo.path AND matched.stream=mo.stream ");
     }
@@ -405,6 +452,7 @@ mod tests {
                 prev_segment: None,
                 seq: 1,
             }),
+            key: None,
         };
         let ready = ready_document(&record, &source).unwrap();
         validate_complete_original(

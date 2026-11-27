@@ -1151,6 +1151,7 @@ mod tests {
                     created_at,
                     stream: coordinate.stream.clone(),
                     segment: coordinate.segment.clone(),
+                    key: None,
                 },
                 coordinate,
             }
@@ -1215,6 +1216,7 @@ mod tests {
                 created_at: "2026-01-02T03:04:05Z".parse::<jiff::Timestamp>().unwrap(),
                 stream: coordinate.stream.clone(),
                 segment: coordinate.segment.clone(),
+                key: None,
             },
             coordinate,
         };

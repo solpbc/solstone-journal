@@ -5769,6 +5769,7 @@ mod tests {
                 created_at: "2026-01-01T01:02:03Z".parse::<jiff::Timestamp>().unwrap(),
                 stream: coordinate.stream.clone(),
                 segment: coordinate.segment.clone(),
+                key: None,
             },
             coordinate,
         };

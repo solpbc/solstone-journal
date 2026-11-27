@@ -161,7 +161,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::SaveMemory,
         wire_name: "save_memory",
         title: "save to the journal",
-        description: "save a note in the owner's journal when they ask you to remember something. content is exact UTF-8, up to 32,768 bytes. retry with the same operation_id and content if the outcome is uncertain.",
+        description: "save a note in the owner's journal when they ask you to remember something. content is exact UTF-8, up to 32,768 bytes. pass a reusable key (such as open-promises) for a living note or list: saving a newer self-contained note with the same key supersedes earlier versions in recall_memory while keeping the journal's history intact. retry with the same operation_id, content, and key if the outcome is uncertain.",
         input_schema: save_memory_input_schema,
         requires: NOTHING,
         audit_name: solstone_core_mcp_audit::ToolName::SaveMemory,
@@ -170,7 +170,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::RecallMemory,
         wire_name: "recall_memory",
         title: "recall notes this agent saved",
-        description: "recall this connection's original agent memories from the index. omit query to browse; pages contain whole notes, up to 20 notes and 65,536 content bytes. an incomplete result does not prove there are no memories.",
+        description: "recall this connection's original agent memories from the owner's journal. by default, returns only active notes: when several notes share a key, only the latest live version is returned. pass key to read one key's note, or include_superseded: true to include earlier versions (with superseded: true on earlier versions and false on active notes). omit query to browse; pages contain whole notes, up to 20 notes and 65,536 content bytes. an incomplete result does not prove there are no memories.",
         input_schema: recall_memory_input_schema,
         requires: NOTHING,
         audit_name: solstone_core_mcp_audit::ToolName::RecallMemory,
@@ -788,7 +788,7 @@ fn format_rule(key: &str) -> Option<&'static str> {
         "day" | "day_from" | "day_to" | "from" | "to" => Some("is YYYYMMDD or YYYY-MM-DD"),
         "week" => Some("is YYYYMMDD or YYYY-MM-DD"),
         "time_from" | "time_to" => Some("is HH:MM"),
-        "operation_id" => Some("uses only letters, digits, '.', '_', ':' or '-'"),
+        "operation_id" | "key" => Some("uses only letters, digits, '.', '_', ':' or '-'"),
         _ => None,
     }
 }
@@ -890,7 +890,8 @@ fn save_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
         "required": ["content", "operation_id"],
         "properties": {
             "content": {"type": "string", "minLength": 1, "maxLength": 32768, "description": "exact UTF-8 content, limited to 32,768 decoded bytes"},
-            "operation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "an id you choose for this save, made of letters, digits, '.', '_', ':' or '-'; reuse it only to retry the same note. the id is unique across this agent's whole history, not only the current pairing."}
+            "operation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "an id you choose for this save, made of letters, digits, '.', '_', ':' or '-'; reuse it only to retry the same note. the id is unique across this agent's whole history, not only the current pairing."},
+            "key": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "optional reusable key for a living note or list, made of letters, digits, '.', '_', ':' or '-'. saving a newer note with the same key supersedes earlier versions in recall_memory; write the full current state rather than a delta."}
         }
     })
 }
@@ -900,6 +901,8 @@ fn recall_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
         "type": "object", "additionalProperties": false,
         "properties": {
             "query": {"type": "string", "maxLength": MAX_QUERY_BYTES},
+            "key": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "optional key to narrow recall to notes saved with that key"},
+            "include_superseded": {"type": "boolean", "default": false, "description": "when true, include earlier versions superseded by a newer note with the same key and include a superseded boolean on each note (true on earlier versions, false on active notes)"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
             "day": {"type": "string", "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION},
             "day_from": {"type": "string", "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION},

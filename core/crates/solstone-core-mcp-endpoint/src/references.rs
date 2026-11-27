@@ -154,6 +154,10 @@ pub(crate) struct MemoryRecallCursor {
     pub source_key: String,
     pub credential_lineage: String,
     pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default)]
+    pub include_superseded: bool,
     pub reference_date: jiff::civil::Date,
     pub compiled_mode: solstone_core_indexer_query::OwnMemoryQueryMode,
     pub effective_date: solstone_core_indexer_query::EffectiveDateConstraint,

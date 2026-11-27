@@ -911,12 +911,12 @@ pub fn queue_upgrade_if_needed(journal: &Path) -> Result<bool, StoreError> {
 /// leaves its paths to the queued drain.
 pub const REFRESH_NOW_WAIT: Duration = Duration::from_secs(3);
 
-/// Bring search up to date for `paths` now, after an owner's trash change has
-/// queued them and released its own holds: take the writer lease for at most
-/// `wait`, then reconcile each path as the drain would, with this writer's
-/// hide decisions. The hints stay queued, so a path this can't reach (the
-/// lease busy, an error) is still done by the drain, and one it did is a
-/// no-op there. Returns how many paths were reconciled.
+/// Bring search up to date for `paths` now, after an owner's trash change or
+/// saved agent memory has queued them and released its own holds: take the
+/// writer lease for at most `wait`, then reconcile each path as the drain
+/// would, with this writer's hide decisions. The hints stay queued, so a path
+/// this can't reach (the lease busy, an error) is still done by the drain, and
+/// one it did is a no-op there. Returns how many paths were reconciled.
 ///
 /// # Errors
 ///

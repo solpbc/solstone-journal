@@ -12,7 +12,7 @@ use jiff::Timestamp;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_format::agent_memory::{
-    Coordinate, MAX_NOTE_BYTES, SourceKey, digest, validate_operation_id,
+    Coordinate, MAX_NOTE_BYTES, SourceKey, digest, validate_memory_key, validate_operation_id,
 };
 use solstone_core_indexer_query::{
     OwnMemoryOpenError, memory_row_matches_original, open_own_memory_index, read_own_memory_row,
@@ -33,6 +33,11 @@ use crate::server::MemoryAuthority;
 
 const MAX_PREPARED_BYTES: usize = 512 * 1024;
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+/// Bounded wait for synchronous single-note index refresh after a committed save.
+/// Keeps routine local saves immediate (`own_recall: "ready"`) while falling back
+/// cleanly to `"pending"` when the index writer lease is busy.
+const MEMORY_REFRESH_WAIT: Duration = Duration::from_millis(1_500);
+const MEMORY_READINESS_BUSY_TIMEOUT: Duration = Duration::from_millis(250);
 static REFERENCES: OnceLock<Option<ReferenceCodec>> = OnceLock::new();
 
 fn bounded_json(value: &impl serde::Serialize, maximum: usize) -> Result<Vec<u8>, ()> {
@@ -66,13 +71,13 @@ fn response_bytes(
 fn agent_message(reason: &str) -> &'static str {
     match reason {
         "memory_operation_conflict" => {
-            "this operation_id was already used with different content; use a new operation_id to save different content, or send the original content to retry that save"
+            "this operation_id was already used with different content or key; use a new operation_id to save a different note, or send the original content and key to retry that save"
         }
         "memory_save_unavailable" => {
-            "the note could not be saved; try again with the same operation_id and content"
+            "the note could not be saved; try again with the same operation_id, content, and key if provided"
         }
         "memory_response_unavailable" => {
-            "the result could not be sent back; try again, and if this was save_memory, keep the same operation_id and content"
+            "the result could not be sent back; try again, and if this was save_memory, keep the same operation_id, content, and key if provided"
         }
         "memory_audit_unavailable" => {
             "the call could not be recorded in the owner's activity log, so nothing was returned; try again"
@@ -124,20 +129,31 @@ fn invalid_params(request: &JsonRpcRequest, tool: ToolName) -> HttpResponse {
     )
 }
 
-fn save_args(arguments: Option<&Value>) -> Option<(&str, &str)> {
+fn save_args(arguments: Option<&Value>) -> Option<(&str, &str, Option<&str>)> {
     let arguments = arguments?.as_object()?;
-    if arguments.len() != 2 {
+    if arguments
+        .keys()
+        .any(|key| !matches!(key.as_str(), "content" | "operation_id" | "key"))
+    {
         return None;
     }
     let content = arguments.get("content")?.as_str()?;
     let operation = arguments.get("operation_id")?.as_str()?;
+    let key = match arguments.get("key") {
+        None => None,
+        Some(value) => {
+            let value = value.as_str()?;
+            validate_memory_key(value).ok()?;
+            Some(value)
+        }
+    };
     if content.is_empty()
         || content.len() > MAX_NOTE_BYTES
         || validate_operation_id(operation).is_err()
     {
         return None;
     }
-    Some((content, operation))
+    Some((content, operation, key))
 }
 
 fn recall_args(arguments: Option<&Value>) -> Option<RecallArgs> {
@@ -149,7 +165,14 @@ fn recall_args(arguments: Option<&Value>) -> Option<RecallArgs> {
     if arguments.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "query" | "limit" | "day" | "day_from" | "day_to" | "continuation"
+            "query"
+                | "key"
+                | "include_superseded"
+                | "limit"
+                | "day"
+                | "day_from"
+                | "day_to"
+                | "continuation"
         )
     }) {
         return None;
@@ -160,6 +183,18 @@ fn recall_args(arguments: Option<&Value>) -> Option<RecallArgs> {
             Some(Value::String(value)) if value.len() <= maximum => Some(Some(value.clone())),
             _ => None,
         }
+    };
+    let key = match arguments.get("key") {
+        None => None,
+        Some(value) => {
+            let value = value.as_str()?;
+            validate_memory_key(value).ok()?;
+            Some(value.to_owned())
+        }
+    };
+    let include_superseded = match arguments.get("include_superseded") {
+        None => false,
+        Some(value) => value.as_bool()?,
     };
     let limit = match arguments.get("limit") {
         None => None,
@@ -177,6 +212,8 @@ fn recall_args(arguments: Option<&Value>) -> Option<RecallArgs> {
     }
     Some(RecallArgs {
         query: string("query", crate::tools::search::MAX_QUERY_BYTES)?,
+        key,
+        include_superseded,
         limit,
         day: crate::tools::normalize_day(string("day", crate::tools::MAX_DAY_BYTES)?).ok()?,
         day_from: crate::tools::normalize_day(string("day_from", crate::tools::MAX_DAY_BYTES)?)
@@ -188,7 +225,7 @@ fn recall_args(arguments: Option<&Value>) -> Option<RecallArgs> {
 
 fn uncertain(request: &JsonRpcRequest, operation: &str, list_changed: bool) -> HttpResponse {
     let value = json!({"schema": 1, "status": "uncertain_retry", "operation_id": operation,
-        "self_resolution": "retry save_memory with the same operation_id and exact content."});
+        "self_resolution": "retry save_memory with the same operation_id, exact content, and key if provided."});
     match response_bytes(request, value, list_changed) {
         Ok(bytes) => HttpResponse::json(200, "OK", bytes),
         Err(()) => error_response(request, "memory_response_unavailable"),
@@ -202,18 +239,20 @@ fn save(
     now: Timestamp,
     list_changed: bool,
 ) -> HttpResponse {
-    let Some((content, operation)) = save_args(tool_arguments(request)) else {
+    let Some((content, operation, key)) = save_args(tool_arguments(request)) else {
         return invalid_params(request, ToolName::SaveMemory);
     };
     let prepared = match prepare_connection_memory(
         journal,
         AuthenticatedMemorySource {
             verified_id: authority.id(),
+            agent_identity: authority.agent_identity(),
             creation_label: authority.label(),
             source: authority.source(),
         },
         content,
         operation,
+        key,
         now,
     ) {
         Ok(prepared) => prepared,
@@ -238,15 +277,35 @@ fn save(
     let readiness = if deleted {
         "deleted"
     } else {
-        indexed_readiness(journal, &receipt)
+        let initial = indexed_readiness(journal, &receipt, MEMORY_READINESS_BUSY_TIMEOUT);
+        if initial == "pending" {
+            refresh_memory_note(journal, &receipt.coordinate, MEMORY_REFRESH_WAIT);
+            indexed_readiness(journal, &receipt, MEMORY_READINESS_BUSY_TIMEOUT)
+        } else {
+            initial
+        }
     };
     let readable = !deleted
         && readiness == "ready"
         && ordinary_readable(journal, authority.id(), &receipt.coordinate);
-    let value = json!({"schema":1, "status":status, "operation_id":operation,
-        "coordinate":receipt.coordinate, "origin":receipt.origin, "created_at":solstone_core_time::utc_iso(receipt.created_at),
-        "digest":receipt.digest, "byte_count":receipt.byte_count,
-        "own_recall":readiness, "ordinary_readable":readable});
+    let mut payload = Map::new();
+    payload.insert("schema".into(), json!(1));
+    payload.insert("status".into(), json!(status));
+    payload.insert("operation_id".into(), json!(operation));
+    if let Some(key) = &receipt.origin.key {
+        payload.insert("key".into(), json!(key));
+    }
+    payload.insert("coordinate".into(), json!(receipt.coordinate));
+    payload.insert("origin".into(), json!(receipt.origin));
+    payload.insert(
+        "created_at".into(),
+        json!(solstone_core_time::utc_iso(receipt.created_at)),
+    );
+    payload.insert("digest".into(), json!(receipt.digest));
+    payload.insert("byte_count".into(), json!(receipt.byte_count));
+    payload.insert("own_recall".into(), json!(readiness));
+    payload.insert("ordinary_readable".into(), json!(readable));
+    let value = Value::Object(payload);
     let shape_bytes = match bounded_json(&value, MAX_PREPARED_BYTES) {
         Ok(bytes) => bytes,
         Err(()) => {
@@ -280,7 +339,8 @@ fn save(
         && (!matches!(read_original(journal, &receipt.origin.source_key, &receipt.coordinate),
                 OriginalRead::Ready { origin, ready, .. }
                 if origin == receipt.origin && ready.digest == receipt.digest && ready.byte_count == receipt.byte_count)
-            || (readiness == "ready" && indexed_readiness(journal, &receipt) != "ready")
+            || (readiness == "ready"
+                && indexed_readiness(journal, &receipt, MEMORY_READINESS_BUSY_TIMEOUT) != "ready")
             || (readable && !ordinary_readable(journal, authority.id(), &receipt.coordinate)))
     {
         return postcommit_failure(journal, &audit, request, operation, now, list_changed);
@@ -317,7 +377,11 @@ fn note_path(coordinate: &Coordinate) -> String {
     )
 }
 
-fn indexed_readiness(journal: &Path, receipt: &AppendReceipt) -> &'static str {
+fn indexed_readiness(
+    journal: &Path,
+    receipt: &AppendReceipt,
+    busy_timeout: Duration,
+) -> &'static str {
     let source = &receipt.origin.source_key;
     let (bytes, origin, ready) = match read_original(journal, source, &receipt.coordinate) {
         OriginalRead::Ready {
@@ -328,7 +392,7 @@ fn indexed_readiness(journal: &Path, receipt: &AppendReceipt) -> &'static str {
         OriginalRead::Deleted => return "deleted",
         _ => return "unavailable",
     };
-    let connection = match open_own_memory_index(journal, Duration::from_secs(5)) {
+    let connection = match open_own_memory_index(journal, busy_timeout) {
         Ok(connection) => connection,
         Err(OwnMemoryOpenError::Pending) => return "pending",
         Err(OwnMemoryOpenError::Unavailable) => return "unavailable",
@@ -352,6 +416,13 @@ fn indexed_readiness(journal: &Path, receipt: &AppendReceipt) -> &'static str {
         }
         Ok(_) => "pending",
         Err(_) => "unavailable",
+    }
+}
+
+fn refresh_memory_note(journal: &Path, coordinate: &Coordinate, wait: Duration) {
+    let path = note_path(coordinate);
+    if solstone_core_indexer_store::todo::refresh_now(journal, &[path], wait).is_err() {
+        log::warn!("memory search update stayed queued");
     }
 }
 
@@ -427,11 +498,13 @@ fn memory_publication_queues_under_a_held_index_writer() {
         root.path(),
         AuthenticatedMemorySource {
             verified_id: "bearer:fixture",
+            agent_identity: "bearer:fixture",
             creation_label: "test connection",
             source: &source,
         },
         "kestrel memory publication",
         "operation-1",
+        None,
         Timestamp::now(),
     )
     .unwrap();
@@ -439,6 +512,10 @@ fn memory_publication_queues_under_a_held_index_writer() {
         panic!("stored memory")
     };
     notify_note(root.path(), &receipt.coordinate);
+    assert_eq!(
+        indexed_readiness(root.path(), &receipt, MEMORY_READINESS_BUSY_TIMEOUT),
+        "unavailable"
+    );
     assert_eq!(
         solstone_core_indexer_store::todo::inspect(root.path())
             .unwrap()
@@ -462,6 +539,63 @@ fn memory_publication_queues_under_a_held_index_writer() {
     assert_eq!((check.indexed, check.removed), (0, 0));
 }
 
+#[cfg(all(test, feature = "full-tests"))]
+#[test]
+fn memory_refresh_is_bounded_under_held_writer_and_immediate_when_free() {
+    let root = tempfile::Builder::new()
+        .prefix("memory-refresh-")
+        .tempdir_in(crate::test_scratch())
+        .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(root.path(), true).unwrap();
+    let source = SourceKey::from_verified_id("bearer:refresh");
+    let lease = solstone_core_journal_io::hold_lock(
+        solstone_core_indexer_store::db::db_path(root.path()),
+        Default::default(),
+    )
+    .unwrap();
+    let prepared = prepare_connection_memory(
+        root.path(),
+        AuthenticatedMemorySource {
+            verified_id: "bearer:refresh",
+            agent_identity: "bearer:refresh",
+            creation_label: "refresh connection",
+            source: &source,
+        },
+        "bounded refresh memory",
+        "operation-refresh-1",
+        Some("refresh-slot"),
+        Timestamp::now(),
+    )
+    .unwrap();
+    let AppendResult::Stored(receipt) = prepared.result else {
+        panic!("stored memory")
+    };
+    notify_note(root.path(), &receipt.coordinate);
+    assert_eq!(
+        indexed_readiness(root.path(), &receipt, MEMORY_READINESS_BUSY_TIMEOUT),
+        "pending"
+    );
+    let started = Instant::now();
+    refresh_memory_note(root.path(), &receipt.coordinate, Duration::from_millis(200));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(
+        indexed_readiness(root.path(), &receipt, MEMORY_READINESS_BUSY_TIMEOUT),
+        "pending"
+    );
+    assert_eq!(
+        solstone_core_indexer_store::todo::inspect(root.path())
+            .unwrap()
+            .keys,
+        [note_path(&receipt.coordinate)]
+    );
+    drop(lease);
+    refresh_memory_note(root.path(), &receipt.coordinate, MEMORY_REFRESH_WAIT);
+    assert_eq!(
+        indexed_readiness(root.path(), &receipt, MEMORY_READINESS_BUSY_TIMEOUT),
+        "ready"
+    );
+}
+
 fn recall_response(
     journal: &Path,
     authority: &MemoryAuthority<'_>,
@@ -472,12 +606,14 @@ fn recall_response(
     let Some(args) = recall_args(tool_arguments(request)) else {
         return invalid_params(request, ToolName::RecallMemory);
     };
+    let include_superseded = args.include_superseded;
     let source = authority.source();
     let mut arguments = Map::new();
     arguments.insert("source_key".into(), json!(source.as_str()));
     arguments.insert("authority".into(), json!("own_memory"));
     for (name, value) in [
         ("query", &args.query),
+        ("key", &args.key),
         ("day", &args.day),
         ("day_from", &args.day_from),
         ("day_to", &args.day_to),
@@ -486,11 +622,14 @@ fn recall_response(
             arguments.insert(name.into(), json!(value));
         }
     }
+    if include_superseded {
+        arguments.insert("include_superseded".into(), json!(true));
+    }
     arguments.insert("limit".into(), json!(args.limit.unwrap_or(5)));
     arguments.insert("continued".into(), json!(args.continuation.is_some()));
     let admission = Admission {
         connection: authority.id(),
-        agent_identity: source.as_str(),
+        agent_identity: authority.agent_identity(),
         tool_name: solstone_core_mcp_audit::ToolName::RecallMemory,
         arguments,
         permission: None,
@@ -539,10 +678,27 @@ fn recall_response(
         .iter()
         .map(|note| note.path.clone())
         .collect::<Vec<_>>();
-    let notes = page.notes.iter().map(|note| {
-        String::from_utf8(note.bytes.clone()).map(|content| json!({"content":content,
-            "day":note.day, "origin":note.origin, "digest":note.ready.digest, "byte_count":note.bytes.len()}))
-    }).collect::<Result<Vec<_>, _>>();
+    let notes = page
+        .notes
+        .iter()
+        .map(|note| {
+            String::from_utf8(note.bytes.clone()).map(|content| {
+                let mut entry = Map::new();
+                entry.insert("content".into(), json!(content));
+                if let Some(key) = &note.origin.key {
+                    entry.insert("key".into(), json!(key));
+                }
+                if include_superseded {
+                    entry.insert("superseded".into(), json!(note.superseded));
+                }
+                entry.insert("day".into(), json!(note.day));
+                entry.insert("origin".into(), json!(note.origin));
+                entry.insert("digest".into(), json!(note.ready.digest));
+                entry.insert("byte_count".into(), json!(note.bytes.len()));
+                Value::Object(entry)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>();
     let Ok(notes) = notes else {
         let _ = crate::audit::write_described_outcome(
             journal,

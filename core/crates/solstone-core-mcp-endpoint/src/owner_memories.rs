@@ -327,6 +327,7 @@ mod tests {
         let source_key = SourceKey::from_verified_id(id);
         let source = AuthenticatedMemorySource {
             verified_id: id,
+            agent_identity: id,
             creation_label: label,
             source: &source_key,
         };

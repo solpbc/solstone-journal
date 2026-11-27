@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- connected agents can now attach a reusable key when saving a note, so newer versions replace earlier ones in their own recall while keeping the full history in your journal; agents can still look up one key or ask for earlier versions.
 - connected agents with transcripts permission can now scan or list spoken transcripts across a day or date range, filtered by speaker (with optional surrounding lines), facet or source. they can also search transcripts by speaker, or return every matching line in a recording instead of only the closest match.
 - connected agents that support MCP resources can now read allowed photos, screenshots, profile pics and audio clips directly from your journal under the same permissions, pause controls and activity trail (listed as `read_resource`).
 - daily maintenance runs at 2 a.m. in your journal’s time zone. you can change the time in settings → storage. if your journal sleeps through that time, it catches up when it wakes.
@@ -24,6 +25,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when a connected agent saves a note, your journal now adds it to search right away so the agent can recall it immediately; if search is busy, it still updates in the background.
+- when a connected agent saves or recalls a note, the activity trail in agents now records the agent's identity the same way other agent requests do.
 - when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - when connected agents search updated transcripts, results now show the current timestamps and speaker names instead of dropping matches, while still keeping outdated text from edited or deleted lines out of results. a full search rescan also refreshes updated transcripts even when the file's modification time hasn't changed.
