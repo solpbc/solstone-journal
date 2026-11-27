@@ -712,7 +712,7 @@ fn bundled_identity(
                 // The bundled place names: GeoNames cities500 as downloaded
                 // 2026-10-11 and Natural Earth at commit ca96624; see
                 // core/models/assets/geo/README.md. Change both with the file.
-                let ver = "geonames-20261126-753927ca33ab-natural-earth-ca96624".to_string();
+                let ver = "geonames-20261127-609270022bb1-natural-earth-ca96624".to_string();
                 let src = "core/models/assets/geo/area-tier.bin".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-location/src/asset.rs"),
@@ -879,7 +879,7 @@ fn bundled_identity(
                 // The bundled place names: GeoNames cities500 as downloaded
                 // 2026-10-11 and Natural Earth at commit ca96624; see
                 // core/models/assets/geo/README.md. Change both with the file.
-                let ver = "geonames-20261126-753927ca33ab-natural-earth-ca96624".to_string();
+                let ver = "geonames-20261127-609270022bb1-natural-earth-ca96624".to_string();
                 let src = "core/models/assets/geo/area-tier.bin".to_string();
                 let sha = read_digest_const(
                     &checkout.join("core/crates/solstone-core-location/src/asset.rs"),
