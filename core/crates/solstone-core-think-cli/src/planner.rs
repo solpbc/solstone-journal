@@ -347,6 +347,7 @@ impl WorkDiscovery {
                     return;
                 }
                 let mut initial = true;
+                let mut history_walk = HistoryWalk::default();
                 loop {
                     if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
                         return;
@@ -382,6 +383,10 @@ impl WorkDiscovery {
                             let _ = report.publish_checked(&journal, checkpoint.as_ref());
                         }
                     }
+                    if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
+                        return;
+                    }
+                    history_walk.after_pass(&journal, &backlog);
                     if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
                         return;
                     }
@@ -465,6 +470,9 @@ impl Drop for WorkDiscovery {
 struct Backlog {
     /// How many ranked tasks the pass handed over.
     handed: usize,
+    /// What the pass found of import and history work, when it inspected
+    /// every day.
+    history: Option<HistoryWork>,
     /// What the pass handed over, and the snapshot it published.
     #[cfg(test)]
     offered: Vec<DiscoveredTask>,
@@ -1871,6 +1879,78 @@ fn held_thinking(
     Ok(Some(held))
 }
 
+/// The import and history work (bands 4-6) one pass found.
+#[derive(Clone, Copy)]
+struct HistoryWork {
+    /// Some of it is still to do.
+    left: bool,
+    /// How much of it the pass counted as done.
+    finished: u64,
+}
+
+/// Says, pass by pass, when a walk through older days has ended: the moment
+/// to read what all of history earns, once, and not after each of its days.
+///
+/// It is kept in memory only. A walk ends on the first pass that finds none
+/// of its work left after a pass that found some, or after more of it was
+/// finished between two passes, or after a start: a walk the journal stopped
+/// in the middle of is noticed then. A resting journal is asked nothing.
+struct HistoryWalk {
+    open: bool,
+    finished: Option<u64>,
+}
+
+impl Default for HistoryWalk {
+    fn default() -> Self {
+        Self {
+            open: true,
+            finished: None,
+        }
+    }
+}
+
+impl HistoryWalk {
+    fn ended(&mut self, history: Option<HistoryWork>) -> bool {
+        let Some(history) = history else {
+            return false;
+        };
+        if history.left {
+            self.open = true;
+            return false;
+        }
+        let ended = self.open || self.finished != Some(history.finished);
+        self.open = false;
+        self.finished = Some(history.finished);
+        ended
+    }
+
+    /// After a pass: read all of history if its walk just ended. History that
+    /// has not changed is not read again, and what could not be written is
+    /// said once. No model is asked, and a failure holds nothing else back.
+    /// The pass has published and handed over its work by now, so this holds
+    /// no lock and no part of the queue.
+    fn after_pass(&mut self, journal: &Path, backlog: &Backlog) {
+        if self.ended(backlog.history)
+            && let Err(error) = crate::segment::consolidate_historical_backfill_span(
+                journal,
+                jiff::Timestamp::now().as_millisecond(),
+            )
+        {
+            log::warn!("history consolidation: {error}");
+        }
+    }
+}
+
+/// Whether a pass found no import or history work to hand over: the walk
+/// through older days has nothing left to do.
+fn no_history_left(candidates: &[DiscoveredTask]) -> bool {
+    !candidates.iter().any(|task| {
+        task.request
+            .priority
+            .is_some_and(|priority| priority.band.is_background())
+    })
+}
+
 /// All historical days after the newest day still owed its recordings or its
 /// first daily outputs are caught up. Today and
 /// yesterday are outside this range; unreadable days and permanent holds are
@@ -2501,6 +2581,14 @@ fn reconcile_pass_with_roots(
     }
     checkpoint()?;
     let handed = candidates.len();
+    // Only a pass that inspected every day can say none of it is left.
+    let history = (report.days_inspected == report.days_total).then(|| HistoryWork {
+        left: !no_history_left(&candidates),
+        finished: report.bands[WorkBand::Import as usize - 1..]
+            .iter()
+            .map(|band| band.segments_complete + band.daily_units_complete)
+            .sum(),
+    });
     #[cfg(test)]
     let offered = candidates.clone();
     queue.replace_discovered(candidates);
@@ -2536,6 +2624,7 @@ fn reconcile_pass_with_roots(
     report.publish_checked(journal, checkpoint)?;
     Ok(Backlog {
         handed,
+        history,
         #[cfg(test)]
         offered,
         #[cfg(test)]
@@ -3852,6 +3941,93 @@ mod tests {
                 .unwrap(),
             queue,
         )
+    }
+
+    #[test]
+    fn history_is_read_once_when_a_pass_has_none_of_it_left_to_hand_over() {
+        let root = fixture("local");
+        body_window(root.path(), "19990101", "063000_300");
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join("streams/phone_screenshots.json"),
+            r#"{"name":"phone_screenshots","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"screenshots"}"#,
+        )
+        .unwrap();
+        let older_day = |day: &str| {
+            let shot = root
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("phone_screenshots/094000_1");
+            std::fs::create_dir_all(&shot).unwrap();
+            std::fs::write(shot.join("screenshot_screen.png"), b"png").unwrap();
+        };
+        let stamp = root.path().join("awareness/backfill_span_state.json");
+        let queue = queue(root.path());
+        let stopped = AtomicBool::new(false);
+        let reads = || crate::segment::SPAN_READS.with(|reads| reads.get());
+        let before = reads();
+        // What the worker does after each of its passes.
+        let pass = |walk: &mut HistoryWalk| {
+            let backlog = reconcile_pass(root.path(), &queue, &stopped, false).unwrap();
+            walk.after_pass(root.path(), &backlog);
+            backlog.history.unwrap().left
+        };
+
+        // A walk with an older day still to do reads nothing, however many
+        // passes find it so.
+        older_day("19990102");
+        let mut walk = HistoryWalk::default();
+        for _ in 0..2 {
+            assert!(pass(&mut walk));
+            assert_eq!(reads(), before);
+            assert!(!stamp.exists());
+        }
+
+        // A journal stopped there remembers nothing of the walk. Started
+        // again with its last day done (here, gone), the first pass to find
+        // none left reads all of history, once, and later passes not again.
+        std::fs::remove_dir_all(root.path().join("chronicle/19990102")).unwrap();
+        let mut walk = HistoryWalk::default();
+        for _ in 0..3 {
+            assert!(!pass(&mut walk));
+            assert_eq!(reads(), before + 1);
+            assert!(stamp.exists());
+        }
+
+        // A day that arrives alone later: nothing while it is still to do,
+        // one read on the pass after it.
+        older_day("19990103");
+        assert!(pass(&mut walk));
+        assert_eq!(reads(), before + 1);
+        std::fs::remove_dir_all(root.path().join("chronicle/19990103")).unwrap();
+        body_window(root.path(), "19990104", "063000_300");
+        for _ in 0..2 {
+            assert!(!pass(&mut walk));
+            assert_eq!(reads(), before + 2);
+        }
+    }
+
+    #[test]
+    fn a_walk_ends_once_and_work_finished_between_passes_ends_one_too() {
+        let found = |left, finished| Some(HistoryWork { left, finished });
+        let mut walk = HistoryWalk::default();
+        // A pass that could not inspect every day says nothing either way.
+        assert!(!walk.ended(None));
+        // After a start, the first pass with none left ends whatever walk
+        // was under way before it.
+        assert!(walk.ended(found(false, 4)));
+        assert!(!walk.ended(found(false, 4)));
+        // A day worked start to finish between two passes was never seen
+        // still to do; the pass counts more work finished.
+        assert!(walk.ended(found(false, 6)));
+        assert!(!walk.ended(found(false, 6)));
+        // A walk in progress ends on the first pass that finds none left.
+        assert!(!walk.ended(found(true, 6)));
+        assert!(!walk.ended(None));
+        assert!(!walk.ended(found(true, 9)));
+        assert!(walk.ended(found(false, 12)));
+        assert!(!walk.ended(found(false, 12)));
     }
 
     #[test]

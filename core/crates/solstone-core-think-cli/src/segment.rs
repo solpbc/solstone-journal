@@ -3138,20 +3138,9 @@ pub(crate) fn ensure_historical_day_activities(
             None,
         )?;
     }
-    // The span is the journal's whole history, not this day's work: what it
-    // could not write is logged here once and does not fail the day.
-    if solstone_core_segment::day_holds_only_backfill_streams(&context.journal, &context.day)
-        && let Err(error) = consolidate_historical_backfill_span(&context.journal, context.now_ms)
-    {
-        log.log(
-            "history_consolidation.failed",
-            context.now_ms,
-            Map::from_iter([
-                ("day".to_owned(), Value::String(context.day.clone())),
-                ("error".to_owned(), Value::String(error)),
-            ]),
-        );
-    }
+    // What the day's people and places earn across history is not read here:
+    // every day of a walk would read all of history again. Work discovery
+    // reads it once, when the walk has ended.
     Ok(())
 }
 
@@ -3406,6 +3395,10 @@ fn correspondent_address(addresses: &[(String, String)], name: &str) -> Option<S
 /// `day_holds_only_backfill_streams`): the days whose entity talents are
 /// skipped once they are older than a week, so none falls between the two.
 ///
+/// Work discovery calls it after the pass that finds a walk through older
+/// days has ended, so a walk over many days reads the span once, at its end,
+/// and a day that arrives alone is read on the pass after its own work.
+///
 /// It runs only when what it reads has changed. Whatever it could not write
 /// is returned once and marked on the stamp, so the same refusal is not met
 /// again on every call: the span is read again when its inputs change.
@@ -3459,6 +3452,8 @@ pub(crate) fn consolidate_historical_backfill_span(
         }
     }
 
+    #[cfg(test)]
+    SPAN_READS.with(|reads| reads.set(reads.get() + 1));
     let failures = consolidate_span_days(
         journal,
         now_ms,
@@ -3483,6 +3478,12 @@ pub(crate) fn consolidate_historical_backfill_span(
     } else {
         Err(failures.join("; "))
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread read the whole span.
+    pub(crate) static SPAN_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// The context an older version gave a correspondent it read from header-like

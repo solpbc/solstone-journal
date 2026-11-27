@@ -138,3 +138,20 @@ fn an_activity_an_older_version_made_of_two_items_stays_as_written() {
         assert_eq!(rows(&context), [vec!["100000_1", "100100_1"]]);
     }
 }
+
+#[test]
+fn filling_in_one_day_leaves_reading_all_of_history_to_the_end_of_the_walk() {
+    let (_journal, _roots, context) = shots();
+    let before = segment::SPAN_READS.with(|reads| reads.get());
+    fill_in(&context);
+    assert_eq!(rows(&context), [vec!["100000_1"], vec!["100100_1"]]);
+    // The day's own activities are written; what history as a whole earns is
+    // not read here, and nothing says it was.
+    assert_eq!(segment::SPAN_READS.with(|reads| reads.get()), before);
+    assert!(
+        !context
+            .journal
+            .join("awareness/backfill_span_state.json")
+            .exists()
+    );
+}

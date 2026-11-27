@@ -229,7 +229,6 @@ pub(crate) fn run(
     }
     let mut total = ModeResult::default();
     let runtime = runtime()?;
-    let mut consolidated_backfill_span = false;
     for (priority, group) in grouped(configs) {
         let mut fields = Map::new();
         fields.insert("mode".to_owned(), Value::String("daily".to_owned()));
@@ -251,20 +250,9 @@ pub(crate) fn run(
                         log_skip(log, context, &config.key, "no_active_facets", Some(facet));
                         continue;
                     }
+                    // What these days earn is read across all of history at
+                    // once, when the walk has no more of it to do.
                     if skip_historical_entity_daily(context, &config.key, facet, from_scratch) {
-                        if !consolidated_backfill_span {
-                            if let Err(error) = crate::segment::consolidate_historical_backfill_span(
-                                &context.journal,
-                                context.now_ms,
-                            ) {
-                                crate::dispatch::record_followup_failure(
-                                    &mut group_result,
-                                    "history consolidation",
-                                    &error,
-                                );
-                            }
-                            consolidated_backfill_span = true;
-                        }
                         log_skip(
                             log,
                             context,
