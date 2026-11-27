@@ -1211,7 +1211,12 @@ pub fn resolve_observation_entity_dir(
     entity_query: &str,
 ) -> Result<ObservationEntityResolution, ObservationLookupError> {
     let map = read_identity_map(journal_root)?;
-    resolve_observation_entity_dir_with_resolved_ids(journal_root, facet, entity_query, &map.resolved)
+    resolve_observation_entity_dir_with_resolved_ids(
+        journal_root,
+        facet,
+        entity_query,
+        &map.resolved,
+    )
 }
 
 /// [`resolve_observation_entity_dir`] reusing an already-loaded identity map

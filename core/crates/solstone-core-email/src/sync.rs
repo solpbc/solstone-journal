@@ -485,8 +485,7 @@ fn run_header_scan_inner(
             state.scan_checked = checked;
             state.scan_total = u64::from(mb.exists).max(checked);
             for h in &rows {
-                if (h.is_sent()
-                    || (is_owner(h, &account.owner_aliases) && !h.is_trash_or_junk()))
+                if (h.is_sent() || (is_owner(h, &account.owner_aliases) && !h.is_trash_or_junk()))
                     && !h.is_draft()
                 {
                     state.scan_sent_found += 1;
@@ -1197,7 +1196,7 @@ pub fn status_snapshot_with_activity(
         }
     } else if choice.is_none() {
         "awaiting_choice".to_owned()
-    } else if state.phase == "fetching" && !worker_active {
+    } else if matches!(state.phase.as_str(), "fetching" | "scanning") && !worker_active {
         "steady".to_owned()
     } else if !state.phase.is_empty() {
         state.phase.clone()
@@ -1670,16 +1669,15 @@ pub fn sync_live_gmail_with_publisher(
     }
     let now = Timestamp::now();
     let zone = store::journal_timezone(root);
-    let initial =
-        match crate::imap::GmailImap::connect_gmail(&creds.account, &creds.app_password) {
-            Ok(client) => client,
-            Err(err) => {
-                if let Some(reason) = err.attention_reason() {
-                    let _ = record_attention(root, reason);
-                }
-                return Err(err);
+    let initial = match crate::imap::GmailImap::connect_gmail(&creds.account, &creds.app_password) {
+        Ok(client) => client,
+        Err(err) => {
+            if let Some(reason) = err.attention_reason() {
+                let _ = record_attention(root, reason);
             }
-        };
+            return Err(err);
+        }
+    };
     let account_reopen = creds.account.clone();
     let password_reopen = creds.app_password.clone();
     let mut client = ReconnectingImapSource::with_initial(

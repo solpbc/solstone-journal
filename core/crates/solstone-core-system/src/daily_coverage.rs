@@ -527,8 +527,7 @@ fn read_daily_coverage_unlocked(
             if config.key == "experiences_detect" && active.is_empty() {
                 continue;
             }
-            let day_facets_historical_only =
-                !active.is_empty() && non_historical_active.is_empty();
+            let day_facets_historical_only = !active.is_empty() && non_historical_active.is_empty();
             units.push(read_unit_coverage_cached_with_backfill(
                 journal,
                 day,
@@ -640,10 +639,8 @@ pub const HISTORICAL_ENTITY_DAILY_TALENTS: [&str; 3] = [
     "entities:entity_observer",
 ];
 
-pub const HISTORICAL_EXPERIENCE_DAILY_TALENTS: [&str; 2] = [
-    "experiences_detect_facet",
-    "experiences_detect",
-];
+pub const HISTORICAL_EXPERIENCE_DAILY_TALENTS: [&str; 2] =
+    ["experiences_detect_facet", "experiences_detect"];
 
 #[must_use]
 pub fn is_historical_backfill_skipped_daily(talent: &str) -> bool {
@@ -2471,7 +2468,7 @@ mod tests {
 
     #[test]
     fn historical_backfill_skips_experience_and_entity_dailies_on_backfill_only_and_closed_mixed_days()
-    {
+     {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (talent, apps) = package_roots().unwrap();
@@ -2502,7 +2499,8 @@ mod tests {
             .unwrap();
             fs::write(seg.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
         }
-        let old_cov = read_daily_coverage_with_roots(root, old_backfill_day, &talent, &apps).unwrap();
+        let old_cov =
+            read_daily_coverage_with_roots(root, old_backfill_day, &talent, &apps).unwrap();
         assert_eq!(
             old_cov.state,
             CoverageState::Current,
@@ -2615,7 +2613,8 @@ mod tests {
                 .iter()
                 .find(|u| {
                     u.identity.name == name
-                        && (u.identity.facet.is_none() || u.identity.facet.as_deref() == Some("work"))
+                        && (u.identity.facet.is_none()
+                            || u.identity.facet.as_deref() == Some("work"))
                 })
                 .unwrap_or_else(|| panic!("expected work unit {name}"));
             assert_eq!(work_unit.state, CoverageState::Current, "{name}");

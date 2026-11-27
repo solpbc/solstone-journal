@@ -262,7 +262,12 @@ pub fn evaluate_decisions(
     for h in all {
         if let Some(id) = h.message_id.as_deref() {
             by_id.entry(id).or_default().push(h);
-            if h.is_sent() && !h.is_draft() {
+            if (h.is_sent() && !h.is_draft())
+                || (landed_keys.contains(&h.key)
+                    && existing
+                        .get(&h.key)
+                        .is_some_and(|prev| prev.outcome == "selected"))
+            {
                 seen_sent_msg_ids.insert(id);
             }
         }
@@ -314,9 +319,7 @@ pub fn evaluate_decisions(
         if !sent && !h.is_draft() {
             continue;
         }
-        if alias_sent
-            && let Some(id) = h.message_id.as_deref()
-        {
+        if alias_sent && let Some(id) = h.message_id.as_deref() {
             seen_sent_msg_ids.insert(id);
         }
         // Only owner-authored drafts count in owner-side draft totals.

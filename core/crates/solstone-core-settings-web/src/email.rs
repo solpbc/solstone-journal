@@ -572,8 +572,7 @@ async fn connect_email(svc: EmailService, body: Bytes) -> Response {
             let _ = source.logout();
             return Err(err);
         }
-        let started =
-            spawn_background_scan_with_source(&svc_bg, source, norm_email, norm_password);
+        let started = spawn_background_scan_with_source(&svc_bg, source, norm_email, norm_password);
         let status = snapshot_value(&svc_bg)?;
         Ok(json!({
             "success": true,

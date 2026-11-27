@@ -1722,7 +1722,10 @@ const TALENT_CONTEXT_BLOCK_MAX_CHARS: usize = 4_000;
 fn bound_talent_context_text(text: &str) -> String {
     let trimmed = text.trim();
     let mut chars = trimmed.chars();
-    let head: String = chars.by_ref().take(TALENT_CONTEXT_BLOCK_MAX_CHARS).collect();
+    let head: String = chars
+        .by_ref()
+        .take(TALENT_CONTEXT_BLOCK_MAX_CHARS)
+        .collect();
     if chars.next().is_some() {
         format!("{}\n[...]", head.trim_end())
     } else {
@@ -4533,7 +4536,10 @@ mod tests {
             rendered.contains("Can we finalize the Q4 board deck before Friday?"),
             "{rendered}"
         );
-        assert!(rendered.contains("Reply attachments: draft.pdf"), "{rendered}");
+        assert!(
+            rendered.contains("Reply attachments: draft.pdf"),
+            "{rendered}"
+        );
         assert!(!rendered.contains("secret-ref-1"), "{rendered}");
         assert!(!rendered.contains("secret-ref-2"), "{rendered}");
 

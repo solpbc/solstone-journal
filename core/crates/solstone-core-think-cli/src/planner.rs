@@ -6770,7 +6770,9 @@ mod tests {
             "import.email at age>0 must not spill into Band 5 (completing history)"
         );
         assert!(
-            q.contains_reference(&format!("supervisor-work-{old_day}-import.email-101600_300")),
+            q.contains_reference(&format!(
+                "supervisor-work-{old_day}-import.email-101600_300"
+            )),
             "historical email segment must queue when backfill is unpaused"
         );
         q.shutdown();

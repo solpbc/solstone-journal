@@ -268,21 +268,38 @@ where
             .expect("connection opened immediately above"))
     }
 
-    fn reconnect(&mut self, attempt: usize, expected_uid_validity: Option<u32>) -> Result<()> {
+    fn reconnect(
+        &mut self,
+        attempt: usize,
+        expected_uid_validity: Option<u32>,
+    ) -> std::result::Result<(), (EmailError, bool)> {
         self.drop_inner();
         if !self.backoff.is_zero() {
             let factor = u32::try_from(attempt.max(1)).unwrap_or(1);
             std::thread::sleep(self.backoff.saturating_mul(factor));
         }
-        let mut fresh = (self.open)()?;
+        let mut fresh = (self.open)().map_err(|e| {
+            let retryable = is_transient_imap_error(&e);
+            (e, retryable)
+        })?;
         if let Some(expected) = expected_uid_validity {
-            let mb = fresh.mailbox_info()?;
+            let mb = match fresh.mailbox_info() {
+                Ok(mb) => mb,
+                Err(e) => {
+                    self.prior_audit.merge_from(&fresh.wire_audit());
+                    let retryable = is_transient_imap_error(&e);
+                    return Err((e, retryable));
+                }
+            };
             if mb.uid_validity != expected {
                 self.prior_audit.merge_from(&fresh.wire_audit());
-                return Err(EmailError::Protocol(format!(
-                    "mailbox UIDVALIDITY changed across reconnect ({expected} -> {})",
-                    mb.uid_validity
-                )));
+                return Err((
+                    EmailError::Protocol(format!(
+                        "mailbox UIDVALIDITY changed across reconnect ({expected} -> {})",
+                        mb.uid_validity
+                    )),
+                    false,
+                ));
             }
         }
         self.inner = Some(fresh);
@@ -317,8 +334,8 @@ where
                         reopen_err = None;
                         break;
                     }
-                    Err(r_err) => {
-                        if !is_transient_imap_error(&r_err) || retries >= self.max_retries {
+                    Err((r_err, retryable)) => {
+                        if !retryable || retries >= self.max_retries {
                             return Err(r_err);
                         }
                         reopen_err = Some(r_err);

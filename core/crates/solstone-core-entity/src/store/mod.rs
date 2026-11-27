@@ -91,8 +91,8 @@ pub use observations::{
     list_facet_entity_directories, load_observations_for_query, normalize_observation_content,
     observation_day_counts, observation_summary, parse_observation_content, parse_observation_file,
     read_live_observations, record_observation_ops_strict, resolve_observation_entity_dir,
-    resolve_observation_entity_dir_with_resolved_ids,
-    retry_add_for_test, retry_record_for_test, serialize_observation_rows,
+    resolve_observation_entity_dir_with_resolved_ids, retry_add_for_test, retry_record_for_test,
+    serialize_observation_rows,
 };
 pub use reconcile::{PreparedHistoryOutcome, classify_prepared_history};
 pub use repair::{

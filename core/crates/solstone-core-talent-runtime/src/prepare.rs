@@ -2185,11 +2185,20 @@ mod tests {
             "short reply with subject/reply_to must not skip as no_input: {:?}",
             prepared.config.get("skip_reason")
         );
-        assert_eq!(prepared.config.get("_sense_static"), Some(&Value::Bool(true)));
+        assert_eq!(
+            prepared.config.get("_sense_static"),
+            Some(&Value::Bool(true))
+        );
         let transcript = prepared.config["transcript"].as_str().unwrap();
-        assert!(transcript.contains("Subject: Permit renewal"), "{transcript}");
+        assert!(
+            transcript.contains("Subject: Permit renewal"),
+            "{transcript}"
+        );
         assert!(transcript.contains("(cc Lee)"), "{transcript}");
-        assert!(transcript.contains("Attachments: permit.pdf"), "{transcript}");
+        assert!(
+            transcript.contains("Attachments: permit.pdf"),
+            "{transcript}"
+        );
         assert!(
             transcript.contains("Can we file the city permit renewal tomorrow morning?"),
             "{transcript}"

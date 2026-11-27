@@ -1201,37 +1201,35 @@ fn from_alias_recovers_unlabelled_sent_mail_without_trash_junk_or_echo_dupes() {
     use crate::select::{RULES_VERSION, evaluate_decisions};
     use std::collections::HashMap;
 
-    let make_hdr = |key: &str,
-                    uid: u32,
-                    from: &str,
-                    labels: &[&str],
-                    msg_id: Option<&str>,
-                    subject: &str| Header {
-        key: key.to_owned(),
-        location: Location {
-            mailbox: "[Gmail]/All Mail".into(),
-            uid_validity: 1,
-            uid,
-        },
-        labels: labels.iter().map(|s| (*s).to_owned()).collect(),
-        message_id: msg_id.map(str::to_owned),
-        from: vec![Addr {
-            name: Some("Maya".into()),
-            address: Some(from.to_owned()),
-        }],
-        to: vec![Addr {
-            name: Some("Sam".into()),
-            address: Some("sam@example.com".into()),
-        }],
-        date_ms: Some(1_760_000_000_000 + i64::from(uid) * 1_000),
-        subject: Some(subject.to_owned()),
-        tree: Part {
-            path: vec![1],
-            mime: "text/plain".into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
+    let make_hdr =
+        |key: &str, uid: u32, from: &str, labels: &[&str], msg_id: Option<&str>, subject: &str| {
+            Header {
+                key: key.to_owned(),
+                location: Location {
+                    mailbox: "[Gmail]/All Mail".into(),
+                    uid_validity: 1,
+                    uid,
+                },
+                labels: labels.iter().map(|s| (*s).to_owned()).collect(),
+                message_id: msg_id.map(str::to_owned),
+                from: vec![Addr {
+                    name: Some("Maya".into()),
+                    address: Some(from.to_owned()),
+                }],
+                to: vec![Addr {
+                    name: Some("Sam".into()),
+                    address: Some("sam@example.com".into()),
+                }],
+                date_ms: Some(1_760_000_000_000 + i64::from(uid) * 1_000),
+                subject: Some(subject.to_owned()),
+                tree: Part {
+                    path: vec![1],
+                    mime: "text/plain".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        };
 
     let aliases = vec!["maya@example.com".to_owned(), "maya@work.org".to_owned()];
     let headers = vec![
@@ -1368,7 +1366,15 @@ fn reconnecting_imap_source_recovers_transient_drops_and_stops_on_auth_error() {
             if self.fail_auth {
                 return Err(EmailError::AuthFailed);
             }
-            let mut mb = self.inner.as_mut().unwrap().mailbox_info()?;
+            let mut mb = match self.inner.as_mut() {
+                Some(inner) => inner.mailbox_info()?,
+                None => MailboxInfo {
+                    name: "[Gmail]/All Mail".to_owned(),
+                    uid_validity: self.uid_validity,
+                    uid_next: 10,
+                    exists: 1,
+                },
+            };
             mb.uid_validity = self.uid_validity;
             Ok(mb)
         }
@@ -1489,6 +1495,39 @@ fn reconnecting_imap_source_recovers_transient_drops_and_stops_on_auth_error() {
     let err = auth_src.mailbox_info().unwrap_err();
     assert!(matches!(err, EmailError::AuthFailed));
     assert_eq!(*auth_opens.lock().unwrap(), 1);
+
+    // UIDVALIDITY change across reconnect must fail immediately without burning retries.
+    let uv_opens = Arc::new(Mutex::new(0usize));
+    let uv_opens_c = Arc::clone(&uv_opens);
+    let mut uv_src = ReconnectingImapSource::new(
+        move || -> crate::error::Result<Box<dyn ImapSource + Send>> {
+            let mut n = uv_opens_c.lock().unwrap();
+            *n += 1;
+            let attempt = *n;
+            Ok(Box::new(FlakySource {
+                fail_scan: Arc::new(Mutex::new(usize::from(attempt == 1))),
+                fail_fetch: Arc::new(Mutex::new(0)),
+                fail_auth: false,
+                uid_validity: if attempt == 1 { 4242 } else { 9999 },
+                inner: None,
+            }))
+        },
+        3,
+        Duration::ZERO,
+    );
+    let mb = MailboxInfo {
+        name: "[Gmail]/All Mail".to_owned(),
+        uid_validity: 4242,
+        uid_next: 10,
+        exists: 1,
+    };
+    let uv_err = uv_src.scan_page(&mb, 1, 10).unwrap_err();
+    assert!(matches!(uv_err, EmailError::Protocol(ref m) if m.contains("UIDVALIDITY")));
+    assert_eq!(
+        *uv_opens.lock().unwrap(),
+        2,
+        "UIDVALIDITY mismatch must stop on the first reconnect instead of burning retries"
+    );
 }
 
 #[test]

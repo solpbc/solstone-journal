@@ -2713,9 +2713,7 @@ impl BackfillDefaultsCache {
                 .collect();
             self.facet_candidates.insert(facet.to_owned(), candidates);
         }
-        self.facet_candidates
-            .get(facet)
-            .map_or(&[], Vec::as_slice)
+        self.facet_candidates.get(facet).map_or(&[], Vec::as_slice)
     }
 }
 
@@ -3238,6 +3236,7 @@ fn backfill_span_fingerprint(
         }
     };
     stat_path(&journal.join("config/journal.json"));
+    stat_path(&journal.join("config/email/account.json"));
     for facet in enabled_facets {
         let facet_dir = journal.join("facets").join(facet);
         stat_path(&facet_dir.join(solstone_core_entity::hidden_names::HIDDEN_NAMES_FILE));
@@ -3733,14 +3732,14 @@ fn consolidate_span_days(
             {
                 for act in activities {
                     if !*backfill_only {
-                        let historical = act
-                            .get("stream")
-                            .and_then(Value::as_str)
-                            .is_some_and(|stream| {
-                                solstone_core_segment::stream_arrived_as_history_on_day(
-                                    journal, stream, day,
-                                )
-                            });
+                        let historical =
+                            act.get("stream")
+                                .and_then(Value::as_str)
+                                .is_some_and(|stream| {
+                                    solstone_core_segment::stream_arrived_as_history_on_day(
+                                        journal, stream, day,
+                                    )
+                                });
                         if !historical {
                             continue;
                         }
@@ -3836,18 +3835,18 @@ fn consolidate_span_days(
             {
                 for (idx, det) in detections.iter().enumerate() {
                     if !*backfill_only {
-                        let historical = det
-                            .get("segments")
-                            .and_then(Value::as_array)
-                            .is_some_and(|segs| {
-                                segs.iter().filter_map(Value::as_str).any(|origin| {
-                                    origin.split_once('/').is_some_and(|(stream, _)| {
-                                        solstone_core_segment::stream_arrived_as_history_on_day(
-                                            journal, stream, day,
-                                        )
+                        let historical =
+                            det.get("segments")
+                                .and_then(Value::as_array)
+                                .is_some_and(|segs| {
+                                    segs.iter().filter_map(Value::as_str).any(|origin| {
+                                        origin.split_once('/').is_some_and(|(stream, _)| {
+                                            solstone_core_segment::stream_arrived_as_history_on_day(
+                                                journal, stream, day,
+                                            )
+                                        })
                                     })
-                                })
-                            });
+                                });
                         if !historical {
                             continue;
                         }
@@ -4077,7 +4076,9 @@ fn consolidate_span_days(
                 .as_deref()
                 .and_then(|eid| {
                     active_by_key
-                        .get(&solstone_core_entity_matching::normalize_resolution_query(eid))
+                        .get(&solstone_core_entity_matching::normalize_resolution_query(
+                            eid,
+                        ))
                         .cloned()
                 })
                 .or_else(|| active_by_key.get(&norm_query).cloned())
@@ -4109,10 +4110,9 @@ fn consolidate_span_days(
                         .get(&entity_id)
                         .cloned()
                         .unwrap_or_else(|| entity_id.clone());
-                    let identity =
-                        solstone_core_entity::read_entity_identity(journal, &entity_dir)
-                            .ok()
-                            .flatten()?;
+                    let identity = solstone_core_entity::read_entity_identity(journal, &entity_dir)
+                        .ok()
+                        .flatten()?;
                     if identity.value().get("blocked") == Some(&Value::Bool(true)) {
                         return None;
                     }
@@ -7284,7 +7284,14 @@ fn email_owner_aliases_are_excluded_in_defaults_and_span_consolidation_including
         std::fs::write(live.join("audio.jsonl"), "{}\n").unwrap();
 
         // Historical email segment on the same mixed day.
-        span_email(journal, day, "140000_0", act_id, "Morgan Patel", "morgan@example.com");
+        span_email(
+            journal,
+            day,
+            "140000_0",
+            act_id,
+            "Morgan Patel",
+            "morgan@example.com",
+        );
 
         // Append both a live-stream activity (must be ignored by span consolidation)
         // and an email activity addressing the owner's secondary alias (must be excluded).
