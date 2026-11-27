@@ -459,7 +459,10 @@ pub(crate) fn inspect(
         ),
         (
             "engine-build/ggml/src/ggml-vulkan/ggml-vulkan.vcxproj".to_owned(),
-            format!("{sdk_options} /external:I \"{}/sdk/include\" /utf-8 /bigobj", norm(run_root)),
+            format!(
+                "{sdk_options} /external:I \"{}/sdk/include\" /utf-8 /bigobj",
+                norm(run_root)
+            ),
             true,
         ),
         (
