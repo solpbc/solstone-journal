@@ -608,7 +608,8 @@ fn settle_day(
                 Some(stream),
                 false,
             )?;
-            object.insert("facets".to_owned(), facets);
+            let merged = crate::segment::merge_folder_owner_facet(&segment.dir, facets, &inventory);
+            object.insert("facets".to_owned(), merged);
         }
         // The same grouping the replay gives a segment, so an item is one
         // activity whichever of the two writes it.

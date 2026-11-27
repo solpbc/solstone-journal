@@ -55,11 +55,14 @@ pub enum ReasonCode {
     ObsidianNoteAhead,
     ScreenshotInvalid,
     ScreenshotAhead,
+    FolderInvalid,
+    FolderAhead,
+    FolderFileInvalid,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 49] = [
+    const ALL: [Self; 52] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -109,6 +112,9 @@ impl ReasonCode {
         Self::ObsidianNoteAhead,
         Self::ScreenshotInvalid,
         Self::ScreenshotAhead,
+        Self::FolderInvalid,
+        Self::FolderAhead,
+        Self::FolderFileInvalid,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -162,6 +168,9 @@ impl ReasonCode {
             Self::ObsidianNoteAhead => "obsidian_note_ahead",
             Self::ScreenshotInvalid => "screenshot_invalid",
             Self::ScreenshotAhead => "screenshot_ahead",
+            Self::FolderInvalid => "folder_invalid",
+            Self::FolderAhead => "folder_ahead",
+            Self::FolderFileInvalid => "folder_file_invalid",
         }
     }
 }

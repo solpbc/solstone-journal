@@ -100,6 +100,7 @@ pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
                     && !stream.to_str().is_some_and(|stream| {
                         solstone_core_segment::is_body_only_dir(stream, &segment.path())
                     })
+                    && !solstone_core_segment::is_activity_only_folder_dir(&segment.path())
                 {
                     collect_segment_facets(&segment.path(), &mut active);
                 }
@@ -144,8 +145,12 @@ pub(crate) fn active_facets_checked_in(
     .map_err(|e| e.to_string())?;
     let mut facets = BTreeSet::new();
     for segment in segments {
-        // An import's chosen facet files body records; it owes no facet's work.
-        if solstone_core_segment::is_body_only_segment(&segment) {
+        // An import's chosen facet files body records, and a folder's chosen
+        // facet scopes activity-only folder segments; neither owes a facet's
+        // daily talent work.
+        if solstone_core_segment::is_body_only_segment(&segment)
+            || solstone_core_segment::is_activity_only_folder_segment(&segment)
+        {
             continue;
         }
         let path = segment.path().join("talents/facets.json");

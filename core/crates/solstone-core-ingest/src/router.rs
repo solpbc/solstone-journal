@@ -62,6 +62,7 @@ pub(crate) struct IngestState {
     pub(crate) journal_root: PathBuf,
     pub(crate) notifier: Arc<dyn IngestNotifier>,
     pub(crate) now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
+    pub(crate) pdf_reader: Arc<dyn crate::folder::FolderPdfReader>,
 }
 
 struct CallosumIngestNotifier {
@@ -168,7 +169,7 @@ fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
 }
 
 /// The journal's own day at this moment, in the owner's zone.
-fn today(journal: &Path, now_ms: i64) -> String {
+pub(crate) fn today(journal: &Path, now_ms: i64) -> String {
     let instant = jiff::Timestamp::from_millisecond(now_ms).unwrap_or(jiff::Timestamp::UNIX_EPOCH);
     solstone_core_time::day_key(
         instant
@@ -198,6 +199,20 @@ fn api_router_with(
     notifier: Arc<dyn IngestNotifier>,
     now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
 ) -> Router {
+    api_router_with_pdf(
+        journal_root,
+        notifier,
+        now_ms,
+        Arc::new(crate::folder::SystemFolderPdfReader),
+    )
+}
+
+pub(crate) fn api_router_with_pdf(
+    journal_root: impl AsRef<Path>,
+    notifier: Arc<dyn IngestNotifier>,
+    now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
+    pdf_reader: Arc<dyn crate::folder::FolderPdfReader>,
+) -> Router {
     Router::new()
         .route("/app/devices/ingest", post(ingest_upload))
         .route("/app/devices/ingest/segments/{day}", get(ingest_segments))
@@ -205,12 +220,25 @@ fn api_router_with(
             "/app/devices/ingest/obsidian/vaults",
             get(crate::obsidian::obsidian_vaults),
         )
+        .route(
+            "/app/devices/ingest/folder/supported",
+            get(crate::folder::folder_supported),
+        )
+        .route(
+            "/app/devices/ingest/folder/estimate",
+            post(crate::folder::folder_estimate),
+        )
+        .route(
+            "/app/devices/ingest/folder/facets",
+            get(crate::folder::folder_facets),
+        )
         .layer(DefaultBodyLimit::max(CONNECTION_BODY_LIMIT))
         .layer(RequestBodyLimitLayer::new(CONNECTION_BODY_LIMIT))
         .with_state(IngestState {
             journal_root: journal_root.as_ref().to_path_buf(),
             notifier,
             now_ms,
+            pdf_reader,
         })
 }
 
@@ -456,6 +484,8 @@ struct Envelope {
     note_changes: Option<Vec<NoteChange>>,
     /// The checked screenshot of a screenshots upload.
     screenshot: Option<crate::screenshots::CheckedScreenshot>,
+    /// The checked folder activity and content parts of a folder upload.
+    folder: Option<crate::folder::CheckedFolderUpload>,
     /// How a calendar upload's answer names the files it did not write as
     /// sent.
     calendar: Option<crate::calendar::Receipt>,
@@ -612,6 +642,7 @@ fn parse_envelope_body(
     let note_changes = validate_obsidian_upload(&source, &day, &segment, &files)?;
     let screenshot =
         crate::screenshots::validate_screenshot_upload(&source, &day, &segment, &meta, &files)?;
+    let folder = crate::folder::validate_folder_upload(&source, &day, &segment, &meta, &files)?;
     Ok(Envelope {
         day,
         segment,
@@ -620,6 +651,7 @@ fn parse_envelope_body(
         files,
         note_changes,
         screenshot,
+        folder,
         calendar: None,
     })
 }
@@ -805,6 +837,17 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         write_note_changes(state, cid, envelope)
     } else if envelope.screenshot.is_some() {
         write_screenshot(state, cid, envelope)
+    } else if envelope.folder.is_some() {
+        let mut envelope = envelope;
+        let upload = envelope.folder.take().expect("folder upload checked");
+        crate::folder::write_folder(
+            state,
+            cid,
+            envelope.day,
+            envelope.segment,
+            envelope.meta,
+            upload,
+        )
     } else if envelope.source == CALENDAR_SOURCE {
         write_calendar(state, cid, envelope)
     } else {
@@ -1702,23 +1745,28 @@ fn descriptors(files: &[IncomingFile], applied: &[AppliedFile]) -> Vec<FileDescr
 fn total_size(files: &[IncomingFile]) -> u64 {
     files.iter().map(|file| file.bytes.len() as u64).sum()
 }
-fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &str) -> Response {
+pub(crate) fn outcome_error(
+    outcome: &str,
+    code: ReasonCode,
+    status: StatusCode,
+    detail: &str,
+) -> Response {
     (status, Json(json!({"status":outcome,"error":"Ingest request failed","reason_code":code.as_str(),"detail":detail}))).into_response()
 }
 
-enum IngestActivity {
+pub(crate) enum IngestActivity {
     Accepted(AcceptedSegment),
     Rejected(ReasonCode),
 }
 
-struct IngestCompletion {
+pub(crate) struct IngestCompletion {
     response: Response,
     activity: IngestActivity,
     source: Option<String>,
 }
 
 impl IngestCompletion {
-    fn accepted(day: String, name: String, response: Response) -> Self {
+    pub(crate) fn accepted(day: String, name: String, response: Response) -> Self {
         Self {
             response,
             activity: IngestActivity::Accepted(AcceptedSegment { day, name }),
@@ -1726,7 +1774,7 @@ impl IngestCompletion {
         }
     }
 
-    fn rejected(code: ReasonCode, response: Response) -> Self {
+    pub(crate) fn rejected(code: ReasonCode, response: Response) -> Self {
         Self {
             response,
             activity: IngestActivity::Rejected(code),
@@ -1809,7 +1857,7 @@ fn record_ingest_activity(
     }
 }
 
-fn activity_timestamp(now_ms: i64) -> String {
+pub(crate) fn activity_timestamp(now_ms: i64) -> String {
     let timestamp = OffsetDateTime::from_unix_timestamp_nanos(i128::from(now_ms) * 1_000_000)
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
     timestamp
@@ -2107,6 +2155,7 @@ mod tests {
             journal_root: root.to_path_buf(),
             notifier: Arc::new(TestIngestNotifier),
             now_ms: Arc::new(|| 0),
+            pdf_reader: Arc::new(crate::folder::SystemFolderPdfReader),
         }
     }
 
@@ -2123,6 +2172,7 @@ mod tests {
             }],
             note_changes: None,
             screenshot: None,
+            folder: None,
             calendar: None,
         }
     }
@@ -2247,6 +2297,7 @@ mod tests {
             journal_root: root.clone(),
             notifier: SpyNotifier::succeeding(),
             now_ms: wall_clock_ms(),
+            pdf_reader: Arc::new(crate::folder::SystemFolderPdfReader),
         };
         let files = [solstone_core_ingest_resolve::IngestFile {
             name: solstone_core_segment::ContentName::new("audio.flac").unwrap(),
@@ -2291,6 +2342,7 @@ mod tests {
             journal_root: root.clone(),
             notifier: SpyNotifier::succeeding(),
             now_ms: wall_clock_ms(),
+            pdf_reader: Arc::new(crate::folder::SystemFolderPdfReader),
         };
         let files = [solstone_core_ingest_resolve::IngestFile {
             name: solstone_core_segment::ContentName::new("audio.flac").unwrap(),

@@ -139,6 +139,38 @@
       }
     },
     {
+      "id": "declared.client.ingestUpload.refusal.folder_invalid",
+      "kind": "declared",
+      "payload": {
+        "detail": "meta.folder is required and must be an object",
+        "error": "Ingest request failed",
+        "reason_code": "folder_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "reason_code": "folder_invalid"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.client.ingestUpload.refusal.folder_file_invalid",
+      "kind": "declared",
+      "payload": {
+        "detail": "content_hash does not match file bytes",
+        "error": "Ingest request failed",
+        "reason_code": "folder_file_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "reason_code": "folder_file_invalid"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
       "consumer_decision": {
         "accepted": true,
         "selected": [

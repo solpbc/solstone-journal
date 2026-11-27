@@ -11,10 +11,12 @@
 use std::path::Path;
 
 use solstone_core_format::calendar::CALENDAR_SOURCE;
+use solstone_core_format::folder::{FOLDER_ACTIVITY_FILE, FOLDER_SOURCE, is_folder_source_name};
 use solstone_core_format::obsidian::OBSIDIAN_SOURCE;
 use solstone_core_format::screenshots::SCREENSHOTS_SOURCE;
 use solstone_core_journal_io::{PathOrDay, Segment, iter_segments};
 
+use crate::content_name::is_reserved_name;
 use crate::segment_dir::is_safe_stream_component;
 use crate::stream_record::{read_typed_stream_record, stream_record_path};
 
@@ -23,6 +25,7 @@ use crate::stream_record::{read_typed_stream_record, stream_record_path};
 /// manifest (`imports/*/imported.json`).
 pub const SYNCING_SOURCES: &[&str] = &[
     CALENDAR_SOURCE,
+    FOLDER_SOURCE,
     OBSIDIAN_SOURCE,
     SCREENSHOTS_SOURCE,
     "granola",
@@ -33,7 +36,7 @@ pub const SYNCING_SOURCES: &[&str] = &[
 /// Whether `source` names a syncing source that may deliver historical days.
 #[must_use]
 pub fn is_syncing_source_name(source: &str) -> bool {
-    SYNCING_SOURCES.contains(&source)
+    SYNCING_SOURCES.contains(&source) || is_folder_source_name(source)
 }
 
 /// Whether `stream` belongs to a syncing source (bound via `streams/<stream>.json`
@@ -213,6 +216,55 @@ pub fn is_photos_stream(journal: &Path, stream: &str) -> bool {
             read_typed_stream_record(&stream_record_path(journal, stream)),
             Ok(Some(record)) if record.source.as_deref() == Some(PHOTOS_SOURCE)
         )
+}
+
+/// Whether `stream` is bound to a watched-folder source (`folder` or `folder_<12 hex>`).
+pub fn is_folder_stream(journal: &Path, stream: &str) -> bool {
+    is_safe_stream_component(stream)
+        && matches!(
+            read_typed_stream_record(&stream_record_path(journal, stream)),
+            Ok(Some(record)) if record.source.as_deref().is_some_and(is_folder_source_name)
+        )
+}
+
+/// Whether `dir` is an activity-only watched-folder segment: it carries
+/// `talents/folder_activity.json`, has no `talents/sense.json`, and holds no
+/// top-level content files outside journal bookkeeping sidecars and subdirs.
+///
+/// Activity-only folder segments are searchable immediately under `screen_text`
+/// and carry any owner-chosen facet for access control, but owe zero model
+/// passes and must not wake daily facet talents.
+#[must_use]
+pub fn is_activity_only_folder_dir(dir: &Path) -> bool {
+    let talents = dir.join("talents");
+    if !talents.join(FOLDER_ACTIVITY_FILE).is_file() || talents.join("sense.json").is_file() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else {
+            return false;
+        };
+        if ft.is_dir() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            return false;
+        };
+        if is_reserved_name(&name) || name.ends_with(".lock") {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+/// Whether a listed segment is an activity-only watched-folder segment.
+#[must_use]
+pub fn is_activity_only_folder_segment(segment: &Segment) -> bool {
+    is_activity_only_folder_dir(segment.path())
 }
 
 /// Whether a listed segment sits in a calendar stream.

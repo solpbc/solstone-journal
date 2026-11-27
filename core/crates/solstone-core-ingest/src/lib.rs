@@ -24,6 +24,7 @@
 
 mod calendar;
 mod carried;
+pub mod folder;
 mod health;
 pub mod known_sources;
 mod listing;

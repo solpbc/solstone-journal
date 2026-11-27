@@ -33,13 +33,7 @@ pub async fn ingest_segments(
             Ok(value) => value,
             Err((code, status, detail)) => return refusal(code, status, detail),
         };
-        let listing = match day_listing(
-            &state,
-            &context.cid,
-            &context.source,
-            &context.native_streams,
-            &day,
-        ) {
+        let listing = match day_listing(&state, &context.cid, &context.native_streams, &day) {
             Ok(listing) => listing,
             Err(error) => return day_refusal(&day, error),
         };
@@ -56,8 +50,7 @@ pub async fn ingest_segments(
 #[derive(Debug)]
 struct ListingContext {
     cid: String,
-    source: String,
-    native_streams: Vec<String>,
+    native_streams: Vec<(String, String)>,
 }
 
 fn listing_context(
@@ -74,6 +67,44 @@ fn listing_context(
         .transpose()
         .map_err(|code| (code, StatusCode::BAD_REQUEST, "invalid source".to_owned()))?
         .unwrap_or_default();
+    if source == solstone_core_format::folder::FOLDER_SOURCE {
+        let bindings = list_stream_bindings(&state.journal_root).map_err(|_| {
+            (
+                ReasonCode::JournalReadFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot resolve journal stream".to_owned(),
+            )
+        })?;
+        let mut folder_sources: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for binding in &bindings {
+            if solstone_core_format::folder::is_folder_source_name(&binding.source) {
+                folder_sources.insert(binding.source.clone());
+            }
+        }
+        let mut native_streams = Vec::new();
+        for folder_source in folder_sources {
+            let visible =
+                visible_stream_names(&state.journal_root, &cid, &folder_source).map_err(|_| {
+                    (
+                        ReasonCode::JournalReadFailed,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "cannot resolve journal stream".to_owned(),
+                    )
+                })?;
+            for stream in visible {
+                if let Some(binding) = bindings.iter().find(|b| b.name == stream)
+                    && binding.seq > 0
+                {
+                    native_streams.push((stream, folder_source.clone()));
+                }
+            }
+        }
+        return Ok(ListingContext {
+            cid,
+            native_streams,
+        });
+    }
     let visible_streams =
         visible_stream_names(&state.journal_root, &cid, &source).map_err(|_| {
             (
@@ -93,7 +124,9 @@ fn listing_context(
         })?;
         for stream in &visible_streams {
             match bindings.iter().find(|binding| binding.name == *stream) {
-                Some(binding) if binding.seq > 0 => native_streams.push(stream.clone()),
+                Some(binding) if binding.seq > 0 => {
+                    native_streams.push((stream.clone(), source.clone()));
+                }
                 Some(_) => {}
                 None => {
                     return Err((
@@ -114,7 +147,6 @@ fn listing_context(
     }
     Ok(ListingContext {
         cid,
-        source,
         native_streams,
     })
 }
@@ -122,12 +154,11 @@ fn listing_context(
 fn day_listing(
     state: &IngestState,
     cid: &str,
-    source: &str,
-    native_streams: &[String],
+    native_streams: &[(String, String)],
     day: &str,
 ) -> Result<DayListing, ListingError> {
     let mut events = Vec::new();
-    for stream in native_streams {
+    for (stream, source) in native_streams {
         events.extend(native_events(
             &state.journal_root,
             day,
@@ -267,6 +298,7 @@ mod listing_context_tests {
             journal_root: root.to_path_buf(),
             notifier: Arc::new(SilentNotifier),
             now_ms: Arc::new(|| 0),
+            pdf_reader: Arc::new(crate::folder::SystemFolderPdfReader),
         }
     }
 
@@ -298,7 +330,10 @@ mod listing_context_tests {
             &SourceQuery { source: None },
         )
         .unwrap();
-        assert_eq!(context.native_streams, vec!["desk_01"]);
+        assert_eq!(
+            context.native_streams,
+            vec![("desk_01".to_owned(), String::new())]
+        );
     }
 
     #[test]
@@ -352,7 +387,10 @@ mod listing_context_tests {
         )
         .unwrap();
 
-        assert_eq!(context.native_streams, vec![SELECTED_STREAM]);
+        assert_eq!(
+            context.native_streams,
+            vec![(SELECTED_STREAM.to_owned(), SOURCE.to_owned())]
+        );
     }
 
     fn write_stream_record(root: &std::path::Path, name: &str, cid: &str, source: &str, seq: u64) {

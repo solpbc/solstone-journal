@@ -783,5 +783,20 @@
     "path": "20260107/photos/120000_0/photo_observation.json",
     "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/photo_observation.json",
     "condition": "Path"
+  },
+  {
+    "path": "20260107/folder_witness/120000_300/document_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/document_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/folder_witness/120000_300/folder_transcript.jsonl",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/folder_transcript.jsonl",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/folder_witness/120000_300/screenshot_01_screen.png",
+    "pattern": "*/*/*/screenshot_*_screen.*",
+    "condition": "Path"
   }
 ]

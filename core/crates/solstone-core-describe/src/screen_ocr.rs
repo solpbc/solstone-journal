@@ -1652,14 +1652,28 @@ fn publish_record(
     commit.revalidate()?;
     let directory = segment.join("talents");
     let path = directory.join("screen_text.md");
-    if lines.is_empty() {
+    let folder_activity =
+        fs::read(directory.join(solstone_core_format::folder::FOLDER_ACTIVITY_FILE))
+            .ok()
+            .and_then(|raw| {
+                serde_json::from_slice::<solstone_core_format::folder::StoredFolderActivity>(&raw)
+                    .ok()
+            });
+    if lines.is_empty() && folder_activity.is_none() {
         let _ = retire_display(segment, &|| commit.revalidate());
         if !path.try_exists()? {
             return Ok(());
         }
     }
     let doc = record_text(lines);
-    let bytes = doc.as_bytes();
+    let combined_text;
+    let bytes = if let Some(activity) = &folder_activity {
+        combined_text =
+            solstone_core_format::folder::merge_folder_activity_with_screen_text(activity, &doc);
+        combined_text.as_bytes()
+    } else {
+        doc.as_bytes()
+    };
     let unchanged = fs::symlink_metadata(&path)
         .ok()
         .is_some_and(|metadata| metadata.file_type().is_file())
@@ -1669,7 +1683,9 @@ fn publish_record(
             commit.revalidate().map_err(|error| error.to_string())
         })?;
     }
-    if let Ok(Some(receipt)) = doc.display_receipt_bytes() {
+    if folder_activity.is_none()
+        && let Ok(Some(receipt)) = doc.display_receipt_bytes()
+    {
         let _ = publish_record_bytes(
             segment,
             &directory,

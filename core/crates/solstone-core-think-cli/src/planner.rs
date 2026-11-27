@@ -6539,4 +6539,189 @@ mod tests {
         assert!(hold_ids.contains(&newly_observed_id));
         assert_eq!(hold_ids.len(), 2);
     }
+
+    #[test]
+    fn activity_only_folder_segment_schedules_zero_talents_even_with_owner_facet() {
+        let root = fixture("local");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "#4A6FA5", "", None)
+            .unwrap();
+        let stream = "laptop_folder_0123456789ab";
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join(format!("streams/{stream}.json")),
+            serde_json::json!({
+                "name": stream,
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": 1,
+                "last_day": null,
+                "last_segment": null,
+                "seq": 1,
+                "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "source": "folder_0123456789ab"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let day = "20260812";
+        let seg_dir = root
+            .path()
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("140000_300");
+        std::fs::create_dir_all(seg_dir.join("talents")).unwrap();
+        std::fs::write(seg_dir.join("events.jsonl"), "").unwrap();
+        std::fs::write(
+            seg_dir.join("talents/folder_activity.json"),
+            serde_json::json!({
+                "v": 1,
+                "folder_id": "downloads-1",
+                "folder_name": "Downloads",
+                "owner_facet": "work",
+                "events": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            seg_dir.join("talents/screen_text.md"),
+            "## 01:00 · Folder: Downloads\n- Added installer\\.dmg\n",
+        )
+        .unwrap();
+        std::fs::write(
+            seg_dir.join("talents/facets.json"),
+            r#"[{"facet":"work","level":"high"}]"#,
+        )
+        .unwrap();
+
+        assert!(solstone_core_segment::is_activity_only_folder_dir(&seg_dir));
+        assert!(
+            solstone_core_system::activity_state::active_facets(root.path(), day).is_empty(),
+            "activity-only folder segments must not wake daily facet talents"
+        );
+        let work = inspect_day(
+            root.path(),
+            day,
+            &queue(root.path()),
+            None,
+            DaySources {
+                imports: &[],
+                archive_coordinates: &BTreeSet::new(),
+                roots: None,
+                coverage_pass: None,
+                day_health: None,
+                ask: Default::default(),
+            },
+            WorkPolicy::read(root.path()).unwrap(),
+            &mut WorkInventory::default(),
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert!(
+            work.candidates.is_empty(),
+            "activity-only folder segment must schedule zero talents, got {} candidates",
+            work.candidates.len()
+        );
+    }
+
+    #[test]
+    fn content_folder_segment_from_past_day_schedules_in_import_band_and_preserves_owner_facet() {
+        let root = fixture("local");
+        for (slug, title) in [("work", "Work"), ("personal", "Personal")] {
+            solstone_core_facets::create_facet(root.path(), slug, title, "", "#4A6FA5", "", None)
+                .unwrap();
+        }
+        let stream = "laptop_folder_0123456789ab";
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join(format!("streams/{stream}.json")),
+            serde_json::json!({
+                "name": stream,
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": 1,
+                "last_day": null,
+                "last_segment": null,
+                "seq": 1,
+                "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "source": "folder_0123456789ab"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let day = "20200110";
+        let seg_dir = root
+            .path()
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join("140000_300");
+        std::fs::create_dir_all(seg_dir.join("talents")).unwrap();
+        std::fs::write(
+            seg_dir.join("note_transcript.md"),
+            "# notes/plan.md\n\nMet about launch.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            seg_dir.join("talents/folder_activity.json"),
+            serde_json::json!({
+                "v": 1,
+                "folder_id": "notes-1",
+                "folder_name": "Notes",
+                "owner_facet": "work",
+                "events": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert!(!solstone_core_segment::is_activity_only_folder_dir(
+            &seg_dir
+        ));
+        let work = inspect_day(
+            root.path(),
+            day,
+            &queue(root.path()),
+            None,
+            DaySources {
+                imports: &[],
+                archive_coordinates: &BTreeSet::new(),
+                roots: None,
+                coverage_pass: None,
+                day_health: None,
+                ask: Default::default(),
+            },
+            WorkPolicy::read(root.path()).unwrap(),
+            &mut WorkInventory::default(),
+            &|| Ok(()),
+        )
+        .unwrap();
+        let seg_task = work
+            .candidates
+            .iter()
+            .find(|c| c.request.reference.contains("140000_300"))
+            .expect("content-bearing folder segment schedules segment work");
+        assert_eq!(seg_task.request.priority.unwrap().band, WorkBand::Import);
+
+        let inventory =
+            solstone_core_facets::observe_declared_facet_inventory(root.path()).unwrap();
+        let merged = crate::segment::merge_folder_owner_facet(
+            &seg_dir,
+            serde_json::json!([{ "facet": "personal", "level": "high" }]),
+            &inventory,
+        );
+        let names: BTreeSet<_> = merged
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v["facet"].as_str())
+            .collect();
+        assert!(names.contains("personal"), "{merged}");
+        assert!(names.contains("work"), "owner facet preserved: {merged}");
+    }
 }

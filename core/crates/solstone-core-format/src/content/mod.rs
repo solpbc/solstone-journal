@@ -958,8 +958,8 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         disposition: IndexDisposition::Excluded,
         segment: Some(SegmentRule::new(OfferedTo::DASHBOARD_TALENTS)),
     },
-    // Note changes a linked device reports from an Obsidian vault, written by
-    // ingest as one transcript per window.
+    // Note changes a linked device reports from an Obsidian vault or watched
+    // folder, written by ingest as one transcript per window.
     FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/note_transcript.md",
         format: FileFormat::Content(Family::Markdown),
@@ -967,6 +967,38 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         kind: KindAssignment::Settled(Kind::Notes),
         unit: ContentUnit::Window,
         offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        segment: None,
+    },
+    // Documents delivered by a watched folder in a bound stream.
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/document_transcript.md",
+        format: FileFormat::Content(Family::Markdown),
+        classification: ContentResolution::Indexed(Family::Markdown),
+        kind: KindAssignment::Settled(Kind::Documents),
+        unit: ContentUnit::Window,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
+        condition: FileCondition::Path,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+        segment: None,
+    },
+    // Conversation or speech transcripts delivered by a watched folder.
+    FilePattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/folder_transcript.jsonl",
+        format: FileFormat::Content(Family::AiChat),
+        classification: ContentResolution::Indexed(Family::AiChat),
+        kind: KindAssignment::Settled(Kind::Transcripts),
+        unit: ContentUnit::Segment,
+        offered_to: OfferedTo::SEARCH_DASHBOARD_AGENT_TALENTS,
         condition: FileCondition::Path,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Admitted {
@@ -1498,6 +1530,18 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
     },
     FilePattern {
         pattern: "*/*/*/screenshot_screen.*",
+        root: PatternRoot::DayRooted,
+        format: FileFormat::Original,
+        classification: ContentResolution::Unrecognized,
+        disposition: IndexDisposition::Excluded,
+        kind: KindAssignment::Settled(Kind::Screen),
+        unit: ContentUnit::Window,
+        offered_to: OfferedTo::DASHBOARD,
+        condition: FileCondition::Path,
+        segment: None,
+    },
+    FilePattern {
+        pattern: "*/*/*/screenshot_*_screen.*",
         root: PatternRoot::DayRooted,
         format: FileFormat::Original,
         classification: ContentResolution::Unrecognized,

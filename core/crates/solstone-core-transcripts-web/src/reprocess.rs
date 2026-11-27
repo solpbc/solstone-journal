@@ -664,7 +664,7 @@ fn modality_signals(segment_dir: &Path, modality: &str, now: Timestamp) -> Signa
                 && kind == Some(solstone_core_processing_record::MediaKind::Audio))
                 || (modality == "screen"
                     && (kind == Some(solstone_core_processing_record::MediaKind::Video)
-                        || solstone_core_format::screenshots::is_screenshot_file_name(name)))
+                        || solstone_core_format::screenshots::is_screen_still_file_name(name)))
             {
                 has_raw = true;
             }

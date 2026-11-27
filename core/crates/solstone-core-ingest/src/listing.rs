@@ -291,6 +291,16 @@ fn resolve_file_status(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err(ListingError::JournalRead),
     }
+    if written == "screen_text.md"
+        && segment
+            .path()
+            .join("talents")
+            .join(solstone_core_format::folder::FOLDER_ACTIVITY_FILE)
+            .is_file()
+        && segment.path().join("talents/screen_text.md").is_file()
+    {
+        return Ok(FileStatus::Present);
+    }
     if SegmentTerminalProof::new(&segment).has_terminal_proof(&name, size) {
         Ok(FileStatus::Processed)
     } else {

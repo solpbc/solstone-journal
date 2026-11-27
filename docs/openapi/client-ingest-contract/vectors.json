@@ -129,6 +129,34 @@
     },
     {
       "decision": {
+        "accepted": false,
+        "http_status": 400,
+        "kind": "refusal",
+        "reason_code": "folder_invalid"
+      },
+      "fixture_id": "declared.client.ingestUpload.refusal.folder_invalid",
+      "id": "client.ingestUpload.refusal.folder_invalid",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code"
+      ]
+    },
+    {
+      "decision": {
+        "accepted": false,
+        "http_status": 400,
+        "kind": "refusal",
+        "reason_code": "folder_file_invalid"
+      },
+      "fixture_id": "declared.client.ingestUpload.refusal.folder_file_invalid",
+      "id": "client.ingestUpload.refusal.folder_file_invalid",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code"
+      ]
+    },
+    {
+      "decision": {
         "accepted": true,
         "kind": "listing_collision_identity",
         "selected": [

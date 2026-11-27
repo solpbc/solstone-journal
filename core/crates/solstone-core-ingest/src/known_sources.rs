@@ -89,6 +89,7 @@ fn history(
     cid: &str,
     activity: Option<&ClientActivity>,
     vaults: Option<&BTreeMap<String, String>>,
+    folders: Option<&BTreeMap<String, String>>,
     use_safari: bool,
 ) -> History {
     let mut history = History::new();
@@ -98,6 +99,9 @@ fn history(
             ("obsidian".into(), Some(vault.clone())),
             stamp,
         );
+    }
+    for (folder, stamp) in folders.into_iter().flatten() {
+        observed(&mut history, ("folder".into(), Some(folder.clone())), stamp);
     }
     for (name, row) in activity.into_iter().flat_map(|a| &a.sources) {
         let SourceRecord::Valid(row) = row else {
@@ -109,6 +113,7 @@ fn history(
         let kind = match name.as_str() {
             "share" => continue,
             "obsidian" if vaults.is_some_and(|v| !v.is_empty()) => continue,
+            "folder" if folders.is_some_and(|f| !f.is_empty()) => continue,
             "" | "mobile" | "mobile-segment" => {
                 if let Some(segment) = &row.last_accepted_segment {
                     for kind in crate::carried_kinds(root, cid, name, &segment.day, &segment.name) {
@@ -126,8 +131,8 @@ fn history(
                 }
             }
             "watch-audio" => "watch",
-            "obsidian" | "calendar" | "screenshots" | "audio" | "screen" | "location"
-            | "camera" | "safari" | "terminal" | "browsers" | "watch" => name,
+            "folder" | "obsidian" | "calendar" | "screenshots" | "audio" | "screen"
+            | "location" | "camera" | "safari" | "terminal" | "browsers" | "watch" => name,
             _ => continue,
         };
         observed(&mut history, (kind.into(), None), stamp);
@@ -193,6 +198,23 @@ fn registry_stamps(root: &Path) -> std::io::Result<Stamps> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e),
     }
+    match std::fs::read_dir(root.join("config/folders")) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry?;
+                if entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with('.'))
+                {
+                    continue;
+                }
+                files.push(entry.path().join("folder.json"));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
     files.sort();
     files
         .into_iter()
@@ -238,6 +260,7 @@ pub fn snapshot(root: &Path, cid: Option<String>) -> Result<Snapshot, Declaratio
     };
     let live_seen = live_seen_for(root);
     let vaults = crate::obsidian::synced_vaults(root).map_err(|_| DeclarationError::Unavailable)?;
+    let folders = crate::folder::synced_folders(root).map_err(|_| DeclarationError::Unavailable)?;
     pairs.sort_by(|a, b| a.fingerprint.cmp(&b.fingerprint));
     let mut hash = Sha256::new();
     let mut devices = Vec::with_capacity(pairs.len());
@@ -259,6 +282,7 @@ pub fn snapshot(root: &Path, cid: Option<String>) -> Result<Snapshot, Declaratio
             &pair.fingerprint,
             activity,
             vaults.get(&pair.fingerprint),
+            folders.get(&pair.fingerprint),
             use_safari,
         );
         let device_last_seen_at = newer_last_seen_at(

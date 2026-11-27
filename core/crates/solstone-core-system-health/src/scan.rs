@@ -678,7 +678,7 @@ pub fn is_audio_jsonl(path: &Path) -> bool {
 
 /// A screenshot is a screen, read as one frame, never a photo.
 fn is_screenshot(path: &Path) -> bool {
-    file_name(path).is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+    file_name(path).is_some_and(solstone_core_format::screenshots::is_screen_still_file_name)
 }
 
 fn is_screen_jsonl(path: &Path) -> bool {

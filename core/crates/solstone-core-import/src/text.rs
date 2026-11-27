@@ -1785,6 +1785,97 @@ fn jsonl_rows(
     rows
 }
 
+/// Deterministically parse a transcript file delivered through a watched folder
+/// into JSONL rows (`header` + turn entries) without model calls or staging an
+/// `imports/` raw copy.
+///
+/// Reuses the exact same layout and structured-export parsers as generic text
+/// import. Returns `None` if the bytes cannot be decoded as UTF-8/UTF-16 text
+/// or contain no non-empty turns.
+pub fn parse_folder_transcript_rows(
+    bytes: &[u8],
+    filename: &str,
+    verdict: &Verdict,
+    origin: Timestamp,
+    facet: Option<&str>,
+) -> Option<Vec<Value>> {
+    let ext = Path::new(filename)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let reading = if crate::detect::is_structured_export_extension(ext) {
+        let text = crate::structured_exports::decode_structured_utf8(bytes)?;
+        let parsed = export_turns::read(text, &verdict.reasons)?;
+        if !readable_export(&parsed, verdict, "import.text") {
+            return None;
+        }
+        parsed
+    } else {
+        let text = triage::decode_text(bytes)?;
+        reading_for(&text, verdict, "import.text")
+    };
+    if reading.turns.is_empty() {
+        return None;
+    }
+    let mut folder_meta = Map::new();
+    folder_meta.insert("source".to_owned(), Value::String("folder".to_owned()));
+    folder_meta.insert("filename".to_owned(), Value::String(filename.to_owned()));
+    folder_meta.insert("triage".to_owned(), serde_json::json!(verdict));
+    if let Some(facet) = facet.filter(|value| !value.is_empty()) {
+        folder_meta.insert("facet".to_owned(), Value::String(facet.to_owned()));
+    }
+    let mut header = Map::new();
+    header.insert("folder".to_owned(), Value::Object(folder_meta));
+    let sent = reading
+        .turns
+        .iter()
+        .filter_map(|turn| match turn.export_time {
+            ExportTime::Sent(instant) => Some(instant),
+            _ => None,
+        });
+    if let (Some(first), Some(last)) = (sent.clone().min(), sent.max()) {
+        header.insert("first_sent_at".into(), Value::String(first.to_string()));
+        header.insert("last_sent_at".into(), Value::String(last.to_string()));
+    }
+    if reading.untimed {
+        header.insert("untimed".to_owned(), Value::Bool(true));
+    }
+    let mut rows = Vec::with_capacity(reading.turns.len() + 1);
+    rows.push(Value::Object(header));
+    for turn in &reading.turns {
+        let mut entry = Map::new();
+        entry.insert("start".to_owned(), Value::String(clock_text(turn.offset)));
+        let source_ms = match turn.export_time {
+            ExportTime::Sent(instant) => instant.as_millisecond(),
+            _ => crate::timestamp::epoch_millis(after(origin, turn.offset)),
+        };
+        entry.insert("source_ms".to_owned(), Value::Number(source_ms.into()));
+        match &turn.export_time {
+            ExportTime::Sent(instant) => {
+                entry.insert("sent_at".into(), Value::String(instant.to_string()));
+            }
+            ExportTime::Caption { start, end } => {
+                entry.insert("cue_start".into(), Value::String(start.clone()));
+                entry.insert("cue_end".into(), Value::String(end.clone()));
+            }
+            ExportTime::NoSendInstant => {
+                entry.insert("sent_at".into(), Value::Null);
+            }
+            ExportTime::Unspecified => {}
+        }
+        if let Some(speaker) = &turn.speaker {
+            entry.insert("speaker".to_owned(), Value::String(speaker.clone()));
+        }
+        if let Some(to) = &turn.recipient {
+            entry.insert("to".into(), serde_json::json!([to]));
+        }
+        entry.insert("text".to_owned(), Value::String(turn.text.clone()));
+        entry.insert("source".to_owned(), Value::String("folder".to_owned()));
+        rows.push(Value::Object(entry));
+    }
+    Some(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

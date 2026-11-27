@@ -138,7 +138,10 @@
               "unknown_service",
               "voice_unavailable",
               "screenshot_ahead",
-              "screenshot_invalid"
+              "screenshot_invalid",
+              "folder_ahead",
+              "folder_file_invalid",
+              "folder_invalid"
             ],
             "type": "string"
           }
@@ -185,6 +188,188 @@
         ],
         "type": "object"
       },
+      "FolderEstimateEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "activity_only_items": {
+            "type": "integer"
+          },
+          "activity_only_segments": {
+            "type": "integer"
+          },
+          "already_in_journal": {
+            "type": "integer"
+          },
+          "backfill_paused": {
+            "type": "boolean"
+          },
+          "content_items": {
+            "type": "integer"
+          },
+          "content_segments": {
+            "type": "integer"
+          },
+          "counts_by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "days": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "integer"
+          },
+          "segments": {
+            "type": "integer"
+          },
+          "thoughts": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "segments",
+          "days",
+          "thoughts",
+          "backfill_paused"
+        ],
+        "type": "object"
+      },
+      "FolderEstimateRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "content_hash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "file_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "has_content": {
+                  "type": "boolean"
+                },
+                "kind_hint": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "FolderFacetsEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "facets": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "color": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "facets"
+        ],
+        "type": "object"
+      },
+      "FolderSupportedEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "activity_only": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "document_revision_cooldown_seconds": {
+            "type": "integer"
+          },
+          "kinds": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "max_file_bytes": {
+            "type": "integer"
+          },
+          "max_image_pixels": {
+            "type": "integer"
+          },
+          "max_note_bytes": {
+            "type": "integer"
+          },
+          "ruleset_version": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "ruleset_version",
+          "window_seconds",
+          "kinds"
+        ],
+        "type": "object"
+      },
       "ObsidianVaultsEnvelope": {
         "additionalProperties": true,
         "properties": {
@@ -218,6 +403,29 @@
         },
         "required": [
           "vaults"
+        ],
+        "type": "object"
+      },
+      "RefusedFile": {
+        "additionalProperties": true,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "part": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason_code",
+          "detail"
         ],
         "type": "object"
       },
@@ -314,7 +522,7 @@
   "info": {
     "description": "Generated from client_ingest_authority.json. Covers only the three Rust-served linked-device devices/ingest operations: upload, segment listing and the Obsidian vault list.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "15.4.0",
+    "version": "15.5.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -438,6 +646,13 @@
                       "additionalProperties": true,
                       "type": "object"
                     },
+                    "refused_files": {
+                      "description": "Present only on folder-source uploads when one or more companion files failed per-file checking while valid events or files landed.",
+                      "items": {
+                        "$ref": "#/components/schemas/RefusedFile"
+                      },
+                      "type": "array"
+                    },
                     "segment": {
                       "type": "string"
                     },
@@ -484,7 +699,9 @@
               "browser_record_invalid",
               "calendar_note_invalid",
               "obsidian_note_invalid",
-              "screenshot_invalid"
+              "screenshot_invalid",
+              "folder_invalid",
+              "folder_file_invalid"
             ]
           },
           "403": {
@@ -515,7 +732,8 @@
               "foreign_stream_binding",
               "malformed_evidence_row",
               "obsidian_note_ahead",
-              "screenshot_ahead"
+              "screenshot_ahead",
+              "folder_ahead"
             ]
           },
           "413": {
@@ -571,6 +789,185 @@
           "client"
         ],
         "x-sources": {
+          "folder": {
+            "answers": [
+              {
+                "client_action": "Mark landed items delivered. Any path listed in `refused_files` reached a terminal per-file refusal unless the file changes on disk.",
+                "http_status": 200,
+                "meaning": "Accepted into the folder's 5-minute segment. Check optional `refused_files` for any individual broken companion files.",
+                "status": "ok"
+              },
+              {
+                "client_action": "Mark delivered and do not resend.",
+                "http_status": 200,
+                "meaning": "Every event and file in this upload was already received for this folder (including items the owner later erased).",
+                "status": "duplicate"
+              },
+              {
+                "client_action": "Do not resend the malformed upload as-is.",
+                "http_status": 400,
+                "meaning": "The envelope, `meta.folder`, activity JSONL, or part references break the contract.",
+                "reason_code": "folder_invalid"
+              },
+              {
+                "client_action": "Mark each named file refused until its bytes change.",
+                "http_status": 400,
+                "meaning": "Every item in the upload failed per-file checking (`refused_files` names each file and reason).",
+                "reason_code": "folder_file_invalid"
+              },
+              {
+                "client_action": "Hold it and resend once the journal's day reaches it.",
+                "http_status": 409,
+                "meaning": "The window's day is later than the journal's today.",
+                "reason_code": "folder_ahead"
+              },
+              {
+                "client_action": "Hold it and retry with backoff.",
+                "http_status": 503,
+                "meaning": "The journal cannot take this upload right now (received ledger unreadable, PDF extractor unavailable, or busy).",
+                "status": "retryable"
+              },
+              {
+                "client_action": "Hold it and retry with backoff.",
+                "http_status": 500,
+                "meaning": "The journal could not finish the write.",
+                "status": "failed"
+              }
+            ],
+            "capability": "folder",
+            "capability_rule": "Send only to a journal whose `GET /api/system/status` lists `folder` in `capabilities`. Below that, hold folder uploads on the device until the paired journal lists it.",
+            "deleted": "Each folder keeps a fail-closed received ledger keyed by `meta.folder.id` that outlives segment erase. Re-sending an already-received event, screenshot, photo, or document revision — including after the owner erased the segment or re-paired the device — answers `duplicate` without resurrecting deleted memories. An unreadable ledger answers `503 retryable`.",
+            "description": "Watched-folder file activity and optional content files from a linked device. One upload carries one 5-minute window (`HHMMSS_300` on the journal's 300-second grid) for one folder (`meta.folder`), consisting of one `folder_<sha256>.jsonl` activity file and zero or more companion content parts referenced by `part` fields on lines in that activity file. Activity-only windows render deterministically to `talents/screen_text.md` with zero model passes; companion content files route by `kind_hint` (falling back to deterministic triage when absent or unrecognized).",
+            "files": "Exactly one `folder_<64 lowercase hex sha256>.jsonl` activity file whose filename hash equals SHA-256 of its UTF-8 bytes (<= 8 MiB, <= 5,000 lines, trailing newline), plus 0..63 companion content parts referenced by `part` fields on lines in that file. Companion part names must not use reserved journal names.",
+            "golden": [
+              {
+                "day": "20261127",
+                "files": [
+                  {
+                    "submitted": "folder_de9ecff0f522b0acd38847b379035ba9dc652667c0ebad9eec88c980bd184ffa.jsonl"
+                  }
+                ],
+                "meta": {
+                  "folder": {
+                    "facet": "work",
+                    "id": "downloads-a1b2c3d4",
+                    "kinds": [
+                      "other"
+                    ],
+                    "name": "Downloads",
+                    "v": 1
+                  }
+                },
+                "segment": "140000_300",
+                "source": "folder"
+              },
+              {
+                "day": "20261127",
+                "files": [
+                  {
+                    "submitted": "folder_1944d3c8cfe49e4fb72aa049d2e69efd10e3c7fe1c7306fbf4a785ca031e53d3.jsonl"
+                  },
+                  {
+                    "submitted": "c_01.md"
+                  },
+                  {
+                    "submitted": "c_02.png"
+                  }
+                ],
+                "meta": {
+                  "folder": {
+                    "facet": null,
+                    "id": "desktop-b2c3d4e5",
+                    "kinds": [
+                      "notes",
+                      "screenshots"
+                    ],
+                    "name": "Desktop",
+                    "v": 1
+                  }
+                },
+                "segment": "140500_300",
+                "source": "folder"
+              },
+              {
+                "day": "20261127",
+                "files": [
+                  {
+                    "submitted": "folder_da5a6aed42ac5e9c9379b80e93baeac7d1bc95b7b1f779f08958d22818be978d.jsonl"
+                  },
+                  {
+                    "submitted": "c_01.txt"
+                  }
+                ],
+                "meta": {
+                  "folder": {
+                    "facet": "work",
+                    "id": "work-c3d4e5f6",
+                    "kinds": [
+                      "transcripts"
+                    ],
+                    "name": "Work",
+                    "v": 1
+                  }
+                },
+                "segment": "141000_300",
+                "source": "folder"
+              }
+            ],
+            "meta_schema": {
+              "properties": {
+                "folder": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "facet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+                      "type": "string"
+                    },
+                    "kinds": {
+                      "items": {
+                        "enum": [
+                          "notes",
+                          "documents",
+                          "transcripts",
+                          "screenshots",
+                          "photos",
+                          "other"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "name": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "v": {
+                      "const": 1
+                    }
+                  },
+                  "required": [
+                    "v",
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "folder"
+              ],
+              "type": "object"
+            },
+            "per_file_checking": "Broken companion files (hash mismatch, undecodable or oversized image, corrupt or encrypted PDF, invalid UTF-8 note, unsupported binary format) are refused by name in `refused_files` while valid activity events and companion files in the same window land (`200 OK`). When every item in an upload fails per-file checking and nothing lands, the journal answers `400` with `reason_code: folder_file_invalid` and `refused_files`.",
+            "source": "folder",
+            "window_grid": "One segment per watched folder per 5-minute window (`HHMMSS_300` on the 300-second grid in each event's own offset). Each folder binds its own internal stream keyed by `meta.folder.id` so concurrent folders never collide."
+          },
           "screenshots": {
             "accepted_types": [
               {
@@ -747,6 +1144,208 @@
             "source": "screenshots"
           }
         }
+      }
+    },
+    "/app/devices/ingest/folder/estimate": {
+      "post": {
+        "description": "Estimate historical backfill size in items, 5-minute segments, days, and approximate model passes (`thoughts`, never money) for a candidate folder scan, excluding items already recorded in the folder's received ledger.",
+        "operationId": "client.ingestFolderEstimate",
+        "parameters": [
+          {
+            "description": "Linked-device ingest protocol version. Must be 3.",
+            "in": "header",
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
+            "schema": {
+              "const": 3,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderEstimateEnvelope"
+                }
+              }
+            },
+            "description": "Backfill preview estimate."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Estimate request was invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The caller is not a linked device."
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Protocol version is not 3."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The folder's received ledger could not be read."
+          }
+        },
+        "summary": "Estimate watched-folder backfill size and thoughts",
+        "tags": [
+          "client"
+        ]
+      }
+    },
+    "/app/devices/ingest/folder/facets": {
+      "get": {
+        "description": "List enabled (non-muted) facets configured on this journal so a linked device can offer an optional owner-chosen facet for a watched folder.",
+        "operationId": "client.ingestFolderFacets",
+        "parameters": [
+          {
+            "description": "Linked-device ingest protocol version. Must be 3.",
+            "in": "header",
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
+            "schema": {
+              "const": 3,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderFacetsEnvelope"
+                }
+              }
+            },
+            "description": "Enabled facets on this journal."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The caller is not a linked device."
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Protocol version is not 3."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The facet list could not be read."
+          }
+        },
+        "summary": "List enabled facets for watched-folder assignment",
+        "tags": [
+          "client"
+        ]
+      }
+    },
+    "/app/devices/ingest/folder/supported": {
+      "get": {
+        "description": "Published supported file extensions, size limits, triage ruleset version, revision cooldown, and per-kind ingestion rules for watched folders.",
+        "operationId": "client.ingestFolderSupported",
+        "parameters": [
+          {
+            "description": "Linked-device ingest protocol version. Must be 3.",
+            "in": "header",
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
+            "schema": {
+              "const": 3,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderSupportedEnvelope"
+                }
+              }
+            },
+            "description": "Supported file types and folder-ingest limits."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The caller is not a linked device."
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Protocol version is not 3."
+          }
+        },
+        "summary": "List supported folder-source file types and limits",
+        "tags": [
+          "client"
+        ]
       }
     },
     "/app/devices/ingest/obsidian/vaults": {

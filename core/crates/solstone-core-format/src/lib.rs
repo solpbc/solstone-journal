@@ -7,6 +7,7 @@ pub mod briefing;
 pub mod calendar;
 pub mod chunker;
 pub mod content;
+pub mod folder;
 pub mod json;
 pub mod markdown;
 pub mod matcher;

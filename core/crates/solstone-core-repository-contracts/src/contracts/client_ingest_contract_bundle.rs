@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "15.4.0";
+const BUNDLE_SEMVER: &str = "15.5.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -24,15 +24,16 @@ const AUTHORITY_PATH: &str =
 /// this bundle. Regenerate committed contract artifacts with
 /// `cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib client_ingest_contract_bundle::regenerate_client_ingest_contract_bundle -- --ignored`.
 const CLIENT_INGEST_AUTHORITY: &str = include_str!("client_ingest_authority.json");
-const ARTIFACTS: [&str; 6] = [
+const ARTIFACTS: [&str; 7] = [
     "manifest.json",
     "projection.openapi.json",
     "vectors.json",
     "fixtures/wire-behavior.json",
     "fixtures/screenshots-golden.jsonl",
+    "fixtures/folder-golden.jsonl",
     "consumer-audit.json",
 ];
-const OPERATION_SPECS: [(&str, &str, &str); 3] = [
+const OPERATION_SPECS: [(&str, &str, &str); 6] = [
     ("/app/devices/ingest", "post", "client.ingestUpload"),
     (
         "/app/devices/ingest/segments/{day}",
@@ -44,18 +45,38 @@ const OPERATION_SPECS: [(&str, &str, &str); 3] = [
         "get",
         "client.ingestObsidianVaults",
     ),
+    (
+        "/app/devices/ingest/folder/supported",
+        "get",
+        "client.ingestFolderSupported",
+    ),
+    (
+        "/app/devices/ingest/folder/estimate",
+        "post",
+        "client.ingestFolderEstimate",
+    ),
+    (
+        "/app/devices/ingest/folder/facets",
+        "get",
+        "client.ingestFolderFacets",
+    ),
 ];
-const COMPONENT_CLOSURE: [&str; 6] = [
+const COMPONENT_CLOSURE: [&str; 11] = [
     "Error",
     "FileDescriptor",
     "SegmentFile",
     "ObsidianVaultsEnvelope",
+    "RefusedFile",
+    "FolderSupportedEnvelope",
+    "FolderEstimateRequest",
+    "FolderEstimateEnvelope",
+    "FolderFacetsEnvelope",
     "SegmentItem",
     "SegmentsEnvelope",
 ];
 /// Upload refusals a device must handle for content it sends, each with an
 /// example detail.
-const UPLOAD_REFUSALS: [(&str, &str); 4] = [
+const UPLOAD_REFUSALS: [(&str, &str); 6] = [
     ("browser_record_invalid", "row=1 field=blocks cause=limit"),
     (
         "calendar_note_invalid",
@@ -68,6 +89,14 @@ const UPLOAD_REFUSALS: [(&str, &str); 4] = [
     (
         "screenshot_invalid",
         "meta.screenshot.captured_at must be RFC 3339 with an offset",
+    ),
+    (
+        "folder_invalid",
+        "meta.folder is required and must be an object",
+    ),
+    (
+        "folder_file_invalid",
+        "content_hash does not match file bytes",
     ),
 ];
 const INGEST_STATUSES: [&str; 5] = ["ok", "duplicate", "collision", "conflict", "failed"];
@@ -560,6 +589,7 @@ fn generate_bundle(authority: &Value, authority_bytes: &[u8]) -> ArtifactMap {
         "fixtures/screenshots-golden.jsonl",
         screenshots_golden(authority),
     );
+    artifacts.insert("fixtures/folder-golden.jsonl", folder_golden(authority));
     artifacts.insert("consumer-audit.json", render_json(&consumer_audit()));
     artifacts.insert(
         "manifest.json",
@@ -575,6 +605,21 @@ fn screenshots_golden(authority: &Value) -> Vec<u8> {
         .pointer("/paths/~1app~1devices~1ingest/post/x-sources/screenshots/golden")
         .and_then(Value::as_array)
         .expect("screenshots golden envelopes");
+    let mut bytes = Vec::new();
+    for envelope in golden {
+        bytes.extend(serde_json::to_vec(&canonicalize(envelope)).expect("serialize envelope"));
+        bytes.push(b'\n');
+    }
+    bytes
+}
+
+/// The folder source's golden envelopes, one compact line each, so a client
+/// builds to the same lines the journal admits.
+fn folder_golden(authority: &Value) -> Vec<u8> {
+    let golden = authority
+        .pointer("/paths/~1app~1devices~1ingest/post/x-sources/folder/golden")
+        .and_then(Value::as_array)
+        .expect("folder golden envelopes");
     let mut bytes = Vec::new();
     for envelope in golden {
         bytes.extend(serde_json::to_vec(&canonicalize(envelope)).expect("serialize envelope"));
@@ -642,6 +687,8 @@ fn content_refusals_are_enumerated_in_authority_and_bundle() {
         "calendar_note_invalid",
         "obsidian_note_invalid",
         "screenshot_invalid",
+        "folder_invalid",
+        "folder_file_invalid",
     ] {
         assert_refusal_enumerated(reason_code);
     }

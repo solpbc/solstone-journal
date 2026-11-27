@@ -120,7 +120,7 @@ pub fn match_handler(journal: &Path, path: &Path, registry: &[HandlerSpec]) -> O
     if path
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+        .is_some_and(solstone_core_format::screenshots::is_screen_still_file_name)
     {
         return registry
             .iter()

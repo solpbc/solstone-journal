@@ -2154,7 +2154,8 @@ fn replay_activity_state_selected(
                 selected_coordinate,
             )?;
             routing_unreadable = filtered.1;
-            obj.insert("facets".to_owned(), filtered.0);
+            let merged = merge_folder_owner_facet(&segment_dir, filtered.0, &inventory);
+            obj.insert("facets".to_owned(), merged);
         }
         let scope = segment_coalesce_scope(&context.journal, &segment_dir, stream.as_deref());
         let changes = machine.update_with_scope(
@@ -5000,7 +5001,7 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
 
         let inventory = observe_declared_facet_inventory(&context.journal)
             .map_err(|error| error.to_string())?;
-        let filtered_facets = filter_declared_facets(
+        let (filtered_facets, _) = filter_declared_facets(
             sense.get("facets"),
             &inventory,
             context,
@@ -5009,14 +5010,15 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
             stream,
             true,
         )?;
+        let merged_facets = merge_folder_owner_facet(segment, filtered_facets, &inventory);
         let facets_json_path = talents.join("facets.json");
         // If a prior assignment cannot be observed, conservatively refresh the
         // bounded dependency set after the new assignment has been saved.
         let previous_facets = std::fs::read(&facets_json_path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-        let assignment_changed = previous_facets.as_ref() != Some(&filtered_facets.0);
-        replace_json_checked(context, &facets_json_path, &filtered_facets.0)?;
+        let assignment_changed = previous_facets.as_ref() != Some(&merged_facets);
+        replace_json_checked(context, &facets_json_path, &merged_facets)?;
         published.insert(facets_json_path.clone());
         assignment_published = assignment_changed;
 
@@ -5786,6 +5788,50 @@ pub(crate) fn filter_declared_facets<W: std::io::Write>(
         log.finish()?;
     }
     Ok((Value::Array(accepted), unreadable))
+}
+
+/// Union a watched folder's owner-chosen facet (when still declared) into a
+/// segment's filtered facets list. Content processing may add other facets to a
+/// folder segment and never removes the owner's.
+pub(crate) fn merge_folder_owner_facet(
+    segment_dir: &std::path::Path,
+    facets_value: Value,
+    inventory: &DeclaredFacetInventory,
+) -> Value {
+    let activity_path = segment_dir
+        .join("talents")
+        .join(solstone_core_format::folder::FOLDER_ACTIVITY_FILE);
+    let Some(owner_facet) = std::fs::read(&activity_path)
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<solstone_core_format::folder::StoredFolderActivity>(&bytes)
+                .ok()
+        })
+        .and_then(|activity| activity.owner_facet)
+        .filter(|slug| {
+            inventory
+                .enabled
+                .iter()
+                .chain(&inventory.muted)
+                .any(|declared| declared == slug)
+        })
+    else {
+        return facets_value;
+    };
+    let mut rows = match facets_value {
+        Value::Array(rows) => rows,
+        _ => Vec::new(),
+    };
+    let already_present = rows
+        .iter()
+        .any(|row| row.get("facet").and_then(Value::as_str) == Some(owner_facet.as_str()));
+    if !already_present {
+        rows.push(serde_json::json!({
+            "facet": owner_facet,
+            "level": "high",
+        }));
+    }
+    Value::Array(rows)
 }
 
 fn log_routing_state<W: std::io::Write>(

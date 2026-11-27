@@ -252,7 +252,10 @@ pub fn segment_file_offers(
     // Only registered conversation imports have a dashboard transcript view.
     // The basename rules above still supply the legacy audio and talent views.
     if reader == SegmentReader::Dashboard
-        && name == "conversation_transcript.jsonl"
+        && matches!(
+            name,
+            "conversation_transcript.jsonl" | "folder_transcript.jsonl"
+        )
         && let Some(row) = actual
         && row.format == FileFormat::Content(Family::AiChat)
         && row.offered_to.contains(Reader::Dashboard)

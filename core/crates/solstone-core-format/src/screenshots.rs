@@ -38,7 +38,7 @@ pub const SCREENSHOT_META_KEY: &str = "screenshot";
 pub fn screen_media_stem<'a>(segment: &str, name: &'a str) -> Option<&'a str> {
     use crate::content::{KindAssignment, file_spec, kinds::Kind};
     let (stem, ext) = name.rsplit_once('.')?;
-    let screen_name = is_screenshot_file_name(name)
+    let screen_name = is_screen_still_file_name(name)
         || ext == "webm"
         || (ext == "mp4" && stem.ends_with("screen"))
         || (matches!(ext, "mov" | "jsonl") && (stem == "screen" || stem.ends_with("_screen")));
@@ -55,11 +55,36 @@ pub fn is_screenshots_stream_name(stream: &str) -> bool {
     stream.ends_with("_screenshots")
 }
 
-/// Whether `name` is a screenshot image name the journal accepts.
+/// Whether `name` is a screenshot image name accepted by the dedicated
+/// `screenshots` source (`screenshot_screen.<ext>`).
 pub fn is_screenshot_file_name(name: &str) -> bool {
     name.strip_prefix(SCREENSHOT_STEM)
         .and_then(|rest| rest.strip_prefix('.'))
         .is_some_and(|ext| SCREENSHOT_EXTENSIONS.contains(&ext))
+}
+
+/// Whether `name` is any screen still image processed by `describe`, including
+/// `screenshot_screen.<ext>` and multi-screenshot window stills
+/// `screenshot_<hex>_screen.<ext>` delivered by a watched folder.
+pub fn is_screen_still_file_name(name: &str) -> bool {
+    if is_screenshot_file_name(name) {
+        return true;
+    }
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    if !SCREENSHOT_EXTENSIONS.contains(&ext) {
+        return false;
+    }
+    stem.strip_prefix("screenshot_")
+        .and_then(|rest| rest.strip_suffix("_screen"))
+        .is_some_and(|id| {
+            !id.is_empty()
+                && id.len() <= 32
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
 }
 
 /// Whether `name` claims to be a screenshot image, accepted or not.

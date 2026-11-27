@@ -48,6 +48,7 @@ pub enum WhatWord {
     Notes,
     Screenshots,
     Photos,
+    Folder,
 }
 
 impl WhatWord {
@@ -61,6 +62,7 @@ impl WhatWord {
             Self::Notes => "Obsidian notes",
             Self::Screenshots => "screenshots",
             Self::Photos => "photos",
+            Self::Folder => "folder",
         }
     }
 }
@@ -391,6 +393,10 @@ fn classify_bound_source(
         "watch-audio" => (Some(DeviceWord::Watch), Some(WhatWord::Audio)),
         "tmux" => (Some(DeviceWord::Terminal), None),
         source if source.starts_with("browser") => (Some(DeviceWord::Browser), None),
+        source if solstone_core_format::folder::is_folder_source_name(source) => {
+            let device_word = resolve_platform_device_word(record, description, ledger_entry);
+            (device_word, Some(WhatWord::Folder))
+        }
         // An empty source is what ingest stores when a client names none: the
         // device's own recording, with nothing read about what it recorded.
         "" | "audio" | "screen" | "camera" | "location" | "calendar" | "obsidian"

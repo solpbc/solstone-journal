@@ -1152,7 +1152,7 @@ fn screenshot_entry(
     let Some(raw) = files.iter().find(|path| {
         path.file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+            .is_some_and(solstone_core_format::screenshots::is_screen_still_file_name)
     }) else {
         return;
     };
@@ -1599,7 +1599,7 @@ fn screen_chunks(
             entry.insert("raw".into(), Value::String(frame_raw.clone()));
             // A screenshot's entry shows its image itself, so its text carries
             // no file note under it.
-            if solstone_core_format::screenshots::is_screenshot_file_name(&frame_raw) {
+            if solstone_core_format::screenshots::is_screen_still_file_name(&frame_raw) {
                 continue;
             }
             let mut content = entry

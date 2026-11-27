@@ -1527,7 +1527,7 @@ fn matches_modality(path: &Path, modality: Option<ReprocessKind>) -> bool {
 fn is_screenshot(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+        .is_some_and(solstone_core_format::screenshots::is_screen_still_file_name)
 }
 
 fn handler_for_path(path: &Path) -> Option<&'static str> {

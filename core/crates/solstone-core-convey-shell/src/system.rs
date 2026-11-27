@@ -15,6 +15,7 @@ use solstone_core_home::readers::get_capture_health;
 /// lists it here.
 const CAPABILITIES: &[&str] = &[
     "calendar_notes",
+    "folder",
     "obsidian_notes",
     "resumable_import_uploads",
     "screenshots",

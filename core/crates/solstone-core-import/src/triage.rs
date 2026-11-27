@@ -165,7 +165,7 @@ fn classify_with_rules<'a>(
 
 /// Decode BOM-marked UTF-16 and UTF-8. Use Windows-1252 only for structurally
 /// recognized SubRip in the loader, so arbitrary binary bytes cannot become text.
-pub(crate) fn decode_text(bytes: &[u8]) -> Option<Cow<'_, str>> {
+pub fn decode_text(bytes: &[u8]) -> Option<Cow<'_, str>> {
     if let Some((little, raw)) = bytes
         .strip_prefix(&[0xff, 0xfe])
         .map(|raw| (true, raw))

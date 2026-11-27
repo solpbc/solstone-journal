@@ -18,13 +18,18 @@
     }
   ],
   "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
-  "bundle_semver": "15.4.0",
+  "bundle_semver": "15.5.0",
   "client_protocol_version": 3,
   "component_closure": [
     "Error",
     "FileDescriptor",
     "SegmentFile",
     "ObsidianVaultsEnvelope",
+    "RefusedFile",
+    "FolderSupportedEnvelope",
+    "FolderEstimateRequest",
+    "FolderEstimateEnvelope",
+    "FolderFacetsEnvelope",
     "SegmentItem",
     "SegmentsEnvelope"
   ],
@@ -41,15 +46,15 @@
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "d08f41ec8907cd808d840066a22ed7043ae5859310bfad9492de2d921179b805"
+      "sha256": "fcf2d85ccfad2bcfeaa12d3d4cccb62bfd8d96369c1fe06f7032e943a11c5ea1"
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "0d80e6ca8f56245f19fc87271f366938a2b19d38cc9fb5d7be72c7e9e627d0db"
+      "sha256": "73f98ab345305770003d5e6bc336537fc6ade649cb22986859a42d7c2d6a01a9"
     },
     {
       "path": "vectors.json",
-      "sha256": "521c294d58c9e1785ac39527fe7fff5be526ee33aa01e459675ea83eb5f126dd"
+      "sha256": "0198ef404af1da419105d9c18032c43750a9dafbd96774a816632d0d0b4dcfd3"
     }
   ],
   "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
@@ -58,7 +63,7 @@
       "id": "openapi.client_ingest_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "afd00a9213ea1b7cf9d68a60e14601af51b950403ec6b6533844baa95a8ca698"
+      "sha256": "1efde3b379ab0345525ffcb07e1b93d0d17425482087601e5881d2a55666ab67"
     }
   ],
   "openapi_document_version": "1.0.0",
@@ -66,7 +71,10 @@
   "operation_ids": [
     "client.ingestUpload",
     "client.ingestSegments",
-    "client.ingestObsidianVaults"
+    "client.ingestObsidianVaults",
+    "client.ingestFolderSupported",
+    "client.ingestFolderEstimate",
+    "client.ingestFolderFacets"
   ],
   "projection_path": "projection.openapi.json",
   "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
