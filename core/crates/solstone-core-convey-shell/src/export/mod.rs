@@ -42,7 +42,41 @@ use solstone_core_journal_archive::{
 };
 use solstone_core_journal_config::owner_zone;
 use solstone_core_journal_io::disk_space::JournalDiskSpace;
-use solstone_core_trash::{ErasureEpoch, read_erasure_epoch};
+use solstone_core_trash::{
+    ErasureEpoch, has_erasing_items, has_erasing_items_unlocked, read_erasure_epoch,
+};
+
+/// Fast lock-free check for whether a permanent Trash erasure has invalidated
+/// `expected_epoch`, either because a Trash item is already committed to
+/// `State::Erasing` or because the erasure epoch advanced/became unreadable.
+/// Checks `State::Erasing` BEFORE `read_erasure_epoch` because `trash::erase`
+/// bumps the epoch strictly before removing the `State::Erasing` item folder,
+/// eliminating any single-call TOCTOU window between the two checks.
+fn permanent_erasure_invalidated_fast(journal: &Path, expected_epoch: &ErasureEpoch) -> bool {
+    !matches!(has_erasing_items_unlocked(journal), Ok(false))
+        || !read_erasure_epoch(journal).is_ok_and(|epoch| epoch == *expected_epoch)
+}
+
+/// Lock-synchronized check for whether a permanent Trash erasure has invalidated
+/// `expected_epoch`. Synchronizes briefly on `.trash/.lock` when `.trash` exists
+/// so an `erase()` call that just acquired the lock finishes publishing
+/// `State::Erasing` before classification — eliminating any timing window between
+/// Trash lock acquisition, `State::Erasing` publication, hooks/backup work, and
+/// `bump_erasure_epoch`, with zero sleeps or retry waits.
+fn permanent_erasure_invalidated_synchronized(
+    journal: &Path,
+    expected_epoch: &ErasureEpoch,
+) -> bool {
+    if !read_erasure_epoch(journal).is_ok_and(|epoch| epoch == *expected_epoch) {
+        return true;
+    }
+    if !matches!(has_erasing_items(journal), Ok(false)) {
+        return true;
+    }
+    // Re-check epoch once after dropping the short Trash lock in case an erasure
+    // finished advancing the epoch and removing its item folder while we waited.
+    !read_erasure_epoch(journal).is_ok_and(|epoch| epoch == *expected_epoch)
+}
 
 use self::range::{
     ACTIVITY_TOUCH_INTERVAL_SECS, ActiveDownloadGuard, ActiveTransferHooks, RangeDecision,
@@ -215,8 +249,8 @@ impl ExportService {
         let has_staging = staging.is_ok();
         if let Ok(ref staging_area) = staging {
             if let Some(record) = staging_area.read_ready_record() {
-                let epoch_matches = read_erasure_epoch(&journal_root)
-                    .is_ok_and(|epoch| epoch == record.erasure_epoch);
+                let epoch_matches =
+                    !permanent_erasure_invalidated_fast(&journal_root, &record.erasure_epoch);
                 let within_window =
                     now.saturating_sub(record.last_activity_epoch_secs) < ROLLING_INACTIVITY_SECS;
                 let authorized = is_requester_authorized(&journal_root, &record.owner);
@@ -281,16 +315,21 @@ impl ExportService {
         };
         let now = self.inner.clock.now_epoch_secs();
         let current_epoch = read_erasure_epoch(&self.inner.journal_root);
+        let erasing_in_progress = !matches!(
+            has_erasing_items_unlocked(&self.inner.journal_root),
+            Ok(false)
+        );
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ready) = state.ready.as_mut() else {
             return;
         };
 
-        // 1. Check permanent Trash erasure epoch (fail closed on unreadable epoch).
-        let epoch_mismatch = match &current_epoch {
-            Ok(epoch) => *epoch != ready.record.erasure_epoch,
-            Err(_) => true,
-        };
+        // 1. Check permanent Trash erasure epoch and active State::Erasing (fail closed).
+        let epoch_mismatch = erasing_in_progress
+            || match &current_epoch {
+                Ok(epoch) => *epoch != ready.record.erasure_epoch,
+                Err(_) => true,
+            };
         if epoch_mismatch {
             ready.retired_by_erasure = true;
             ready.abort_signal.store(ABORT_ERASED, Ordering::Release);
@@ -1023,10 +1062,8 @@ impl ActiveTransferHooks for ExportTransferHooks {
     }
 
     fn check_abort_disk(&self) -> Option<TransferAbortReason> {
-        let epoch_mismatch = match read_erasure_epoch(&self.inner.journal_root) {
-            Ok(epoch) => epoch != self.erasure_epoch,
-            Err(_) => true,
-        };
+        let epoch_mismatch =
+            permanent_erasure_invalidated_fast(&self.inner.journal_root, &self.erasure_epoch);
         if epoch_mismatch {
             self.abort_signal.store(ABORT_ERASED, Ordering::Release);
             let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -1057,6 +1094,10 @@ impl ActiveTransferHooks for ExportTransferHooks {
 
     fn release_active_download(&self) {
         let current_epoch = read_erasure_epoch(&self.inner.journal_root);
+        let erasing_in_progress = !matches!(
+            has_erasing_items_unlocked(&self.inner.journal_root),
+            Ok(false)
+        );
         let now = self.inner.clock.now_epoch_secs();
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ready) = state.ready.as_mut() else {
@@ -1068,10 +1109,11 @@ impl ActiveTransferHooks for ExportTransferHooks {
         ready.active_downloads = ready.active_downloads.saturating_sub(1);
         ready.record.last_activity_epoch_secs = now;
 
-        let epoch_mismatch = match &current_epoch {
-            Ok(epoch) => *epoch != ready.record.erasure_epoch,
-            Err(_) => true,
-        };
+        let epoch_mismatch = erasing_in_progress
+            || match &current_epoch {
+                Ok(epoch) => *epoch != ready.record.erasure_epoch,
+                Err(_) => true,
+            };
         if epoch_mismatch {
             ready.retired_by_erasure = true;
             ready.abort_signal.store(ABORT_ERASED, Ordering::Release);
@@ -1144,7 +1186,7 @@ fn run_prepare_worker(
     };
 
     // 1. Check whether Trash erasure already invalidated the job before scanning.
-    if !read_erasure_epoch(&inner.journal_root).is_ok_and(|epoch| epoch == start_epoch) {
+    if permanent_erasure_invalidated_synchronized(&inner.journal_root, &start_epoch) {
         finish_with_error(
             "erased_invalidated",
             "export_invalidated_by_erasure",
@@ -1157,10 +1199,17 @@ fn run_prepare_worker(
     let fingerprint = ChangeFingerprint::capture(&inner.journal_root);
 
     // 2. Open live-journal source snapshot.
+    // Classify any error against synchronized Trash state (`erasure_epoch` + `State::Erasing`
+    // under `.trash/.lock`) with zero timing waits: if a permanent erasure has begun (even
+    // before its hooks/backup writes or `bump_erasure_epoch` finish), report `erased_invalidated`;
+    // otherwise retain ordinary `source_changed`.
     let source = match ArchiveSource::open_live(&inner.journal_root) {
         Ok(source) => source,
         Err(error) => {
-            if !read_erasure_epoch(&inner.journal_root).is_ok_and(|epoch| epoch == start_epoch) {
+            if cancel.load(Ordering::Acquire) {
+                finish_with_error("cancelled", "cancelled", None, None, None);
+            } else if permanent_erasure_invalidated_synchronized(&inner.journal_root, &start_epoch)
+            {
                 finish_with_error(
                     "erased_invalidated",
                     "export_invalidated_by_erasure",
@@ -1294,9 +1343,8 @@ fn run_prepare_worker(
     let mut checks_since_disk_check: u32 = 0;
     let mut floor_breach: Option<(u64, u64)> = None;
     let mut check_abort = || -> Result<(), String> {
-        match read_erasure_epoch(&abort_journal) {
-            Ok(current) if current == abort_epoch => {}
-            _ => return Err("trash_erased".to_owned()),
+        if permanent_erasure_invalidated_fast(&abort_journal, &abort_epoch) {
+            return Err("trash_erased".to_owned());
         }
         if !is_requester_authorized(&abort_journal, &abort_owner) {
             return Err("requester_revoked".to_owned());
@@ -1334,7 +1382,7 @@ fn run_prepare_worker(
 
     if let Err(error) = encode_result {
         drop(part_file);
-        if !read_erasure_epoch(&inner.journal_root).is_ok_and(|epoch| epoch == start_epoch) {
+        if permanent_erasure_invalidated_synchronized(&inner.journal_root, &start_epoch) {
             finish_with_error(
                 "erased_invalidated",
                 "export_invalidated_by_erasure",
@@ -1458,9 +1506,11 @@ fn run_prepare_worker(
         ExportMode::WithoutProcessedMedia => format!("solstone-journal-{date_stamp}-light.zip"),
     };
 
+    let invalidated_sync =
+        permanent_erasure_invalidated_synchronized(&inner.journal_root, &start_epoch);
     let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
     let epoch_still_valid =
-        read_erasure_epoch(&inner.journal_root).is_ok_and(|epoch| epoch == start_epoch);
+        !invalidated_sync && !permanent_erasure_invalidated_fast(&inner.journal_root, &start_epoch);
     if cancel.load(Ordering::Acquire) {
         drop(state);
         finish_with_error("cancelled", "cancelled", None, None, None);
@@ -1575,7 +1625,7 @@ fn hash_file(
         }
         if bytes_since_epoch_check >= EPOCH_CHECK_INTERVAL_BYTES {
             bytes_since_epoch_check = 0;
-            if !read_erasure_epoch(journal_root).is_ok_and(|epoch| epoch == *expected_epoch) {
+            if permanent_erasure_invalidated_fast(journal_root, expected_epoch) {
                 return Err(HashError::Erased);
             }
         }
@@ -1773,8 +1823,7 @@ pub fn prepared_export_path(journal_root: &Path, export_id: &str) -> Option<(Pat
     if record.export_id != export_id || record.owner != RequesterScope::Local {
         return None;
     }
-    let epoch = read_erasure_epoch(journal_root).ok()?;
-    if epoch != record.erasure_epoch {
+    if permanent_erasure_invalidated_fast(journal_root, &record.erasure_epoch) {
         return None;
     }
     let now = SystemExportClock.now_epoch_secs();

@@ -1189,3 +1189,379 @@ async fn estimate_reports_staging_volume_identity_for_same_and_distinct_sibling_
         "reserve must apply to the actual volume holding the staged ZIP"
     );
 }
+
+struct BarrierTrashKind {
+    entered_tx: std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    release_rx: std::sync::Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+}
+
+impl Kind for BarrierTrashKind {
+    fn handles(&self, unit: &Unit) -> bool {
+        matches!(unit, Unit::Entity)
+    }
+
+    fn hold<'a>(&'a self, _journal: &Path, _item: &Item) -> Result<Box<dyn Hold + 'a>, String> {
+        Ok(Box::new(NoopHold))
+    }
+
+    fn present(&self, journal: &Path, path: &str) -> bool {
+        journal.join(path).exists()
+    }
+
+    fn references(
+        &self,
+        _journal: &Path,
+        _item: &Item,
+        _change: Change,
+        _files: &[String],
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn erasing(&self, _journal: &Path, _item: &Item) -> Result<(), String> {
+        if let Some(tx) = self
+            .entered_tx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            let _ = tx.send(());
+        }
+        if let Some(rx) = self
+            .release_rx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            let _ = rx.recv();
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invalidated_without_timing_waits()
+ {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    let staging = work.path().join("staging");
+    seed_journal(&journal);
+
+    let clock = Arc::new(MockClock::new(1_764_150_000));
+    let disk = Arc::new(MockDiskSpace::new(
+        50 * 1024 * 1024 * 1024,
+        100 * 1024 * 1024 * 1024,
+    ));
+    let service = make_service(&journal, &staging, Arc::clone(&clock), Arc::clone(&disk));
+
+    // Prepare an initial ready copy and place one entity into Trash (State::Trashed).
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready_initial = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    assert_eq!(ready_initial["status"], "ready");
+    let initial_id = ready_initial["ready"]["export_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let entity_path = journal.join("entities/barrier-target/entity.json");
+    fs::create_dir_all(entity_path.parent().unwrap()).unwrap();
+    fs::write(&entity_path, br#"{"id":"barrier-target"}"#).unwrap();
+    let trashed_item = detach(
+        &journal,
+        &FakeTrashKind,
+        Unit::Entity,
+        Action::EntityDelete,
+        web_surface(),
+        vec!["entities/barrier-target".into()],
+    )
+    .unwrap();
+    let epoch_before = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
+
+    // Ordinary State::Trashed must NOT invalidate exports.
+    assert!(!super::permanent_erasure_invalidated_synchronized(
+        &journal,
+        &epoch_before
+    ));
+    assert_eq!(
+        service.state_payload(&RequesterScope::Local)["status"],
+        "ready"
+    );
+
+    // Start permanent erase on a background thread and block inside Kind::erasing()
+    // AFTER State::Erasing is published and BEFORE bump_erasure_epoch() runs.
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let journal_for_erase = journal.clone();
+    let item_id = trashed_item.id.clone();
+    let erase_handle = std::thread::spawn(move || {
+        let barrier_kind = BarrierTrashKind {
+            entered_tx: std::sync::Mutex::new(Some(entered_tx)),
+            release_rx: std::sync::Mutex::new(Some(release_rx)),
+        };
+        erase(
+            &journal_for_erase,
+            &[&barrier_kind],
+            &item_id,
+            Action::Erase,
+            web_surface(),
+        )
+    });
+
+    entered_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("erase must reach Kind::erasing barrier");
+
+    // Epoch has NOT bumped yet; barrier remains held indefinitely beyond any retry window.
+    assert_eq!(
+        solstone_core_trash::read_erasure_epoch(&journal).unwrap(),
+        epoch_before,
+        "barrier must hold erase BEFORE bump_erasure_epoch runs"
+    );
+    assert!(solstone_core_trash::has_erasing_items(&journal).unwrap());
+
+    // 1. Existing ready copy is invalidated immediately while bump_erasure_epoch is still blocked.
+    let dl_while_blocked = service
+        .serve_download(
+            &RequesterScope::Local,
+            &initial_id,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(dl_while_blocked.status(), StatusCode::GONE);
+    assert!(!staging.join(format!("{initial_id}.zip")).exists());
+
+    // 2. Preparing while bump_erasure_epoch is held indefinitely beyond any retry window
+    //    classifies deterministically as erased_invalidated (never source_changed).
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let outcome_while_blocked = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    assert_eq!(
+        outcome_while_blocked["status"], "erased_invalidated",
+        "outcome_while_blocked={outcome_while_blocked}"
+    );
+    assert_eq!(
+        outcome_while_blocked["active_job"]["error_code"],
+        "export_invalidated_by_erasure"
+    );
+    assert!(outcome_while_blocked["ready"].is_null());
+    // Prove the barrier was STILL held (epoch still unbumped) when classification completed.
+    assert_eq!(
+        solstone_core_trash::read_erasure_epoch(&journal).unwrap(),
+        epoch_before
+    );
+
+    // Release the barrier and confirm erase finishes cleanly and subsequent prepare succeeds.
+    release_tx.send(()).unwrap();
+    erase_handle.join().unwrap().unwrap();
+    assert_eq!(
+        solstone_core_trash::read_erasure_epoch(&journal)
+            .unwrap()
+            .epoch,
+        epoch_before.epoch + 1
+    );
+    assert!(!solstone_core_trash::has_erasing_items(&journal).unwrap());
+
+    // 3. Mid-encode permanent erase held behind the barrier (even if a source mutation occurs
+    //    at the exact same moment before bump_erasure_epoch runs) classifies as erased_invalidated.
+    let entity2_path = journal.join("entities/barrier-target-2/entity.json");
+    fs::create_dir_all(entity2_path.parent().unwrap()).unwrap();
+    fs::write(&entity2_path, br#"{"id":"barrier-target-2"}"#).unwrap();
+    let trashed_item2 = detach(
+        &journal,
+        &FakeTrashKind,
+        Unit::Entity,
+        Action::EntityDelete,
+        web_surface(),
+        vec!["entities/barrier-target-2".into()],
+    )
+    .unwrap();
+    let victim2 = journal.join("notes/zzz-erasure-race-victim.bin");
+    fs::write(&victim2, vec![0x33u8; 32 * 1024]).unwrap();
+    let epoch_before_2 = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
+
+    let (entered2_tx, entered2_rx) = std::sync::mpsc::channel();
+    let (release2_tx, release2_rx) = std::sync::mpsc::channel();
+    type EraseHandle = std::thread::JoinHandle<Result<(), solstone_core_trash::TrashError>>;
+    let erase2_handle_slot: Arc<std::sync::Mutex<Option<EraseHandle>>> =
+        Arc::new(std::sync::Mutex::new(None));
+
+    struct OnEncodeProbe {
+        calls: AtomicU64,
+        action: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    }
+    impl DiskSpaceProbe for OnEncodeProbe {
+        fn read(&self, _staging: &StagingArea) -> std::io::Result<JournalDiskSpace> {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            // Call 0 is start_job preflight; call 1 runs inside encode_archive_with_options'
+            // check_abort hook after open_live has frozen the inventory.
+            if n == 1
+                && let Some(action) = self.action.lock().unwrap_or_else(|e| e.into_inner()).take()
+            {
+                action();
+            }
+            Ok(JournalDiskSpace {
+                free_bytes: 50 * 1024 * 1024 * 1024,
+                total_bytes: 100 * 1024 * 1024 * 1024,
+            })
+        }
+    }
+
+    let journal_for_hook = journal.clone();
+    let victim2_for_hook = victim2.clone();
+    let item2_id = trashed_item2.id.clone();
+    let handle_slot_for_hook = Arc::clone(&erase2_handle_slot);
+    let mid_encode_probe: Arc<dyn DiskSpaceProbe> = Arc::new(OnEncodeProbe {
+        calls: AtomicU64::new(0),
+        action: std::sync::Mutex::new(Some(Box::new(move || {
+            let j = journal_for_hook.clone();
+            let h = std::thread::spawn(move || {
+                let barrier_kind = BarrierTrashKind {
+                    entered_tx: std::sync::Mutex::new(Some(entered2_tx)),
+                    release_rx: std::sync::Mutex::new(Some(release2_rx)),
+                };
+                erase(
+                    &j,
+                    &[&barrier_kind],
+                    &item2_id,
+                    Action::Erase,
+                    web_surface(),
+                )
+            });
+            *handle_slot_for_hook
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(h);
+            entered2_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("mid-encode erase must reach barrier before epoch bump");
+            let _ = fs::remove_file(&victim2_for_hook);
+        }))),
+    });
+
+    let service2 = ExportService::with_deps(
+        journal.clone(),
+        StagingArea::at_dir(staging.clone(), true).unwrap(),
+        Arc::clone(&clock) as Arc<dyn ExportClock>,
+        mid_encode_probe,
+    );
+    service2
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let outcome_mid_encode = wait_until_not_preparing(&service2, &RequesterScope::Local).await;
+    assert_eq!(
+        outcome_mid_encode["status"], "erased_invalidated",
+        "mid-encode erase blocked before epoch bump must classify as erased_invalidated; outcome={outcome_mid_encode}"
+    );
+    assert_eq!(
+        outcome_mid_encode["active_job"]["error_code"],
+        "export_invalidated_by_erasure"
+    );
+    assert_eq!(
+        solstone_core_trash::read_erasure_epoch(&journal).unwrap(),
+        epoch_before_2,
+        "barrier must still be held (epoch unbumped) when mid-encode classification finished"
+    );
+
+    release2_tx.send(()).unwrap();
+    erase2_handle_slot
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+        .expect("mid-encode erase thread spawned")
+        .join()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        solstone_core_trash::read_erasure_epoch(&journal)
+            .unwrap()
+            .epoch,
+        epoch_before_2.epoch + 1
+    );
+
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready_after = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    assert_eq!(ready_after["status"], "ready");
+    assert!(ready_after["ready"].is_object());
+}
+
+#[tokio::test]
+async fn ordinary_non_erasure_source_changed_remains_failed_source_changed_even_with_trashed_item()
+{
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    let staging = work.path().join("staging");
+    seed_journal(&journal);
+
+    // Keep a State::Trashed item present (not permanently erasing) to ensure Trash
+    // presence alone never misclassifies an ordinary non-erasure SourceChanged.
+    let trashed_src = journal.join("entities/kept-in-trash/entity.json");
+    fs::create_dir_all(trashed_src.parent().unwrap()).unwrap();
+    fs::write(&trashed_src, br#"{"id":"kept-in-trash"}"#).unwrap();
+    let _trashed = detach(
+        &journal,
+        &FakeTrashKind,
+        Unit::Entity,
+        Action::EntityDelete,
+        web_surface(),
+        vec!["entities/kept-in-trash".into()],
+    )
+    .unwrap();
+
+    let victim = journal.join("notes/zzz-victim.bin");
+    fs::write(&victim, vec![0x5Au8; 64 * 1024]).unwrap();
+
+    struct DeleteVictimDuringEncodeProbe {
+        calls: AtomicU64,
+        victim: std::path::PathBuf,
+        deleted: Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl DiskSpaceProbe for DeleteVictimDuringEncodeProbe {
+        fn read(&self, _staging: &StagingArea) -> std::io::Result<JournalDiskSpace> {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            // Call 0 is start_job preflight; call 1 runs inside encode_archive_with_options'
+            // check_abort hook after open_live has frozen `notes/zzz-victim.bin` in inventory.
+            if n == 1 {
+                fs::remove_file(&self.victim).unwrap();
+                self.deleted.store(true, Ordering::SeqCst);
+            }
+            Ok(JournalDiskSpace {
+                free_bytes: 50 * 1024 * 1024 * 1024,
+                total_bytes: 100 * 1024 * 1024 * 1024,
+            })
+        }
+    }
+
+    let deleted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let clock = Arc::new(MockClock::new(1_764_150_000));
+    let disk: Arc<dyn DiskSpaceProbe> = Arc::new(DeleteVictimDuringEncodeProbe {
+        calls: AtomicU64::new(0),
+        victim: victim.clone(),
+        deleted: Arc::clone(&deleted),
+    });
+    let service = ExportService::with_deps(
+        journal.clone(),
+        StagingArea::at_dir(staging.clone(), true).unwrap(),
+        clock,
+        disk,
+    );
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+
+    let outcome = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    assert!(
+        deleted.load(Ordering::SeqCst),
+        "expected deterministic hook to remove victim mid-encode; outcome={outcome}"
+    );
+    assert_eq!(outcome["status"], "failed", "outcome={outcome}");
+    assert_eq!(
+        outcome["active_job"]["error_code"], "source_changed",
+        "ordinary non-erasure mutation must stay source_changed; outcome={outcome}"
+    );
+    assert!(outcome["ready"].is_null());
+}

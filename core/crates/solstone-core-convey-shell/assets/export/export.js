@@ -1535,6 +1535,12 @@
     let reported = false;
     let pollTimer = null;
     let reqCounter = 0;
+    let stateReqSeq = 0;
+    let latestAppliedStateSeq = 0;
+    let minAcceptedStateSeq = 0;
+    let estimateReqSeq = 0;
+    let latestAppliedEstimateSeq = 0;
+    let minAcceptedEstimateSeq = 0;
     const fetchFn = ctx.fetch || global.fetch.bind(global);
     const nowFn = ctx.now || (() => Date.now());
 
@@ -1596,12 +1602,16 @@
       draw();
     }
 
-    function schedulePoll() {
+    function clearPollTimer() {
       if (pollTimer) {
         global.clearTimeout(pollTimer);
         pollTimer = null;
       }
-      if (ctx.disposed) return;
+    }
+
+    function schedulePoll() {
+      clearPollTimer();
+      if (ctx.disposed || ui.refreshingCopy) return;
       const needsFast =
         (ui.estimate && ui.estimate.status === 'measuring') ||
         (ui.state && ui.state.status === 'preparing');
@@ -1610,59 +1620,71 @@
       const delay = needsFast ? POLL_FAST_MS : POLL_READY_MS;
       pollTimer = global.setTimeout(() => {
         pollTimer = null;
-        if (ctx.disposed) return;
+        if (ctx.disposed || ui.refreshingCopy) return;
         const tasks = [];
         if (ui.estimate && ui.estimate.status === 'measuring') tasks.push(loadEstimate());
         if (ui.state && (ui.state.status === 'preparing' || ui.state.status === 'ready')) {
           tasks.push(loadState());
         }
-        Promise.all(tasks).then(() => {
+        Promise.all(tasks).then((applied) => {
           if (!ctx.disposed) {
-            draw();
-            schedulePoll();
+            if (applied.some(Boolean)) draw();
+            if (!pollTimer) schedulePoll();
           }
         });
       }, delay);
     }
 
-    function loadEstimate() {
+    function loadEstimate(opts) {
+      const seq = ++estimateReqSeq;
+      if (opts && opts.authoritative) {
+        minAcceptedEstimateSeq = seq;
+      }
       return fetchFn(API_ESTIMATE, { headers: { Accept: 'application/json' } })
         .then((res) => (res && res.ok ? res.json() : null))
         .then((data) => {
-          if (data && !ctx.disposed) ui.estimate = data;
+          if (!data || ctx.disposed) return false;
+          if (seq < latestAppliedEstimateSeq || seq < minAcceptedEstimateSeq) return false;
+          latestAppliedEstimateSeq = seq;
+          ui.estimate = data;
+          return true;
         })
-        .catch(() => {});
+        .catch(() => false);
     }
 
-    function loadState() {
+    function loadState(opts) {
+      const seq = ++stateReqSeq;
+      if (opts && opts.authoritative) {
+        minAcceptedStateSeq = seq;
+      }
       return fetchFn(API_STATE, { headers: { Accept: 'application/json' } })
         .then((res) => (res && res.ok ? res.json() : null))
         .then((data) => {
-          if (data && !ctx.disposed) {
-            const prevStatus = ui.state && ui.state.status;
-            const prevReadyId = ui.state && ui.state.ready && ui.state.ready.export_id;
-            const nextReadyId = data.ready && data.ready.export_id;
-            ui.state = data;
-            if (data.status !== 'preparing') ui.cancellingPrep = false;
-            if (prevStatus !== data.status || prevReadyId !== nextReadyId) {
-              ui.dismissedTerminal = false;
-              ui.confirmDiscard = false;
-              ui.discardConflict = false;
-              ui.dismissedSavedCleanup = false;
-              if (
-                ui.nativeState &&
-                (ui.nativeState.phase === 'error' || ui.nativeState.phase === 'failed') &&
-                (!ui.nativeState.export_id || ui.nativeState.export_id === prevReadyId)
-              ) {
-                ui.nativeState = null;
-              }
-              if (data.status !== 'ready' || prevReadyId !== nextReadyId) {
-                ui.browserStarted = false;
-              }
+          if (!data || ctx.disposed) return false;
+          if (seq < latestAppliedStateSeq || seq < minAcceptedStateSeq) return false;
+          latestAppliedStateSeq = seq;
+          const prevStatus = ui.state && ui.state.status;
+          const prevReadyId = ui.state && ui.state.ready && ui.state.ready.export_id;
+          const nextReadyId = data.ready && data.ready.export_id;
+          ui.state = data;
+          if (data.status !== 'preparing') ui.cancellingPrep = false;
+          if (prevStatus !== data.status || prevReadyId !== nextReadyId) {
+            ui.dismissedTerminal = false;
+            ui.confirmDiscard = false;
+            ui.discardConflict = false;
+            ui.dismissedSavedCleanup = false;
+            if (
+              ui.nativeState &&
+              (ui.nativeState.phase === 'error' || ui.nativeState.phase === 'failed') &&
+              (!ui.nativeState.export_id || ui.nativeState.export_id === prevReadyId)
+            ) {
+              ui.nativeState = null;
             }
-            return true;
+            if (data.status !== 'ready' || prevReadyId !== nextReadyId) {
+              ui.browserStarted = false;
+            }
           }
-          return false;
+          return true;
         })
         .catch(() => false);
     }
@@ -1679,12 +1701,17 @@
         draw();
       },
       refreshEstimate() {
+        const seq = ++estimateReqSeq;
+        minAcceptedEstimateSeq = seq;
         ui.estimate = Object.assign({}, ui.estimate || {}, { status: 'measuring' });
         draw();
         fetchFn(API_ESTIMATE_REFRESH, { method: 'POST', headers: { Accept: 'application/json' } })
           .then((res) => (res && res.ok ? res.json() : null))
           .then((data) => {
-            if (data && !ctx.disposed) ui.estimate = data;
+            if (data && !ctx.disposed && seq >= latestAppliedEstimateSeq && seq >= minAcceptedEstimateSeq) {
+              latestAppliedEstimateSeq = seq;
+              ui.estimate = data;
+            }
             if (!ctx.disposed) {
               draw();
               schedulePoll();
@@ -1712,7 +1739,7 @@
               draw();
               return;
             }
-            return loadState().then(() => {
+            return loadState({ authoritative: true }).then(() => {
               if (!ctx.disposed) {
                 draw();
                 schedulePoll();
@@ -1730,7 +1757,7 @@
         ui.cancellingPrep = true;
         draw();
         fetchFn(`${API_JOBS}/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })
-          .then(() => loadState())
+          .then(() => loadState({ authoritative: true }))
           .then(() => {
             if (!ctx.disposed) {
               draw();
@@ -1765,7 +1792,7 @@
             }
             if (!res.ok) {
               ui.confirmDiscard = false;
-              return loadState().then(() => {
+              return loadState({ authoritative: true }).then(() => {
                 if (!ctx.disposed) draw();
               });
             }
@@ -1773,7 +1800,7 @@
             ui.discardConflict = false;
             ui.discardedBytes = sizeBytes;
             ui.nativeState = null;
-            return Promise.all([loadState(), loadEstimate()]).then(() => {
+            return Promise.all([loadState({ authoritative: true }), loadEstimate({ authoritative: true })]).then(() => {
               if (!ctx.disposed) {
                 draw();
                 schedulePoll();
@@ -1838,9 +1865,10 @@
       },
       refreshCurrentCopy() {
         if (ui.refreshingCopy) return;
+        clearPollTimer();
         ui.refreshingCopy = true;
         draw();
-        Promise.all([loadState(), loadEstimate()])
+        Promise.all([loadState({ authoritative: true }), loadEstimate({ authoritative: true })])
           .then(([stateOk]) => {
             if (ctx.disposed) return;
             ui.refreshingCopy = false;
@@ -1856,6 +1884,7 @@
             if (ctx.disposed) return;
             ui.refreshingCopy = false;
             draw();
+            schedulePoll();
           });
       },
       pauseNative() {

@@ -757,6 +757,176 @@ async function run(name, fn) {
     h.dispose();
   });
 
+  // 11. Explicit current-copy check stays authoritative over late ordinary polls,
+  //     and an unsuccessful check remains retryable without older polls clearing the warning.
+  await run('explicit current-copy check supersedes late polls and failed checks stay retryable', async () => {
+    const sent = [];
+    const nativeHost = {
+      version: 2,
+      types: ['export.start', 'export.status', 'export.pause', 'export.resume', 'export.cancel', 'export.reveal', 'export.device_space'],
+      send(msg) {
+        sent.push(msg);
+        return { phase: 'idle' };
+      },
+    };
+    const copyA = {
+      export_id: 'exp_copy_a',
+      mode: 'full',
+      filename: 'solstone-journal-a.zip',
+      size_bytes: 16777216,
+      sha256: 'a'.repeat(64),
+      etag: '"' + 'a'.repeat(64) + '"',
+      created_at: '2026-11-26T17:10:00Z',
+      download_path: '/app/export/api/ready/exp_copy_a/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_copy_a',
+    };
+    const copyB = {
+      export_id: 'exp_copy_b',
+      mode: 'full',
+      filename: 'solstone-journal-b.zip',
+      size_bytes: 16781312,
+      sha256: 'b'.repeat(64),
+      etag: '"' + 'b'.repeat(64) + '"',
+      created_at: '2026-11-26T17:12:00Z',
+      download_path: '/app/export/api/ready/exp_copy_b/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_copy_b',
+    };
+    const copyC = {
+      export_id: 'exp_copy_c',
+      mode: 'full',
+      filename: 'solstone-journal-c.zip',
+      size_bytes: 16785408,
+      sha256: 'c'.repeat(64),
+      etag: '"' + 'c'.repeat(64) + '"',
+      created_at: '2026-11-26T17:14:00Z',
+      download_path: '/app/export/api/ready/exp_copy_c/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_copy_c',
+    };
+
+    const stateResponders = [
+      () => jsonResp(200, { status: 'ready', other_requester_busy: false, active_job: null, ready: copyA }),
+    ];
+    let heldPollResolve = null;
+    const h = createHarness({
+      nativeHost,
+      fetch: (url) => {
+        if (url.includes('/estimate')) return jsonResp(200, sampleEstimate());
+        const next = stateResponders.shift();
+        assert.ok(next, `unexpected /state fetch for ${url}`);
+        return next();
+      },
+    });
+    await flush();
+    await flush();
+
+    // Emit export_copy_unconfirmed for copy A.
+    h.emitNative({
+      phase: 'error',
+      export_id: 'exp_copy_a',
+      platform: 'macos',
+      error_code: 'export_copy_unconfirmed',
+    });
+    assert.ok(h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'));
+    assert.ok(h.root.querySelector('#exportPrimarySaveBtn').hasAttribute('disabled'));
+
+    // Queue a held ordinary 15s poll for stale A, then click explicit check which returns B first.
+    stateResponders.push(
+      () => new Promise((resolve) => {
+        heldPollResolve = () => resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ status: 'ready', other_requester_busy: false, active_job: null, ready: copyA }),
+        });
+      }),
+      () => jsonResp(200, { status: 'ready', other_requester_busy: false, active_job: null, ready: copyB }),
+    );
+
+    const activeReadyTimer = [...h.timers].reverse().find((t) => !t.cleared && t.ms === 15000);
+    assert.ok(activeReadyTimer, 'ready state scheduled a 15s poll timer');
+    activeReadyTimer.fn();
+    assert.ok(heldPollResolve, 'ordinary poll request is in-flight for A');
+
+    // Owner clicks check current copy -> resolves with B first.
+    h.root.querySelector('#exportRefreshCopyBtn').click();
+    await flush();
+    await flush();
+    assert.ok(!h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'), 'warning cleared after authoritative B');
+
+    // Now deliver the older in-flight poll response for stale A!
+    heldPollResolve();
+    heldPollResolve = null;
+    await flush();
+    await flush();
+
+    // Clicking Save must send ONLY copy B's metadata (never stale A).
+    const saveB = h.root.querySelector('#exportPrimarySaveBtn');
+    assert.ok(saveB && !saveB.hasAttribute('disabled'), 'Save enabled for B after late stale A poll');
+    saveB.click();
+    const startsAfterB = sent.filter((m) => m.type === 'export.start');
+    assert.strictEqual(startsAfterB.length, 1);
+    assert.strictEqual(startsAfterB[0].export_id, copyB.export_id);
+    assert.strictEqual(startsAfterB[0].sha256, copyB.sha256);
+    assert.strictEqual(startsAfterB[0].etag, copyB.etag);
+    assert.strictEqual(startsAfterB[0].download_path, copyB.download_path);
+
+    // Part 2: unsuccessful check (HTTP 503) stays retryable AND supersedes any older in-flight poll
+    // so an older poll cannot sneak in and clear the warning.
+    h.emitNative({
+      phase: 'error',
+      export_id: 'exp_copy_b',
+      platform: 'ios',
+      error_code: 'export_copy_unconfirmed',
+    });
+    let heldOlderForC = null;
+    stateResponders.push(
+      () => new Promise((resolve) => {
+        heldOlderForC = () => resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ status: 'ready', other_requester_busy: false, active_job: null, ready: copyA }),
+        });
+      }),
+      () => jsonResp(503, { code: 'unavailable' }),
+      () => jsonResp(200, { status: 'ready', other_requester_busy: false, active_job: null, ready: copyC }),
+    );
+    const secondTimer = [...h.timers].reverse().find((t) => !t.cleared && t.ms === 15000);
+    assert.ok(secondTimer, 'second ready poll timer scheduled');
+    secondTimer.fn();
+    assert.ok(heldOlderForC, 'older poll in-flight before failed check');
+
+    // Authoritative check returns 503.
+    h.root.querySelector('#exportRefreshCopyBtn').click();
+    await flush();
+    await flush();
+    assert.ok(h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'), 'warning remains after 503');
+    assert.ok(h.root.querySelector('#exportPrimarySaveBtn').hasAttribute('disabled'), 'Save stays disabled after 503');
+    const retryBtn = h.root.querySelector('#exportRefreshCopyBtn');
+    assert.ok(retryBtn && !retryBtn.hasAttribute('disabled'), 'check current copy stays retryable after 503');
+
+    // Deliver the older pre-check poll response (copy A): must be ignored, must NOT clear warning!
+    heldOlderForC();
+    await flush();
+    await flush();
+    assert.ok(h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'), 'superseded poll must not clear warning');
+    assert.ok(h.root.querySelector('#exportPrimarySaveBtn').hasAttribute('disabled'), 'Save still disabled after superseded poll');
+
+    // Retry succeeds with copy C; Save sends ONLY copy C.
+    h.root.querySelector('#exportRefreshCopyBtn').click();
+    await flush();
+    await flush();
+    assert.ok(!h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'), 'warning cleared after retry succeeds');
+    const saveC = h.root.querySelector('#exportPrimarySaveBtn');
+    assert.ok(saveC && !saveC.hasAttribute('disabled'));
+    saveC.click();
+    const startsAfterC = sent.filter((m) => m.type === 'export.start');
+    assert.strictEqual(startsAfterC.length, 2);
+    assert.strictEqual(startsAfterC[1].export_id, copyC.export_id);
+    assert.strictEqual(startsAfterC[1].sha256, copyC.sha256);
+    assert.strictEqual(startsAfterC[1].etag, copyC.etag);
+    assert.strictEqual(startsAfterC[1].download_path, copyC.download_path);
+    h.dispose();
+  });
+
   console.log(`DOM CASES: ${passed} passed`);
 })().catch((err) => {
   console.error(err);

@@ -1174,6 +1174,51 @@ pub fn moving(journal: &Path) -> Result<Vec<Item>, TrashError> {
         .collect())
 }
 
+/// Whether any Trash item is currently committed to permanent erasure (`State::Erasing`),
+/// synchronized with the short Trash metadata lock when `.trash` exists so an `erase()`
+/// that just acquired the lock finishes publishing `State::Erasing` before inspection.
+///
+/// Never creates `.trash` on a clean journal and fails closed (`Err`) on unreadable state.
+pub fn has_erasing_items(journal: &Path) -> Result<bool, TrashError> {
+    let root = trash_root(journal);
+    match std::fs::symlink_metadata(&root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(TrashError::Io(error.to_string())),
+        Ok(meta) if !meta.is_dir() => {
+            return Err(TrashError::Io(
+                "trash root is not a plain directory".to_owned(),
+            ));
+        }
+        Ok(_) => {}
+    }
+    let _lock = hold_lock(root.join(LOCK_STEM), LockOptions::default())
+        .map_err(|_| TrashError::Held("your trash is busy; try again".to_owned()))?;
+    Ok(every_item(journal, true)?
+        .into_iter()
+        .any(|item| item.state == State::Erasing))
+}
+
+/// Lock-free check for whether any Trash item is currently in `State::Erasing`.
+///
+/// Suitable for hot-path progress/download checks without touching `.trash/.lock`;
+/// fails closed (`Err`) on unreadable state and never creates `.trash`.
+pub fn has_erasing_items_unlocked(journal: &Path) -> Result<bool, TrashError> {
+    let root = trash_root(journal);
+    match std::fs::symlink_metadata(&root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(TrashError::Io(error.to_string())),
+        Ok(meta) if !meta.is_dir() => {
+            return Err(TrashError::Io(
+                "trash root is not a plain directory".to_owned(),
+            ));
+        }
+        Ok(_) => {}
+    }
+    Ok(every_item(journal, true)?
+        .into_iter()
+        .any(|item| item.state == State::Erasing))
+}
+
 /// Exclusive, nonblocking access for a domain clearing derived data from all
 /// restorable payloads. Item records remain intact, so recovery keeps working.
 pub struct PayloadScrub<'a> {
@@ -4784,11 +4829,35 @@ mod tests {
             read_item(&root, &item.id).unwrap().unwrap().state,
             State::Erasing
         );
+        assert!(has_erasing_items(&root).unwrap());
+        assert!(has_erasing_items_unlocked(&root).unwrap());
 
         // Once health/ is restored as a directory, sweep succeeds and bumps the epoch.
         std::fs::remove_file(&health).unwrap();
         sweep(&root, &[&kind], Timestamp::now());
         assert!(read_item(&root, &item.id).unwrap().is_none());
         assert_eq!(read_erasure_epoch(&root).unwrap().epoch, 1);
+        assert!(!has_erasing_items(&root).unwrap());
+        assert!(!has_erasing_items_unlocked(&root).unwrap());
+    }
+
+    #[test]
+    fn has_erasing_items_does_not_create_trash_and_distinguishes_trashed_from_erasing() {
+        let (_dir, root) = journal();
+        assert!(!trash_root(&root).exists());
+        assert!(!has_erasing_items(&root).unwrap());
+        assert!(!has_erasing_items_unlocked(&root).unwrap());
+        assert!(
+            !trash_root(&root).exists(),
+            "read-only erasing query must never create .trash"
+        );
+
+        let kind = Erasing::default();
+        let _trashed = trashed_person(&root, &kind);
+        assert!(
+            !has_erasing_items(&root).unwrap(),
+            "ordinary State::Trashed item must not report permanent erasure in progress"
+        );
+        assert!(!has_erasing_items_unlocked(&root).unwrap());
     }
 }
