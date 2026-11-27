@@ -128,11 +128,11 @@ fn valid_fixture_matches_frozen_distinctive_row_and_footer() {
 fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
     let corpus = corpus();
     let expected_table = &corpus.cases["table"];
-    let expected_midnight = &corpus.cases["midnight"];
+    let expected_default = &corpus.cases["default_daily_time"];
     let expected_invalid_daily_time = &corpus.cases["invalid_daily_time"];
     for expected in [
         expected_table,
-        expected_midnight,
+        expected_default,
         expected_invalid_daily_time,
     ] {
         assert_eq!(expected.exit, 0);
@@ -155,7 +155,7 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
             .contains("unsupported-interval            fortnightly")
     );
     assert!(expected_table.stdout.contains("Monday 08:15"));
-    assert!(expected_midnight.stdout.contains("02:00"));
+    assert!(expected_default.stdout.contains("02:00"));
     assert!(expected_invalid_daily_time.stdout.contains("02:00"));
 
     let journal = journal();
@@ -231,32 +231,32 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
 
     fs::write(
         journal.path().join("config/schedules.json"),
-        r#"{"daily-at-midnight":{"cmd":["journal","heartbeat"],"every":"daily"}}"#,
+        r#"{"daily-at-default":{"cmd":["journal","heartbeat"],"every":"daily"}}"#,
     )
     .expect("midnight config");
     fs::write(
         journal.path().join("health/scheduler.json"),
         format!(
-            r#"{{"daily-at-midnight":{{"last_run":{}}}}}"#,
+            r#"{{"daily-at-default":{{"last_run":{}}}}}"#,
             jiff::Timestamp::now().as_second()
         ),
     )
     .expect("midnight state");
     let output = run(journal.path(), &["schedule"]);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let header = stdout.lines().next().expect("midnight header");
-    assert_eq!(output.status.code(), Some(expected_midnight.exit));
+    let header = stdout.lines().next().expect("default time header");
+    assert_eq!(output.status.code(), Some(expected_default.exit));
     assert_eq!(
         header,
-        expected_midnight
+        expected_default
             .stdout
             .lines()
             .next()
-            .expect("captured midnight header")
+            .expect("captured default time header")
     );
     assert_eq!(
-        cell(header, row(&stdout, "daily-at-midnight"), "NEXT DUE", 10),
-        "midnight"
+        cell(header, row(&stdout, "daily-at-default"), "NEXT DUE", 10),
+        "02:00"
     );
 
     fs::write(
@@ -291,7 +291,7 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
             "NEXT DUE",
             10
         ),
-        "midnight"
+        "02:00"
     );
 }
 

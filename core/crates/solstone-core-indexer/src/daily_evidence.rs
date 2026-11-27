@@ -2076,12 +2076,10 @@ mod tests {
                 None
             );
         }
-        for hook in ["entities:entities_review"] {
-            assert_eq!(
-                DAILY_INPUTS[0].version_since(hook, "20260910", Some(cutoff)),
-                None
-            );
-        }
+        assert_eq!(
+            DAILY_INPUTS[0].version_since("entities:entities_review", "20260910", Some(cutoff)),
+            None,
+        );
     }
 
     #[test]
