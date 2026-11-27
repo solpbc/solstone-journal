@@ -82,6 +82,12 @@ pub struct SourceState {
     pub last_added_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_checked_at: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub last_rules_version: u32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
 }
 
 /// One landed exchange record in `config/email/landed.jsonl`.
@@ -143,6 +149,11 @@ pub fn bodies_dir(root: &Path) -> PathBuf {
 
 pub fn cancel_flag_path(root: &Path) -> PathBuf {
     root.join(CANCEL_REL)
+}
+
+#[must_use]
+pub fn decisions_path(root: &Path) -> PathBuf {
+    root.join(DECISIONS_REL)
 }
 
 /// Request cancellation of an in-progress scan or sync.

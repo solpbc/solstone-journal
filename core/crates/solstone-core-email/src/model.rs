@@ -142,6 +142,15 @@ impl Header {
     }
 
     #[must_use]
+    pub fn is_trash_or_junk(&self) -> bool {
+        self.labels.iter().any(|l| {
+            l.eq_ignore_ascii_case("\\Trash")
+                || l.eq_ignore_ascii_case("\\Junk")
+                || l.eq_ignore_ascii_case("\\Spam")
+        })
+    }
+
+    #[must_use]
     pub fn when_ms(&self) -> Option<i64> {
         self.date_ms.or(self.internal_date_ms)
     }

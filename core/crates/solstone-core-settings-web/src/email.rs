@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use axum::{
     Router,
@@ -33,7 +34,10 @@ use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_email::error::EmailError;
-use solstone_core_email::imap::{GmailImap, ImapSource};
+use solstone_core_email::imap::{
+    DEFAULT_RECONNECT_BACKOFF, DEFAULT_RECONNECT_RETRIES, GmailImap, ImapSource,
+    ReconnectingImapSource,
+};
 use solstone_core_email::model::{MessageType, RangePreset};
 use solstone_core_email::store::{self, EMAIL_STREAM, PROVIDER_GMAIL};
 use solstone_core_email::sync::{
@@ -60,6 +64,7 @@ pub(crate) struct EmailService {
     root: PathBuf,
     busy: Arc<AtomicBool>,
     opener: ImapOpener,
+    reconnect_backoff: Duration,
 }
 
 impl EmailService {
@@ -68,14 +73,21 @@ impl EmailService {
             let client = GmailImap::connect_gmail(account, app_password)?;
             Ok(Box::new(client))
         });
-        Self::with_opener(root, opener)
+        Self {
+            root,
+            busy: Arc::new(AtomicBool::new(false)),
+            opener,
+            reconnect_backoff: DEFAULT_RECONNECT_BACKOFF,
+        }
     }
 
+    #[cfg(test)]
     pub(crate) fn with_opener(root: PathBuf, opener: ImapOpener) -> Self {
         Self {
             root,
             busy: Arc::new(AtomicBool::new(false)),
             opener,
+            reconnect_backoff: Duration::ZERO,
         }
     }
 
@@ -260,8 +272,9 @@ fn update_email_schedule(root: &Path, install: bool) -> Result<(), EmailError> {
 
 fn snapshot_value(svc: &EmailService) -> Result<Value, EmailError> {
     let zone = store::journal_timezone(&svc.root);
-    let mut snap = sync::status_snapshot(&svc.root, &zone)?;
-    if svc.is_busy() {
+    let worker_active = svc.is_busy() || store::is_sync_locked(&svc.root);
+    let mut snap = sync::status_snapshot_with_activity(&svc.root, &zone, worker_active)?;
+    if worker_active {
         snap.syncing = true;
     }
     serde_json::to_value(snap).map_err(|e| EmailError::Storage(e.to_string()))
@@ -269,24 +282,35 @@ fn snapshot_value(svc: &EmailService) -> Result<Value, EmailError> {
 
 fn spawn_background_scan_with_source(
     svc: &EmailService,
-    mut source: Box<dyn ImapSource + Send>,
+    source: Box<dyn ImapSource + Send>,
+    account: String,
+    app_password: String,
 ) -> bool {
     if svc.busy.swap(true, Ordering::SeqCst) {
-        let _ = source.logout();
+        let mut src = source;
+        let _ = src.logout();
         return false;
     }
     let guard = BusyGuard(Arc::clone(&svc.busy));
     let root = svc.root.clone();
+    let opener = Arc::clone(&svc.opener);
+    let backoff = svc.reconnect_backoff;
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
         let zone = store::journal_timezone(&root);
         let now = Timestamp::now();
-        if let Err(err) = sync::run_header_scan(&root, source.as_mut(), now, &zone, false)
+        let mut reconnecting = ReconnectingImapSource::with_initial(
+            source,
+            move || (opener)(&account, &app_password),
+            DEFAULT_RECONNECT_RETRIES,
+            backoff,
+        );
+        if let Err(err) = sync::run_header_scan(&root, &mut reconnecting, now, &zone, false)
             && !matches!(err, EmailError::Cancelled)
         {
             log::warn!("email header scan stopped: {err}");
         }
-        let _ = source.logout();
+        let _ = reconnecting.logout();
     });
     true
 }
@@ -301,18 +325,28 @@ fn spawn_background_scan(svc: &EmailService) -> Result<bool, EmailError> {
     let guard = BusyGuard(Arc::clone(&svc.busy));
     let root = svc.root.clone();
     let opener = Arc::clone(&svc.opener);
+    let backoff = svc.reconnect_backoff;
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
         let zone = store::journal_timezone(&root);
         let now = Timestamp::now();
         match (opener)(&creds.account, &creds.app_password) {
-            Ok(mut source) => {
-                if let Err(err) = sync::run_header_scan(&root, source.as_mut(), now, &zone, false)
+            Ok(source) => {
+                let reopen = Arc::clone(&opener);
+                let account = creds.account.clone();
+                let password = creds.app_password.clone();
+                let mut reconnecting = ReconnectingImapSource::with_initial(
+                    source,
+                    move || (reopen)(&account, &password),
+                    DEFAULT_RECONNECT_RETRIES,
+                    backoff,
+                );
+                if let Err(err) = sync::run_header_scan(&root, &mut reconnecting, now, &zone, false)
                     && !matches!(err, EmailError::Cancelled)
                 {
                     log::warn!("email header scan stopped: {err}");
                 }
-                let _ = source.logout();
+                let _ = reconnecting.logout();
             }
             Err(err) => {
                 if let Some(reason) = err.attention_reason() {
@@ -344,6 +378,7 @@ fn spawn_background_sync_with_optional_source(
     let guard = BusyGuard(Arc::clone(&svc.busy));
     let root = svc.root.clone();
     let opener = Arc::clone(&svc.opener);
+    let backoff = svc.reconnect_backoff;
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
         let zone = store::journal_timezone(&root);
@@ -353,13 +388,22 @@ fn spawn_background_sync_with_optional_source(
             None => (opener)(&creds.account, &creds.app_password),
         };
         match opened {
-            Ok(mut source) => {
+            Ok(source) => {
+                let reopen = Arc::clone(&opener);
+                let account = creds.account.clone();
+                let password = creds.app_password.clone();
+                let mut reconnecting = ReconnectingImapSource::with_initial(
+                    source,
+                    move || (reopen)(&account, &password),
+                    DEFAULT_RECONNECT_RETRIES,
+                    backoff,
+                );
                 let publisher = |run_id: &str, batch: &[CreatedEmailSegment]| {
                     publish_email_batch(&root, run_id, batch);
                 };
                 if let Err(err) = sync::run_sync_with_publisher(
                     &root,
-                    source.as_mut(),
+                    &mut reconnecting,
                     now,
                     &zone,
                     SyncOptions::default(),
@@ -368,7 +412,7 @@ fn spawn_background_sync_with_optional_source(
                 {
                     log::warn!("email sync stopped: {err}");
                 }
-                let _ = source.logout();
+                let _ = reconnecting.logout();
             }
             Err(err) => {
                 if let Some(reason) = err.attention_reason() {
@@ -440,13 +484,13 @@ async fn get_choice_preview(
     match tokio::task::spawn_blocking(move || -> Result<Value, EmailError> {
         let zone = store::journal_timezone(&root);
         let now = Timestamp::now();
-        let preview = sync::choice_preview(&root, range, &types, now, &zone)?;
+        let (preview, earliest_month) =
+            sync::choice_preview_with_earliest(&root, range, &types, now, &zone)?;
         let existing_choice = store::read_choice(&root)?;
         let covered_ranges = existing_choice
             .as_ref()
             .map(|c| sync::covered_ranges_for(c.range))
             .unwrap_or_default();
-        let snap = sync::status_snapshot(&root, &zone)?;
         let mut val =
             serde_json::to_value(preview).map_err(|e| EmailError::Storage(e.to_string()))?;
         if let Some(obj) = val.as_object_mut() {
@@ -454,7 +498,7 @@ async fn get_choice_preview(
                 "covered_ranges".to_owned(),
                 serde_json::to_value(covered_ranges).unwrap_or(Value::Array(Vec::new())),
             );
-            if let Some(month) = snap.scan.earliest_month {
+            if let Some(month) = earliest_month {
                 obj.insert("earliest_month".to_owned(), Value::String(month));
             }
         }
@@ -528,7 +572,8 @@ async fn connect_email(svc: EmailService, body: Bytes) -> Response {
             let _ = source.logout();
             return Err(err);
         }
-        let started = spawn_background_scan_with_source(&svc_bg, source);
+        let started =
+            spawn_background_scan_with_source(&svc_bg, source, norm_email, norm_password);
         let status = snapshot_value(&svc_bg)?;
         Ok(json!({
             "success": true,
@@ -739,7 +784,7 @@ async fn replace_password(svc: EmailService, body: Bytes) -> Response {
             update_email_schedule(&svc_bg.root, true)?;
             let _ = spawn_background_sync_with_optional_source(&svc_bg, Some(source))?;
         } else {
-            let _ = spawn_background_scan_with_source(&svc_bg, source);
+            let _ = spawn_background_scan_with_source(&svc_bg, source, account, norm_password);
         }
         let status = snapshot_value(&svc_bg)?;
         Ok(json!({
@@ -1789,5 +1834,43 @@ mod tests {
         .await;
         assert_eq!(widened["accounting"]["in_journal"], 2);
         assert_eq!(widened["choice"]["covered_ranges"], json!(["30d", "6m"]));
+
+        // choice-preview returns earliest_month and covered_ranges directly without status_snapshot.
+        let (pv_st, pv_body) = read_json(
+            router
+                .clone()
+                .oneshot(
+                    Request::get("/app/sources/api/email/choice-preview?range=all&types=replies,new_messages,forwards")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(pv_st, StatusCode::OK);
+        assert_eq!(pv_body["covered_ranges"], json!(["30d", "6m"]));
+        assert!(pv_body["earliest_month"].as_str().is_some());
+
+        // Stale "fetching" on disk reconciles to "steady" when no worker is live.
+        let mut stale = store::read_state(root.path()).unwrap();
+        stale.fetching_active = true;
+        stale.phase = "fetching".to_owned();
+        store::write_state(root.path(), &stale).unwrap();
+        let (_, reconciled) = read_json(
+            router
+                .clone()
+                .oneshot(
+                    Request::get("/app/sources/api/email")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(reconciled["phase"], "steady");
+        assert_eq!(reconciled["syncing"], false);
+        assert_eq!(reconciled["sync"]["active"], false);
     }
 }

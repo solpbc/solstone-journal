@@ -4,7 +4,7 @@
 //! Deterministic selection of owner-sent messages, parent resolution (two tiers),
 //! left-out categorization, and versioned re-reach for skipped mail (AC 6).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,13 +12,13 @@ use crate::model::{Header, MessageType, Reference};
 use crate::text::is_forward_subject;
 
 /// Current selection rules version stamped onto every persisted decision.
-pub const RULES_VERSION: u32 = 1;
+pub const RULES_VERSION: u32 = 2;
 
 /// Releases can bump this threshold to trigger re-evaluation of previously
 /// skipped decisions with `rules_version < STALE_SKIP_BEFORE_VERSION`.
 /// Re-reach only ever adds newly qualifying mail and never modifies or
 /// removes already-landed exchanges.
-pub const STALE_SKIP_BEFORE_VERSION: u32 = 1;
+pub const STALE_SKIP_BEFORE_VERSION: u32 = 2;
 
 /// Left-out reason buckets shown on `/app/sources/` and `/app/sources/email`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -258,9 +258,13 @@ pub fn evaluate_decisions(
     stale_before_version: u32,
 ) -> Vec<Decision> {
     let mut by_id: HashMap<&str, Vec<&Header>> = HashMap::new();
+    let mut seen_sent_msg_ids: HashSet<&str> = HashSet::new();
     for h in all {
         if let Some(id) = h.message_id.as_deref() {
             by_id.entry(id).or_default().push(h);
+            if h.is_sent() && !h.is_draft() {
+                seen_sent_msg_ids.insert(id);
+            }
         }
     }
 
@@ -272,6 +276,11 @@ pub fn evaluate_decisions(
         if landed_keys.contains(&h.key)
             && let Some(prev) = existing.get(&h.key)
         {
+            if prev.outcome == "selected"
+                && let Some(id) = h.message_id.as_deref()
+            {
+                seen_sent_msg_ids.insert(id);
+            }
             seen_keys.insert(h.key.clone());
             out.push(prev.clone());
             continue;
@@ -289,9 +298,26 @@ pub fn evaluate_decisions(
         }
 
         let owner = is_owner(h, owner_aliases);
-        let sent = h.is_sent();
+        // Gmail All Mail can hold owner-authored mail without a `\Sent` label
+        // (for example, migrated mail, secondary send-as aliases, or archived
+        // sent threads). Recover those when not draft/trash/junk and not a
+        // duplicate Message-ID echo of an already-seen sent copy.
+        let alias_sent = !h.is_sent()
+            && owner
+            && !h.is_draft()
+            && !h.is_trash_or_junk()
+            && !h
+                .message_id
+                .as_deref()
+                .is_some_and(|id| seen_sent_msg_ids.contains(id));
+        let sent = h.is_sent() || alias_sent;
         if !sent && !h.is_draft() {
             continue;
+        }
+        if alias_sent
+            && let Some(id) = h.message_id.as_deref()
+        {
+            seen_sent_msg_ids.insert(id);
         }
         // Only owner-authored drafts count in owner-side draft totals.
         if h.is_draft() && !sent && !owner && !h.from.is_empty() {

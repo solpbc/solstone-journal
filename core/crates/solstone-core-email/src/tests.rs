@@ -780,8 +780,10 @@ fn versioned_rereach_adds_newly_qualified_skipped_mail_without_touching_landed()
     client.logout().unwrap();
     let _ = handle.join();
 
-    // Simulate an older release (rules_version=1) having left out UID 10 (gm:1010)
-    // and never having landed it, while gm:1002 is already landed at version 1.
+    // Simulate an older release (rules_version=RULES_VERSION) having left out UID 10 (gm:1010)
+    // and never having landed it, while gm:1002 is already landed at that version.
+    let current_rules = crate::select::RULES_VERSION;
+    let next_rules = current_rules + 1;
     let mut decisions = store::read_decisions(root).unwrap();
     for d in &mut decisions {
         if d.key == "gm:1010" {
@@ -789,7 +791,7 @@ fn versioned_rereach_adds_newly_qualified_skipped_mail_without_touching_landed()
             d.message_type = None;
             d.reason = Some("legacy_skip".into());
             d.left_out_bucket = Some(LeftOutBucket::AutomaticReplies);
-            d.rules_version = 1;
+            d.rules_version = current_rules;
         }
     }
     store::write_decisions(root, &decisions).unwrap();
@@ -798,7 +800,7 @@ fn versioned_rereach_adds_newly_qualified_skipped_mail_without_touching_landed()
     landed.retain(|r| r.key != "gm:1010");
     store::write_landed(root, &landed).unwrap();
 
-    // At stale_before=1 (no upgrade), gm:1010 remains skipped.
+    // At current stale_before (no upgrade), gm:1010 remains skipped.
     let (stream, handle) = mock_server(msgs.clone()).spawn();
     let mut client =
         GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678").unwrap();
@@ -807,7 +809,7 @@ fn versioned_rereach_adds_newly_qualified_skipped_mail_without_touching_landed()
     client.logout().unwrap();
     let _ = handle.join();
 
-    // Release bumps rules_version=2, stale_before_version=2 -> gm:1010 re-evaluated and lands,
+    // Release bumps rules_version & stale_before_version -> gm:1010 re-evaluated and lands,
     // while gm:1002 is untouched.
     let (stream, handle) = mock_server(msgs).spawn();
     let mut client =
@@ -818,8 +820,8 @@ fn versioned_rereach_adds_newly_qualified_skipped_mail_without_touching_landed()
         now,
         &tz,
         SyncOptions {
-            rules_version: Some(2),
-            stale_before_version: Some(2),
+            rules_version: Some(next_rules),
+            stale_before_version: Some(next_rules),
             ..Default::default()
         },
     )
@@ -1190,5 +1192,461 @@ fn accounting_reconciles_every_bucket_identically() {
     assert_eq!(
         acc.sent_total,
         acc.in_journal + acc.removed_by_owner + acc.outside_choice + acc.left_out.total
+    );
+}
+
+#[test]
+fn from_alias_recovers_unlabelled_sent_mail_without_trash_junk_or_echo_dupes() {
+    use crate::model::{Addr, Header, Location, Part};
+    use crate::select::{RULES_VERSION, evaluate_decisions};
+    use std::collections::HashMap;
+
+    let make_hdr = |key: &str,
+                    uid: u32,
+                    from: &str,
+                    labels: &[&str],
+                    msg_id: Option<&str>,
+                    subject: &str| Header {
+        key: key.to_owned(),
+        location: Location {
+            mailbox: "[Gmail]/All Mail".into(),
+            uid_validity: 1,
+            uid,
+        },
+        labels: labels.iter().map(|s| (*s).to_owned()).collect(),
+        message_id: msg_id.map(str::to_owned),
+        from: vec![Addr {
+            name: Some("Maya".into()),
+            address: Some(from.to_owned()),
+        }],
+        to: vec![Addr {
+            name: Some("Sam".into()),
+            address: Some("sam@example.com".into()),
+        }],
+        date_ms: Some(1_760_000_000_000 + i64::from(uid) * 1_000),
+        subject: Some(subject.to_owned()),
+        tree: Part {
+            path: vec![1],
+            mime: "text/plain".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let aliases = vec!["maya@example.com".to_owned(), "maya@work.org".to_owned()];
+    let headers = vec![
+        // Standard \Sent message
+        make_hdr(
+            "gm:1",
+            1,
+            "maya@example.com",
+            &["\\Sent"],
+            Some("<m1@example.com>"),
+            "Normal sent",
+        ),
+        // Mailing-list echo without \Sent sharing Message-ID with gm:1 -> must dedupe
+        make_hdr(
+            "gm:2",
+            2,
+            "maya@example.com",
+            &["\\Inbox"],
+            Some("<m1@example.com>"),
+            "Normal sent",
+        ),
+        // Unlabelled owner-from message (primary address) -> must recover
+        make_hdr(
+            "gm:3",
+            3,
+            "maya@example.com",
+            &[],
+            Some("<m3@example.com>"),
+            "Archived sent",
+        ),
+        // Unlabelled owner-from message (secondary alias) -> must recover
+        make_hdr(
+            "gm:4",
+            4,
+            "maya@work.org",
+            &[],
+            Some("<m4@work.org>"),
+            "Alias sent",
+        ),
+        // Duplicate unlabelled copy sharing Message-ID with gm:4 -> must dedupe
+        make_hdr(
+            "gm:5",
+            5,
+            "maya@work.org",
+            &[],
+            Some("<m4@work.org>"),
+            "Alias sent",
+        ),
+        // Unlabelled owner-from in \Trash -> must exclude
+        make_hdr(
+            "gm:6",
+            6,
+            "maya@example.com",
+            &["\\Trash"],
+            Some("<m6@example.com>"),
+            "Trashed",
+        ),
+        // Unlabelled owner-from in \Junk -> must exclude
+        make_hdr(
+            "gm:7",
+            7,
+            "maya@example.com",
+            &["\\Junk"],
+            Some("<m7@example.com>"),
+            "Junked",
+        ),
+        // Non-owner inbound message -> must exclude
+        make_hdr(
+            "gm:8",
+            8,
+            "sam@example.com",
+            &["\\Inbox"],
+            Some("<m8@example.com>"),
+            "Inbound",
+        ),
+        // Owner draft -> left_out (Drafts), not selected
+        make_hdr(
+            "gm:9",
+            9,
+            "maya@example.com",
+            &["\\Draft"],
+            Some("<m9@example.com>"),
+            "Draft",
+        ),
+    ];
+
+    let decisions = evaluate_decisions(
+        "maya@example.com",
+        &aliases,
+        &headers,
+        &HashMap::new(),
+        &BTreeSet::new(),
+        RULES_VERSION,
+        RULES_VERSION,
+    );
+    let selected_keys: BTreeSet<&str> = decisions
+        .iter()
+        .filter(|d| d.outcome == "selected")
+        .map(|d| d.key.as_str())
+        .collect();
+    assert_eq!(
+        selected_keys,
+        BTreeSet::from(["gm:1", "gm:3", "gm:4"]),
+        "expected standard sent + unlabelled primary + unlabelled alias without dupes/trash/junk"
+    );
+    let draft = decisions.iter().find(|d| d.key == "gm:9").expect("draft");
+    assert_eq!(draft.outcome, "left_out");
+    assert_eq!(draft.left_out_bucket, Some(LeftOutBucket::Drafts));
+    assert!(
+        !decisions
+            .iter()
+            .any(|d| matches!(d.key.as_str(), "gm:2" | "gm:5" | "gm:6" | "gm:7" | "gm:8")),
+        "echo dupes, trash/junk, and inbound mail must not enter decisions"
+    );
+}
+
+#[test]
+fn reconnecting_imap_source_recovers_transient_drops_and_stops_on_auth_error() {
+    use crate::imap::{MailboxInfo, ReconnectingImapSource, WireAudit};
+    use crate::model::{Header, Part};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    struct FlakySource {
+        fail_scan: Arc<Mutex<usize>>,
+        fail_fetch: Arc<Mutex<usize>>,
+        fail_auth: bool,
+        uid_validity: u32,
+        inner: Option<Box<dyn ImapSource + Send>>,
+    }
+
+    impl ImapSource for FlakySource {
+        fn mailbox_info(&mut self) -> crate::error::Result<MailboxInfo> {
+            if self.fail_auth {
+                return Err(EmailError::AuthFailed);
+            }
+            let mut mb = self.inner.as_mut().unwrap().mailbox_info()?;
+            mb.uid_validity = self.uid_validity;
+            Ok(mb)
+        }
+
+        fn scan_page(
+            &mut self,
+            mailbox: &MailboxInfo,
+            lo: u32,
+            hi: u32,
+        ) -> crate::error::Result<Vec<Header>> {
+            let mut rem = self.fail_scan.lock().unwrap();
+            if *rem > 0 {
+                *rem -= 1;
+                return Err(EmailError::Unreachable("simulated TLS EOF".into()));
+            }
+            drop(rem);
+            self.inner.as_mut().unwrap().scan_page(mailbox, lo, hi)
+        }
+
+        fn fetch_texts(
+            &mut self,
+            reqs: &[(&Header, &Part)],
+        ) -> crate::error::Result<Vec<Option<String>>> {
+            let mut rem = self.fail_fetch.lock().unwrap();
+            if *rem > 0 {
+                *rem -= 1;
+                return Err(EmailError::Protocol("simulated BYE timeout".into()));
+            }
+            drop(rem);
+            self.inner.as_mut().unwrap().fetch_texts(reqs)
+        }
+
+        fn wire_audit(&self) -> WireAudit {
+            self.inner
+                .as_ref()
+                .map_or_else(WireAudit::default, |s| s.wire_audit())
+        }
+
+        fn logout(&mut self) -> crate::error::Result<()> {
+            if let Some(s) = self.inner.as_mut() {
+                s.logout()?;
+            }
+            Ok(())
+        }
+    }
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    let msgs = sample_mailbox_messages();
+    let tz = denver_tz();
+    let now = now_ts();
+
+    let opens = Arc::new(Mutex::new(0usize));
+    let fail_scan = Arc::new(Mutex::new(1usize));
+    let fail_fetch = Arc::new(Mutex::new(1usize));
+    let handles = Arc::new(Mutex::new(Vec::new()));
+
+    let open_session = {
+        let msgs = msgs.clone();
+        let opens = Arc::clone(&opens);
+        let fail_scan = Arc::clone(&fail_scan);
+        let fail_fetch = Arc::clone(&fail_fetch);
+        let handles = Arc::clone(&handles);
+        move || -> crate::error::Result<Box<dyn ImapSource + Send>> {
+            *opens.lock().unwrap() += 1;
+            let (stream, handle) = mock_server(msgs.clone()).spawn();
+            handles.lock().unwrap().push(handle);
+            let client = GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678")?;
+            let uid_validity = 4242;
+            Ok(Box::new(FlakySource {
+                fail_scan: Arc::clone(&fail_scan),
+                fail_fetch: Arc::clone(&fail_fetch),
+                fail_auth: false,
+                uid_validity,
+                inner: Some(Box::new(client)),
+            }))
+        }
+    };
+
+    let mut source = ReconnectingImapSource::new(open_session, 3, Duration::ZERO);
+    sync::connect_and_verify(
+        root,
+        "maya@example.com",
+        "abcd 1234 efgh 5678",
+        &mut source,
+        now,
+    )
+    .unwrap();
+    let scan = sync::run_header_scan(root, &mut source, now, &tz, false).unwrap();
+    assert!(scan.complete);
+    assert_eq!(scan.eligible_sent, 5);
+
+    sync::save_choice(root, RangePreset::All, MessageType::ALL.to_vec(), now, &tz).unwrap();
+    let report = sync::run_sync(root, &mut source, now, &tz, SyncOptions::default()).unwrap();
+    assert_eq!(report.landed_messages, 5);
+    assert_eq!(
+        *opens.lock().unwrap(),
+        3,
+        "initial open + 1 reconnect on scan drop + 1 reconnect on fetch drop"
+    );
+    assert!(report.wire.commands > 0);
+    source.logout().unwrap();
+    for h in handles.lock().unwrap().drain(..) {
+        let _ = h.join();
+    }
+
+    // Permanent AuthFailed error must never be retried.
+    let auth_opens = Arc::new(Mutex::new(0usize));
+    let auth_opens_c = Arc::clone(&auth_opens);
+    let mut auth_src = ReconnectingImapSource::new(
+        move || -> crate::error::Result<Box<dyn ImapSource + Send>> {
+            *auth_opens_c.lock().unwrap() += 1;
+            Err(EmailError::AuthFailed)
+        },
+        3,
+        Duration::ZERO,
+    );
+    let err = auth_src.mailbox_info().unwrap_err();
+    assert!(matches!(err, EmailError::AuthFailed));
+    assert_eq!(*auth_opens.lock().unwrap(), 1);
+}
+
+#[test]
+fn fetch_error_clears_fetching_phase_and_stale_worker_state_reconciles() {
+    use crate::imap::{MailboxInfo, WireAudit};
+    use crate::model::{Header, Part};
+
+    struct FailOnFetch(Box<dyn ImapSource + Send>);
+    impl ImapSource for FailOnFetch {
+        fn mailbox_info(&mut self) -> crate::error::Result<MailboxInfo> {
+            self.0.mailbox_info()
+        }
+        fn scan_page(
+            &mut self,
+            mailbox: &MailboxInfo,
+            lo: u32,
+            hi: u32,
+        ) -> crate::error::Result<Vec<Header>> {
+            self.0.scan_page(mailbox, lo, hi)
+        }
+        fn fetch_texts(
+            &mut self,
+            _reqs: &[(&Header, &Part)],
+        ) -> crate::error::Result<Vec<Option<String>>> {
+            Err(EmailError::Unreachable("network dropped".into()))
+        }
+        fn wire_audit(&self) -> WireAudit {
+            self.0.wire_audit()
+        }
+        fn logout(&mut self) -> crate::error::Result<()> {
+            self.0.logout()
+        }
+    }
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    let msgs = sample_mailbox_messages();
+    let tz = denver_tz();
+    let now = now_ts();
+
+    let (stream, handle) = mock_server(msgs).spawn();
+    let client = GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678").unwrap();
+    let mut failing = FailOnFetch(Box::new(client));
+    sync::connect_and_verify(
+        root,
+        "maya@example.com",
+        "abcd 1234 efgh 5678",
+        &mut failing,
+        now,
+    )
+    .unwrap();
+    sync::run_header_scan(root, &mut failing, now, &tz, false).unwrap();
+    sync::save_choice(root, RangePreset::All, MessageType::ALL.to_vec(), now, &tz).unwrap();
+
+    let err = sync::run_sync(root, &mut failing, now, &tz, SyncOptions::default()).unwrap_err();
+    assert!(matches!(err, EmailError::Unreachable(_)));
+    let _ = failing.logout();
+    let _ = handle.join();
+
+    // After transient fetch failure, persisted state must NOT remain stuck in "fetching".
+    let state = store::read_state(root).unwrap();
+    assert!(!state.fetching_active);
+    assert_eq!(state.phase, "steady");
+
+    // Simulate a process crash leaving stale "fetching" or "scanning" in state.json.
+    let mut crashed_fetch = state.clone();
+    crashed_fetch.fetching_active = true;
+    crashed_fetch.phase = "fetching".to_owned();
+    store::write_state(root, &crashed_fetch).unwrap();
+
+    let dead_fetch = sync::status_snapshot_with_activity(root, &tz, false).unwrap();
+    assert_eq!(dead_fetch.phase, "steady");
+    assert!(!dead_fetch.syncing);
+    assert!(!dead_fetch.sync.active);
+
+    let live_fetch = sync::status_snapshot_with_activity(root, &tz, true).unwrap();
+    assert_eq!(live_fetch.phase, "fetching");
+    assert!(live_fetch.syncing);
+    assert!(live_fetch.sync.active);
+
+    let mut crashed_scan = state;
+    crashed_scan.scan_complete = false;
+    crashed_scan.scan_paused = false;
+    crashed_scan.phase = "scanning".to_owned();
+    store::write_state(root, &crashed_scan).unwrap();
+
+    let dead_scan = sync::status_snapshot_with_activity(root, &tz, false).unwrap();
+    assert_eq!(dead_scan.phase, "scan_paused");
+    assert!(dead_scan.scan.paused);
+    assert!(!dead_scan.syncing);
+
+    let live_scan = sync::status_snapshot_with_activity(root, &tz, true).unwrap();
+    assert_eq!(live_scan.phase, "scanning");
+    assert!(!live_scan.scan.paused);
+    assert!(live_scan.syncing);
+}
+
+#[test]
+fn steady_noop_scan_skips_decision_rewrite_until_rules_or_uid_changes() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    let msgs = sample_mailbox_messages();
+    let tz = denver_tz();
+    let now = now_ts();
+
+    let (stream, handle) = mock_server(msgs.clone()).spawn();
+    let mut client =
+        GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678").unwrap();
+    sync::connect_and_verify(
+        root,
+        "maya@example.com",
+        "abcd 1234 efgh 5678",
+        &mut client,
+        now,
+    )
+    .unwrap();
+    sync::run_header_scan(root, &mut client, now, &tz, false).unwrap();
+    client.logout().unwrap();
+    let _ = handle.join();
+
+    // Marker line appended to decisions.jsonl: a no-op tick must not rewrite the file.
+    let decisions_file = store::decisions_path(root);
+    let orig = std::fs::read_to_string(&decisions_file).unwrap();
+    let with_blank = format!("{orig}\n");
+    std::fs::write(&decisions_file, &with_blank).unwrap();
+
+    let (stream, handle) = mock_server(msgs.clone()).spawn();
+    let mut client =
+        GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678").unwrap();
+    let later = Timestamp::from_second(now.as_second() + 3600).unwrap();
+    let noop = sync::run_header_scan(root, &mut client, later, &tz, false).unwrap();
+    assert!(noop.complete);
+    assert_eq!(noop.eligible_sent, 5);
+    client.logout().unwrap();
+    let _ = handle.join();
+    assert_eq!(
+        std::fs::read_to_string(&decisions_file).unwrap(),
+        with_blank,
+        "0-new-mail tick at current rules_version must skip rewriting decisions.jsonl"
+    );
+
+    // Simulating an upgrade from an earlier rules_version must force re-evaluation.
+    let mut st = store::read_state(root).unwrap();
+    st.last_rules_version = 1;
+    store::write_state(root, &st).unwrap();
+    let (stream, handle) = mock_server(msgs).spawn();
+    let mut client =
+        GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678").unwrap();
+    sync::run_header_scan(root, &mut client, later, &tz, false).unwrap();
+    client.logout().unwrap();
+    let _ = handle.join();
+    assert_eq!(
+        std::fs::read_to_string(&decisions_file).unwrap(),
+        orig,
+        "older last_rules_version must trigger full decision re-evaluation"
+    );
+    assert_eq!(
+        store::read_state(root).unwrap().last_rules_version,
+        crate::select::RULES_VERSION
     );
 }

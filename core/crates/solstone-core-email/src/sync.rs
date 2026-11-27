@@ -25,10 +25,14 @@ use crate::extract::{
     self, ANSWERED_NO_TEXT_FALLBACK, CAP_CHARS, Evidence, Extracted, ForwardedBlock, cap_text,
     owner_fallback_text,
 };
-use crate::imap::{ImapSource, MailboxInfo, WireAudit};
+use crate::imap::{
+    DEFAULT_RECONNECT_BACKOFF, DEFAULT_RECONNECT_RETRIES, ImapSource, MailboxInfo,
+    ReconnectingImapSource, WireAudit,
+};
 use crate::model::{BodyChoice, Header, MessageType, Part, RangePreset, choose_body};
 use crate::select::{
-    Decision, RULES_VERSION, STALE_SKIP_BEFORE_VERSION, evaluate_decisions, learn_owner_aliases,
+    Decision, RULES_VERSION, STALE_SKIP_BEFORE_VERSION, evaluate_decisions, is_owner,
+    learn_owner_aliases,
 };
 use crate::store::{
     self, AccountMeta, Credentials, EMAIL_STREAM, LandedRecord, PROVIDER_GMAIL, SourceState,
@@ -376,6 +380,27 @@ pub fn run_header_scan_with_versions(
     rules_version: u32,
     stale_before_version: u32,
 ) -> Result<ScanReport> {
+    let (report, _) = run_header_scan_inner(
+        root,
+        source,
+        now,
+        zone,
+        lock_held,
+        rules_version,
+        stale_before_version,
+    )?;
+    Ok(report)
+}
+
+fn run_header_scan_inner(
+    root: &Path,
+    source: &mut dyn ImapSource,
+    now: Timestamp,
+    zone: &TimeZone,
+    lock_held: bool,
+    rules_version: u32,
+    stale_before_version: u32,
+) -> Result<(ScanReport, Option<Vec<Header>>)> {
     let _lock = if lock_held {
         None
     } else {
@@ -397,10 +422,12 @@ pub fn run_header_scan_with_versions(
 
     let mut cache = HeaderCache::open(&store::header_cache_path(root))?;
     let cursor = cache.cursor(&mb.name)?;
+    let mut cache_reset = false;
     let start_uid = match cursor {
         Some(c) if c.uid_validity == mb.uid_validity => c.last_uid.saturating_add(1),
         Some(_) => {
             cache.clear_all()?;
+            cache_reset = true;
             1
         }
         None => 1,
@@ -418,6 +445,7 @@ pub fn run_header_scan_with_versions(
     state.folder_cap_warning = folder_cap_warning;
     store::write_state(root, &state)?;
 
+    let mut fetched_new_rows = false;
     if highest_uid == 0 || start_uid > highest_uid {
         let last_uid = highest_uid.max(start_uid.saturating_sub(1));
         cache.put_page(&mb.name, mb.uid_validity, last_uid, mb.exists, true, &[])?;
@@ -448,19 +476,68 @@ pub fn run_header_scan_with_versions(
                     return Err(err);
                 }
             };
+            if !rows.is_empty() {
+                fetched_new_rows = true;
+            }
             let is_last = hi >= highest_uid;
             cache.put_page(&mb.name, mb.uid_validity, hi, mb.exists, is_last, &rows)?;
             let checked = cache.count()?;
             state.scan_checked = checked;
             state.scan_total = u64::from(mb.exists).max(checked);
             for h in &rows {
-                if h.is_sent() && !h.is_draft() {
+                if (h.is_sent()
+                    || (is_owner(h, &account.owner_aliases) && !h.is_trash_or_junk()))
+                    && !h.is_draft()
+                {
                     state.scan_sent_found += 1;
                 }
             }
             store::write_state(root, &state)?;
             lo = hi.saturating_add(1);
         }
+    }
+
+    // Fast path for steady-state ticks with zero new headers and current rules:
+    // avoid loading the entire SQLite header index and rewriting decisions.jsonl.
+    let rules_current = state.last_rules_version >= rules_version
+        && state.last_rules_version >= stale_before_version;
+    if state.scan_complete
+        && !cache_reset
+        && !fetched_new_rows
+        && rules_current
+        && store::decisions_path(root).is_file()
+    {
+        let checked = cache.count()?;
+        state.scan_checked = checked;
+        state.scan_total = u64::from(mb.exists).max(checked);
+        state.folder_cap_warning = folder_cap_warning;
+        state.last_checked_at = Some(now.to_string());
+        if !state.fetching_active {
+            state.phase = if store::read_choice(root)?.is_some() {
+                "steady".to_owned()
+            } else {
+                "awaiting_choice".to_owned()
+            };
+        }
+        store::write_state(root, &state)?;
+        let left_out_total = state
+            .scan_sent_found
+            .saturating_sub(state.scan_eligible_sent);
+        return Ok((
+            ScanReport {
+                mailbox: mb.name,
+                checked: state.scan_checked,
+                total: state.scan_total,
+                sent_found: state.scan_sent_found,
+                eligible_sent: state.scan_eligible_sent,
+                left_out_total,
+                complete: true,
+                earliest_month: state.scan_earliest_month.clone(),
+                folder_cap_warning,
+                wire: source.wire_audit(),
+            },
+            None,
+        ));
     }
 
     // Recompute owner aliases and selection decisions across the full header index.
@@ -506,6 +583,7 @@ pub fn run_header_scan_with_versions(
     state.scan_earliest_month = earliest.clone();
     state.folder_cap_warning = folder_cap_warning;
     state.last_checked_at = Some(now.to_string());
+    state.last_rules_version = rules_version;
     if !state.fetching_active {
         state.phase = if store::read_choice(root)?.is_some() {
             "steady".to_owned()
@@ -515,18 +593,21 @@ pub fn run_header_scan_with_versions(
     }
     store::write_state(root, &state)?;
 
-    Ok(ScanReport {
-        mailbox: mb.name,
-        checked: state.scan_checked,
-        total: state.scan_total,
-        sent_found,
-        eligible_sent,
-        left_out_total,
-        complete: true,
-        earliest_month: earliest,
-        folder_cap_warning,
-        wire: source.wire_audit(),
-    })
+    Ok((
+        ScanReport {
+            mailbox: mb.name,
+            checked: state.scan_checked,
+            total: state.scan_total,
+            sent_found,
+            eligible_sent,
+            left_out_total,
+            complete: true,
+            earliest_month: earliest,
+            folder_cap_warning,
+            wire: source.wire_audit(),
+        },
+        Some(all_headers),
+    ))
 }
 
 /// Persist the owner's selective-sync choice (`range` + `types`) and return the
@@ -615,11 +696,28 @@ pub fn choice_preview(
     now: Timestamp,
     zone: &TimeZone,
 ) -> Result<ChoicePreview> {
+    let (preview, _) = choice_preview_with_earliest(root, range, types, now, zone)?;
+    Ok(preview)
+}
+
+/// Same as [`choice_preview`], also returning the earliest sent month without
+/// scanning landed segments on disk.
+pub fn choice_preview_with_earliest(
+    root: &Path,
+    range: RangePreset,
+    types: &[MessageType],
+    now: Timestamp,
+    zone: &TimeZone,
+) -> Result<(ChoicePreview, Option<String>)> {
     let decisions = store::read_decisions(root)?;
     let landed = store::read_landed(root)?;
     let landed_keys = store::landed_key_set(&landed);
     let state = store::read_state(root)?;
-    Ok(preview_choice(
+    let earliest = state
+        .scan_earliest_month
+        .clone()
+        .or_else(|| earliest_sent_month(&decisions, zone));
+    let preview = preview_choice(
         &decisions,
         &landed_keys,
         range,
@@ -627,7 +725,8 @@ pub fn choice_preview(
         now,
         zone,
         state.folder_cap_warning,
-    ))
+    );
+    Ok((preview, earliest))
 }
 
 /// Execute one sync pass: incremental header catch-up, versioned re-reach for
@@ -672,8 +771,8 @@ pub fn run_sync_with_publisher(
         .unwrap_or(STALE_SKIP_BEFORE_VERSION);
 
     // Step 1: catch up headers + run re-reach over stale skips.
-    let scan =
-        run_header_scan_with_versions(root, source, now, zone, true, rules_version, stale_before)?;
+    let (scan, cached_headers) =
+        run_header_scan_inner(root, source, now, zone, true, rules_version, stale_before)?;
     let Some(choice) = store::read_choice(root)? else {
         return Ok(SyncReport {
             run_id: None,
@@ -729,8 +828,13 @@ pub fn run_sync_with_publisher(
         });
     }
 
-    let cache = HeaderCache::open(&store::header_cache_path(root))?;
-    let all_headers = cache.all()?;
+    let all_headers = match cached_headers {
+        Some(headers) => headers,
+        None => {
+            let cache = HeaderCache::open(&store::header_cache_path(root))?;
+            cache.all()?
+        }
+    };
     let by_key: HashMap<&str, &Header> = all_headers.iter().map(|h| (h.key.as_str(), h)).collect();
     let mut by_msg_id: HashMap<&str, Vec<&Header>> = HashMap::new();
     for h in &all_headers {
@@ -804,6 +908,7 @@ pub fn run_sync_with_publisher(
                     let _ = record_attention(root, reason);
                 } else {
                     state.fetching_active = false;
+                    state.phase = "steady".to_owned();
                     let _ = store::write_state(root, &state);
                 }
                 return Err(err);
@@ -1045,6 +1150,16 @@ pub fn run_sync_with_publisher(
 
 /// Build the exact `/app/sources/api/email` JSON status snapshot.
 pub fn status_snapshot(root: &Path, zone: &TimeZone) -> Result<StatusSnapshot> {
+    status_snapshot_with_activity(root, zone, store::is_sync_locked(root))
+}
+
+/// Build the `/app/sources/api/email` status snapshot, reconciling stale
+/// in-progress on-disk phases (`scanning` / `fetching`) when no worker is live.
+pub fn status_snapshot_with_activity(
+    root: &Path,
+    zone: &TimeZone,
+    worker_active: bool,
+) -> Result<StatusSnapshot> {
     let creds = store::read_credentials(root)?;
     let account = store::read_account(root)?;
     let choice = store::read_choice(root)?;
@@ -1057,6 +1172,13 @@ pub fn status_snapshot(root: &Path, zone: &TimeZone) -> Result<StatusSnapshot> {
     let accounting = compute_accounting(&decisions, &live_map, choice.as_ref());
     let connected = creds.is_some();
 
+    let fetching_active = state.fetching_active && worker_active;
+    let scan_paused = if !state.scan_complete {
+        state.scan_paused || !worker_active
+    } else {
+        state.scan_paused
+    };
+
     let phase = if !connected {
         if account.is_some() || !landed.is_empty() {
             "disconnected".to_owned()
@@ -1065,16 +1187,18 @@ pub fn status_snapshot(root: &Path, zone: &TimeZone) -> Result<StatusSnapshot> {
         }
     } else if state.attention_reason.is_some() {
         "needs_attention".to_owned()
-    } else if state.fetching_active {
+    } else if fetching_active {
         "fetching".to_owned()
     } else if !state.scan_complete {
-        if state.scan_paused {
+        if scan_paused {
             "scan_paused".to_owned()
         } else {
             "scanning".to_owned()
         }
     } else if choice.is_none() {
         "awaiting_choice".to_owned()
+    } else if state.phase == "fetching" && !worker_active {
+        "steady".to_owned()
     } else if !state.phase.is_empty() {
         state.phase.clone()
     } else {
@@ -1153,10 +1277,10 @@ pub fn status_snapshot(root: &Path, zone: &TimeZone) -> Result<StatusSnapshot> {
             None
         },
         connected,
-        syncing: state.fetching_active || (connected && !state.scan_complete && !state.scan_paused),
+        syncing: fetching_active || (connected && !state.scan_complete && !scan_paused),
         scan: ScanSnapshot {
             complete: state.scan_complete,
-            paused: state.scan_paused,
+            paused: scan_paused,
             checked: state.scan_checked,
             total: state.scan_total,
             sent_found,
@@ -1176,7 +1300,7 @@ pub fn status_snapshot(root: &Path, zone: &TimeZone) -> Result<StatusSnapshot> {
             updated_at: c.updated_at,
         }),
         sync: SyncSnapshot {
-            active: state.fetching_active,
+            active: fetching_active,
             done: state.fetch_done,
             total: state.fetch_total,
             last_added_at: state.last_added_at,
@@ -1546,7 +1670,7 @@ pub fn sync_live_gmail_with_publisher(
     }
     let now = Timestamp::now();
     let zone = store::journal_timezone(root);
-    let mut client =
+    let initial =
         match crate::imap::GmailImap::connect_gmail(&creds.account, &creds.app_password) {
             Ok(client) => client,
             Err(err) => {
@@ -1556,6 +1680,17 @@ pub fn sync_live_gmail_with_publisher(
                 return Err(err);
             }
         };
+    let account_reopen = creds.account.clone();
+    let password_reopen = creds.app_password.clone();
+    let mut client = ReconnectingImapSource::with_initial(
+        Box::new(initial),
+        move || {
+            let fresh = crate::imap::GmailImap::connect_gmail(&account_reopen, &password_reopen)?;
+            Ok(Box::new(fresh))
+        },
+        DEFAULT_RECONNECT_RETRIES,
+        DEFAULT_RECONNECT_BACKOFF,
+    );
     let outcome = if scan_only {
         let scan = run_header_scan(root, &mut client, now, &zone, false)?;
         Ok(SyncReport {

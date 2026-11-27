@@ -42,6 +42,21 @@ pub struct WireAudit {
     pub body_section_requests: u64,
 }
 
+impl WireAudit {
+    pub fn merge_from(&mut self, other: &Self) {
+        self.commands = self.commands.saturating_add(other.commands);
+        for (verb, count) in &other.verbs {
+            *self.verbs.entry(verb.clone()).or_default() += *count;
+        }
+        self.received_bytes = self.received_bytes.saturating_add(other.received_bytes);
+        self.read_only_acks = self.read_only_acks.saturating_add(other.read_only_acks);
+        self.header_requests = self.header_requests.saturating_add(other.header_requests);
+        self.body_section_requests = self
+            .body_section_requests
+            .saturating_add(other.body_section_requests);
+    }
+}
+
 /// Mailbox metadata returned by `EXAMINE`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MailboxInfo {
@@ -178,6 +193,182 @@ pub trait ImapSource {
     fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>>;
     fn wire_audit(&self) -> WireAudit;
     fn logout(&mut self) -> Result<()>;
+}
+
+/// Default maximum consecutive reconnect retries per failed IMAP page/batch.
+pub const DEFAULT_RECONNECT_RETRIES: usize = 3;
+/// Default base backoff between reconnect attempts on live connections.
+pub const DEFAULT_RECONNECT_BACKOFF: Duration = Duration::from_secs(2);
+
+fn is_transient_imap_error(err: &EmailError) -> bool {
+    matches!(err, EmailError::Unreachable(_) | EmailError::Protocol(_))
+}
+
+/// Reconnecting wrapper around any read-only [`ImapSource`] opener.
+///
+/// Long scans and large body fetches can encounter idle TCP/TLS resets or
+/// transient IMAP drops. On a transient [`EmailError::Unreachable`] or
+/// [`EmailError::Protocol`] error, this wrapper opens a fresh read-only IMAP
+/// session and retries the exact failed page or batch up to `max_retries`
+/// times, preserving the cumulative [`WireAudit`] across sessions. Permanent,
+/// authentication, and read-only guard errors are never retried.
+pub struct ReconnectingImapSource<F>
+where
+    F: FnMut() -> Result<Box<dyn ImapSource + Send>>,
+{
+    inner: Option<Box<dyn ImapSource + Send>>,
+    open: F,
+    max_retries: usize,
+    backoff: Duration,
+    prior_audit: WireAudit,
+}
+
+impl<F> ReconnectingImapSource<F>
+where
+    F: FnMut() -> Result<Box<dyn ImapSource + Send>>,
+{
+    pub fn new(open: F, max_retries: usize, backoff: Duration) -> Self {
+        Self {
+            inner: None,
+            open,
+            max_retries,
+            backoff,
+            prior_audit: WireAudit::default(),
+        }
+    }
+
+    pub fn with_initial(
+        initial: Box<dyn ImapSource + Send>,
+        open: F,
+        max_retries: usize,
+        backoff: Duration,
+    ) -> Self {
+        Self {
+            inner: Some(initial),
+            open,
+            max_retries,
+            backoff,
+            prior_audit: WireAudit::default(),
+        }
+    }
+
+    fn drop_inner(&mut self) {
+        if let Some(src) = self.inner.take() {
+            self.prior_audit.merge_from(&src.wire_audit());
+        }
+    }
+
+    fn ensure_connected(&mut self) -> Result<&mut (dyn ImapSource + Send)> {
+        if self.inner.is_none() {
+            self.inner = Some((self.open)()?);
+        }
+        Ok(self
+            .inner
+            .as_deref_mut()
+            .expect("connection opened immediately above"))
+    }
+
+    fn reconnect(&mut self, attempt: usize, expected_uid_validity: Option<u32>) -> Result<()> {
+        self.drop_inner();
+        if !self.backoff.is_zero() {
+            let factor = u32::try_from(attempt.max(1)).unwrap_or(1);
+            std::thread::sleep(self.backoff.saturating_mul(factor));
+        }
+        let mut fresh = (self.open)()?;
+        if let Some(expected) = expected_uid_validity {
+            let mb = fresh.mailbox_info()?;
+            if mb.uid_validity != expected {
+                self.prior_audit.merge_from(&fresh.wire_audit());
+                return Err(EmailError::Protocol(format!(
+                    "mailbox UIDVALIDITY changed across reconnect ({expected} -> {})",
+                    mb.uid_validity
+                )));
+            }
+        }
+        self.inner = Some(fresh);
+        Ok(())
+    }
+
+    fn call_with_reconnect<T, Op>(
+        &mut self,
+        expected_uid_validity: Option<u32>,
+        mut op: Op,
+    ) -> Result<T>
+    where
+        Op: FnMut(&mut (dyn ImapSource + Send)) -> Result<T>,
+    {
+        let mut retries = 0usize;
+        loop {
+            let err = match self.ensure_connected() {
+                Ok(src) => match op(src) {
+                    Ok(value) => return Ok(value),
+                    Err(err) => err,
+                },
+                Err(err) => err,
+            };
+            if !is_transient_imap_error(&err) || retries >= self.max_retries {
+                return Err(err);
+            }
+            retries += 1;
+            let mut reopen_err: Option<EmailError> = None;
+            while retries <= self.max_retries {
+                match self.reconnect(retries, expected_uid_validity) {
+                    Ok(()) => {
+                        reopen_err = None;
+                        break;
+                    }
+                    Err(r_err) => {
+                        if !is_transient_imap_error(&r_err) || retries >= self.max_retries {
+                            return Err(r_err);
+                        }
+                        reopen_err = Some(r_err);
+                        retries += 1;
+                    }
+                }
+            }
+            if let Some(final_err) = reopen_err {
+                return Err(final_err);
+            }
+        }
+    }
+}
+
+impl<F> ImapSource for ReconnectingImapSource<F>
+where
+    F: FnMut() -> Result<Box<dyn ImapSource + Send>>,
+{
+    fn mailbox_info(&mut self) -> Result<MailboxInfo> {
+        self.call_with_reconnect(None, |src| src.mailbox_info())
+    }
+
+    fn scan_page(&mut self, mailbox: &MailboxInfo, lo: u32, hi: u32) -> Result<Vec<Header>> {
+        self.call_with_reconnect(Some(mailbox.uid_validity), |src| {
+            src.scan_page(mailbox, lo, hi)
+        })
+    }
+
+    fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>> {
+        let expected_uid_validity = reqs.first().map(|(h, _)| h.location.uid_validity);
+        self.call_with_reconnect(expected_uid_validity, |src| src.fetch_texts(reqs))
+    }
+
+    fn wire_audit(&self) -> WireAudit {
+        let mut merged = self.prior_audit.clone();
+        if let Some(src) = &self.inner {
+            merged.merge_from(&src.wire_audit());
+        }
+        merged
+    }
+
+    fn logout(&mut self) -> Result<()> {
+        if let Some(mut src) = self.inner.take() {
+            let res = src.logout();
+            self.prior_audit.merge_from(&src.wire_audit());
+            res
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// Narrow, structurally read-only IMAP4rev1 + Gmail client over any `Read + Write` stream.
