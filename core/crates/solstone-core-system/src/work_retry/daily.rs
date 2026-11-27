@@ -292,55 +292,6 @@ mod tests {
     use solstone_core_journal_io::{AcceptedDailyResult, DailyUnitRecord, save_daily_unit_record};
 
     #[test]
-    fn maintenance_has_one_identity_and_uses_todays_evidence() {
-        let root = tempfile::tempdir().unwrap();
-        let talents = root.path().join("talents");
-        let apps = root.path().join("apps");
-        std::fs::create_dir_all(&talents).unwrap();
-        std::fs::create_dir_all(&apps).unwrap();
-        std::fs::write(talents.join("daily_schedule.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":1,\"output\":\"json\",\"hook\":{\"pre\":\"daily_schedule\",\"post\":\"daily_schedule\"}\n}\nMaintain schedule.").unwrap();
-        let unit = Unit::Daily {
-            day: "19990101".into(),
-            talent: "daily_schedule".into(),
-            facet: None,
-        };
-        let later = Unit::Daily {
-            day: "20260101".into(),
-            talent: "daily_schedule".into(),
-            facet: None,
-        };
-        assert_eq!(unit.id().unwrap(), later.id().unwrap());
-        let evidence = evidence_with_roots(root.path(), &unit, &talents, &apps).unwrap();
-        let mut record = DailyUnitRecord::new(
-            identity(&unit).unwrap(),
-            &evidence.revision,
-            &evidence.contract,
-        );
-        record.status = DailyUnitStatus::Capped;
-        record.reason_code = Some("schema_invalid".into());
-        save_daily_unit_record(root.path(), &record).unwrap();
-        let input = observe_using(root.path(), &unit, || {
-            evidence_with_roots(root.path(), &unit, &talents, &apps)
-        })
-        .unwrap()
-        .unwrap();
-        super::super::request(root.path(), &unit).unwrap();
-        let grant = super::super::read(root.path(), &later.id().unwrap())
-            .unwrap()
-            .unwrap()
-            .permission(&input, &[])
-            .unwrap();
-        super::super::consume(root.path(), &later, &grant, &grant.reason, &input, &[]).unwrap();
-        assert!(
-            super::super::read(root.path(), &unit.id().unwrap())
-                .unwrap()
-                .unwrap()
-                .permission(&input, &[])
-                .is_none()
-        );
-    }
-
-    #[test]
     fn accepted_frozen_briefing_reconciles_hold_without_permission() {
         let root = tempfile::tempdir().unwrap();
         let talents = root.path().join("talents");

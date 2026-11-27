@@ -13,7 +13,6 @@ pub enum StageId {
     MorningBriefing,
     EntityDescribe,
     Participation,
-    DailySchedule,
     EntityDetection,
     EntitiesReview,
     EntitySuggest,
@@ -74,7 +73,6 @@ pub enum PrePostState {
     Pulse(Box<crate::pulse::PulsePreState>),
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntityDescribe(crate::entities::describe::EntityDescribePreState),
-    DailySchedule(crate::daily_schedule::DailySchedulePreState),
     EntityDetection(crate::entities::detection::DetectionState),
     EntitiesReview(crate::entities::review::ReviewState),
     EntitySuggest(crate::entities::suggest::SuggestState),
@@ -125,7 +123,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 17] = [
+pub const HOOK_TABLE: [HookBinding; 16] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -149,10 +147,6 @@ pub const HOOK_TABLE: [HookBinding; 17] = [
     HookBinding {
         hook: "participation",
         stage: StageId::Participation,
-    },
-    HookBinding {
-        hook: "daily_schedule",
-        stage: StageId::DailySchedule,
     },
     HookBinding {
         hook: "entities:detection",
@@ -268,20 +262,6 @@ pub static PARTICIPATION: StageSpec = StageSpec {
     commit: Some(CommitSpec {
         parse: crate::participation::parse,
         commit: crate::participation::commit,
-    }),
-    unavailable_commit: None,
-    unavailable_before_generate: None,
-    writes_as_intent: Some(crate::writers::apply_prepared),
-    output_override: None,
-};
-pub static DAILY_SCHEDULE: StageSpec = StageSpec {
-    stage: StageId::DailySchedule,
-    gate: None,
-    build: Some(|prepared, context, _| crate::daily_schedule::build(prepared, context)),
-    prompt_override: Some(crate::daily_schedule::apply_prompt_override),
-    commit: Some(CommitSpec {
-        parse: crate::daily_schedule::parse,
-        commit: crate::daily_schedule::commit,
     }),
     unavailable_commit: None,
     unavailable_before_generate: None,
@@ -455,7 +435,6 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::MorningBriefing => &MORNING_BRIEFING,
         StageId::EntityDescribe => &ENTITY_DESCRIBE,
         StageId::Participation => &PARTICIPATION,
-        StageId::DailySchedule => &DAILY_SCHEDULE,
         StageId::EntityDetection => &ENTITY_DETECTION,
         StageId::EntitiesReview => &ENTITIES_REVIEW,
         StageId::EntitySuggest => &ENTITY_SUGGEST,

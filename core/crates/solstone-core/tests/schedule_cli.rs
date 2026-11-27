@@ -85,7 +85,7 @@ fn write_detailed_schedule(journal: &std::path::Path) {
     let now = jiff::Timestamp::now().as_second();
     fs::write(
         journal.join("config/schedules.json"),
-        r#"{"daily_time":"03:00","weekly_day":"monday","weekly_time":"08:15","daily-with-configured-time":{"cmd":["journal","heartbeat"],"every":"daily"},"sub-floor-minute":{"cmd":"journal think --cadence","every":"2m"},"unsupported-interval":{"cmd":"journal check","every":"fortnightly"},"very-long-schedule-name:hourly":{"cmd":["journal","think"],"every":"hourly"},"weekly-status":{"cmd":["journal","maintenance"],"every":"weekly"},"z:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
+        r#"{"maintenance_time":"03:00","weekly_day":"monday","weekly_time":"08:15","daily-with-configured-time":{"cmd":["journal","heartbeat"],"every":"daily"},"sub-floor-minute":{"cmd":"journal think --cadence","every":"2m"},"unsupported-interval":{"cmd":"journal check","every":"fortnightly"},"very-long-schedule-name:hourly":{"cmd":["journal","think"],"every":"hourly"},"weekly-status":{"cmd":["journal","maintenance"],"every":"weekly"},"z:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
     )
     .expect("schedules");
     fs::write(
@@ -112,7 +112,7 @@ fn valid_fixture_matches_frozen_distinctive_row_and_footer() {
     let journal = journal();
     fs::write(
         journal.path().join("config/schedules.json"),
-        r#"{"daily_time":"03:00","a:daily":{"cmd":["journal","heartbeat"],"every":"daily"},"minute":{"cmd":"journal think --cadence","every":"1m"},"z:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
+        r#"{"maintenance_time":"03:00","a:daily":{"cmd":["journal","heartbeat"],"every":"daily"},"minute":{"cmd":"journal think --cadence","every":"1m"},"z:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
     )
     .expect("schedules");
     let output = run(journal.path(), &["schedule"]);
@@ -155,8 +155,8 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
             .contains("unsupported-interval            fortnightly")
     );
     assert!(expected_table.stdout.contains("Monday 08:15"));
-    assert!(expected_midnight.stdout.contains("midnight"));
-    assert!(expected_invalid_daily_time.stdout.contains("midnight"));
+    assert!(expected_midnight.stdout.contains("02:00"));
+    assert!(expected_invalid_daily_time.stdout.contains("02:00"));
 
     let journal = journal();
     write_detailed_schedule(journal.path());
@@ -261,7 +261,7 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
 
     fs::write(
         journal.path().join("config/schedules.json"),
-        r#"{"daily_time":"25:00","daily-with-invalid-time":{"cmd":["journal","heartbeat"],"every":"daily"}}"#,
+        r#"{"maintenance_time":"25:00","daily-with-invalid-time":{"cmd":["journal","heartbeat"],"every":"daily"}}"#,
     )
     .expect("invalid daily-time config");
     fs::write(

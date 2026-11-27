@@ -10,14 +10,21 @@ use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, hold_lock};
 
 use super::ScheduleError;
 
-pub(crate) const RESERVED_METADATA_KEYS: [&str; 3] = ["daily_time", "weekly_day", "weekly_time"];
+pub(crate) const RESERVED_METADATA_KEYS: [&str; 4] = [
+    "daily_time",
+    "maintenance_time",
+    "weekly_day",
+    "weekly_time",
+];
 
-const DEFAULT_DAILY_TIME: &str = "00:15";
+pub(crate) const DEFAULT_MAINTENANCE_TIME: &str = "02:00";
 const DEFAULT_WEEKLY_TIME: &str = "03:15";
 
 /// A validated enabled schedule entry. `every` intentionally retains its raw form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduleEntry {
+    /// First registration instant of a shipped entry. Legacy and owner-authored entries may omit it.
+    pub registered_at_ms: Option<i64>,
     pub cmd: Vec<String>,
     pub every: String,
     pub max_runtime: Option<Duration>,
@@ -111,8 +118,16 @@ pub fn enabled_schedule_entry(value: &Value) -> Option<ScheduleEntry> {
 /// including disabled or edited built-ins, are left untouched. Returns the
 /// names that were added.
 pub fn register_default_entries(path: &Path) -> Result<Vec<String>, ScheduleError> {
+    register_default_entries_at(path, jiff::Timestamp::now().as_millisecond())
+}
+
+/// Add only missing shipped entries, atomically publishing each with its first cadence boundary.
+pub fn register_default_entries_at(path: &Path, now_ms: i64) -> Result<Vec<String>, ScheduleError> {
     initialize_schedule_config(path)?;
-    let defaults = BTreeMap::from(default_entries().map(|(name, value)| (name.to_owned(), value)));
+    let defaults = BTreeMap::from(default_entries().map(|(name, mut value)| {
+        value["registered_at_ms"] = Value::from(now_ms);
+        (name.to_owned(), value)
+    }));
     add_missing_schedule_entries(path, &defaults)
 }
 
@@ -126,10 +141,6 @@ pub fn initialize_schedule_config(path: &Path) -> Result<bool, ScheduleError> {
         return Ok(false);
     }
     let mut raw = Map::new();
-    raw.insert(
-        "daily_time".to_owned(),
-        Value::String(DEFAULT_DAILY_TIME.to_owned()),
-    );
     raw.insert(
         "weekly_time".to_owned(),
         Value::String(DEFAULT_WEEKLY_TIME.to_owned()),
@@ -237,56 +248,6 @@ pub fn set_schedule_metadata(
     })
 }
 
-/// Only the daily scheduling field is owned by this retained action; unrelated
-/// owner schedule edits survive preparation and publication.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PreparedDailyTime {
-    pub before: Option<Value>,
-    pub after: Value,
-}
-
-pub fn prepare_daily_time(path: &Path, primary: &str) -> Result<PreparedDailyTime, String> {
-    if jiff::civil::Time::strptime("%H:%M", primary).is_err() {
-        return Err("invalid daily time".into());
-    }
-    let _lock = hold_lock(path, Default::default()).map_err(|e| e.to_string())?;
-    let raw = read_strict_raw(path).map_err(|e| e.to_string())?;
-    Ok(PreparedDailyTime {
-        before: raw.get("daily_time").cloned(),
-        after: Value::String(primary.into()),
-    })
-}
-
-pub fn publish_daily_time(
-    path: &Path,
-    batch: &PreparedDailyTime,
-    allow_before: bool,
-    receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    publish_daily_time_checked(path, batch, allow_before, || Ok(()), receipt)
-}
-
-pub fn publish_daily_time_checked(
-    path: &Path,
-    batch: &PreparedDailyTime,
-    allow_before: bool,
-    checkpoint: impl Fn() -> Result<(), String>,
-    receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let _lock = hold_lock(path, Default::default()).map_err(|e| e.to_string())?;
-    checkpoint()?;
-    let mut raw = read_strict_raw(path).map_err(|e| e.to_string())?;
-    if raw.get("daily_time") != Some(&batch.after) {
-        if !allow_before || raw.get("daily_time") != batch.before.as_ref() {
-            return Err("conflict: daily time changed after preparation".into());
-        }
-        raw.insert("daily_time".into(), batch.after.clone());
-        checkpoint()?;
-        write_raw(path, raw).map_err(|e| e.to_string())?;
-    }
-    receipt()
-}
-
 fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
     use solstone_core_journal_io::durability::{
         ArtifactId, DurableRead, read_json_durable_validated,
@@ -374,6 +335,7 @@ fn validate(raw: Map<String, Value>) -> ConfigLoad {
         result.config.entries.insert(
             name,
             ScheduleEntry {
+                registered_at_ms: entry.get("registered_at_ms").and_then(Value::as_i64),
                 cmd,
                 every: every.to_owned(),
                 max_runtime,
@@ -386,10 +348,7 @@ fn validate(raw: Map<String, Value>) -> ConfigLoad {
 pub(crate) fn metadata_from_raw(raw: &Map<String, Value>) -> ScheduleConfig {
     ScheduleConfig {
         entries: BTreeMap::new(),
-        daily_time: raw
-            .get("daily_time")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        daily_time: Some(effective_maintenance_time(raw).to_owned()),
         weekly_time: raw
             .get("weekly_time")
             .and_then(Value::as_str)
@@ -400,6 +359,50 @@ pub(crate) fn metadata_from_raw(raw: &Map<String, Value>) -> ScheduleConfig {
             .filter(|value| parse_weekly_day(value).is_some())
             .map(str::to_owned),
     }
+}
+
+// Older journals used daily_time for the model's inferred window. Only the
+// dedicated owner setting can select a different time now.
+fn effective_maintenance_time(raw: &Map<String, Value>) -> &str {
+    raw.get("maintenance_time")
+        .and_then(Value::as_str)
+        .filter(|value| valid_maintenance_time(value))
+        .unwrap_or(DEFAULT_MAINTENANCE_TIME)
+}
+
+pub fn valid_maintenance_time(value: &str) -> bool {
+    matches!(
+        value.as_bytes(),
+        [b'0'..=b'1', b'0'..=b'9', b':', b'0'..=b'5', b'0'..=b'9']
+            | [b'2', b'0'..=b'3', b':', b'0'..=b'5', b'0'..=b'9']
+    )
+}
+
+pub fn maintenance_time(journal: &Path) -> Result<String, ScheduleError> {
+    let path = journal.join("config/schedules.json");
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(DEFAULT_MAINTENANCE_TIME.to_owned());
+        }
+        Err(error) => return Err(io_error(error)),
+    };
+    let raw =
+        serde_json::from_slice(&bytes).map_err(|_| ScheduleError::MalformedConfig { path })?;
+    Ok(effective_maintenance_time(&raw).to_owned())
+}
+
+pub fn set_maintenance_time(journal: &Path, value: &str) -> Result<(), ScheduleError> {
+    if !valid_maintenance_time(value) {
+        return Err(ScheduleError::InvalidMaintenanceTime);
+    }
+    let root = solstone_core_journal_io::JournalRoot::open(journal).map_err(io_error)?;
+    super::mutate_schedule_entries_at_root_checked(std::sync::Arc::new(root), &|| Ok(()), |raw| {
+        let saved = Value::String(value.to_owned());
+        let changed = raw.get("maintenance_time") != Some(&saved);
+        raw.insert("maintenance_time".to_owned(), saved);
+        ScheduleMutation { changed, value: () }
+    })
 }
 
 pub(crate) fn parse_weekly_day(raw: &str) -> Option<u32> {
@@ -552,78 +555,6 @@ mod tests {
         let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(value["daily_time"], "09:30");
         assert_eq!(value["job"]["enabled"], true);
-    }
-
-    #[cfg(feature = "full-tests")]
-    #[test]
-    fn cancelled_daily_time_publication_waits_for_the_owner_lock_without_writing() {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-            mpsc,
-        };
-        use std::time::Duration;
-        for cancel in [true, false] {
-            let root = tempfile::tempdir().unwrap();
-            let path = root.path().join("schedules.json");
-            let before = br#"{"daily_time":"08:00","weekly_day":"sunday","cadence":{"enabled":false,"interval_minutes":5}}"#;
-            std::fs::write(&path, before).unwrap();
-            let batch = prepare_daily_time(&path, "09:30").unwrap();
-            let held = hold_lock(&path, Default::default()).unwrap();
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let receipted = Arc::new(AtomicBool::new(false));
-            let worker_path = path.clone();
-            let worker_cancelled = cancelled.clone();
-            let worker_receipted = receipted.clone();
-            let (entered, observed) = mpsc::channel();
-            let (release, gate) = mpsc::channel();
-            let worker = std::thread::spawn(move || {
-                let gated = AtomicBool::new(false);
-                publish_daily_time_checked(
-                    &worker_path,
-                    &batch,
-                    true,
-                    || {
-                        if !gated.swap(true, Ordering::SeqCst) {
-                            entered.send(()).unwrap();
-                            gate.recv_timeout(Duration::from_secs(5)).unwrap();
-                        }
-                        if worker_cancelled.load(Ordering::SeqCst) {
-                            Err("cancelled".into())
-                        } else {
-                            Ok(())
-                        }
-                    },
-                    || {
-                        worker_receipted.store(true, Ordering::SeqCst);
-                        Ok(())
-                    },
-                )
-            });
-            assert!(matches!(
-                observed.recv_timeout(Duration::from_millis(100)),
-                Err(mpsc::RecvTimeoutError::Timeout)
-            ));
-            cancelled.store(cancel, Ordering::SeqCst);
-            drop(held);
-            observed.recv_timeout(Duration::from_secs(5)).unwrap();
-            assert_eq!(std::fs::read(&path).unwrap(), before);
-            release.send(()).unwrap();
-            let result = worker.join().unwrap();
-            if cancel {
-                assert_eq!(result.unwrap_err(), "cancelled");
-                assert_eq!(std::fs::read(&path).unwrap(), before);
-                assert!(!receipted.load(Ordering::SeqCst));
-            } else {
-                result.unwrap();
-                assert!(receipted.load(Ordering::SeqCst));
-                let value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-                assert_eq!(value["daily_time"], "09:30");
-                assert_eq!(value["weekly_day"], "sunday");
-                assert_eq!(value["cadence"]["enabled"], false);
-                assert_eq!(value["cadence"]["interval_minutes"], 5);
-            }
-        }
     }
 
     #[test]

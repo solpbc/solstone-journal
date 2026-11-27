@@ -46,9 +46,6 @@ pub enum PreparedDailyAction {
         facet_id: String,
         batch: solstone_core_entity::PreparedMergeProposals,
     },
-    DailyTime {
-        batch: solstone_core_system::schedule::PreparedDailyTime,
-    },
     Output {
         path: String,
         facet_identity: Option<(String, String)>,
@@ -152,9 +149,7 @@ fn action_facet(action: &PreparedDailyAction) -> Option<(&str, &str)> {
         PreparedDailyAction::Output { facet_identity, .. } => facet_identity
             .as_ref()
             .map(|(facet, id)| (facet.as_str(), id.as_str())),
-        PreparedDailyAction::DailyTime { .. } | PreparedDailyAction::ExperiencesCommit { .. } => {
-            None
-        }
+        PreparedDailyAction::ExperiencesCommit { .. } => None,
     }
 }
 
@@ -286,7 +281,6 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
         WriteIntent::EntitySuggest { output, .. } => (output, "suggest"),
         WriteIntent::EntityObserver { output, .. } => (output, "observer"),
         WriteIntent::EntitiesReview { output, .. } => (output, "review"),
-        WriteIntent::DailySchedule { output, .. } => (output, "maintenance"),
         _ => return Ok(()),
     };
     let invalid = |id| StageError::new("parse", "daily", "daily", MessageDetail::message(id, []));
@@ -325,19 +319,6 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
                     && !row.get("aliases").is_some_and(Value::is_array)
             }) {
                 return Err(invalid("journal.cli.talent.daily.validation.aliases"));
-            }
-        }
-        "maintenance" => {
-            let primary = value
-                .get("primary")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    invalid("journal.cli.talent.daily.validation.maintenance.missing")
-                })?;
-            if jiff::civil::Time::strptime("%H:%M", primary).is_err() {
-                return Err(invalid(
-                    "journal.cli.talent.daily.validation.maintenance.time",
-                ));
             }
         }
         _ => unreachable!(),
@@ -415,55 +396,6 @@ pub fn prepare_daily_publication(
                 )
                 .map_err(daily_owner_error)?,
             );
-        }
-        CommitPlan::Write(WriteIntent::DailySchedule {
-            output,
-            output_path,
-        }) => {
-            let value: Value = serde_json::from_str(&output).map_err(|e| {
-                error(MessageDetail::message(
-                    "journal.cli.talent.daily.maintenance.output",
-                    [("error", &e)],
-                ))
-            })?;
-            let primary = value
-                .get("primary")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    error(MessageDetail::message(
-                        "journal.cli.talent.daily.maintenance.primary",
-                        [],
-                    ))
-                })?;
-            let batch = solstone_core_system::schedule::prepare_daily_time(
-                &root.join("config/schedules.json"),
-                primary,
-            )
-            .map_err(error)?;
-            let expected = prepared.config.get("_daily_time_before").ok_or_else(|| {
-                error(MessageDetail::message(
-                    "journal.cli.talent.daily.maintenance.snapshot",
-                    [],
-                ))
-            })?;
-            if batch.before.as_ref().unwrap_or(&Value::Null) != expected {
-                return Err(error(MessageDetail::message(
-                    "journal.cli.talent.daily.maintenance.changed",
-                    [],
-                )));
-            }
-            actions.push(PreparedDailyAction::DailyTime { batch });
-            if let Some(path) = output_path {
-                actions.push(
-                    prepare_frozen_output_action(
-                        root,
-                        &PathBuf::from(path),
-                        output.into_bytes(),
-                        prepared,
-                    )
-                    .map_err(daily_owner_error)?,
-                );
-            }
         }
         CommitPlan::Write(WriteIntent::EntitiesReview { output, facet, day }) => {
             let identity = solstone_core_journal_io::DailyUnitIdentity::new(
@@ -793,16 +725,6 @@ pub(crate) fn publish_daily_publication_cancellable(
                     receipt,
                 )
                 .map_err(make_review)?
-            }
-            PreparedDailyAction::DailyTime { batch } => {
-                solstone_core_system::schedule::publish_daily_time_checked(
-                    &context.journal.join("config/schedules.json"),
-                    batch,
-                    allow_before,
-                    || super::check_cancellation(cancellation),
-                    receipt,
-                )
-                .map_err(|e| make_error(e.into()))?
             }
             PreparedDailyAction::Output {
                 path,
@@ -1584,36 +1506,6 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.phase, "publication");
-    }
-
-    #[test]
-    fn config_rejects_owner_changes_during_generation() {
-        let root = fixture();
-        let context = ExecutionContext {
-            journal: root.path().into(),
-        };
-        let mut prepared = PreparedTalent::new("daily_schedule".into(), Default::default());
-        let path = root.path().join("config/schedules.json");
-        solstone_core_system::schedule::set_schedule_metadata(
-            &path,
-            &serde_json::Map::from_iter([("daily_time".into(), json!("04:00"))]),
-        )
-        .unwrap();
-        prepared
-            .config
-            .insert("_daily_time_before".into(), json!("03:00"));
-        let failure = prepare_daily_publication(
-            CommitPlan::Write(WriteIntent::DailySchedule {
-                output: r#"{"primary":"05:00"}"#.into(),
-                output_path: None,
-            }),
-            &prepared,
-            &context,
-        )
-        .unwrap_err();
-        assert_eq!(failure.phase, "conflict");
-        let raw: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(raw["daily_time"], "04:00");
     }
 
     #[test]

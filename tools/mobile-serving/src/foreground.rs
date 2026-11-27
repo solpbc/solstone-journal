@@ -1176,6 +1176,10 @@ struct HostScheduleSink {
     queue: Arc<TaskQueue>,
 }
 impl ScheduleSubmissionSink for HostScheduleSink {
+    fn has_active_schedule(&self, name: &str) -> bool {
+        self.queue.has_active_schedule(name)
+    }
+
     fn submit(&self, request: ScheduledRequest) -> bool {
         if solstone_core_maintenance::schedule_sync::is_retired_audio_sync_command(
             request.cmd.as_wire(),
@@ -2052,7 +2056,7 @@ impl ForegroundProcessingHost {
             let (mut engine, _) =
                 ScheduleEngine::init(&config, &state, now.clone()).map_err(|e| e.to_string())?;
             let mut fresh = BTreeSet::new();
-            match engine.register_defaults() {
+            match engine.register_defaults_at(now.unix_millis) {
                 Ok(added) => fresh.extend(added),
                 Err(error) => log::warn!("foreground schedule defaults: {error}"),
             }
@@ -2075,9 +2079,10 @@ impl ForegroundProcessingHost {
                 Err(error) if cancelled() => return Err(error),
                 Err(error) => log::warn!("foreground summary schedule: {error}"),
             }
-            match solstone_core_maintenance::schedule_sync::sync(
+            match solstone_core_maintenance::schedule_sync::sync_at(
                 &config,
                 solstone_core_maintenance::registry::routines(),
+                now.unix_millis,
             ) {
                 Ok(summary) => {
                     fresh.extend(
@@ -6690,90 +6695,6 @@ mod processing_proofs {
             json!(false)
         );
         drop(second);
-    }
-
-    #[test]
-    fn maintained_daily_schedule_intentionally_updates_daily_time_and_preserves_other_choices() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let (temp, payload) = journal_fixture();
-        write_schedules(temp.path(), quiet_entries());
-        let config_path = temp.path().join("config/journal.json");
-        let mut configured = read_json(&config_path);
-        configured["providers"] = json!({"active":{"provider":"openai","model":"fixture"}});
-        fs::write(&config_path, configured.to_string()).unwrap();
-        let owner_choices = configured.as_object().unwrap().clone();
-        let maintained = checkout_payload().join("solstone/talent");
-        for name in ["daily_schedule.md", "daily_schedule.schema.json"] {
-            fs::copy(
-                maintained.join(name),
-                payload.join("solstone/talent").join(name),
-            )
-            .unwrap();
-        }
-        let generate = |_: &GenerateRequest| {
-            Ok(GenerateResponse::Generated(Box::new(
-                solstone_core_generate::GeneratedResponse {
-                    id: None,
-                    text: r#"{"primary":"00:00","fallback":"01:00"}"#.into(),
-                    model: "fixture".into(),
-                    usage: json!({}),
-                    finish_reason: "stop".into(),
-                    thinking: None,
-                    schema_validation: Some(json!({"valid":true})),
-                    input_budget: None,
-                    request_budget: None,
-                    inference: None,
-                    hints_applied: vec![],
-                },
-            )))
-        };
-        let now = ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC);
-        let host = ForegroundProcessingHost::open_with_executor(
-            temp.path(),
-            &payload,
-            now,
-            Arc::new(generate),
-            BackupWebDeps::new(temp.path().to_path_buf()),
-        )
-        .unwrap();
-        assert_eq!(
-            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
-            "00:15"
-        );
-        assert_eq!(
-            host.execute_worker_command(&owned(&["think", "--day", "20261012", "--daily-only"])),
-            0
-        );
-        let output = read_json(&temp.path().join(format!(
-            "chronicle/{}/talents/daily_schedule.json",
-            Timestamp::now().strftime("%Y%m%d")
-        )));
-        assert_eq!(output["primary"], "00:00");
-        assert_eq!(
-            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
-            "00:00"
-        );
-        assert_eq!(
-            read_json(&temp.path().join("config/schedules.json"))["weekly_time"],
-            "03:15"
-        );
-        drop(host);
-        let after_daily = read_json(&config_path);
-        for (key, value) in &owner_choices {
-            assert_eq!(&after_daily[key], value, "owner choice {key}");
-        }
-        let reopened = ForegroundProcessingHost::open_at(
-            temp.path(),
-            &payload,
-            ScheduleNow::in_zone(Timestamp::now(), jiff::tz::TimeZone::UTC),
-            BackupWebDeps::new(temp.path().to_path_buf()),
-        )
-        .unwrap();
-        drop(reopened);
-        assert_eq!(
-            read_json(&temp.path().join("config/schedules.json"))["daily_time"],
-            "00:00"
-        );
     }
 
     #[test]

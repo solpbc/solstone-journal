@@ -59,8 +59,7 @@ The processing host also runs maintained Think modes through their native
 parser and callable owners. Schedule entries retain their existing arguments;
 supported Journal actions execute in process. Literal desktop programs and
 shell scripts require their desktop host and remain uncompleted on a phone.
-The existing `daily_schedule` talent may update `daily_time` from its accepted
-result; startup and unrelated work preserve saved schedule and timezone choices.
+Daily maintenance defaults to 02:00 in the journal’s time zone. Owners can change the time in Settings → storage.
 
 `POST /api/journal/think` accepts `{ "args": [...] }`, using the native Think
 argument grammar. Work requests return `202` with an admitted queue reference;

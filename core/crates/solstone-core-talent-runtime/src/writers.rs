@@ -42,10 +42,6 @@ pub enum WriteIntent {
         record_id: String,
         value: Value,
     },
-    DailySchedule {
-        output: String,
-        output_path: Option<String>,
-    },
     Participation {
         destination_id: String,
         output: String,
@@ -419,37 +415,6 @@ fn apply_with_sources(
             )
             .map_err(|detail| StageError::new("commit", "story", talent, detail))?;
             Ok(CommitDisposition::CommittedNoOutput)
-        }
-        CommitPlan::Write(WriteIntent::DailySchedule {
-            output,
-            output_path,
-        }) => {
-            crate::daily_schedule::apply_result_cancellable(
-                &context.journal,
-                &output,
-                cancellation,
-            )
-            .map_err(|detail| {
-                StageError::new("write-intent", "daily_schedule", "daily_schedule", detail)
-            })?;
-            let Some(output_path) = output_path else {
-                return Ok(CommitDisposition::CommittedNoOutput);
-            };
-            write_output_with_sources_cancellable(
-                PathBuf::from(output_path),
-                &output,
-                sources,
-                cancellation,
-            )
-            .map_err(|error| {
-                StageError::new(
-                    "write-intent",
-                    "daily_schedule",
-                    "daily_schedule",
-                    error.to_string(),
-                )
-            })?;
-            Ok(CommitDisposition::Written)
         }
         CommitPlan::Write(WriteIntent::Participation {
             destination_id,
@@ -1256,37 +1221,6 @@ mod tests {
 
         assert!(write_output_with_sources(output, "body", &[source]).is_err());
         assert!(!sidecar.exists());
-    }
-
-    #[test]
-    fn daily_schedule_writes_day_output_and_only_primary_metadata() {
-        let root = tempfile::Builder::new()
-            .prefix("solstone-daily-schedule-output-")
-            .tempdir_in("/var/tmp")
-            .unwrap();
-        let output_path = root
-            .path()
-            .join("journal/chronicle/20990101/talents/daily_schedule.json");
-        let output = r#"{"primary":"03:00","fallback":"04:00"}"#;
-        let disposition = apply(
-            CommitPlan::Write(WriteIntent::DailySchedule {
-                output: output.to_owned(),
-                output_path: Some(output_path.to_string_lossy().into_owned()),
-            }),
-            &ExecutionContext {
-                journal: root.path().join("journal"),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(disposition, CommitDisposition::Written);
-        assert_eq!(fs::read_to_string(output_path).unwrap(), output);
-        let schedules: Value = serde_json::from_slice(
-            &fs::read(root.path().join("journal/config/schedules.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(schedules["daily_time"], "03:00");
-        assert!(schedules.get("fallback").is_none());
     }
 
     #[test]

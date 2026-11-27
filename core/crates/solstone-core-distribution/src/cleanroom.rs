@@ -165,23 +165,15 @@ pub fn serve_directory(listener: TcpListener, root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn serve_generation_fixture(
-    listener: TcpListener,
-    evidence: &Path,
-    expected_fragment: &str,
-) -> io::Result<()> {
+pub fn serve_generation_fixture(listener: TcpListener, evidence: &Path) -> io::Result<()> {
     for incoming in listener.incoming() {
         let stream = incoming?;
-        handle_generation(stream, evidence, expected_fragment)?;
+        handle_generation(stream, evidence)?;
     }
     Ok(())
 }
 
-fn handle_generation(
-    mut stream: TcpStream,
-    evidence: &Path,
-    expected_fragment: &str,
-) -> io::Result<()> {
+fn handle_generation(mut stream: TcpStream, evidence: &Path) -> io::Result<()> {
     let request = read_http_request(&mut stream)?;
     let request_line = request.lines().next().unwrap_or_default();
     let body = request.split_once("\r\n\r\n").map_or("", |(_, body)| body);
@@ -211,7 +203,7 @@ fn handle_generation(
             .to_string(),
         );
     }
-    let (talent, completion) = match generation_completion(&prompt, expected_fragment) {
+    let (talent, completion) = match generation_completion(&prompt) {
         Ok(reply) => reply,
         Err(reason) => {
             append_evidence(evidence, reason)?;
@@ -296,10 +288,7 @@ fn flatten_json_strings(value: &serde_json::Value) -> String {
     output
 }
 
-fn generation_completion(
-    prompt: &str,
-    expected_fragment: &str,
-) -> Result<(&'static str, &'static str), &'static str> {
+fn generation_completion(prompt: &str) -> Result<(&'static str, &'static str), &'static str> {
     if prompt.contains("# Segment Sense")
         && prompt.contains("meeting_detected")
         && prompt.contains("speculative_facet")
@@ -307,18 +296,6 @@ fn generation_completion(
         return Ok((
             "sense",
             r#"{"density":"active","content_type":"work","activity_summary":"Held a synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Cleanroom interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
-        ));
-    }
-    if prompt.contains("Maintenance Window Analysis")
-        && prompt.contains("primary")
-        && prompt.contains("fallback")
-    {
-        if !prompt.contains(expected_fragment) {
-            return Err("daily_schedule-anchor-missing");
-        }
-        return Ok((
-            "daily_schedule",
-            r#"{"primary":"03:00","fallback":"04:00"}"#,
         ));
     }
     if prompt.contains("You are generating the morning briefing")
@@ -559,37 +536,18 @@ mod tests {
     }
 
     #[test]
-    fn generation_fixture_requires_the_daily_activity_anchor_and_maps_the_full_batch() {
-        let anchor = "20260817 (Monday):\n  03:17 - 03:28 (11m)";
+    fn generation_fixture_maps_the_daily_batch() {
         assert_eq!(
             generation_completion(
-                &format!("Maintenance Window Analysis primary fallback\n{anchor}"),
-                anchor
-            ),
-            Ok((
-                "daily_schedule",
-                r#"{"primary":"03:00","fallback":"04:00"}"#
-            ))
-        );
-        assert_eq!(
-            generation_completion("Maintenance Window Analysis primary fallback", anchor),
-            Err("daily_schedule-anchor-missing")
-        );
-        assert_eq!(
-            generation_completion(
-                "You are generating the morning briefing coverage_preamble needs_attention",
-                anchor
+                "You are generating the morning briefing coverage_preamble needs_attention"
             )
             .expect("morning response")
             .0,
             "morning_briefing"
         );
-        assert_eq!(
-            generation_completion("unknown", anchor),
-            Err("unexpected-talent")
-        );
+        assert_eq!(generation_completion("unknown"), Err("unexpected-talent"));
         let (sense_name, sense_text) =
-            generation_completion("# Segment Sense meeting_detected speculative_facet", anchor)
+            generation_completion("# Segment Sense meeting_detected speculative_facet")
                 .expect("sense response");
         assert_eq!(sense_name, "sense");
         let sense_json: serde_json::Value =

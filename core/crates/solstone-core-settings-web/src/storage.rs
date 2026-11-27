@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use axum::{
+    body::Bytes,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -11,7 +12,9 @@ use serde_json::{Map, Value, json};
 use solstone_core_convey_http::window_catalog::{strings, text};
 use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
 
-use crate::http::json_response;
+use crate::http::{invalid_config_value, json_response, settings_operation_failed_with_detail};
+use crate::request_body::{JsonBody, json_body};
+use solstone_core_system::schedule;
 
 pub async fn get(locale: &'static str, journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || {
@@ -89,6 +92,14 @@ pub async fn get_config(locale: &'static str, journal_root: PathBuf) -> Response
                 .period
                 .is_none();
             let mut payload = config_payload(&journal_root, &config);
+            // Storage policy is still readable if only the separate schedule file is damaged.
+            payload["maintenance_time"] = match schedule::maintenance_time(&journal_root) {
+                Ok(time) => json!(time),
+                Err(error) => {
+                    log::warn!("could not read daily maintenance time: {error}");
+                    Value::Null
+                }
+            };
             if let Some(retention) = payload.get_mut("retention").and_then(Value::as_object_mut) {
                 retention.insert("keep_empty_audio".to_owned(), json!(keep_empty_audio));
             }
@@ -99,6 +110,36 @@ pub async fn get_config(locale: &'static str, journal_root: PathBuf) -> Response
             text(locale, "journal.window.settings.storage.storage.config"),
             detail,
         ),
+    }
+}
+
+pub async fn set_maintenance_time(
+    locale: &'static str,
+    journal_root: PathBuf,
+    body: Bytes,
+) -> Response {
+    let JsonBody::Value(request) = json_body(body) else {
+        return crate::http::missing_request_body(locale);
+    };
+    let Some(time) = request
+        .get("maintenance_time")
+        .and_then(Value::as_str)
+        .filter(|time| schedule::valid_maintenance_time(time))
+    else {
+        return invalid_config_value(
+            locale,
+            text(locale, "journal.window.settings.maintenance.time.invalid"),
+        );
+    };
+    let time = time.to_owned();
+    match tokio::task::spawn_blocking(move || {
+        schedule::set_maintenance_time(&journal_root, &time).map(|()| time)
+    })
+    .await
+    {
+        Ok(Ok(time)) => json_response(json!({"maintenance_time": time})),
+        Ok(Err(error)) => settings_operation_failed_with_detail(locale, error.to_string()),
+        Err(error) => settings_operation_failed_with_detail(locale, error.to_string()),
     }
 }
 

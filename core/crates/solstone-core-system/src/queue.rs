@@ -3735,10 +3735,11 @@ fn enqueue_locked(state: &mut QueueState, submission: Submission) -> SubmitOutco
         .queues
         .entry(submission.partition.clone())
         .or_default();
-    if let Some(entry) = queue
-        .iter_mut()
-        .find(|entry| entry.command == submission.command && entry.cap == submission.cap)
-    {
+    if let Some(entry) = queue.iter_mut().find(|entry| {
+        entry.command == submission.command
+            && entry.cap == submission.cap
+            && entry.scheduler_name == submission.scheduler_name
+    }) {
         entry.priority.merge(submission.priority);
         if let Some(source) = entry.sources.iter_mut().find(|source| {
             source.reference == submission.reference && source.discovered == submission.discovered
@@ -3870,18 +3871,47 @@ fn take_ready(state: &mut QueueState, selection: Selection) -> Vec<Dispatch> {
                 !state.running.contains_key(partition)
             });
         let pick = check.or(analysis).or_else(|| {
-            state.queues.iter().find_map(|(partition, queue)| {
-                (!state.running.contains_key(partition)
-                    && !state.held.contains_key(partition)
-                    && queue.front().is_some_and(|entry| {
-                        !is_analysis_command(&entry.command)
-                            && !(own_endpoint && is_model_check(&entry.command))
-                            && !(state.local_analysis_pauses != 0
+            let maintenance_busy = state
+                .running
+                .values()
+                .any(|slot| daily_maintenance_admission(&slot.command, &slot.reference).is_some());
+            state
+                .queues
+                .iter()
+                .filter(|(partition, _)| {
+                    !state.running.contains_key(*partition) && !state.held.contains_key(*partition)
+                })
+                .filter_map(|(partition, queue)| {
+                    // A waiting nightly job must not hold an owner's command behind it.
+                    let mut nightly = None;
+                    for (index, entry) in queue.iter().enumerate() {
+                        let admitted = entry.scheduler_name.as_ref().and_then(|_| {
+                            daily_maintenance_admission(&entry.command, &entry.references[0])
+                        });
+                        if is_analysis_command(&entry.command)
+                            || (own_endpoint && is_model_check(&entry.command))
+                            || (state.local_analysis_pauses != 0
                                 && is_local_analysis_command(&entry.command))
-                            && !index_daily_conflict(state, &entry.command)
-                    }))
-                .then(|| Pick::Queued(partition.clone(), 0))
-            })
+                            || index_daily_conflict(state, &entry.command)
+                        {
+                            if admitted.is_some() {
+                                continue;
+                            }
+                            break;
+                        }
+                        let pick = Pick::Queued(partition.clone(), index);
+                        match admitted {
+                            None => return Some((None, pick)),
+                            Some(time) if !maintenance_busy && nightly.is_none() => {
+                                nightly = Some((Some(time), pick))
+                            }
+                            _ => {}
+                        }
+                    }
+                    nightly
+                })
+                .min_by_key(|(admitted, _)| *admitted)
+                .map(|(_, pick)| pick)
         });
         let Some(pick) = pick else {
             break;
@@ -4077,6 +4107,25 @@ fn is_model_check(command: &[String]) -> bool {
     matches!(command.as_ref(), [journal, brain, action, ..]
         if journal == "journal" && brain == "brain"
             && matches!(action.as_str(), "refresh" | "renew-prerequisites"))
+}
+
+/// The scheduler carries the admitted civil date on daily work. Use its original
+/// submission time to let the oldest waiting nightly job take the next turn.
+fn daily_maintenance_admission(command: &[String], reference: &str) -> Option<i64> {
+    let (_, admission) = crate::schedule::schedule_reference(reference)?;
+    let (millis, period) = admission.split_once('@')?;
+    period.parse::<jiff::civil::Date>().ok()?;
+    let command = crate::partition::journal_alias_form(command);
+    match command.as_ref() {
+        [journal, verb, action, ..]
+            if journal == "journal"
+                && ((verb == "maintenance" && action == "run")
+                    || (verb == "indexer" && action == "--rescan")) =>
+        {
+            millis.parse().ok()
+        }
+        _ => None,
+    }
 }
 
 /// The daily catch-all and daily talents share the corpus. Keep their scheduled
@@ -7691,6 +7740,95 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
+    fn nightly_work_drains_oldest_first_while_owner_work_can_start() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        let pick = |state: &mut QueueState| {
+            take_ready(
+                state,
+                selection(jiff::civil::date(2026, 1, 11), local_spending()),
+            )
+        };
+        for (name, command, millis) in [
+            ("nightly-rescan", vec!["journal", "indexer", "--rescan"], 10),
+            (
+                "nightly-backup",
+                vec!["journal", "maintenance", "run", "backup:prune"],
+                20,
+            ),
+        ] {
+            let mut submission = normalize_request(
+                command_request(&command, &format!("sched:{name}:{millis}@2026-01-10"), None),
+                queue.inner.options.cap_resolver.as_ref(),
+            );
+            submission.scheduler_name = Some(name.into());
+            enqueue_locked(&mut state, submission);
+        }
+        enqueue_locked(
+            &mut state,
+            normalize_request(
+                command_request(&["journal", "heartbeat"], "owner-check", None),
+                queue.inner.options.cap_resolver.as_ref(),
+            ),
+        );
+        let first = pick(&mut state);
+        assert_eq!(
+            first
+                .iter()
+                .map(|job| job.submission.reference.as_str())
+                .collect::<Vec<_>>(),
+            ["owner-check", "sched:nightly-rescan:10@2026-01-10"]
+        );
+        assert!(pick(&mut state).is_empty());
+        state.running.remove(&first[1].submission.partition);
+        let next = pick(&mut state);
+        assert_eq!(next.len(), 1);
+        assert_eq!(
+            next[0].submission.reference,
+            "sched:nightly-backup:20@2026-01-10"
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn incoming_index_work_can_pass_a_rescan_blocked_by_daily_thinking() {
+        let queue = queue(false, 10, VecDeque::new());
+        let mut state = ready_state(&queue);
+        let normalize = |cmd: &[&str], reference: &str| {
+            normalize_request(
+                command_request(cmd, reference, None),
+                queue.inner.options.cap_resolver.as_ref(),
+            )
+        };
+        let pick = |state: &mut QueueState| {
+            take_ready(
+                state,
+                selection(jiff::civil::date(2026, 1, 11), local_spending()),
+            )
+        };
+        enqueue_locked(
+            &mut state,
+            normalize(&["journal", "think", "--day", "20260110"], "thinking"),
+        );
+        let thinking = pick(&mut state);
+        assert_eq!(thinking[0].submission.partition.as_str(), "daily");
+        let mut nightly = normalize(
+            &["journal", "indexer", "--rescan"],
+            "sched:rescan:10@2026-01-10",
+        );
+        nightly.scheduler_name = Some("rescan".into());
+        enqueue_locked(&mut state, nightly);
+        enqueue_locked(
+            &mut state,
+            normalize(&["journal", "indexer", "drain"], "new-capture"),
+        );
+        let next = pick(&mut state);
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].submission.reference, "new-capture");
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
     fn local_analysis_pause_drains_reserved_work_and_atomically_excludes_new_work() {
         let queue = queue(false, 10, VecDeque::new());
         let enqueue = |state: &mut QueueState, command: &[&str], reference: &str| {
@@ -8687,16 +8825,17 @@ mod tests {
         }
         assert_eq!(queue.submit(request("bus")), SubmitOutcome::Pending);
         queue.set_ready();
-        // The zero override and ordinary bus request share the same effective
-        // budget and may coalesce; different scheduled budgets must not.
+        // The bus request keeps its own identity even at the same effective cap:
+        // only the scheduled completion satisfies the named schedule.
         queue
-            .join_test_workers(3, TEST_TRANSITION_TIMEOUT)
+            .join_test_workers(4, TEST_TRANSITION_TIMEOUT)
             .expect("workers");
         let mut actual = captured.lock().expect("budgets").clone();
         actual.sort();
         assert_eq!(
             actual,
             vec![
+                ("bus".to_owned(), Duration::from_secs(42)),
                 ("long".to_owned(), Duration::from_secs(7)),
                 ("short".to_owned(), Duration::from_secs(3)),
                 ("zero".to_owned(), Duration::from_secs(42)),

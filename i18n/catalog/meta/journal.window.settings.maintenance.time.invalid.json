@@ -1,0 +1,16 @@
+{
+  "description": "Error when the daily maintenance time is empty or is not a valid hour and minute.",
+  "context": "Journal window, storage settings, daily maintenance time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e1581aaaa0387ba0b9dbca4ed6e43f60b706cd12b293c1c3cbb44c6e3349e452",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

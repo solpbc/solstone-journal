@@ -197567,6 +197567,27 @@
       ]
     },
     {
+      "id": "journal.window.settings.maintenance.time.invalid",
+      "source": "e1581aaaa0387ba0b9dbca4ed6e43f60b706cd12b293c1c3cbb44c6e3349e452",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.maintenance.time.label",
+      "source": "a822f27083df60b0b28e47c68c5163a8618b84ba3a8713bb4b04c7f36a82c94d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.settings.maintenance.time.zone",
+      "source": "1a48fada870955540fdda3116000db80c57d067009f91b4c9b73c8430e633860",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.settings.option.label.about",
       "source": "83010f04eae109d71997d8842b28e5cfea46f295e079bfe0b00fa1dc196a2905",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

@@ -655,35 +655,26 @@ fn main() -> ExitCode {
         }
         Some("cleanroom-generate-serve") => {
             let evidence = args.next().map(PathBuf::from);
-            let expected = args.next().map(PathBuf::from);
-            match (evidence, expected) {
-                (Some(evidence), Some(expected)) => match std::fs::read_to_string(&expected) {
-                    Ok(expected) => match bind_loopback() {
-                        Ok((listener, port)) => {
-                            println!("127.0.0.1:{port}");
-                            let _ = std::io::Write::flush(&mut std::io::stdout());
-                            match serve_generation_fixture(listener, &evidence, &expected) {
-                                Ok(()) => ExitCode::SUCCESS,
-                                Err(error) => {
-                                    eprintln!("{error}");
-                                    ExitCode::from(2)
-                                }
+            match evidence {
+                Some(evidence) if args.next().is_none() => match bind_loopback() {
+                    Ok((listener, port)) => {
+                        println!("127.0.0.1:{port}");
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                        match serve_generation_fixture(listener, &evidence) {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(error) => {
+                                eprintln!("{error}");
+                                ExitCode::from(2)
                             }
                         }
-                        Err(error) => {
-                            eprintln!("{error}");
-                            ExitCode::from(2)
-                        }
-                    },
+                    }
                     Err(error) => {
-                        eprintln!("read expected fragment {}: {error}", expected.display());
+                        eprintln!("{error}");
                         ExitCode::from(2)
                     }
                 },
                 _ => {
-                    eprintln!(
-                        "usage: solstone-distribution cleanroom-generate-serve EVIDENCE EXPECTED_FRAGMENT_FILE"
-                    );
+                    eprintln!("usage: solstone-distribution cleanroom-generate-serve EVIDENCE");
                     ExitCode::from(2)
                 }
             }

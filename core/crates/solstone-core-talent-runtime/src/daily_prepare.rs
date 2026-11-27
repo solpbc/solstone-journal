@@ -14,7 +14,6 @@ use serde_json::{Map, Value, json};
 #[derive(Serialize, Deserialize)]
 enum FrozenState {
     None,
-    DailySchedule(crate::daily_schedule::DailySchedulePreState),
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntitiesReview(crate::entities::review::ReviewState),
     EntitySuggest(crate::entities::suggest::SuggestState),
@@ -84,7 +83,6 @@ pub fn freeze(
     }
     let mut state = match state {
         PrePostState::None => FrozenState::None,
-        PrePostState::DailySchedule(v) => FrozenState::DailySchedule(v),
         PrePostState::MorningBriefing(v) => FrozenState::MorningBriefing(v),
         PrePostState::EntitiesReview(v) => FrozenState::EntitiesReview(v),
         PrePostState::EntitySuggest(v) => FrozenState::EntitySuggest(v),
@@ -727,7 +725,6 @@ pub fn thaw(packet: &Value) -> Result<ThawedStage, String> {
     let (state, expected) = match frozen {
         // Every current daily hook freezes its own pre-state.
         FrozenState::None => (PrePostState::None, ""),
-        FrozenState::DailySchedule(v) => (PrePostState::DailySchedule(v), "daily_schedule"),
         FrozenState::MorningBriefing(v) => (PrePostState::MorningBriefing(v), "morning_briefing"),
         FrozenState::EntitiesReview(v) => {
             (PrePostState::EntitiesReview(v), "entities:entities_review")
@@ -878,18 +875,6 @@ fn capture_owner_expectations(
         "_daily_artifact_before".to_owned(),
         Value::Object(artifacts),
     );
-    if hook == "daily_schedule" {
-        let before = solstone_core_system::schedule::prepare_daily_time(
-            &context.journal.join("config/schedules.json"),
-            "00:00",
-        )
-        .map_err(|e| failure(prepared, e))?
-        .before;
-        prepared.config.insert(
-            "_daily_time_before".to_owned(),
-            before.unwrap_or(Value::Null),
-        );
-    }
     Ok(())
 }
 
@@ -986,12 +971,12 @@ mod tests {
         let config = Map::from_iter([
             (
                 "hook".to_owned(),
-                json!({"pre":"daily_schedule","post":"daily_schedule"}),
+                json!({"pre":"entities:entities_review","post":"entities:entities_review"}),
             ),
             ("skip_reason".to_owned(), json!("no_input")),
         ]);
         let packet = freeze(
-            PreparedTalent::new("daily_schedule".to_owned(), config),
+            PreparedTalent::new("entities:entities_review".to_owned(), config),
             &context,
         )
         .unwrap();
@@ -1170,11 +1155,6 @@ mod tests {
 
         let excluded = [
             prepared(
-                "daily_schedule",
-                LOCATION_DAY,
-                json!({"hook":{"pre":"daily_schedule","post":"daily_schedule"},"skip_reason":"no_input"}),
-            ),
-            prepared(
                 "entities:entities_review",
                 LOCATION_DAY,
                 json!({
@@ -1235,9 +1215,9 @@ mod tests {
         assert!(malformed.is_err());
         let excluded_malformed = freeze(
             prepared(
-                "daily_schedule",
+                "entities:entities_review",
                 LOCATION_DAY,
-                json!({"hook":{"pre":"daily_schedule","post":"daily_schedule"},"skip_reason":"no_input"}),
+                json!({"facet":"work","hook":{"pre":"entities:entities_review","post":"entities:entities_review"},"skip_reason":"no_input"}),
             ),
             &context,
         )

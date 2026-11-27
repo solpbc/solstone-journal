@@ -335,7 +335,6 @@ talent_direct_rung() {
 	assert_launchers
 	journal=/journal-direct
 	day=$(date +%Y%m%d)
-	weekday=$(date +%A)
 	segment=$journal/chronicle/$day/default/031700_697
 	target_segment=$journal/chronicle/20990101/default/120000_001
 	mkdir -p "$journal/config" "$segment/talents" "$target_segment/talents"
@@ -354,11 +353,10 @@ talent_direct_rung() {
 	printf '%s\n' \
 		'{"density":"idle","content_type":"idle","activity_summary":"","facets":[]}' \
 		>"$target_segment/talents/sense.json"
-	printf '%s (%s):\n  03:17 - 03:28 (11m)' "$day" "$weekday" >"$journal/expected-fragment"
 	: >"$journal/generation-evidence"
 	: >"$journal/generation.addr"
 	/qualification-tools/solstone-distribution cleanroom-generate-serve \
-		"$journal/generation-evidence" "$journal/expected-fragment" \
+		"$journal/generation-evidence" \
 		>"$journal/generation.addr" 2>"$journal/generation.err" &
 	SERVER_PID=$!
 	attempt=0
@@ -375,10 +373,10 @@ talent_direct_rung() {
 	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
 		>"$journal/config/journal.json"
 	export SOLSTONE_JOURNAL=$journal
-	[ ! -e "$journal/chronicle/20990101/talents/daily_schedule.json" ] \
-		|| refuse "daily_schedule output was pre-seeded"
+	[ ! -e "$journal/chronicle/20990101/talents/morning_briefing.json" ] \
+		|| refuse "morning_briefing output was pre-seeded"
 	[ ! -e "$journal/config/schedules.json" ] || refuse "schedule metadata was pre-seeded"
-	printf '%s\n' '{"name":"daily_schedule","day":"20990101"}' \
+	printf '%s\n' '{"name":"morning_briefing","day":"20990101"}' \
 		>"$journal/talent-request.json"
 	if ! /tree/bin/solstone-core __talent-worker \
 		<"$journal/talent-request.json" >"$journal/talent.out" 2>"$journal/talent.err"; then
@@ -387,24 +385,18 @@ talent_direct_rung() {
 		refuse "direct talent worker failed"
 	fi
 	stop_server
-	[ -f "$journal/chronicle/20990101/talents/daily_schedule.json" ] \
-		|| refuse "daily_schedule output missing"
-	daily=$(tr -d '[:space:]' <"$journal/chronicle/20990101/talents/daily_schedule.json")
-	[ "$daily" = '{"primary":"03:00","fallback":"04:00"}' ] \
-		|| refuse "daily_schedule output mismatch: $daily"
-	grep -F '"daily_time": "03:00"' "$journal/config/schedules.json" >/dev/null \
-		|| grep -F '"daily_time":"03:00"' "$journal/config/schedules.json" >/dev/null \
-		|| refuse "daily schedule metadata missing"
-	! grep -F 'fallback' "$journal/config/schedules.json" >/dev/null \
-		|| refuse "fallback leaked into schedule metadata"
+	[ -f "$journal/chronicle/20990101/talents/morning_briefing.json" ] \
+		|| refuse "morning_briefing output missing"
+	grep -F '"needs_attention"' "$journal/chronicle/20990101/talents/morning_briefing.json" >/dev/null \
+        || refuse "morning briefing is missing the attention list"
 	sorted=$(LC_ALL=C sort "$journal/generation-evidence")
-	[ "$sorted" = "daily_schedule" ] || {
+	[ "$sorted" = "morning_briefing" ] || {
 		cat "$journal/generation-evidence" >&2
 		refuse "generation fixture saw an unexpected direct-worker batch"
 	}
 	grep -F '"event":"finish"' "$journal/talent.out" >/dev/null \
 		|| refuse "direct talent worker did not report finish"
-	grep -F '"name":"daily_schedule"' "$journal/talent.out" >/dev/null \
+	grep -F '"name":"morning_briefing"' "$journal/talent.out" >/dev/null \
 		|| refuse "direct talent worker finish was misattributed"
 	cat "$journal/talent.out"
 	scan_zero
@@ -416,7 +408,6 @@ talent_orchestration_rung() {
 	journal=/journal-orchestration
 	day=$(date +%Y%m%d)
 	target_day=$(date -d yesterday +%Y%m%d)
-	weekday=$(date +%A)
 	segment=$journal/chronicle/$day/default/031700_697
 	target_segment=$journal/chronicle/$target_day/default/120000_001
 	mkdir -p "$journal/config" "$segment/talents" "$target_segment/talents"
@@ -440,11 +431,10 @@ talent_orchestration_rung() {
 	# it queues the segment first and leaves the daily batch to the next
 	# automatic discovery pass, which --no-daily turns off, so the day never
 	# finishes inside this rung.
-	printf '%s (%s):\n  03:17 - 03:28 (11m)' "$day" "$weekday" >"$journal/expected-fragment"
 	: >"$journal/generation-evidence"
 	: >"$journal/generation.addr"
 	/qualification-tools/solstone-distribution cleanroom-generate-serve \
-		"$journal/generation-evidence" "$journal/expected-fragment" \
+		"$journal/generation-evidence" \
 		>"$journal/generation.addr" 2>"$journal/generation.err" &
 	SERVER_PID=$!
 	attempt=0
@@ -482,8 +472,6 @@ talent_orchestration_rung() {
 			cat "$journal/reprocess.out" "$journal/reprocess.err" >&2 || true
 			refuse "supervisor daily reprocess request was not accepted"
 		}
-	# The maintenance-window talent is scoped to today; the named past-day
-	# reprocess is complete only when its versioned daily marker is published.
 	attempt=0
 	while [ ! -s "$journal/chronicle/$target_day/health/daily.updated" ]; do
 		attempt=$((attempt + 1))
@@ -496,24 +484,15 @@ talent_orchestration_rung() {
 	done
 	stop_supervisor
 	stop_server
-	[ -f "$journal/chronicle/$day/talents/daily_schedule.json" ] \
-		|| refuse "orchestration daily_schedule output missing"
-	daily=$(tr -d '[:space:]' <"$journal/chronicle/$day/talents/daily_schedule.json")
-	[ "$daily" = '{"primary":"03:00","fallback":"04:00"}' ] \
-		|| refuse "orchestration daily_schedule output mismatch: $daily"
-	grep -F '"daily_time": "03:00"' "$journal/config/schedules.json" >/dev/null \
-		|| grep -F '"daily_time":"03:00"' "$journal/config/schedules.json" >/dev/null \
-		|| refuse "orchestration daily schedule metadata missing"
-	! grep -F 'fallback' "$journal/config/schedules.json" >/dev/null \
-		|| refuse "orchestration fallback leaked into schedule metadata"
+	[ ! -e "$journal/chronicle/$day/talents/daily_schedule.json" ] \
+        || refuse "reprocessing ran retired scheduling work"
 	# The fixture's Sense reply is non-idle and carries the setup facet, so
 	# idle hygiene retains it and the daily batch runs entity_suggest for that
 	# facet. With no entity candidates in a fresh journal, entity_suggest
 	# publishes the empty result without a model call (cb3777ba2), keeping the
-	# exact three-call generation set while proving end-to-end publication.
+	# exact two-call generation set while proving end-to-end publication.
 	sorted=$(LC_ALL=C sort "$journal/generation-evidence")
-	[ "$sorted" = "daily_schedule
-morning_briefing
+	[ "$sorted" = "morning_briefing
 sense" ] || {
 		cat "$journal/generation-evidence" >&2
 		refuse "generation fixture saw an incomplete or unexpected production daily batch"
@@ -536,14 +515,14 @@ sense" ] || {
 		tr -d '[:space:]' <"$suggestions" | grep -F '"entities":[]' >/dev/null \
 			|| refuse "orchestration entity suggestion was not the empty no-candidate result"
 	done
-	set -- "$journal"/talents/daily_schedule/*.jsonl
+	set -- "$journal"/talents/morning_briefing/*.jsonl
 	if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
-		refuse "orchestration daily_schedule terminal event log missing"
+		refuse "orchestration morning_briefing terminal event log missing"
 	fi
 	grep -F '"event":"finish"' "$1" >/dev/null \
-		|| refuse "orchestration daily_schedule did not persist a terminal finish event"
-	grep -F '"name":"daily_schedule"' "$1" >/dev/null \
-		|| refuse "orchestration daily_schedule terminal event was misattributed"
+		|| refuse "orchestration morning_briefing did not persist a terminal finish event"
+	grep -F '"name":"morning_briefing"' "$1" >/dev/null \
+		|| refuse "orchestration morning_briefing terminal event was misattributed"
 	scan_zero
 	printf 'rung=talent coverage=supervisor-catchup-orchestration,daily-batch,persisted-terminal-event ok\n'
 }

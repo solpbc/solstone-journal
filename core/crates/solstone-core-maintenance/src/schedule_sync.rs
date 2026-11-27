@@ -174,10 +174,37 @@ pub(crate) fn sync_in(
     path: &Path,
     routines: &[RoutineDescriptor],
 ) -> Result<SyncSummary, String> {
+    sync_at_in(
+        copy,
+        path,
+        routines,
+        jiff::Timestamp::now().as_millisecond(),
+    )
+}
+
+/// Reconcile against the startup clock so every added entry can identify its first eligible mark
+/// even when the process stops immediately after the schedules file is published.
+pub fn sync_at(
+    path: &Path,
+    routines: &[RoutineDescriptor],
+    now_ms: i64,
+) -> Result<SyncSummary, String> {
+    sync_at_in(Output::canonical(), path, routines, now_ms)
+}
+
+fn sync_at_in(
+    copy: Output<'_>,
+    path: &Path,
+    routines: &[RoutineDescriptor],
+    now_ms: i64,
+) -> Result<SyncSummary, String> {
     initialize_schedule_config(path).map_err(|error| schedule_detail(copy, error))?;
     mutate_schedule_entries(path, |raw| {
         let mut next = raw.clone();
         let summary = plan_sync(&mut next, routines, host_unscheduled());
+        for id in &summary.added {
+            next[&schedule_name(id)]["registered_at_ms"] = Value::from(now_ms);
+        }
         let changed = next != *raw;
         if changed {
             *raw = next;
@@ -207,6 +234,9 @@ fn schedule_detail(
             "journal.cli.maintenance.schedule.state.shape",
             [("path", &path.display())],
         ),
+        ScheduleError::InvalidMaintenanceTime => {
+            copy.message("journal.cli.talent.daily.validation.maintenance.time", [])
+        }
         ScheduleError::UnknownMetadataKeys { keys } => copy.message(
             "journal.cli.maintenance.schedule.metadata",
             [("keys", &format!("{keys:?}"))],
@@ -598,6 +628,83 @@ mod tests {
     };
 
     #[test]
+    fn restart_between_registration_and_first_catchup_preserves_only_preexisting_debt() {
+        use solstone_core_system::{
+            request::ScheduledRequest,
+            schedule::{
+                ScheduleEngine, ScheduleNow, ScheduleSubmissionSink, register_default_entries_at,
+            },
+        };
+
+        struct Queue;
+        impl ScheduleSubmissionSink for Queue {
+            fn submit(&self, _: ScheduledRequest) -> bool {
+                true
+            }
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("config/schedules.json");
+        let state = root.path().join("health/scheduler.json");
+        let tick =
+            |stamp: &str| ScheduleNow::in_zone(stamp.parse().unwrap(), jiff::tz::TimeZone::UTC);
+        let registered = tick("2026-11-21T17:47:00Z");
+        let reopened = tick("2026-11-21T17:48:00Z");
+        write_config(
+            &config,
+            &json!({
+                "old": {"cmd":["journal","heartbeat"], "every":"daily"}
+            }),
+        );
+        register_default_entries_at(&config, registered.unix_millis).unwrap();
+        super::sync_at(&config, &[CAPPED, UNCAPPED], registered.unix_millis).unwrap();
+
+        // Simulate exit before the initial scheduler had a chance to start or catch up.
+        assert!(!state.exists());
+        assert!(
+            register_default_entries_at(&config, reopened.unix_millis)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            super::sync_at(&config, &[CAPPED, UNCAPPED], reopened.unix_millis)
+                .unwrap()
+                .added
+                .is_empty()
+        );
+        let (mut engine, _) = ScheduleEngine::init(&config, &state, reopened.clone()).unwrap();
+        assert_eq!(
+            engine
+                .catch_up(reopened, &Queue, &Default::default())
+                .submitted,
+            ["old"]
+        );
+
+        let next_day = tick("2026-11-22T02:00:00Z");
+        let report = engine.check(next_day, &Queue).unwrap();
+        assert!(report.submitted.iter().any(|s| s == "heartbeat"));
+        assert!(
+            report
+                .submitted
+                .iter()
+                .any(|s| s == "maintenance:app:capped")
+        );
+        assert!(
+            !report
+                .submitted
+                .iter()
+                .any(|s| s == "maintenance:app:uncapped")
+        );
+        let weekly = engine.check(tick("2026-11-22T03:15:00Z"), &Queue).unwrap();
+        assert!(
+            weekly
+                .submitted
+                .iter()
+                .any(|s| s == "maintenance:app:uncapped")
+        );
+    }
+
+    #[test]
     fn sync_initializes_staggered_metadata_for_a_missing_schedule_config() {
         let root = tempfile::tempdir().expect("temporary journal");
         let config = root.path().join("config/schedules.json");
@@ -608,7 +715,7 @@ mod tests {
         assert_eq!(summary.added, vec![CAPPED.id, UNCAPPED.id]);
         let raw: Value =
             serde_json::from_slice(&std::fs::read(config).expect("schedule config")).expect("json");
-        assert_eq!(raw["daily_time"], "00:15");
+        assert!(raw.get("maintenance_time").is_none());
         assert_eq!(raw["weekly_time"], "03:15");
     }
 

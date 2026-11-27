@@ -69,7 +69,7 @@ fn payload_txt_is_confined_and_present() {
     assert!(
         listed
             .iter()
-            .any(|path| path == "solstone/talent/daily_schedule.md"),
+            .any(|path| path == "solstone/talent/morning_briefing.md"),
         "payload declaration must include a known talent positive"
     );
     assert!(

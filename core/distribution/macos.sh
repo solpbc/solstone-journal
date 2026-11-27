@@ -895,11 +895,9 @@ talent_rung() {
 	printf '%s\n' \
 		'{"start":"00:00:00","source":"mic","speaker":1,"text":"No future scheduled activity appears in this synthetic macOS rung segment."}' \
 		>"$target_segment/capture_audio.jsonl"
-	weekday=$(date +%A)
-	printf '%s (%s):\n  03:17 - 03:28 (11m)' "$day" "$weekday" >"$JOURNAL/expected-fragment"
 	: >"$JOURNAL/generation-evidence"
 	: >"$JOURNAL/generation.addr"
-	"$PRODUCER" cleanroom-generate-serve "$JOURNAL/generation-evidence" "$JOURNAL/expected-fragment" \
+	"$PRODUCER" cleanroom-generate-serve "$JOURNAL/generation-evidence" \
 		>"$JOURNAL/generation.addr" 2>"$JOURNAL/generation.err" &
 	SERVER_PID=$!
 	attempt=0
@@ -934,10 +932,10 @@ talent_rung() {
 	# through that supervisor; starting one and then invoking the other directly
 	# would test lease contention rather than the extracted talent. Cortex uses
 	# this same native worker plus the same line-delimited request shape.
-	[ ! -e "$JOURNAL/chronicle/20990101/talents/daily_schedule.json" ] \
-		|| refuse "daily_schedule output was pre-seeded"
+	[ ! -e "$JOURNAL/chronicle/20990101/talents/morning_briefing.json" ] \
+		|| refuse "morning_briefing output was pre-seeded"
 	printf '%s\n' \
-		'{"use_id":"macos-tree-daily-schedule","name":"daily_schedule","day":"20990101","ts":1}' \
+		'{"use_id":"macos-tree-briefing","name":"morning_briefing","day":"20990101","ts":1}' \
 		>"$JOURNAL/talent.request"
 	if ! "$TREE/bin/solstone-core" __talent-worker \
 		<"$JOURNAL/talent.request" \
@@ -945,17 +943,16 @@ talent_rung() {
 		cat "$JOURNAL/talent.out" "$JOURNAL/talent.err" \
 			"$JOURNAL/generation.err" >&2 || true
 		kill "$SERVER_PID" 2>/dev/null || true
-		refuse "daily_schedule worker failed from the extracted tree"
+		refuse "morning_briefing worker failed from the extracted tree"
 	fi
 	kill "$SERVER_PID" 2>/dev/null || true
 	wait "$SERVER_PID" 2>/dev/null || true
-	[ -f "$JOURNAL/chronicle/20990101/talents/daily_schedule.json" ] \
-		|| refuse "daily_schedule output missing"
-	daily=$(tr -d '[:space:]' <"$JOURNAL/chronicle/20990101/talents/daily_schedule.json")
-	[ "$daily" = '{"primary":"03:00","fallback":"04:00"}' ] \
-		|| refuse "daily_schedule output mismatch: $daily"
+	[ -f "$JOURNAL/chronicle/20990101/talents/morning_briefing.json" ] \
+		|| refuse "morning_briefing output missing"
+	grep -F '"needs_attention"' "$JOURNAL/chronicle/20990101/talents/morning_briefing.json" >/dev/null \
+        || refuse "morning briefing is missing the attention list"
 	grep -Fq '"event":"finish"' "$JOURNAL/talent.out" \
-		|| refuse "daily_schedule worker did not reach a terminal finish event"
+		|| refuse "morning_briefing worker did not reach a terminal finish event"
 	printf 'rung=talent ok\n'
 }
 

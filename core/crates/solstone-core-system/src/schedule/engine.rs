@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-
-const SUBMITTED_PERIOD_CAPACITY: usize = 512;
 
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
@@ -13,11 +11,13 @@ use serde_json::{Map, Value};
 
 use crate::request::{ScheduledArgv, ScheduledRequest};
 
-use super::completion::{load_runtime_state, record_completion, record_completion_checked};
-use super::config::{ConfigDiagnostic, load_runtime, minute_interval, register_default_entries};
+use super::completion::{
+    load_runtime_state, record_completion, record_completion_checked, start_cadence,
+};
+use super::config::{ConfigDiagnostic, load_runtime, minute_interval, register_default_entries_at};
 use super::due::{
     compute_next_run, current_marks, effective_daily_spec, effective_every, effective_weekly_spec,
-    is_due, local_from_epoch, period_key, retry_at, state_entry,
+    is_due, now_from_epoch, period_key, retry_at, state_entry,
 };
 use super::status::ScheduleStatus;
 use super::{ScheduleConfig, ScheduleError, ScheduleNow, ScheduleSubmissionSink};
@@ -51,10 +51,6 @@ pub struct ScheduleEngine {
     /// The failed `last_run` each entry's retry was submitted for, so a retry
     /// still running is not submitted again on the next minute.
     failure_retried: BTreeMap<String, u64>,
-    /// Period key captured when each scheduled request was submitted, keyed by
-    /// request reference, so editing `daily_time` or the weekly window while a
-    /// batch is still running does not misclassify in-flight completions.
-    submitted_periods: Mutex<VecDeque<(String, String)>>,
     completion_lock: Mutex<()>,
 }
 
@@ -69,8 +65,7 @@ impl ScheduleEngine {
         let state_path = state_path.as_ref().to_path_buf();
         let loaded = load_runtime(&config_path)?;
         let state = load_runtime_state(&state_path)?;
-        let (last_hour, last_daily_mark, last_weekly_mark) =
-            current_marks(&loaded.config, now.local);
+        let (last_hour, last_daily_mark, last_weekly_mark) = current_marks(&loaded.config, &now);
         let last_minute = minute_mark(now.local);
         Ok((
             Self {
@@ -85,7 +80,6 @@ impl ScheduleEngine {
                 last_weekly_mark,
                 pending_retry: BTreeSet::new(),
                 failure_retried: BTreeMap::new(),
-                submitted_periods: Mutex::new(VecDeque::new()),
                 completion_lock: Mutex::new(()),
             },
             loaded.diagnostics,
@@ -95,7 +89,12 @@ impl ScheduleEngine {
     /// Strictly add missing built-ins, preserving disabled raw defaults.
     /// Returns the names that were added.
     pub fn register_defaults(&mut self) -> Result<Vec<String>, ScheduleError> {
-        let added = register_default_entries(&self.config_path)?;
+        self.register_defaults_at(jiff::Timestamp::now().as_millisecond())
+    }
+
+    /// Register built-ins against the host's startup clock, including clocks supplied by embedded hosts.
+    pub fn register_defaults_at(&mut self, now_ms: i64) -> Result<Vec<String>, ScheduleError> {
+        let added = register_default_entries_at(&self.config_path, now_ms)?;
         if !added.is_empty() {
             self.config = load_runtime(&self.config_path)?.config;
         }
@@ -113,26 +112,50 @@ impl ScheduleEngine {
         let prev_daily_spec = effective_daily_spec(&self.config);
         let prev_weekly_spec = effective_weekly_spec(&self.config);
         let loaded = load_runtime(&self.config_path)?;
-        self.config = loaded.config;
-        self.zone = now.zone.clone();
+        let zone_changed = self.zone != now.zone;
         let diagnostics = loaded.diagnostics;
-        self.pending_retry
-            .retain(|name| self.config.entries.contains_key(name));
         let current_minute = minute_mark(now.local);
         let (current_hour, current_daily_mark, current_weekly_mark) =
-            current_marks(&self.config, now.local);
+            current_marks(&loaded.config, &now);
         // Changing daily_time or weekly_day/weekly_time shifts the configured
         // window; it is not the wall clock crossing a boundary, so rebase the
         // mark rather than firing every entry on the edit tick.
-        if effective_daily_spec(&self.config) != prev_daily_spec {
+        let daily_edited = zone_changed || effective_daily_spec(&loaded.config) != prev_daily_spec;
+        let weekly_edited =
+            zone_changed || effective_weekly_spec(&loaded.config) != prev_weekly_spec;
+        if daily_edited || weekly_edited {
+            let rebased = loaded
+                .config
+                .entries
+                .iter()
+                .filter(|(_, entry)| {
+                    (daily_edited && entry.every == "daily")
+                        || (weekly_edited && entry.every == "weekly")
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+            start_cadence(
+                &self.completion_lock,
+                &self.state_path,
+                &rebased,
+                now.unix_millis as f64 / 1000.0,
+                true,
+            )?;
+            self.state = load_runtime_state(&self.state_path)?;
+        }
+        self.config = loaded.config;
+        self.zone = now.zone.clone();
+        self.pending_retry
+            .retain(|name| self.config.entries.contains_key(name));
+        if daily_edited {
             self.last_daily_mark = current_daily_mark;
         }
-        if effective_weekly_spec(&self.config) != prev_weekly_spec {
+        if weekly_edited {
             self.last_weekly_mark = current_weekly_mark;
         }
         let hour_changed = current_hour != self.last_hour;
-        let daily_changed = current_daily_mark != self.last_daily_mark;
-        let weekly_changed = current_weekly_mark != self.last_weekly_mark;
+        let daily_changed = current_daily_mark > self.last_daily_mark;
+        let weekly_changed = current_weekly_mark > self.last_weekly_mark;
         let minute_changed = current_minute != self.last_minute;
         if !hour_changed && !daily_changed && !weekly_changed && !minute_changed {
             return Ok(CheckReport {
@@ -141,7 +164,9 @@ impl ScheduleEngine {
             });
         }
 
-        self.state = load_runtime_state(&self.state_path)?;
+        if !daily_edited && !weekly_edited {
+            self.state = load_runtime_state(&self.state_path)?;
+        }
         self.last_minute = current_minute;
         self.last_hour = current_hour;
         self.last_daily_mark = current_daily_mark;
@@ -164,6 +189,7 @@ impl ScheduleEngine {
             attempted.insert(name.clone());
             if self.submit(&name, &entry, &now, sink) {
                 self.pending_retry.remove(&name);
+                self.note_failure_retry(&name);
                 report.retried.push(name);
             }
         }
@@ -213,15 +239,44 @@ impl ScheduleEngine {
         fresh: &BTreeSet<String>,
     ) -> CatchUpReport {
         let mut report = CatchUpReport::default();
+        // External callers may still supply fresh entries without embedded registration times.
+        let unmarked = fresh
+            .iter()
+            .filter(|name| {
+                self.config
+                    .entries
+                    .get(*name)
+                    .is_some_and(|entry| entry.registered_at_ms.is_none())
+            })
+            .cloned()
+            .collect();
+        if let Err(error) = start_cadence(
+            &self.completion_lock,
+            &self.state_path,
+            &unmarked,
+            now.unix_millis as f64 / 1000.0,
+            false,
+        ) {
+            log::warn!("unable to record fresh schedules: {error}");
+        }
+        match load_runtime_state(&self.state_path) {
+            Ok(state) => self.state = state,
+            Err(error) => {
+                log::warn!("unable to read schedule state for catch-up: {error}");
+                return report;
+            }
+        }
         for (name, entry) in self.config.entries.clone() {
             if fresh.contains(&name) {
                 continue;
             }
-            if is_due(&entry, state_entry(&self.state, &name), &self.config, &now)
-                && self.submit(&name, &entry, &now, sink)
-            {
-                self.note_failure_retry(&name);
-                report.submitted.push(name);
+            if is_due(&entry, state_entry(&self.state, &name), &self.config, &now) {
+                if self.submit(&name, &entry, &now, sink) {
+                    self.note_failure_retry(&name);
+                    report.submitted.push(name);
+                } else {
+                    self.pending_retry.insert(name);
+                }
             }
         }
         report
@@ -235,7 +290,7 @@ impl ScheduleEngine {
         now: &ScheduleNow,
     ) -> bool {
         let state = state_entry(&self.state, name);
-        retry_at(entry, state, &self.config, now).is_some_and(|at| now.local >= at)
+        retry_at(entry, state, &self.config, now).is_some_and(|at| now.unix_millis >= at)
             && self.failure_retried.get(name) != failed_run_key(state).as_ref()
     }
 
@@ -263,14 +318,10 @@ impl ScheduleEngine {
                     last_run,
                     due: is_due(entry, state, &self.config, &now),
                     next_run: compute_next_run(entry, state, &self.config, &now),
-                    daily_time: (entry.every == "daily")
-                        .then(|| {
-                            self.config
-                                .daily_time
-                                .clone()
-                                .filter(|value| !value.is_empty())
-                        })
-                        .flatten(),
+                    daily_time: (entry.every == "daily").then(|| {
+                        let (hour, minute) = effective_daily_spec(&self.config);
+                        format!("{hour:02}:{minute:02}")
+                    }),
                     weekly_day: (entry.every == "weekly")
                         .then(|| self.config.weekly_day.clone())
                         .flatten(),
@@ -337,43 +388,33 @@ impl ScheduleEngine {
         now: &ScheduleNow,
         sink: &dyn ScheduleSubmissionSink,
     ) -> bool {
-        let reference = format!("sched:{name}:{}", now.unix_millis);
-        let command =
-            ScheduledArgv::from_wire(entry.cmd.clone()).expect("validated non-empty command");
-        let mut request = ScheduledRequest::new(command, reference.clone(), name);
-        request.max_runtime = entry.max_runtime;
-        if !sink.submit(request) {
+        if sink.has_active_schedule(name) {
             return false;
         }
-        if let Some(period) = period_key(entry, &self.config, now.local) {
-            let mut periods = self
-                .submitted_periods
-                .lock()
-                .expect("submitted period cache poisoned");
-            if let Some(pos) = periods.iter().position(|(key, _)| key == &reference) {
-                periods.remove(pos);
-            }
-            if periods.len() >= SUBMITTED_PERIOD_CAPACITY {
-                periods.pop_front();
-            }
-            periods.push_back((reference, period));
+        // Carry the admitted period through queued work, host restarts and clock edits.
+        let mut reference = format!("sched:{name}:{}", now.unix_millis);
+        if let Some(period) = period_key(entry, &self.config, now) {
+            reference.push('@');
+            reference.push_str(&period);
         }
-        true
+        let command =
+            ScheduledArgv::from_wire(entry.cmd.clone()).expect("validated non-empty command");
+        let mut request = ScheduledRequest::new(command, reference, name);
+        request.max_runtime = entry.max_runtime;
+        sink.submit(request)
     }
 
     fn completion_period(&self, name: &str, ended_at: f64, reference: &str) -> Option<String> {
+        if let Some((entry, suffix)) = super::submission::schedule_reference(reference)
+            && entry == name
+            && let Some((_, period)) = suffix.split_once('@')
         {
-            let mut periods = self
-                .submitted_periods
-                .lock()
-                .expect("submitted period cache poisoned");
-            if let Some(pos) = periods.iter().position(|(key, _)| key == reference) {
-                return periods.remove(pos).map(|(_, period)| period);
-            }
+            return Some(period.to_owned());
         }
+        // Previously released requests and manual completions have no admitted period.
         let entry = self.config.entries.get(name)?;
-        let local = local_from_epoch(ended_at, &self.zone)?;
-        period_key(entry, &self.config, local)
+        let now = now_from_epoch(ended_at, &self.zone)?;
+        period_key(entry, &self.config, &now)
     }
 }
 

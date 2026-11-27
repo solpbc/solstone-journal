@@ -18,13 +18,13 @@
       "argv": [],
       "exit": 0,
       "stderr": "",
-      "stdout": "  NAME                     EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-with-invalid-time  daily     2026-03-22 04:00    midnight    journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
+      "stdout": "  NAME                     EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-with-invalid-time  daily     2026-03-22 04:00    02:00       journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
     },
     "midnight": {
       "argv": [],
       "exit": 0,
       "stderr": "",
-      "stdout": "  NAME               EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-at-midnight  daily     2026-03-22 01:00    midnight    journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
+      "stdout": "  NAME               EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-at-midnight  daily     2026-03-22 01:00    02:00       journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
     },
     "simple_table": {
       "argv": [],

@@ -10,7 +10,6 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_format::content::{self, ContentResolution, Family};
-use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 use std::{
     collections::BTreeMap,
     fs, io,
@@ -601,8 +600,7 @@ pub fn daily_hook(name: &str, metadata: &Map<String, Value>) -> Result<String, S
     }
     if !matches!(
         effective,
-        "daily_schedule"
-            | "morning_briefing"
+        "morning_briefing"
             | "entities:entities_review"
             | "entities:entity_suggest"
             | "entities:entity_observer"
@@ -960,40 +958,7 @@ pub fn compute_daily_evidence_cached(
             [("day", &day)],
         )
     })?;
-    let evidence = if hook == "daily_schedule" {
-        let anchor = journal_today(journal);
-        let lookback = metadata
-            .get("meta")
-            .and_then(|v| v.get("lookback_days"))
-            .or_else(|| metadata.get("lookback_days"))
-            .and_then(Value::as_i64)
-            .unwrap_or(7);
-        if !(1..=366).contains(&lookback) {
-            return Err(solstone_core_cli_copy::render_for(
-                locale,
-                "journal.cli.reprocess.schedule.lookback",
-                &[],
-            ));
-        }
-        let mut windows = BTreeMap::new();
-        for offset in 0..lookback {
-            let d = solstone_core_time::day_key(
-                anchor
-                    .checked_sub(Span::new().days(offset))
-                    .map_err(|e| e.to_string())?,
-            );
-            // The schedule reads segment times as when the owner was active,
-            // which a calendar note or a body record is not.
-            let keys = iter_segments(journal, PathOrDay::Day(&d))
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .filter(|s| !solstone_core_segment::holds_nothing_the_owner_did(journal, s))
-                .map(|s| s.key().to_owned())
-                .collect::<Vec<_>>();
-            windows.insert(d, keys);
-        }
-        json!({"anchor":anchor.to_string(),"windows":windows})
-    } else {
+    let evidence = {
         // ⛔ No forward window for the briefing.  Its packet reads nothing from
         // the days after it, while a forward read of the activity files hashes
         // rows the packet never reads: every closed day then re-owed the eight
@@ -1253,11 +1218,7 @@ mod tests {
             "morning_briefing" => json!({"pre":name}),
             _ => json!({"pre":name,"post":name}),
         };
-        let mut metadata = Map::from_iter([("hook".to_owned(), hook)]);
-        if name == "daily_schedule" {
-            metadata.insert("meta".to_owned(), json!({"lookback_days":7}));
-        }
-        metadata
+        Map::from_iter([("hook".to_owned(), hook)])
     }
 
     fn evidence_of(root: &Path, day: &str, name: &str, facet: Option<&str>) -> DailyEvidence {
@@ -1454,11 +1415,7 @@ mod tests {
             &format!("chronicle/{today}/talents/flow.md"),
             "# Flow\nMeeting.",
         );
-        let names = [
-            "morning_briefing",
-            "entities:entity_observer",
-            "daily_schedule",
-        ];
+        let names = ["morning_briefing", "entities:entity_observer"];
         let before = names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
         write(
             &root,
@@ -1499,11 +1456,7 @@ mod tests {
             &format!("{window}/event_transcript.md"),
             "## planning\nThe garden beds.\n",
         );
-        let names = [
-            "morning_briefing",
-            "entities:entity_observer",
-            "daily_schedule",
-        ];
+        let names = ["morning_briefing", "entities:entity_observer"];
         let before = names.map(|name| evidence_of(&root, &today, name, Some("work")).revision);
         write(
             &root,
@@ -2033,13 +1986,13 @@ mod tests {
             "entities:entity_observer",
             "morning_briefing",
         ];
-        let excluded = ["daily_schedule", "entities:entities_review"];
+        let excluded = ["entities:entities_review"];
         write_config(
             &root,
             &json!({"identity":{"timezone":"UTC"},"daily_inputs":{"location":{"location-words-1":"not-a-day"}}}),
         );
         for name in excluded {
-            let facet = (name != "daily_schedule").then_some("work");
+            let facet = Some("work");
             let without =
                 compute_contract_digest(&root, name, &metadata_for(name), "prompt", None, None)
                     .unwrap();
@@ -2091,7 +2044,7 @@ mod tests {
             assert_eq!(before.contract, without, "{name} before cutoff");
         }
         for name in excluded {
-            let facet = (name != "daily_schedule").then_some("work");
+            let facet = Some("work");
             let evidence = evidence_of(&root, "20260910", name, facet);
             let without =
                 compute_contract_digest(&root, name, &metadata_for(name), "prompt", None, None)
@@ -2123,7 +2076,7 @@ mod tests {
                 None
             );
         }
-        for hook in ["daily_schedule", "entities:entities_review"] {
+        for hook in ["entities:entities_review"] {
             assert_eq!(
                 DAILY_INPUTS[0].version_since(hook, "20260910", Some(cutoff)),
                 None
@@ -2140,59 +2093,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn daily_maintenance_shares_calendar_window_and_observes_named_segment_topology() {
-        let root = root("daily-maintenance-window");
-        let anchor = journal_today(&root);
-        let today = solstone_core_time::day_key(anchor);
-        let old = solstone_core_time::day_key(anchor - Span::new().days(7));
-        let future = solstone_core_time::day_key(anchor + Span::new().days(1));
-        let meta = Map::from_iter([
-            ("meta".to_owned(), json!({"lookback_days":7})),
-            (
-                "hook".to_owned(),
-                json!({"pre":"daily_schedule","post":"daily_schedule"}),
-            ),
-        ]);
-        let get = |day| {
-            compute_daily_evidence_revision(
-                &root,
-                day,
-                "daily_schedule",
-                &meta,
-                "prompt",
-                None,
-                None,
-            )
-            .unwrap()
-            .0
-        };
-        let first = get("20260101");
-        assert_eq!(first, get("20250101"));
-        write(
-            &root,
-            &format!("chronicle/{old}/mic/090000_60/audio.jsonl"),
-            "{}",
-        );
-        write(
-            &root,
-            &format!("chronicle/{future}/mic/090000_60/audio.jsonl"),
-            "{}",
-        );
-        write(
-            &root,
-            &format!("chronicle/{today}/health/status.json"),
-            "{}",
-        );
-        assert_eq!(first, get("20250101"));
-        write(
-            &root,
-            &format!("chronicle/{today}/mic/090000_60/audio.jsonl"),
-            "{}",
-        );
-        assert_ne!(first, get("20250101"));
-        fs::remove_dir_all(root).unwrap();
-    }
     #[test]
     fn daily_contract_changes_for_brain_choice_but_not_runtime_incarnation() {
         let root = root("daily-brain-contract");

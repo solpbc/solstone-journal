@@ -184,6 +184,10 @@ pub(crate) struct SupervisorScheduleSink {
 }
 
 impl ScheduleSubmissionSink for SupervisorScheduleSink {
+    fn has_active_schedule(&self, name: &str) -> bool {
+        self.queue.has_active_schedule(name)
+    }
+
     fn submit(&self, request: ScheduledRequest) -> bool {
         if solstone_core_maintenance::schedule_sync::is_retired_audio_sync_command(
             request.cmd.as_wire(),

@@ -568,7 +568,7 @@ function journal(overrides = {}) {
     '/app/settings/api/granola': { configured: false, syncing: false },
     '/app/settings/api/garmin': { available: true, connected: false, syncing: false, key_expires_on: null, key_expiring_soon: false, last_sync: null, last_added: null, attention: null, attention_code: null, days_covered: 0, workouts: 0, backfill: { complete: true, reached_day: null }, runs: [] },
     '/app/settings/api/garmin/body-facet': { offer: { state: 'declined', facet: null }, facets: [], copy: {} },
-    '/app/settings/api/storage/config': { retention: { raw_media: 'keep', raw_media_days: null, keep_empty_audio: false, per_stream: {}, journal_logs: { enabled: true, days: 30 } }, streams: [] },
+    '/app/settings/api/storage/config': { maintenance_time: '02:00', retention: { raw_media: 'keep', raw_media_days: null, keep_empty_audio: false, per_stream: {}, journal_logs: { enabled: true, days: 30 } }, streams: [] },
     '/app/settings/api/storage': { summary: { raw_media_human: '0 B', derived_human: '0 B', total_segments: 0, segments_with_raw: 0, segments_purged: 0 }, warnings: [] },
     '/app/settings/api/storage/removals': { entries: [], total: 0 },
     '/app/settings/api/trash': { erase_after_days: 7, items: [trashItem('t1')] },
@@ -3166,6 +3166,56 @@ module.exports = async function settingsContractCases(crateDir) {
       }
     };
   };
+  await test("daily maintenance uses the saved time after reopening and restores it after a refused edit", async () => {
+    const config = '/app/settings/api/storage/config';
+    const write = '/app/settings/api/storage/maintenance-time';
+    const base = journal();
+    let time = '02:00';
+    const answers = (url, opts) => {
+      const { pathname } = new URL(url, ORIGIN);
+      if (pathname === config) return { ...base(url, opts), maintenance_time: time };
+      if (pathname === write && opts.method === 'PUT') {
+        time = JSON.parse(opts.body).maintenance_time;
+        return { maintenance_time: time };
+      }
+      return base(url, opts);
+    };
+    const page = () => boot(env, '/app/settings/#storage', { answers });
+    const edit = (p, value) => {
+      const field = p.byId('maintenanceTime');
+      field.value = value;
+      p.doc.dispatch(field, { type: 'change' });
+      return field;
+    };
+    let p = await page();
+    assert.strictEqual(p.byId('maintenanceTime').value, '02:00');
+    edit(p, '04:35');
+    await settle();
+    assert.strictEqual(time, '04:35');
+    p.leave();
+    p = await page();
+    reverting(p);
+    assert.strictEqual(p.byId('maintenanceTime').value, '04:35');
+    const held = holdGranola(p, 'PUT', write);
+    const field = edit(p, '19:10');
+    await settle();
+    assert.ok(field.readOnly);
+    held.release({ error: 'refused' }, 503);
+    await settle();
+    assert.strictEqual(field.value, '04:35');
+    assert.ok(!field.readOnly);
+    edit(p, '');
+    await settle();
+    assert.strictEqual(field.value, '04:35');
+    assert.strictEqual(p.writes().length, 1);
+    p.leave();
+    time = null;
+    p = await page();
+    assert.strictEqual(p.byId('maintenanceTime').value, '');
+    assert.ok(p.byId('maintenanceTime').disabled);
+    assert.ok(!p.byId('storageSettingsForm').hidden);
+  });
+
   const configOf = (identity, transcribe) => ({ identity: { name: 'owner', timezone: 'UTC', ...identity }, transcribe, env: {}, runtime_env: {}, key_validation: {}, trash: { erase_after_days: 7 } });
   const BACKENDS = [{ name: 'parakeet', label: 'parakeet' }, { name: 'whisper', label: 'whisper' }];
   const CONFIG_URL = '/app/settings/api/config';

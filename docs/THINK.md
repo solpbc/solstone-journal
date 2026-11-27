@@ -37,7 +37,7 @@ Each talent's frontmatter `schedule` decides when it runs. Within one trigger, l
 | `segment` | each segment, after its media is processed | `sense`; `screen`, `documents`; `detection`, `possible_names`; `speaker_attribution` | Sense's activity line, possible-name labels beside the transcript, voice labels |
 | `activity` | when an activity ends | `participation`; `work` or `conversation`, whichever the activity record selects | the story (its first sentence becomes the title), topics, participation |
 | `cadence` | every `cadence_minutes` (5), only if a segment or activity finished since its last run | `pulse` | Home's pulse, including `needs_you` |
-| `daily` | once a day at the scheduler's daily time (`00:15` for a new configuration) | `daily_schedule`; `morning_briefing`; `entities_review`; `entity_suggest`; `entity_observer` | the daily briefing (`morning_briefing`) and entity notes; `daily_schedule` only times maintenance |
+| `daily` | once a day at the scheduler's daily time (02:00 in the journal’s time zone by default) | `morning_briefing`; `entities_review`; `entity_suggest`; `entity_observer` | the daily briefing (`morning_briefing`) and entity notes |
 | `weekly` | once a week (Sunday `03:15` for a new configuration), for the week that just ended | `weekly_reflection` | the weekly reflection on Home, a weekly notification, and in search |
 | none | when a feature asks | `entity_describe`; `linked_presence`, `linked_share`, `linked_share_activity` | entity descriptions, the sharing flow |
 
@@ -163,12 +163,6 @@ remains unverified. Coverage distinguishes current, current-degraded, outstandin
 historical-unverified, and unreadable results. Unsupported daily hook contracts stay
 unverified. Current bounded analyses retain their selection and exclusion information;
 they do not assert that every entity was processed.
-
-`daily_schedule` has one global record at `health/maintenance/daily_schedule.json`,
-shared across historical catchups for the current local window. Its status is reported
-separately from historical daily coverage. Failure caps apply to the current evidence
-and contract. Capped environmental failures receive one persisted, bounded revalidation
-per local day; owner-write conflicts do not become successful capped results.
 
 ## Possible names
 
@@ -421,13 +415,7 @@ Priority is required on every scheduled prompt. See [CORTEX.md](CORTEX.md).
 
 ## Schedules
 
-`config/schedules.json` stores scheduler metadata and named entries. Reserved
-keys are `daily_time`, `weekly_day`, and `weekly_time`. Every other top-level
-key is a named entry with `cmd` and `every`, plus optional `enabled` and
-`max_runtime`. New schedule configurations set the daily scheduler time to
-`00:15` and weekly scheduler time to Sunday at `03:15`, keeping both off the
-hourly boundary. Existing configurations are not backfilled with those metadata
-values. Writes go through `solstone-core-system`.
+`config/schedules.json` stores scheduler metadata and named entries. Daily maintenance defaults to 02:00 in the journal’s time zone. Settings → storage saves the owner's choice in `maintenance_time`. Earlier versions stored a model-selected time in `daily_time`, which the scheduler ignores. The weekly default on new installations is Sunday at 03:15. The other timing keys are `weekly_day` and `weekly_time`. Named entries contain `cmd` and `every`, plus optional `enabled` and `max_runtime`. Writes go through `solstone-core-system`.
 
 At every start, before the scheduler loads, the supervisor brings the file up
 to date with what the journal ships: the built-in entries (`heartbeat`,

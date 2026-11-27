@@ -24,7 +24,6 @@ pub mod contract;
 mod daily_execution;
 pub mod daily_location;
 pub mod daily_prepare;
-pub mod daily_schedule;
 pub mod documents;
 pub mod entities;
 pub mod experiences;
@@ -862,6 +861,10 @@ pub fn execute_request(
     cancellation: &solstone_core_generate::Cancellation,
 ) -> RuntimeOutcome {
     if cancellation.is_cancelled() {
+        return RuntimeOutcome::Cancelled;
+    }
+    // An upgraded host may still receive a worker request admitted by its predecessor.
+    if request.get("name").and_then(Value::as_str) == Some("daily_schedule") {
         return RuntimeOutcome::Cancelled;
     }
     if request.contains_key("lock_token") {

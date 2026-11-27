@@ -9,9 +9,7 @@ use serde_json::{Map, Value};
 use solstone_core_journal_io::{MalformedPolicy, ReadError, read_json};
 
 use super::config::{RESERVED_METADATA_KEYS, is_interval, json_truthy, metadata_from_raw};
-use super::due::{
-    compute_next_run, effective_every, local_from_epoch, parse_daily_time, state_entry,
-};
+use super::due::{compute_next_run, effective_every, local_from_epoch, state_entry};
 use super::{ScheduleConfig, ScheduleEntry, ScheduleNow};
 
 /// One rendered schedule table row.
@@ -220,6 +218,7 @@ pub fn build_schedule_report_in(
             cli_text(locale, "journal.cli.schedule.cell.invalid")
         } else {
             let entry = ScheduleEntry {
+                registered_at_ms: entry.get("registered_at_ms").and_then(Value::as_i64),
                 cmd: command.expect("checked command"),
                 every: raw_every.expect("supported interval").to_owned(),
                 max_runtime: None,
@@ -394,17 +393,8 @@ fn format_next_due(
         return cli_text(locale, "journal.cli.schedule.cell.now");
     }
     let epoch_millis = compute_next_run(entry, state, config, now);
-    let retrying = super::due::retry_at(entry, state, config, now).is_some();
     local_from_epoch(epoch_millis as f64 / 1_000.0, &now.zone)
         .map(|value| match entry.every.as_str() {
-            "hourly" => value.strftime("%H:%M").to_string(),
-            "daily" if retrying => value.strftime("%H:%M").to_string(),
-            "daily" => config
-                .daily_time
-                .as_deref()
-                .and_then(parse_daily_time)
-                .map(|(hour, minute)| format!("{hour:02}:{minute:02}"))
-                .unwrap_or_else(|| cli_text(locale, "journal.cli.schedule.cell.midnight")),
             "weekly" => {
                 let time = value.strftime("%H:%M").to_string();
                 solstone_core_cli_copy::render_for(

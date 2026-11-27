@@ -54,7 +54,7 @@ use solstone_core_system::provider_runtime::{
 };
 use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
 use solstone_core_system::schedule::{
-    ScheduleEngine, ScheduleNow, initialize_schedule_config, register_default_entries,
+    ScheduleEngine, ScheduleNow, initialize_schedule_config, register_default_entries_at,
 };
 use solstone_core_system::status_wire::CrashedServiceCandidate;
 
@@ -933,9 +933,9 @@ fn ready_sleep_marker_path(argv: &[String]) -> Option<&str> {
 /// refuses retired audio sync work. Returns the schedule names added by this
 /// reconciliation, so the boot catch-up can leave them to start at their next
 /// mark.
-fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
+fn reconcile_schedules(schedule_config_path: &Path, now_ms: i64) -> BTreeSet<String> {
     let mut fresh = BTreeSet::new();
-    match register_default_entries(schedule_config_path) {
+    match register_default_entries_at(schedule_config_path, now_ms) {
         Ok(added) if added.is_empty() => {}
         Ok(added) => {
             log::info!(
@@ -948,9 +948,10 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
             "supervisor: built-in schedule registration skipped; scheduler runs the file as is: {error}"
         ),
     }
-    match solstone_core_maintenance::schedule_sync::sync(
+    match solstone_core_maintenance::schedule_sync::sync_at(
         schedule_config_path,
         solstone_core_maintenance::registry::routines(),
+        now_ms,
     ) {
         Ok(summary) if summary.removed.is_empty() && summary.added.is_empty() => {}
         Ok(summary) => {
@@ -2178,7 +2179,7 @@ pub(crate) async fn boot_and_tick(
                 abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
             );
         }
-        let fresh_schedules = reconcile_schedules(&schedule_config_path);
+        let fresh_schedules = reconcile_schedules(&schedule_config_path, now.unix_millis);
         let mut scheduler = match ScheduleEngine::init(
             schedule_config_path,
             journal.join("health/scheduler.json"),
@@ -2691,7 +2692,7 @@ mod tests {
         });
         fs::write(&path, before.to_string()).unwrap();
 
-        super::reconcile_schedules(&path);
+        super::reconcile_schedules(&path, 0);
         let bytes = fs::read(&path).unwrap();
         let saved: Value = serde_json::from_slice(&bytes).unwrap();
         for name in [
@@ -2710,7 +2711,7 @@ mod tests {
         for (name, entry) in before.as_object().unwrap() {
             assert_eq!(&saved[name], entry, "{name}");
         }
-        super::reconcile_schedules(&path);
+        super::reconcile_schedules(&path, 0);
         assert_eq!(fs::read(&path).unwrap(), bytes);
     }
 

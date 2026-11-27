@@ -147,7 +147,7 @@ pub const BRIEFING_MORNING_ENDS_HOUR: u32 = 12;
 
 /// Daily talents that no longer ship. Their old unit records and held retries
 /// stay on disk, but nothing owes, shows or reruns them.
-pub const RETIRED_DAILY_TALENTS: &[&str] = &["schedule"];
+pub const RETIRED_DAILY_TALENTS: &[&str] = &["schedule", "daily_schedule"];
 
 pub fn daily_configs(
     journal: &Path,
@@ -368,13 +368,9 @@ pub fn read_daily_coverage_with_roots_in(
 
 /// Pass-scoped coverage context reused across all days of one discovery pass.
 ///
-/// Loads daily talent configurations and declared facet names once per pass,
-/// and evaluates global `daily_schedule` maintenance only when reading
-/// `pass_day`.
 pub struct DailyCoveragePass {
     configs: Vec<TalentConfig>,
     facets: Vec<String>,
-    pass_day: String,
     locale: String,
 }
 
@@ -404,7 +400,7 @@ impl DailyCoveragePass {
         journal: &Path,
         talent: &Path,
         apps: &Path,
-        pass_day: impl Into<String>,
+        _pass_day: impl Into<String>,
         locale: &str,
     ) -> Result<Self, String> {
         let configs = daily_configs_in(journal, talent, apps, locale)?;
@@ -413,7 +409,6 @@ impl DailyCoveragePass {
         Ok(Self {
             configs,
             facets,
-            pass_day: pass_day.into(),
             locale: locale.to_owned(),
         })
     }
@@ -424,7 +419,6 @@ impl DailyCoveragePass {
             day,
             &self.configs,
             &self.facets,
-            Some(self.pass_day.as_str()),
             &mut DayProjectionCache::new_in(journal, day, &self.locale),
             &self.locale,
         )
@@ -447,7 +441,7 @@ fn read_daily_coverage_with_cache(
     let configs = daily_configs_in(journal, talent, apps, locale)?;
     let facets =
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?;
-    read_daily_coverage_unlocked(journal, day, &configs, &facets, None, cache, locale)
+    read_daily_coverage_unlocked(journal, day, &configs, &facets, cache, locale)
 }
 
 fn read_daily_coverage_core(
@@ -455,20 +449,11 @@ fn read_daily_coverage_core(
     day: &str,
     configs: &[TalentConfig],
     facets: &[String],
-    maintenance_pass_day: Option<&str>,
     cache: &mut DayProjectionCache,
     locale: &str,
 ) -> Result<DailyCoverage, String> {
     let _one_read_at_a_time = acquire_coverage_read(&COVERAGE_READ, day);
-    read_daily_coverage_unlocked(
-        journal,
-        day,
-        configs,
-        facets,
-        maintenance_pass_day,
-        cache,
-        locale,
-    )
+    read_daily_coverage_unlocked(journal, day, configs, facets, cache, locale)
 }
 
 fn read_daily_coverage_unlocked(
@@ -476,14 +461,11 @@ fn read_daily_coverage_unlocked(
     day: &str,
     configs: &[TalentConfig],
     facets: &[String],
-    maintenance_pass_day: Option<&str>,
     cache: &mut DayProjectionCache,
     locale: &str,
 ) -> Result<DailyCoverage, String> {
     let active = crate::activity_state::active_facets_checked_in(journal, day, locale)?;
     let today = local_day(journal, Timestamp::now());
-    let include_maintenance =
-        maintenance_pass_day.is_none_or(|pass_day| day == pass_day || day == today);
     let mut backfill_only: Option<bool> = None;
     let mut is_backfill_only = || -> bool {
         *backfill_only.get_or_insert_with(|| {
@@ -491,32 +473,7 @@ fn read_daily_coverage_unlocked(
         })
     };
     let mut units = Vec::new();
-    let mut maintenance = None;
     for config in configs {
-        // Global maintenance is reported independently of historical evidence coverage.
-        if config.key == "daily_schedule" {
-            if !include_maintenance {
-                continue;
-            }
-            maintenance = Some(match read_unit_coverage(journal, &today, config, None) {
-                Ok(mut unit) => {
-                    if unit.state == CoverageState::HistoricalUnverified {
-                        unit.state = CoverageState::Outstanding;
-                    }
-                    unit
-                }
-                Err(error) => UnitCoverage {
-                    identity: DailyUnitIdentity::new(&today, "daily_schedule", None),
-                    evidence_revision: String::new(),
-                    contract_digest: String::new(),
-                    state: CoverageState::Unreadable,
-                    reason_code: Some(error),
-                    earlier_version: None,
-                    owed_by: None,
-                },
-            });
-            continue;
-        }
         if config.metadata.get("multi_facet") == Some(&Value::Bool(true)) {
             for facet in facets {
                 if config.metadata.get("always") != Some(&Value::Bool(true))
@@ -577,7 +534,7 @@ fn read_daily_coverage_unlocked(
         CoverageState::Current
     };
     Ok(DailyCoverage {
-        maintenance,
+        maintenance: None,
         day: day.to_owned(),
         as_of_ms: Timestamp::now().as_millisecond(),
         state,
@@ -1591,7 +1548,10 @@ mod tests {
             .recv_timeout(GENEROUS)
             .expect("the read does not deadlock on itself")
             .expect("the fixture reads");
-        assert!(first.maintenance.is_some(), "the maintenance unit was read");
+        assert!(
+            first.maintenance.is_none(),
+            "retired maintenance was skipped"
+        );
         let second = read_on_a_thread(root, &talent, &apps)
             .recv_timeout(GENEROUS)
             .expect("a second read on a new thread completes")
@@ -2403,12 +2363,12 @@ mod tests {
             pass_old.maintenance.is_none(),
             "historical day skips daily_schedule maintenance"
         );
-        assert!(direct_old.maintenance.is_some());
+        assert!(direct_old.maintenance.is_none());
 
         let pass_today = pass.read_day(root, &today).unwrap();
         assert!(
-            pass_today.maintenance.is_some(),
-            "pass_day keeps daily_schedule maintenance"
+            pass_today.maintenance.is_none(),
+            "pass_day excludes retired maintenance"
         );
     }
     #[test]

@@ -81,11 +81,6 @@ pub(crate) fn run(
     {
         configs.retain(|config| &config.key == talent);
     }
-    if context.rebuild.as_ref().is_some_and(|lease| lease.resumed) {
-        // This singleton has its own maintenance clock, outside the requested
-        // day's target set. A recovered rebuild must not reset or replay it.
-        configs.retain(|config| config.key != "daily_schedule");
-    }
     if configs.is_empty() {
         crate::daily_rebuild::initialize(context, Vec::new())?;
         crate::daily_rebuild::require_complete(context)?;
@@ -130,10 +125,7 @@ pub(crate) fn run(
             );
         }
     }
-    if let Some((solstone_core_system::work_retry::Unit::Daily { talent, facet, .. }, _)) =
-        &context.retry
-        && talent != "daily_schedule"
-    {
+    if let Some((solstone_core_system::work_retry::Unit::Daily { facet, .. }, _)) = &context.retry {
         write_facets.retain(|name| facet.as_ref() == Some(name));
     }
     for facet in write_facets {
@@ -146,7 +138,7 @@ pub(crate) fn run(
     if context.rebuild.is_some() {
         let mut rebuild_targets = Vec::new();
         for config in &configs {
-            if excluded(config, stream) || config.key == "daily_schedule" {
+            if excluded(config, stream) {
                 continue;
             }
             if config.metadata.get("multi_facet") == Some(&Value::Bool(true)) {
@@ -371,12 +363,10 @@ fn record_preparation_failure(
     );
     fields.insert("detail".to_owned(), Value::String(error.source.clone()));
     log.log("talent.fail", context.event_now_ms(), fields);
-    if name != "daily_schedule" {
-        result.failed += 1;
-        result
-            .failed_names
-            .push(error.named(&crate::dispatch::item_label(name, facet)));
-    }
+    result.failed += 1;
+    result
+        .failed_names
+        .push(error.named(&crate::dispatch::item_label(name, facet)));
 }
 
 #[allow(
@@ -407,16 +397,9 @@ fn queue_daily(
     }
     let grant = context.retry.as_ref().map(|(_, attempt)| attempt);
     let unit = (config.key.clone(), facet.map(ToOwned::to_owned));
-    if config.key != "daily_schedule" {
-        result.applicable_units.insert(unit.clone());
-    }
+    result.applicable_units.insert(unit.clone());
     let today =
         solstone_core_system::daily_coverage::local_day(&context.journal, jiff::Timestamp::now());
-    let evidence_day = if config.key == "daily_schedule" {
-        &today
-    } else {
-        &context.day
-    };
     #[cfg(test)]
     {
         let early =
@@ -426,7 +409,7 @@ fn queue_daily(
         }
     }
     let evidence =
-        crate::snapshot::compute_daily_evidence(&context.journal, evidence_day, config, facet)?;
+        crate::snapshot::compute_daily_evidence(&context.journal, &context.day, config, facet)?;
     let (evidence_rev, contract_dig) = (evidence.revision.clone(), evidence.contract.clone());
     let identity = solstone_core_journal_io::DailyUnitIdentity::new(
         &context.day,
@@ -436,11 +419,7 @@ fn queue_daily(
     let existing_record =
         solstone_core_journal_io::load_daily_unit_record(&context.journal, &identity)
             .map_err(|e| e.to_string())?;
-    let plan = if config.key == "daily_schedule" {
-        None
-    } else {
-        crate::daily_rebuild::plan(context, &identity, &existing_record, &contract_dig)?
-    };
+    let plan = crate::daily_rebuild::plan(context, &identity, &existing_record, &contract_dig)?;
     let from_scratch = match &plan {
         Some(plan) => plan.first_reset,
         None if context.rebuild.as_ref().is_some_and(|lease| lease.resumed) => false,
@@ -582,9 +561,6 @@ fn queue_daily(
             serde_json::to_value((&retry_unit, attempt)).map_err(|e| e.to_string())?,
         );
     }
-    if config.key == "daily_schedule" {
-        extra.insert("day".to_owned(), Value::String(today.clone()));
-    }
     let retained = existing_record
         .as_ref()
         .filter(|record| {
@@ -605,7 +581,7 @@ fn queue_daily(
         solstone_core_talent_runtime::daily_location::daily_location_freshness(
             &context.journal,
             &hook,
-            evidence_day,
+            &context.day,
             retained.as_ref(),
         )?
     };
@@ -723,9 +699,7 @@ fn queue_daily(
                 Value::String("request_lost".to_owned()),
             );
             log.log("talent.fail", context.event_now_ms(), fields);
-            if config.key != "daily_schedule" {
-                result.failed += 1;
-            }
+            result.failed += 1;
             result
                 .failed_names
                 .push(label(&config.key, facet, "request_lost").into());
@@ -740,9 +714,7 @@ fn queue_daily(
                 "unavailable",
                 "unavailable",
             );
-            if config.key != "daily_schedule" {
-                result.failed += 1;
-            }
+            result.failed += 1;
             result
                 .failed_names
                 .push(label(&config.key, facet, "send").into());
@@ -913,18 +885,6 @@ fn reserve_daily_attempt_inner(
                 "daily retry allowance already consumed".to_owned(),
             ));
         }
-        if identity.name == "daily_schedule"
-            && record
-                .frozen_packet
-                .as_ref()
-                .and_then(|packet| packet.pointer("/prepared/config/day"))
-                .and_then(Value::as_str)
-                .is_some_and(|day| day > today)
-        {
-            return Err(solstone_core_journal_io::DailyUnitError::Malformed(
-                "newer maintenance window already owns publication".to_owned(),
-            ));
-        }
         let kept_attempt_day = record.attempt_day.clone();
         if !same || from_scratch || reprepare {
             let accepted = record.accepted.take();
@@ -1093,7 +1053,7 @@ fn drain_daily(
         pending,
         Some(DEFAULT_THINK_TIMEOUT),
         &mut |item, outcome| log_daily_terminal(log, context, item, outcome),
-        &|item| item.name != "daily_schedule",
+        &|_| true,
     )
 }
 
@@ -3043,348 +3003,6 @@ cat "${0%/*}/review-response.json"
         );
         run(&context, &mut log, None, false, 1).unwrap();
         assert_eq!(worker.outcomes.lock().unwrap().len(), 2);
-    }
-    #[cfg(all(test, feature = "full-tests"))]
-    #[cfg(unix)]
-    #[test]
-    fn historical_days_share_the_current_maintenance_packet_and_failure_is_separate() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let talent = root.join("payload/talent");
-        let apps = root.join("payload/apps");
-        std::fs::create_dir_all(&talent).unwrap();
-        std::fs::create_dir_all(&apps).unwrap();
-        std::fs::create_dir_all(root.join("config")).unwrap();
-        std::fs::write(root.join("config/journal.json"), r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
-        std::fs::write(talent.join("daily_schedule.md"), format!("{}\nChoose a daily processing time from $activity_spans.", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json","hook":{"pre":"daily_schedule","post":"daily_schedule"},"load":{"transcripts":false}})).unwrap())).unwrap();
-        // Keep one real historical unit independently current when maintenance fails.
-        std::fs::write(talent.join("morning_briefing.md"), format!("{}\nBRIEFING_PROOF: $briefing_metadata $activity_digest", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":2,"output":"json","hook":{"pre":"morning_briefing"},"load":{"transcripts":false}})).unwrap())).unwrap();
-        let today = solstone_core_system::daily_coverage::local_day(root, jiff::Timestamp::now());
-        std::fs::create_dir_all(root.join("chronicle").join(&today).join("mic/090000_600"))
-            .unwrap();
-        let stub = root.join("generate-stub.sh");
-        std::fs::write(
-            root.join("response.json"),
-            model_response(r#"{"primary":"03:00"}"#, Value::Null).to_string(),
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("response-briefing.json"),
-            model_response(r#"{"summary":"Prepared"}"#, Value::Null).to_string(),
-        )
-        .unwrap();
-        std::fs::write(
-            &stub,
-            r#"#!/bin/sh
-request=$(cat)
-case "$request" in
- *BRIEFING_PROOF*) cat "${0%/*}/response-briefing.json";;
- *) cat "${0%/*}/response.json";;
-esac
-"#,
-        )
-        .unwrap();
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let worker = Arc::new(Worker {
-            context: solstone_core_talent_runtime::ExecutionContext {
-                journal: root.to_owned(),
-            },
-            paths: solstone_core_talent_runtime::prepare::RuntimePaths {
-                talent_root: talent.clone(),
-                apps_root: apps.clone(),
-                templates_dir: root.join("payload/think/templates"),
-            },
-            stub,
-            outcomes: Mutex::new(Default::default()),
-            sibling_rewrites: None,
-        });
-        let identity = DailyUnitIdentity::new("20200101", "daily_schedule", None);
-        let mut accepted_token = None;
-        for day in ["20200101", "20200201"] {
-            let context = ThinkContext::new(
-                root,
-                day.into(),
-                root.join("chronicle").join(day),
-                1789400000000,
-            )
-            .unwrap()
-            .with_talent_roots(talent.clone(), apps.clone())
-            .with_boundary(worker.clone());
-            let outcome = run(
-                &context,
-                &mut RunLogWriter::open(root, day, "daily"),
-                None,
-                false,
-                1,
-            )
-            .unwrap();
-            assert_eq!(outcome.failed, 0, "{outcome:?}");
-            let record = load_daily_unit_record(root, &identity).unwrap().unwrap();
-            assert_eq!(
-                record
-                    .frozen_packet
-                    .as_ref()
-                    .unwrap()
-                    .pointer("/prepared/config/day"),
-                Some(&json!(today))
-            );
-            assert!(
-                record
-                    .frozen_packet
-                    .as_ref()
-                    .unwrap()
-                    .to_string()
-                    .contains("09:00"),
-                "actual current-window span was frozen"
-            );
-            if let Some(token) = &accepted_token {
-                assert_eq!(record.lock_token.as_ref(), Some(token));
-            }
-            accepted_token = record.lock_token;
-        }
-        assert_eq!(
-            worker.outcomes.lock().unwrap().len(),
-            3,
-            "two historical units share one committed maintenance use"
-        );
-        let before = std::fs::read(root.join("config/schedules.json")).unwrap();
-        std::fs::create_dir_all(root.join("chronicle").join(&today).join("mic/120000_600"))
-            .unwrap();
-        std::fs::write(
-            root.join("response.json"),
-            model_response("invalid schedule", Value::Null).to_string(),
-        )
-        .unwrap();
-        let day = "20200301";
-        let context = ThinkContext::new(
-            root,
-            day.into(),
-            root.join("chronicle").join(day),
-            1789400000000,
-        )
-        .unwrap()
-        .with_talent_roots(talent.clone(), apps.clone())
-        .with_boundary(worker.clone());
-        let outcome = run(
-            &context,
-            &mut RunLogWriter::open(root, day, "daily"),
-            None,
-            false,
-            1,
-        )
-        .unwrap();
-        assert_eq!(
-            outcome.failed, 0,
-            "global maintenance failure does not fail historical coverage"
-        );
-        let coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
-            root, day, &talent, &apps,
-        )
-        .unwrap();
-        assert_eq!(
-            coverage.units.len(),
-            1,
-            "historical coverage must not be vacuous"
-        );
-        assert_eq!(
-            coverage.state,
-            solstone_core_system::daily_coverage::CoverageState::Current
-        );
-        assert_eq!(
-            coverage.maintenance.unwrap().state,
-            solstone_core_system::daily_coverage::CoverageState::Outstanding
-        );
-        assert_eq!(
-            std::fs::read(root.join("config/schedules.json")).unwrap(),
-            before
-        );
-        assert_eq!(worker.outcomes.lock().unwrap().len(), 5);
-    }
-
-    #[cfg(all(test, feature = "full-tests"))]
-    #[cfg(unix)]
-    #[test]
-    fn newer_maintenance_window_fences_late_worker_and_refuses_older_readmission() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let context = solstone_core_talent_runtime::ExecutionContext {
-            journal: root.to_owned(),
-        };
-        std::fs::create_dir_all(root.join("config")).unwrap();
-        std::fs::write(
-            root.join("config/journal.json"),
-            r#"{"identity":{"timezone":"UTC"}}"#,
-        )
-        .unwrap();
-        let current_day = jiff::Timestamp::now()
-            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
-            .date();
-        let today = solstone_core_time::day_key(current_day);
-        let previous = solstone_core_time::day_key(current_day.yesterday().unwrap());
-        let make_packet = |day: &str| {
-            solstone_core_talent_runtime::daily_prepare::freeze(
-                solstone_core_talent_runtime::PreparedTalent::new("daily_schedule".into(), json!({
-                    "name":"daily_schedule", "day":day,"type":"generate","max_output_tokens":1024,"model":"test-model","provider":"test",
-                    "prompt":"Choose daily time from $activity_spans.","hook":{"pre":"daily_schedule","post":"daily_schedule"}
-                }).as_object().unwrap().clone()), &context
-            ).unwrap()
-        };
-        // The persisted prior-window packet is the restart boundary. Publication
-        // must fence it by its admitted window/token even while its model runs.
-        let old_packet = make_packet(&previous);
-        let current_packet = make_packet(&today);
-        let identity = DailyUnitIdentity::new("20200101", "daily_schedule", None);
-        reserve_daily_attempt(
-            root,
-            &identity,
-            "old-window-E",
-            "C",
-            &old_packet,
-            &previous,
-            "old-worker",
-            false,
-            false,
-            1,
-            &|| Ok(()),
-        )
-        .unwrap();
-        let started = root.join("model-started");
-        let release = root.join("model-release");
-        let old_stub = root.join("old-model.sh");
-        std::fs::write(
-            root.join("old-response.json"),
-            model_response(r#"{"primary":"02:00"}"#, Value::Null).to_string(),
-        )
-        .unwrap();
-        std::fs::write(&old_stub, "#!/bin/sh\ncat >/dev/null\ntouch \"${0%/*}/model-started\"\nattempt=0\nwhile [ ! -f \"${0%/*}/model-release\" ]; do\n attempt=$((attempt+1))\n [ \"$attempt\" -lt 500 ] || exit 93\n sleep 0.01\ndone\ncat \"${0%/*}/old-response.json\"\n").unwrap();
-        std::fs::set_permissions(&old_stub, std::fs::Permissions::from_mode(0o700)).unwrap();
-        // Publish both executables before any model subprocess starts.
-        let new_stub = root.join("new-model.sh");
-        std::fs::write(
-            root.join("new-response.json"),
-            model_response(r#"{"primary":"04:00"}"#, Value::Null).to_string(),
-        )
-        .unwrap();
-        std::fs::write(
-            &new_stub,
-            "#!/bin/sh\ncat >/dev/null\ncat \"${0%/*}/new-response.json\"\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&new_stub, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let paths = solstone_core_talent_runtime::prepare::RuntimePaths {
-            talent_root: root.join("no-live-talent"),
-            apps_root: root.join("no-live-apps"),
-            templates_dir: root.join("no-live-templates"),
-        };
-        let worker_context = context.clone();
-        let worker_paths = paths.clone();
-        let old = std::thread::spawn(move || {
-            solstone_core_talent_runtime::execute_request(
-                json!({"name":"daily_schedule","day":"20200101","lock_token":"old-worker"})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                &worker_paths,
-                &worker_context,
-                &solstone_core_generate::OneShotClient::at_path(old_stub),
-                &mut Vec::new(),
-                &solstone_core_generate::Cancellation::never(),
-            )
-        });
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !started.exists() && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(
-            started.exists(),
-            "old maintenance model did not reach barrier"
-        );
-        let newer_identity = DailyUnitIdentity::new("20200201", "daily_schedule", None);
-        assert_eq!(identity, newer_identity);
-        assert!(
-            reserve_daily_attempt(
-                root,
-                &newer_identity,
-                "current-window-E",
-                "C",
-                &current_packet,
-                &today,
-                "new-worker",
-                false,
-                false,
-                2,
-                &|| Ok(())
-            )
-            .is_err()
-        );
-        // A lower-level external replacement still fences the old token.
-        let mut replacement = DailyUnitRecord::new(newer_identity.clone(), "current-window-E", "C");
-        replacement.frozen_packet = Some(current_packet.clone());
-        replacement.packet_digest = Some(
-            solstone_core_talent_runtime::daily_prepare::packet_digest(&current_packet),
-        );
-        replacement.lock_token = Some("new-worker".into());
-        replacement.use_id = Some("new-worker".into());
-        replacement.attempt_day = Some(today.clone());
-        save_daily_unit_record(root, &replacement).unwrap();
-        std::fs::write(&release, b"resume").unwrap();
-        let old_outcome = old.join().unwrap();
-        let solstone_core_talent_runtime::RuntimeOutcome::StageFailed(error) = old_outcome else {
-            panic!("old worker retained authority: {old_outcome:?}");
-        };
-        assert!(
-            error.detail.contains("publication token was replaced"),
-            "{error:?}"
-        );
-        let newer = solstone_core_talent_runtime::execute_request(
-            json!({"name":"daily_schedule","day":"20200201","lock_token":"new-worker"})
-                .as_object()
-                .unwrap()
-                .clone(),
-            &paths,
-            &context,
-            &solstone_core_generate::OneShotClient::at_path(new_stub),
-            &mut Vec::new(),
-            &solstone_core_generate::Cancellation::never(),
-        );
-        assert!(
-            matches!(
-                newer,
-                solstone_core_talent_runtime::RuntimeOutcome::Finished { .. }
-            ),
-            "{newer:?}"
-        );
-        let committed = std::fs::read(root.join("config/schedules.json")).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&committed).unwrap()["daily_time"],
-            "04:00"
-        );
-        let refused = reserve_daily_attempt(
-            root,
-            &identity,
-            "old-window-E",
-            "C",
-            &old_packet,
-            &previous,
-            "late-readmission",
-            false,
-            false,
-            3,
-            &|| Ok(()),
-        )
-        .unwrap_err();
-        assert!(
-            refused
-                .to_string()
-                .contains("newer maintenance window already owns publication"),
-            "{refused}"
-        );
-        let record = load_daily_unit_record(root, &identity).unwrap().unwrap();
-        assert_eq!(record.lock_token.as_deref(), Some("new-worker"));
-        assert_eq!(
-            record.accepted.unwrap().evidence_revision,
-            "current-window-E"
-        );
     }
 
     #[test]

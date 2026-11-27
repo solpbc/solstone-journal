@@ -100,8 +100,7 @@ pub(crate) fn decorate(mut plan: CommitPlan, prepared: &PreparedTalent) -> Commi
                     stamp(value, partial.as_ref());
                 }
             }
-            WriteIntent::DailySchedule { output, .. }
-            | WriteIntent::Participation { output, .. }
+            WriteIntent::Participation { output, .. }
             | WriteIntent::EntityDetection { output, .. }
             | WriteIntent::EntitiesReview { output, .. }
             | WriteIntent::EntitySuggest { output, .. }
@@ -301,18 +300,6 @@ mod tests {
                         shown_observation_ids: BTreeMap::new(),
                     },
                     "facets/work/entities/20260101_observer_outcome.json",
-                ),
-                (
-                    WriteIntent::DailySchedule {
-                        output: r#"{"primary":"03:00"}"#.into(),
-                        output_path: Some(
-                            root.path()
-                                .join("daily.json")
-                                .to_string_lossy()
-                                .into_owned(),
-                        ),
-                    },
-                    "daily.json",
                 ),
             ];
             for (intent, path) in cases {

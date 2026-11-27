@@ -92,7 +92,7 @@ fn payload_txt_matches_git_tracked_inventory() {
         "no tracked payload found under payload_src_root '{source_root}'"
     );
     assert!(
-        tracked_bytes.contains(b"solstone/talent/daily_schedule.md".as_slice()),
+        tracked_bytes.contains(b"solstone/talent/morning_briefing.md".as_slice()),
         "tracked inventory must see a known talent positive under '{source_root}'"
     );
     assert!(

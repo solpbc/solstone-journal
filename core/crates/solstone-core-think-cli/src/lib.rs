@@ -1709,12 +1709,16 @@ mod tests {
         Ok(argv)
     }
 
-    fn oracle_blocks() -> Vec<(usize, Vec<String>, String)> {
+    fn oracle_blocks() -> Vec<(usize, char, Vec<String>, String)> {
         let fixture = include_str!("../../../fixtures/think-dry-run-reference-oracle.txt");
         let lines = fixture.lines().collect::<Vec<_>>();
         let mut blocks = Vec::new();
         let mut line = 0;
+        let mut scenario = 'A';
         while line < lines.len() {
+            if let Some(label) = lines[line].strip_prefix("### SCENARIO ") {
+                scenario = label.chars().next().expect("oracle scenario identifier");
+            }
             let Some(header) = lines[line].strip_prefix("### journal think") else {
                 line += 1;
                 continue;
@@ -1749,22 +1753,22 @@ mod tests {
                     "Post-phase: journal journal-stats",
                     "Post-phase: solstone journal journal-stats",
                 );
-            blocks.push((header_line, argv, stdout));
+            blocks.push((header_line, scenario, argv, stdout));
             line += 1;
         }
         blocks
     }
 
-    fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
-        match line {
-            113 | 143 | 152 => {
+    fn seed_oracle_case(journal: &Path, scenario: char, now_ms: i64) {
+        match scenario {
+            'B' => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            205 => {
+            'C' => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -1774,7 +1778,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            234 => {
+            'D' => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(cadence, format!(r#"{{"pulse":{now_ms}}}"#)).unwrap();
@@ -6776,16 +6780,12 @@ mod tests {
     #[test]
     fn dry_run_oracle_replays_all_thirteen_cases_byte_for_byte() {
         let blocks = oracle_blocks();
-        assert_eq!(
-            blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![30, 56, 69, 82, 86, 95, 101, 107, 113, 143, 152, 205, 234]
-        );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());
-        for (line, argv, expected) in blocks {
+        for (line, scenario, argv, expected) in blocks {
             let journal = tempdir().unwrap();
             let now_ms = 1_767_225_600_000;
-            seed_oracle_case(journal.path(), line, now_ms);
+            seed_oracle_case(journal.path(), scenario, now_ms);
             let run = run_oracle_case(journal.path(), &argv, now_ms);
             assert_eq!(run.exit_code, 0, "oracle case at line {line}");
             // The fixture's two declared deviations are not present in planner
@@ -6849,13 +6849,13 @@ mod tests {
     #[test]
     fn dry_run_output_paths_are_package_relative_and_format_sensitive() {
         // Source-derived, not measured: oracle lines 173-190 require a JSON
-        // daily_schedule output to ignore a same-stem markdown decoy.
+        // example_daily output to ignore a same-stem markdown decoy.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "daily_schedule",
+                "example_daily",
                 "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\"\n}\n",
             )],
         );
@@ -6871,11 +6871,11 @@ mod tests {
         };
         let before = dry_run::run(&context, &args, 4).unwrap();
         fs::create_dir_all(day_dir.join("talents")).unwrap();
-        fs::write(day_dir.join("talents/daily_schedule.md"), "decoy").unwrap();
+        fs::write(day_dir.join("talents/example_daily.md"), "decoy").unwrap();
         assert_eq!(dry_run::run(&context, &args, 4).unwrap(), before);
-        fs::write(day_dir.join("talents/daily_schedule.json"), "{}\n").unwrap();
+        fs::write(day_dir.join("talents/example_daily.json"), "{}\n").unwrap();
         let after = dry_run::run(&context, &args, 4).unwrap();
-        assert!(after.contains("daily_schedule (exists)"), "{after}");
+        assert!(after.contains("example_daily (exists)"), "{after}");
         assert!(!before.contains(journal.path().to_string_lossy().as_ref()));
     }
 

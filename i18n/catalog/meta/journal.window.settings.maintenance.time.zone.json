@@ -1,0 +1,16 @@
+{
+  "description": "Helper under the daily maintenance time picker. The journal keeps time in the owner’s configured home zone.",
+  "context": "Journal window, storage settings, daily maintenance time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a48fada870955540fdda3116000db80c57d067009f91b4c9b73c8430e633860",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Field label for the time when the daily maintenance jobs can start.",
+  "context": "Journal window, storage settings, daily maintenance time.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a822f27083df60b0b28e47c68c5163a8618b84ba3a8713bb4b04c7f36a82c94d",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

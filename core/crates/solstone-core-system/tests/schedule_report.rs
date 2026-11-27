@@ -228,10 +228,10 @@ fn raw_entries_preserve_display_only_cases() {
 
 #[test]
 fn daily_next_due_parses_metadata_before_displaying_it() {
-    for (daily_time, expected) in [("25:00", "midnight"), ("3:5", "03:05")] {
+    for (daily_time, expected) in [("25:00", "02:00"), ("3:5", "02:00"), ("03:05", "03:05")] {
         let bed = Bed::new("daily-time-display");
         bed.write_config(json!({
-            "daily_time": daily_time,
+            "maintenance_time": daily_time,
             "daily": {"cmd": ["journal", "heartbeat"], "every": "daily"}
         }));
         bed.write_state(

@@ -577,7 +577,7 @@ fn panicking_stopped_sink_does_not_skip_later_coalesced_ref() {
 }
 
 #[test]
-fn ac16_first_queued_submitter_owns_history_metadata_but_all_refs_stop() {
+fn identical_commands_from_distinct_schedules_keep_their_own_completion() {
     let bed = Bed::new("ac16");
     let sink = Arc::new(QueueCollector::default());
     let queue = queue(&bed, Duration::from_secs(5), true, Some(sink.clone()), None);
@@ -602,7 +602,7 @@ fn ac16_first_queued_submitter_owns_history_metadata_but_all_refs_stop() {
         Some("20260802"),
         Some("second-schedule"),
     ));
-    wait_for_history(&queue, 2);
+    wait_for_history(&queue, 3);
     let history = queue.history();
     assert_eq!(history[1].scheduler_name.as_deref(), Some("first-schedule"));
     assert!(
@@ -616,13 +616,10 @@ fn ac16_first_queued_submitter_owns_history_metadata_but_all_refs_stop() {
                         && entry.scheduler_name.as_deref() == Some("first-schedule"))
             ))
     );
-    assert!(stopped_references(&sink).contains(&"second".to_owned()));
+    assert_eq!(history[2].reference, "second");
     assert_eq!(
-        history
-            .iter()
-            .filter(|entry| entry.reference == "second")
-            .count(),
-        0
+        history[2].scheduler_name.as_deref(),
+        Some("second-schedule")
     );
 }
 
@@ -648,23 +645,28 @@ fn ac18_cap_overrun_is_terminated_and_labeled_timeout() {
 fn scheduled_budget_controls_status_and_deadline_independently_of_partition_default() {
     use solstone_core_system::request::{ScheduledArgv, ScheduledRequest};
     let bed = Bed::new("scheduled-cap");
-    let queue = queue(&bed, Duration::from_secs(600), true, None, None);
+    let queue = queue(&bed, Duration::from_secs(600), false, None, None);
     let ready = bed.root.join("ready");
     let mut scheduled = ScheduledRequest::new(
         ScheduledArgv::from_wire(command(&["ready-park", ready.to_str().expect("utf8")]))
             .expect("scheduled argv"),
-        "scheduled-short",
-        "test-schedule",
+        "sched:custom:test-schedule:123@2026-08-20",
+        "custom:test-schedule",
     );
     scheduled.max_runtime = Some(Duration::from_secs(30));
     queue.submit(ExecutionRequest::Scheduled(scheduled));
+    assert!(queue.has_active_schedule("custom:test-schedule"));
+    assert!(!queue.has_active_schedule("custom"));
+    queue.set_ready();
     wait_for_ready(&ready);
     wait_until(|| queue.active_process_handles().len() == 1);
+    assert!(queue.has_active_schedule("custom:test-schedule"));
     let now = Instant::now();
     let status = queue.collect_task_status(now);
     assert_eq!(status[0].cap_seconds, 30);
     queue.enforce_deadlines(now + Duration::from_secs(31));
     wait_for_history(&queue, 1);
+    wait_until(|| !queue.has_active_schedule("custom:test-schedule"));
     assert_eq!(queue.history()[0].exit_status, TIMEOUT_EXIT_STATUS);
 }
 

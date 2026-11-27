@@ -25437,3 +25437,9 @@ journal.window.export.err.copy.unconfirmed.title = couldn't confirm this prepare
 journal.window.export.err.copy.unconfirmed.body = couldn't confirm this is still the same prepared copy, so the unfinished save was cleared and any existing file at that location was left untouched. check the current copy before saving again.
 
 journal.window.export.err.copy.unconfirmed.action = check current copy
+
+journal.window.settings.maintenance.time.label = daily maintenance time
+
+journal.window.settings.maintenance.time.zone = uses your journal’s time zone.
+
+journal.window.settings.maintenance.time.invalid = choose an hour and a minute.

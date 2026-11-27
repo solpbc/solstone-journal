@@ -111,6 +111,7 @@ fn local_epoch(value: &ScheduleNow) -> f64 {
 
 fn entry(every: &str) -> ScheduleEntry {
     ScheduleEntry {
+        registered_at_ms: None,
         cmd: vec!["journal".to_owned(), "heartbeat".to_owned()],
         every: every.to_owned(),
         max_runtime: None,
@@ -121,7 +122,7 @@ fn entry(every: &str) -> ScheduleEntry {
 fn schedule_entry_mutations_are_idempotent_and_preserve_raw_values() {
     let bed = Bed::new("entry-mutations");
     bed.write_config(json!({
-        "daily_time": "04:00",
+        "maintenance_time": "04:00",
         "unrelated": {"cmd": ["journal", "other"], "every": "daily", "custom": [1, 2]},
         "retired": {"cmd": ["journal", "old"], "every": "weekly"}
     }));
@@ -148,7 +149,7 @@ fn schedule_entry_mutations_are_idempotent_and_preserve_raw_values() {
     assert_eq!(fs::read(bed.config()).expect("no rewrite"), after_remove);
 
     let raw: Value = serde_json::from_slice(&after_remove).expect("raw json");
-    assert_eq!(raw["daily_time"], "04:00");
+    assert_eq!(raw["maintenance_time"], "04:00");
     assert_eq!(raw["unrelated"]["custom"], json!([1, 2]));
     assert!(raw.get("maintenance:backup:run").is_some());
 }
@@ -157,7 +158,7 @@ fn schedule_entry_mutations_are_idempotent_and_preserve_raw_values() {
 fn arbitrary_schedule_mutation_is_locked_and_skips_noop_rewrites() {
     let bed = Bed::new("arbitrary-mutation");
     bed.write_config(json!({
-        "daily_time":"04:00",
+        "maintenance_time":"04:00",
         "legacy":{"cmd":["sol","dream","daily"],"every":"daily"},
         "unrelated":{"keep":true}
     }));
@@ -360,7 +361,7 @@ fn ac13_ac16_defaults_are_idempotent_and_preserve_disabled_raw_entries() {
     let bed = Bed::new("defaults");
     bed.write_config(json!({
         "brain": {"cmd": ["journal", "brain", "refresh"], "every": "daily", "enabled": false},
-        "daily_time": "04:00", "weekly_day": "monday", "weekly_time": "05:00"
+        "maintenance_time": "04:00", "weekly_day": "monday", "weekly_time": "05:00"
     }));
     let (mut engine, diagnostics) =
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("init");
@@ -388,14 +389,14 @@ fn fresh_schedule_defaults_are_staggered_without_backfilling_existing_configs() 
     assert!(initialize_schedule_config(&fresh.config()).expect("fresh defaults"));
     let fresh_raw: Value =
         serde_json::from_slice(&fs::read(fresh.config()).expect("fresh config")).expect("json");
-    assert_eq!(fresh_raw.as_object().expect("schedule object").len(), 2);
-    assert_eq!(fresh_raw["daily_time"], "00:15");
+    assert_eq!(fresh_raw.as_object().expect("schedule object").len(), 1);
+    assert!(fresh_raw.get("maintenance_time").is_none());
     assert_eq!(fresh_raw["weekly_time"], "03:15");
 
     let existing = Bed::new("existing-defaults-without-metadata");
     let mut legacy_raw = fresh_raw;
     let legacy_object = legacy_raw.as_object_mut().expect("schedule object");
-    legacy_object.remove("daily_time");
+    legacy_object.remove("maintenance_time");
     legacy_object.remove("weekly_time");
     existing.write_config(legacy_raw);
     let before = fs::read(existing.config()).expect("legacy config");
@@ -514,7 +515,7 @@ fn catch_up_leaves_fresh_entries_to_their_next_mark() {
         ..Sink::default()
     };
     engine
-        .check(now(2026, 3, 23, 0, 16), &sink)
+        .check(now(2026, 3, 23, 2, 0), &sink)
         .expect("daily boundary");
     assert!(
         sink.names().contains(&"maintenance:new".to_owned()),
@@ -655,7 +656,7 @@ fn ac20_non_object_runtime_state_is_set_aside_from_init_and_check() {
 fn ac24_status_matches_metadata_shape_and_floors_every_on_demand() {
     let bed = Bed::new("status");
     bed.write_config(json!({
-        "daily_time": "04:00", "weekly_day": "monday", "weekly_time": "05:00",
+        "maintenance_time": "04:00", "weekly_day": "monday", "weekly_time": "05:00",
         "daily": {"cmd": ["journal", "heartbeat"], "every": "daily"},
         "weekly": {"cmd": ["journal", "heartbeat"], "every": "weekly"},
         "minute": {"cmd": ["journal", "heartbeat"], "every": "2m"}
@@ -689,7 +690,7 @@ fn ac24_status_matches_metadata_shape_and_floors_every_on_demand() {
 fn ac24_status_omits_empty_time_metadata() {
     let bed = Bed::new("empty-status-time");
     bed.write_config(json!({
-        "daily_time": "", "weekly_day": "monday", "weekly_time": "",
+        "maintenance_time": "", "weekly_day": "monday", "weekly_time": "",
         "daily": {"cmd": ["journal", "heartbeat"], "every": "daily"},
         "weekly": {"cmd": ["journal", "heartbeat"], "every": "weekly"}
     }));
@@ -702,7 +703,8 @@ fn ac24_status_omits_empty_time_metadata() {
             .find(|item| item.name == "daily")
             .expect("daily")
             .daily_time
-            .is_none()
+            .as_deref()
+            == Some("02:00")
     );
     let weekly = status
         .iter()
@@ -884,7 +886,7 @@ fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark
 fn a_failed_daily_run_shows_its_retry_as_the_next_run() {
     let bed = Bed::new("failed-daily");
     bed.write_config(json!({
-        "daily_time": "00:15",
+        "maintenance_time": "00:15",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
     }));
     let (engine, _) =
@@ -910,7 +912,7 @@ fn a_failed_daily_run_shows_its_retry_as_the_next_run() {
 fn changing_daily_time_does_not_burst_daily_entries_live_or_on_restart() {
     let bed = Bed::new("daily-time-shift");
     bed.write_config(json!({
-        "daily_time": "00:00",
+        "maintenance_time": "00:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
         "brain": {"cmd": ["journal", "brain", "refresh"], "every": "daily"}
     }));
@@ -925,7 +927,7 @@ fn changing_daily_time_does_not_burst_daily_entries_live_or_on_restart() {
     // Mid-afternoon shift from 00:00 -> 02:00 must not fire any daily entry on
     // the live tick, even though the old 00:00 run is earlier than 02:00.
     bed.write_config(json!({
-        "daily_time": "02:00",
+        "maintenance_time": "02:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
         "brain": {"cmd": ["journal", "brain", "refresh"], "every": "daily"}
     }));
@@ -974,7 +976,7 @@ fn changing_daily_time_without_recorded_period_still_does_not_burst_live() {
     // burst on a live `daily_time` change.
     let bed = Bed::new("daily-time-shift-legacy-state");
     bed.write_config(json!({
-        "daily_time": "00:00",
+        "maintenance_time": "00:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
     }));
     fs::write(
@@ -988,7 +990,7 @@ fn changing_daily_time_without_recorded_period_still_does_not_burst_live() {
     let (mut engine, _) =
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 15, 20)).expect("init");
     bed.write_config(json!({
-        "daily_time": "02:00",
+        "maintenance_time": "02:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
     }));
     let sink = Sink {
@@ -1001,9 +1003,22 @@ fn changing_daily_time_without_recorded_period_still_does_not_burst_live() {
     assert!(report.submitted.is_empty());
     assert!(sink.names().is_empty());
 
+    let (mut restarted, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 15, 21)).unwrap();
+    assert!(
+        restarted
+            .catch_up(now(2026, 3, 22, 15, 21), &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    assert_eq!(
+        restarted.collect_status(now(2026, 3, 22, 15, 21))[0].next_run,
+        now(2026, 3, 23, 2, 0).unix_millis
+    );
+
     // Moving daily_time later in the same day (02:00 -> 22:00) also waits.
     bed.write_config(json!({
-        "daily_time": "22:00",
+        "maintenance_time": "22:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
     }));
     let report = engine
@@ -1064,7 +1079,7 @@ fn missed_yesterday_catchup_before_today_mark_still_runs_today() {
     // yesterday's period, so today's 03:00 mark is still due.
     let bed = Bed::new("missed-catchup-control");
     bed.write_config(json!({
-        "daily_time": "03:00",
+        "maintenance_time": "03:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
     }));
     let (mut engine, _) =
@@ -1096,7 +1111,7 @@ fn daily_schedule_shifting_daily_time_mid_batch_does_not_double_run_at_new_time(
     // finish at 00:02, so 02:00 on the same day does not run them a second time.
     let bed = Bed::new("daily-time-shift-mid-batch");
     bed.write_config(json!({
-        "daily_time": "00:00",
+        "maintenance_time": "00:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
         "think-daily": {"cmd": ["journal", "think", "--daily"], "every": "daily"}
     }));
@@ -1126,7 +1141,7 @@ fn daily_schedule_shifting_daily_time_mid_batch_does_not_double_run_at_new_time(
 
     // daily_schedule updates daily_time from 00:00 to 02:00 while the batch runs.
     bed.write_config(json!({
-        "daily_time": "02:00",
+        "maintenance_time": "02:00",
         "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
         "think-daily": {"cmd": ["journal", "think", "--daily"], "every": "daily"}
     }));
@@ -1169,4 +1184,190 @@ fn daily_schedule_shifting_daily_time_mid_batch_does_not_double_run_at_new_time(
         .check(now(2026, 3, 23, 2, 0), &sink)
         .expect("tomorrow 02:00");
     assert_eq!(tomorrow.submitted, vec!["heartbeat", "think-daily"]);
+}
+
+#[test]
+fn restart_before_first_mark_and_sleep_over_three_marks() {
+    let bed = Bed::new("sleep-restart");
+    bed.write_config(json!({"job": {"cmd":["job"], "every":"daily"}}));
+    let first = now(2026, 3, 21, 12, 0);
+    let (mut engine, _) = ScheduleEngine::init(bed.config(), bed.state(), first.clone()).unwrap();
+    let sink = Sink {
+        accepted: true,
+        ..Default::default()
+    };
+    assert!(
+        engine
+            .catch_up(first.clone(), &sink, &BTreeSet::from(["job".into()]))
+            .submitted
+            .is_empty()
+    );
+    let (mut reopened, _) = ScheduleEngine::init(bed.config(), bed.state(), first.clone()).unwrap();
+    assert!(
+        reopened
+            .catch_up(first, &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    let woke = now(2026, 3, 24, 9, 0);
+    assert_eq!(
+        reopened.check(woke.clone(), &sink).unwrap().submitted,
+        ["job"]
+    );
+    let reference = sink.requests.lock().unwrap()[0].reference.clone();
+    reopened
+        .record_completion("job", local_epoch(&woke), "success", &reference)
+        .unwrap();
+    let later = now(2026, 3, 24, 11, 0);
+    let (mut reopened, _) = ScheduleEngine::init(bed.config(), bed.state(), later.clone()).unwrap();
+    assert!(
+        reopened
+            .catch_up(later, &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    assert_eq!(sink.names(), ["job"]);
+}
+
+#[test]
+fn rejected_catchup_retries_and_active_period_survives_reopen() {
+    let bed = Bed::new("missed-admission");
+    bed.write_config(json!({"job": {"cmd":["job"], "every":"daily"}}));
+    let at = now(2026, 4, 7, 1, 58);
+    let (mut engine, _) = ScheduleEngine::init(bed.config(), bed.state(), at.clone()).unwrap();
+    assert!(
+        engine
+            .catch_up(at, &Sink::default(), &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    let sink = Sink {
+        accepted: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        engine.check(now(2026, 4, 7, 1, 59), &sink).unwrap().retried,
+        ["job"]
+    );
+    let reference = sink.requests.lock().unwrap()[0].reference.clone();
+
+    struct Busy;
+    impl ScheduleSubmissionSink for Busy {
+        fn has_active_schedule(&self, name: &str) -> bool {
+            name == "job"
+        }
+        fn submit(&self, _: ScheduledRequest) -> bool {
+            panic!("duplicate active schedule")
+        }
+    }
+    let after_mark = now(2026, 4, 7, 2, 1);
+    let (mut reopened, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), after_mark.clone()).unwrap();
+    assert!(
+        reopened
+            .catch_up(after_mark.clone(), &Busy, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    reopened
+        .record_completion("job", local_epoch(&after_mark), "ok", &reference)
+        .unwrap();
+    assert_eq!(
+        reopened
+            .check(now(2026, 4, 7, 2, 2), &sink)
+            .unwrap()
+            .retried,
+        ["job"]
+    );
+}
+
+#[test]
+fn skipped_and_repeated_marks_match_status_and_real_elapsed_retry_time() {
+    let bed = Bed::new("dst-schedule");
+    bed.write_config(json!({"maintenance_time":"02:30", "job":{"cmd":["job"],"every":"daily"}}));
+    let spring = now(2026, 3, 7, 12, 0);
+    let (mut engine, _) = ScheduleEngine::init(bed.config(), bed.state(), spring.clone()).unwrap();
+    let sink = Sink {
+        accepted: true,
+        ..Default::default()
+    };
+    engine
+        .record_completion("job", local_epoch(&spring), "ok", "prior")
+        .unwrap();
+    engine.check(now(2026, 3, 8, 1, 59), &sink).unwrap();
+    assert_eq!(
+        engine.collect_status(now(2026, 3, 8, 1, 59))[0].next_run,
+        now(2026, 3, 8, 3, 0).unix_millis
+    );
+    assert_eq!(
+        engine
+            .check(now(2026, 3, 8, 3, 0), &sink)
+            .unwrap()
+            .submitted,
+        ["job"]
+    );
+
+    bed.write_config(json!({"maintenance_time":"01:30", "job":{"cmd":["job"],"every":"daily"}}));
+    let fold = |instant: &str| ScheduleNow::in_zone(instant.parse().unwrap(), zone());
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), fold("2026-11-01T07:00:00Z")).unwrap();
+    let first = fold("2026-11-01T07:30:00Z");
+    assert_eq!(
+        engine.check(first.clone(), &sink).unwrap().submitted,
+        ["job"]
+    );
+    let reference = sink
+        .requests
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .reference
+        .clone();
+    engine
+        .record_completion("job", local_epoch(&first), "failed", &reference)
+        .unwrap();
+    let second = fold("2026-11-01T08:10:00Z");
+    assert!(
+        engine
+            .check(second.clone(), &sink)
+            .unwrap()
+            .submitted
+            .is_empty()
+    );
+    let retry = fold("2026-11-01T08:30:00Z");
+    assert_eq!(engine.collect_status(second)[0].next_run, retry.unix_millis);
+    assert_eq!(engine.check(retry, &sink).unwrap().retried, ["job"]);
+}
+
+#[test]
+fn changing_owner_zone_waits_for_the_new_zones_next_mark() {
+    let bed = Bed::new("owner-zone-change");
+    bed.write_config(json!({"job":{"cmd":["job"],"every":"daily"}}));
+    let before = now(2026, 4, 4, 1, 48);
+    let (mut engine, _) = ScheduleEngine::init(bed.config(), bed.state(), before).unwrap();
+    let new_zone = solstone_core_time::zone("America/New_York").unwrap();
+    let eastern = |s: &str| ScheduleNow::in_zone(s.parse().unwrap(), new_zone.clone());
+    let after = eastern("2026-04-04T07:49:00Z");
+    let sink = Sink {
+        accepted: true,
+        ..Default::default()
+    };
+    assert!(
+        engine
+            .check(after.clone(), &sink)
+            .unwrap()
+            .submitted
+            .is_empty()
+    );
+    let (mut reopened, _) = ScheduleEngine::init(bed.config(), bed.state(), after.clone()).unwrap();
+    assert!(
+        reopened
+            .catch_up(after.clone(), &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    let next = eastern("2026-04-05T06:00:00Z");
+    assert_eq!(reopened.collect_status(after)[0].next_run, next.unix_millis);
+    assert_eq!(reopened.check(next, &sink).unwrap().submitted, ["job"]);
 }

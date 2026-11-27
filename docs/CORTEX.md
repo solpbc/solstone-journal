@@ -299,7 +299,7 @@ The JSON frontmatter for a talent can include:
   - `"activity"`: when an activity ends
   - `"cadence"`: every `cadence_minutes` (default 5), only if a segment or activity finished since its last run
   - `"daily"`: at the configured daily scheduler time
-    (`00:15` for a newly initialized schedule configuration)
+    (02:00 in the journal’s time zone by default)
   - `"weekly"`: once a week, for the week that just ended
   - Which talents use each, and what they feed: [THINK.md](THINK.md) § Talent schedule
 - `temperature`: The talent's sampling temperature (default 0.3); a request cannot change it
@@ -403,6 +403,6 @@ The `solstone journal supervisor` command provides process management for the Co
 - Handles process restarts on failure
 - Monitors system health indicators
 - Runs configured daily entries, such as `solstone journal think`, at their scheduler
-  time (`00:15` for a newly initialized schedule configuration)
+  time (02:00 in the journal’s time zone by default)
 
 This is distinct from agent lifecycle management, which Cortex handles internally through file state transitions.

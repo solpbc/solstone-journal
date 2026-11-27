@@ -1002,6 +1002,68 @@ fn ac5b_update_empty_audio_removes_preserve_all_even_if_empty_audio_unchanged() 
     assert_eq!(get_body["retention"]["keep_empty_audio"], false);
 }
 
+#[tokio::test]
+async fn maintenance_time_in_storage_settings_round_trips_only_valid_owner_edits() {
+    let root = root_from_config(&json!({"setup": {"completed_at": 1_700_000_000_i64}}));
+    let schedule_path = root.path().join("config/schedules.json");
+    let custom = json!({"every":"hourly","cmd":["custom"]});
+    write_json(
+        root.path(),
+        "config/schedules.json",
+        &json!({
+            "daily_time":"19:10", "weekly_time":"10:30", "custom":custom,
+        }),
+    );
+    let router = crate::test_support::shell_router(root.path());
+    let read = "/app/settings/api/storage/config";
+    let write = "/app/settings/api/storage/maintenance-time";
+    let (status, config) = send(router.clone(), "GET", read, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(config["maintenance_time"], "02:00");
+    let (status, changed) = send(
+        router.clone(),
+        "PUT",
+        write,
+        Some(&json!({"maintenance_time":"04:35"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(changed["maintenance_time"], "04:35");
+    let before = fs::read(&schedule_path).unwrap();
+    let schedules: Value = serde_json::from_slice(&before).unwrap();
+    assert_eq!(schedules["custom"], custom);
+    assert_eq!(schedules["weekly_time"], "10:30");
+    let (status, _) = send(
+        router.clone(),
+        "PUT",
+        write,
+        Some(&json!({"maintenance_time":"24:00"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(fs::read(&schedule_path).unwrap(), before);
+    let (status, config) = send(router.clone(), "GET", read, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(config["maintenance_time"], "04:35");
+    fs::write(&schedule_path, "{").unwrap();
+    for time in ["05:00", "06:00"] {
+        let (status, _) = send(
+            router.clone(),
+            "PUT",
+            write,
+            Some(&json!({"maintenance_time": time})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(fs::read(&schedule_path).unwrap(), b"{");
+    }
+    let (status, config) = send(router, "GET", read, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(config["maintenance_time"].is_null());
+    assert_eq!(fs::read(&schedule_path).unwrap(), b"{");
+    assert!(config["retention"].is_object());
+}
+
 #[test]
 fn ac5c_update_rejects_invalid_empty_audio_values_and_preserves_file_bytes() {
     let initial_config = json!({

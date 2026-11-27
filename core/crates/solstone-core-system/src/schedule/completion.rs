@@ -16,7 +16,7 @@ use solstone_core_journal_io::{
 
 use super::ScheduleError;
 use super::config::load_runtime;
-use super::due::{local_from_epoch, period_key};
+use super::due::{now_from_epoch, period_key};
 
 static MANUAL_COMPLETION_LOCK: Mutex<()> = Mutex::new(());
 
@@ -59,8 +59,8 @@ pub fn record_manual_completion(
         .is_some_and(|runtime| runtime.config.entries.contains_key(name));
     let last_period = loaded.as_ref().and_then(|runtime| {
         let entry = runtime.config.entries.get(name)?;
-        let local = local_from_epoch(ended_at, zone)?;
-        period_key(entry, &runtime.config, local)
+        let now = now_from_epoch(ended_at, zone)?;
+        period_key(entry, &runtime.config, &now)
     });
     std::fs::create_dir_all(state_path.parent().expect("scheduler state has a parent"))
         .map_err(io_error)?;
@@ -136,6 +136,73 @@ fn record_completion_inner(
     only_if_existing: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), ScheduleError> {
+    mutate_state(lock, path, checkpoint, |state| {
+        if only_if_existing && !state.contains_key(name) {
+            return false;
+        }
+        let current = state
+            .get(name)
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let mut current = current;
+        // The run before this one tells the due check whether this run was the
+        // first of its period, which is the only kind a failure retries.
+        match current.get("last_period").cloned() {
+            Some(previous) => current.insert("previous_period".to_owned(), previous),
+            None => current.remove("previous_period"),
+        };
+        match current.get("last_run").cloned() {
+            Some(previous) => current.insert("previous_run".to_owned(), previous),
+            None => current.remove("previous_run"),
+        };
+        current.insert("last_run".to_owned(), json!(ended_at));
+        current.insert("last_status".to_owned(), json!(exit_status));
+        current.insert("last_ref".to_owned(), json!(reference));
+        match last_period {
+            Some(period) => current.insert("last_period".to_owned(), json!(period)),
+            None => current.remove("last_period"),
+        };
+        state.insert(name.to_owned(), Value::Object(current));
+        true
+    })
+}
+
+/// Registration starts the first period without recording a fictitious completed run.
+/// A single locked write covers all entries first adopted on this boot.
+pub(crate) fn start_cadence(
+    lock: &Mutex<()>,
+    path: &Path,
+    names: &std::collections::BTreeSet<String>,
+    at: f64,
+    rebase: bool,
+) -> Result<(), ScheduleError> {
+    if names.is_empty() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(path.parent().expect("scheduler state has a parent"))
+        .map_err(io_error)?;
+    mutate_state(lock, path, &|| Ok(()), |state| {
+        let mut changed = false;
+        for name in names {
+            let value = state.entry(name.clone()).or_insert_with(|| json!({}));
+            if let Some(row) = value.as_object_mut()
+                && (rebase || !row.contains_key("last_run") && !row.contains_key("start_after"))
+            {
+                row.insert("start_after".into(), json!(at));
+                changed = true;
+            }
+        }
+        changed
+    })
+}
+
+fn mutate_state(
+    lock: &Mutex<()>,
+    path: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    mutate: impl FnOnce(&mut Map<String, Value>) -> bool,
+) -> Result<(), ScheduleError> {
     let parent = solstone_core_journal_io::JournalRoot::open(
         path.parent().expect("scheduler state has a parent"),
     )
@@ -163,29 +230,9 @@ fn record_completion_inner(
     };
     admitted_checkpoint().map_err(ScheduleError::Io)?;
     let mut state = load_runtime_state(path)?;
-    if only_if_existing && !state.contains_key(name) {
+    if !mutate(&mut state) {
         return Ok(());
     }
-    let current = state
-        .get(name)
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let mut current = current;
-    // The run before this one tells the due check whether this run was the
-    // first of its period, which is the only kind a failure retries.
-    match current.get("last_run").cloned() {
-        Some(previous) => current.insert("previous_run".to_owned(), previous),
-        None => current.remove("previous_run"),
-    };
-    current.insert("last_run".to_owned(), json!(ended_at));
-    current.insert("last_status".to_owned(), json!(exit_status));
-    current.insert("last_ref".to_owned(), json!(reference));
-    match last_period {
-        Some(period) => current.insert("last_period".to_owned(), json!(period)),
-        None => current.remove("last_period"),
-    };
-    state.insert(name.to_owned(), Value::Object(current));
     let bytes = serde_json::to_vec_pretty(&Value::Object(state))
         .map_err(|error| ScheduleError::Io(error.to_string()))?;
     admitted_checkpoint().map_err(ScheduleError::Io)?;

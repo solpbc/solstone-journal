@@ -404,56 +404,6 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_continuation_does_not_replay_global_timing_maintenance() {
-        let root = tempfile::tempdir().unwrap();
-        let mut context = context(root.path());
-        let lease = context.rebuild.take().unwrap();
-        let id = lease.id.clone();
-        drop(lease);
-        context.rebuild = Some(Arc::new(
-            work_intent::begin_rebuild(
-                root.path(),
-                &context.day,
-                &id,
-                &solstone_core_journal_io::JournalRoot::open(root.path())
-                    .unwrap()
-                    .identity()
-                    .observation_id(),
-            )
-            .unwrap(),
-        ));
-        context.talent_root = root.path().join("fixture-talents");
-        context.apps_root = root.path().join("fixture-apps");
-        std::fs::create_dir_all(&context.talent_root).unwrap();
-        std::fs::create_dir_all(&context.apps_root).unwrap();
-        std::fs::write(context.talent_root.join("daily_schedule.md"),
-            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":1,\"output\":\"json\",\"hook\":{\"pre\":\"daily_schedule\",\"post\":\"daily_schedule\"}\n}\nChoose a daily processing time.").unwrap();
-        let loaded = solstone_core_talent_config::load_talent_configs(
-            &context.talent_root,
-            &context.apps_root,
-            None,
-            solstone_core_talent_config::TalentFilter {
-                r#type: None,
-                schedule: Some("daily"),
-                include_disabled: false,
-            },
-        )
-        .unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].key, "daily_schedule");
-        let identity = DailyUnitIdentity::new(&context.day, "daily_schedule", None);
-        let record = DailyUnitRecord::new(identity.clone(), "possible-send", "C");
-        save_daily_unit_record(root.path(), &record).unwrap();
-        let mut log = crate::run_log::RunLogWriter::open(root.path(), &context.day, "daily");
-        crate::daily::run(&context, &mut log, None, true, 1).unwrap();
-        assert_eq!(
-            load_daily_unit_record(root.path(), &identity).unwrap(),
-            Some(record)
-        );
-        require_complete(&context).unwrap();
-    }
-
-    #[test]
     fn request_authority_survives_cross_day_activity_but_not_stop_or_input_drift() {
         let root = tempfile::tempdir().unwrap();
         let context = context(root.path());

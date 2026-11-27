@@ -80,6 +80,7 @@ pub(crate) fn routes_with_email_service(
     let storage_root = journal_root.clone();
     let owner_voice_root = journal_root.clone();
     let storage_config_root = journal_root.clone();
+    let maintenance_time_root = journal_root.clone();
     let removals_root = journal_root.clone();
     let trash_list_root = journal_root.clone();
     let trash_recover_root = journal_root.clone();
@@ -446,6 +447,16 @@ pub(crate) fn routes_with_email_service(
             "/app/settings/api/trash/backups",
             get(move |locale: Option<Extension<ResponseLocale>>| {
                 trash::backups(response_locale(locale), trash_backups_root.clone())
+            }),
+        )
+        .route(
+            "/app/settings/api/storage/maintenance-time",
+            axum::routing::put(move |locale: Option<Extension<ResponseLocale>>, body| {
+                storage::set_maintenance_time(
+                    response_locale(locale),
+                    maintenance_time_root.clone(),
+                    body,
+                )
             }),
         )
         .route(

@@ -83,6 +83,9 @@ fn collect_system(
 ) -> Result<(), String> {
     for path in markdown_entries(locale, root)? {
         let name = stem(locale, &path)?;
+        if name == "daily_schedule" {
+            continue;
+        }
         configs.push(config(
             locale,
             &path,

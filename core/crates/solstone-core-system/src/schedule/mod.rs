@@ -24,11 +24,12 @@ pub use bound::mutate_schedule_entries_at_root_checked;
 pub use caps::baseline_cap_contributions;
 pub use completion::record_manual_completion;
 pub use config::{
-    ConfigDiagnostic, PreparedDailyTime, ScheduleConfig, ScheduleEntry, ScheduleMutation,
+    ConfigDiagnostic, ScheduleConfig, ScheduleEntry, ScheduleMutation,
     add_missing_schedule_entries, configured_weekly_day_name, enabled_schedule_entry,
-    initialize_schedule_config, mutate_schedule_entries, prepare_daily_time, publish_daily_time,
-    publish_daily_time_checked, read_enabled_schedule_entry, register_default_entries,
-    remove_schedule_entry, set_schedule_metadata, validate_schedule_entry,
+    initialize_schedule_config, maintenance_time, mutate_schedule_entries,
+    read_enabled_schedule_entry, register_default_entries, register_default_entries_at,
+    remove_schedule_entry, set_maintenance_time, set_schedule_metadata, valid_maintenance_time,
+    validate_schedule_entry,
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};
@@ -37,6 +38,7 @@ pub use report::{
 };
 pub use status::ScheduleStatus;
 pub use submission::ScheduleSubmissionSink;
+pub(crate) use submission::schedule_reference;
 
 /// Caller-observed local wall time, its Unix timestamp, and the zone both are
 /// read in.
@@ -70,6 +72,8 @@ pub enum ScheduleError {
     MalformedConfig { path: PathBuf },
     #[error("schedule state at {path} must be a JSON object")]
     StateShape { path: PathBuf },
+    #[error("maintenance time must be HH:MM on a 24-hour clock")]
+    InvalidMaintenanceTime,
     #[error("unknown schedule metadata keys: {keys:?}")]
     UnknownMetadataKeys { keys: Vec<String> },
 }

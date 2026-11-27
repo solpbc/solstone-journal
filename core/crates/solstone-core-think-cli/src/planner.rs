@@ -2097,8 +2097,7 @@ fn reconcile_pass_with_roots(
         }
     }
     let now = jiff::Timestamp::now();
-    let today = daily_coverage::local_day(journal, now);
-    let pass_day = today.clone();
+    let pass_day = daily_coverage::local_day(journal, now);
     solstone_core_system::daily_coverage::activate_daily_inputs_checked(journal, now, checkpoint)?;
     let coverage_pass = match roots {
         Some(roots) => daily_coverage::DailyCoveragePass::load_with_roots(
@@ -2110,16 +2109,6 @@ fn reconcile_pass_with_roots(
         .ok(),
         None => daily_coverage::DailyCoveragePass::load(journal, &pass_day).ok(),
     };
-    let maintenance =
-        solstone_core_journal_io::DailyUnitIdentity::new(&today, "daily_schedule", None);
-    if solstone_core_journal_io::load_daily_unit_record(journal, &maintenance)
-        .map_err(|e| e.to_string())?
-        .is_some_and(|record| record.status == solstone_core_journal_io::DailyUnitStatus::Capped)
-    {
-        days.entry(today.clone())
-            .or_insert_with(|| journal.join("chronicle").join(today));
-    }
-
     for unit in held_activities
         .iter()
         .chain(held_records.iter().map(|r| &r.unit))
@@ -3334,7 +3323,7 @@ mod tests {
     }
 
     #[test]
-    fn capped_global_maintenance_is_discovered_on_today_without_recordings() {
+    fn retired_maintenance_hold_does_not_enqueue_a_retry() {
         let root = fixture("local");
         let today = daily_coverage::local_day(root.path(), jiff::Timestamp::now());
         let unit = Unit::Daily {
@@ -3342,22 +3331,23 @@ mod tests {
             talent: "daily_schedule".into(),
             facet: None,
         };
-        let evidence = work_retry::daily::evidence(root.path(), &unit).unwrap();
         let mut record = solstone_core_journal_io::DailyUnitRecord::new(
             work_retry::daily::identity(&unit).unwrap(),
-            &evidence.revision,
-            &evidence.contract,
+            "old evidence",
+            "old contract",
         );
         record.status = solstone_core_journal_io::DailyUnitStatus::Capped;
         record.reason_code = Some("schema_invalid".into());
         solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
+        work_retry::observe_held(root.path(), &unit, "schema_invalid", "old evidence").unwrap();
+        work_retry::request(root.path(), &unit).unwrap();
+        let (held, errors) = work_retry::list(root.path());
+        assert!(errors.is_empty());
+        assert!(held.iter().all(|record| record.unit != unit));
         let queue = queue(root.path());
         reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
         let id = unit.id().unwrap();
-        assert!(work_retry::read(root.path(), &id).unwrap().unwrap().held);
-        work_retry::request(root.path(), &unit).unwrap();
-        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
-        assert!(queue.contains_reference(&format!("supervisor-retry-daily-{today}-{id}")));
+        assert!(!queue.contains_reference(&format!("supervisor-retry-daily-{today}-{id}")));
         assert!(!queue.contains_reference(&format!("supervisor-work-{today}-daily")));
     }
 
@@ -6457,54 +6447,6 @@ mod tests {
             )
             .is_err()
         );
-    }
-
-    #[cfg(all(unix, feature = "full-tests"))]
-    #[test]
-    fn maintenance_keeps_its_recent_key_projection_outside_archive_processing_bound() {
-        use std::os::unix::fs::PermissionsExt;
-        let root = fixture("local");
-        let recent = solstone_core_time::day_key(
-            jiff::Timestamp::now()
-                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
-                .date()
-                .yesterday()
-                .unwrap(),
-        );
-        let stream = root
-            .path()
-            .join("chronicle")
-            .join(&recent)
-            .join("import.archive");
-        std::fs::create_dir_all(stream.join("120000_300")).unwrap();
-        std::fs::write(stream.join("120000_300/audio.opus"), "audio").unwrap();
-        std::fs::create_dir_all(root.path().join("imports")).unwrap();
-        solstone_core_import::audio_archive::claims::register_pending_tile(
-            root.path(),
-            "19990101_010101",
-            &recent,
-            "120000_300",
-        )
-        .unwrap();
-        assert!(
-            !solstone_core_import::audio_archive::archive_day_has_pending(root.path(), "19990102")
-                .unwrap()
-        );
-        std::fs::set_permissions(&stream, std::fs::Permissions::from_mode(0o000)).unwrap();
-        let coverage = daily_coverage::read_daily_coverage(root.path(), "19990102");
-        std::fs::set_permissions(&stream, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let maintenance = coverage.unwrap().maintenance.unwrap();
-        assert_eq!(maintenance.identity.name, "daily_schedule");
-        assert_eq!(
-            maintenance.state,
-            CoverageState::Unreadable,
-            "global maintenance still reads recent archive keys from a nonpending day's coverage"
-        );
-        let restored = daily_coverage::read_daily_coverage(root.path(), "19990102")
-            .unwrap()
-            .maintenance
-            .unwrap();
-        assert_ne!(restored.state, CoverageState::Unreadable);
     }
 
     #[test]
