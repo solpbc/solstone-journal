@@ -554,10 +554,10 @@ mod tests {
             serde_json::from_str(sense_text).expect("valid sense JSON");
         assert_ne!(sense_json["density"], "idle");
         assert_ne!(sense_json["content_type"], "idle");
-        let schema: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../payload/solstone/talent/sense.schema.json"
-        ))
-        .unwrap();
+        let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/talent/sense.schema.json");
+        let schema: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(schema_path).unwrap()).unwrap();
         assert!(
             schema["properties"]["content_type"]["enum"]
                 .as_array()
