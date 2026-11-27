@@ -113,6 +113,7 @@ pub(crate) struct Prepared {
     value: Value,
     images: Vec<Vec<u8>>,
     audio: Vec<Vec<u8>>,
+    resource_links: Vec<crate::jsonrpc::ResourceLink>,
     count: usize,
     targets: Vec<String>,
     empty_note: Option<String>,
@@ -125,6 +126,7 @@ impl Prepared {
             value,
             images: Vec::new(),
             audio: Vec::new(),
+            resource_links: Vec::new(),
             count,
             targets,
             empty_note: None,
@@ -160,6 +162,7 @@ impl Prepared {
 pub(crate) struct ToolOutput {
     pub(crate) images: Vec<Vec<u8>>,
     pub(crate) audio: Vec<Vec<u8>>,
+    pub(crate) resource_links: Vec<crate::jsonrpc::ResourceLink>,
     pub(crate) value: Value,
     pub(crate) empty_note: Option<String>,
 }
@@ -376,6 +379,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
     Ok(ToolOutput {
         images: prepared.images,
         audio: prepared.audio,
+        resource_links: prepared.resource_links,
         value: prepared.value,
         empty_note: prepared.empty_note,
     })
@@ -427,7 +431,7 @@ fn literal_record_text(record: Map<String, Value>) -> Result<String, DispatchErr
 /// failure here can only degrade the owner's reading from `refused` or `error`
 /// to `uncertain`. ⛔ It can never turn a refusal into a release — that
 /// direction is the one guarded by `?` at the serving gate.
-fn record_outcome(
+pub(crate) fn record_outcome(
     journal_root: &Path,
     coordinates: &AuditCoordinates,
     now: Timestamp,
@@ -501,7 +505,7 @@ pub(crate) fn kind_refusal(kind: AdmittedCategory) -> String {
     kind_reason(kind).render(ENGLISH)
 }
 
-fn kind_reason(kind: AdmittedCategory) -> Reason {
+pub(crate) fn kind_reason(kind: AdmittedCategory) -> Reason {
     match kind {
         AdmittedCategory::Transcripts => Reason::ReadTranscripts,
         AdmittedCategory::AudioMedia => Reason::ReadAudioMedia,
@@ -583,7 +587,7 @@ fn fetch_target_missing_kind(
     Some(missing)
 }
 
-fn owner_denial_reason(reason: &'static str) -> Reason {
+pub(crate) fn owner_denial_reason(reason: &'static str) -> Reason {
     match reason {
         "unenforceable" => Reason::Unenforceable,
         _ => Reason::NoRead,
@@ -1028,7 +1032,7 @@ fn audit_call(
     .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))
 }
 
-fn audit_permission_snapshot(
+pub(crate) fn audit_permission_snapshot(
     snapshot: &ConnectionReadSnapshot,
 ) -> solstone_core_mcp_audit::PermissionSnapshotRecord {
     let categories = snapshot
@@ -1412,6 +1416,7 @@ fn read_batch(
         batch.count += item.count;
         batch.targets.extend(item.targets);
         batch.images.extend(item.images);
+        batch.resource_links.extend(item.resource_links);
     }
     batch.value = json!({"items": items});
     // Each successful item was made literal with its own reader's rules.
@@ -3870,9 +3875,13 @@ fn fetch(
             }
 
             // An activity record arrives as literal JSON text; any other text
-            // is made literal at release.
-            let served_as_is: &'static [&'static str] =
-                if record.is_some() { &["text"] } else { &[] };
+            // is made literal at release. Server-minted `resource_uri` values
+            // stay verbatim so query delimiters keep their bytes.
+            let served_as_is: &'static [&'static str] = if record.is_some() {
+                &["text", "resource_uri"]
+            } else {
+                &["resource_uri"]
+            };
             let photo = crate::photo_picture::is_photo_description(&entry.path);
             let decoded = photo
                 .then(|| crate::photo_picture::decode_model_text(&text))
@@ -3939,14 +3948,28 @@ fn fetch(
             // kind that admitted the description admits its picture.
             let picture_size = request.size.unwrap_or_default();
             let mut picture = None;
+            let mut resource_link = None;
             if photo {
-                let (state, kept) =
+                let (mut state, kept) =
                     crate::photo_picture::photo_picture(journal_root, &entry.path, picture_size);
+                if let Some(kept) = kept {
+                    let link = crate::resources::entry_picture_link(
+                        &request.reference,
+                        &entry.day,
+                        crate::resources::EntryPictureKind::Photo,
+                        picture_size,
+                        &kept.jpeg,
+                    );
+                    state["resource_uri"] = json!(link.uri);
+                    resource_link = Some(link);
+                    picture = Some(kept.jpeg);
+                }
                 value["picture"] = state;
-                picture = kept.map(|kept| kept.jpeg);
             }
             if let Some(folder) = crate::screen_picture::import_folder(&entry.path) {
-                let (info, image) = if snapshot.categories.contains(&AdmittedCategory::Screenshots)
+                let (mut info, image) = if snapshot
+                    .categories
+                    .contains(&AdmittedCategory::Screenshots)
                 {
                     crate::screen_picture::imported(journal_root, folder, picture_size)
                 } else {
@@ -3962,6 +3985,17 @@ fn fetch(
                     )
                 {
                     return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+                }
+                if let Some(ref jpeg) = image {
+                    let link = crate::resources::entry_picture_link(
+                        &request.reference,
+                        &entry.day,
+                        crate::resources::EntryPictureKind::Screenshot,
+                        picture_size,
+                        jpeg,
+                    );
+                    info["resource_uri"] = json!(link.uri);
+                    resource_link = Some(link);
                 }
                 value["picture"] = info;
                 picture = image;
@@ -3984,6 +4018,7 @@ fn fetch(
             let target = format!("{}#{}", entry.path, entry.idx);
             let mut prepared = Prepared::new(value, 1, vec![target]).served_as_is(served_as_is);
             prepared.images.extend(picture);
+            prepared.resource_links.extend(resource_link);
             Ok(prepared)
         }
         ReferenceTarget::Activity(act_ref) => {
@@ -4671,7 +4706,13 @@ fn get_entity(
     if crate::names::is_name(&request.reference) {
         let (entity_id, facet) = crate::names::parse_entity(&request.reference)
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-        return read_entity(journal_root, snapshot, &facet, &entity_id);
+        return read_entity_with_reference(
+            journal_root,
+            snapshot,
+            &facet,
+            &entity_id,
+            Some(&request.reference),
+        );
     }
     let ReferenceTarget::Entity(reference) = codec()
         .resolve(
@@ -4684,11 +4725,12 @@ fn get_entity(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
-    read_entity(
+    read_entity_with_reference(
         journal_root,
         snapshot,
         &reference.facet_id,
         &reference.entity_id,
+        Some(&request.reference),
     )
 }
 
@@ -4700,6 +4742,16 @@ pub(crate) fn read_entity(
     snapshot: &ConnectionReadSnapshot,
     facet: &str,
     entity_id: &str,
+) -> Result<Prepared, DispatchError> {
+    read_entity_with_reference(journal_root, snapshot, facet, entity_id, None)
+}
+
+fn read_entity_with_reference(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    facet: &str,
+    entity_id: &str,
+    wire_reference: Option<&str>,
 ) -> Result<Prepared, DispatchError> {
     if !snapshot.categories.contains(&AdmittedCategory::Entities) {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
@@ -4767,6 +4819,7 @@ pub(crate) fn read_entity(
         value["notes_truncated"] = json!(true);
     }
     let mut image = None;
+    let mut resource_link = None;
     // The connection's profile pics option, then the owner's switch, read the
     // one way every face reader reads it.
     if snapshot.categories.contains(&AdmittedCategory::ProfilePics)
@@ -4776,11 +4829,18 @@ pub(crate) fn read_entity(
         let photo =
             solstone_core_entities::photos::photo(journal_root, entity_id, Some(&facet_dir))
                 .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
-        value["photo"] = json!({"state": photo.state});
+        let mut photo_val = json!({"state": photo.state});
         image = photo.jpeg.map(|bytes| bounded_photo(&bytes)).transpose()?;
+        if let (Some(wire_ref), Some(jpeg)) = (wire_reference, image.as_ref()) {
+            let link = crate::resources::entity_profile_pic_link(wire_ref, entity_id, jpeg);
+            photo_val["resource_uri"] = json!(link.uri);
+            resource_link = Some(link);
+        }
+        value["photo"] = photo_val;
     }
-    let mut prepared = Prepared::new(value, 1, targets);
+    let mut prepared = Prepared::new(value, 1, targets).served_as_is(&["resource_uri"]);
     prepared.images.extend(image);
+    prepared.resource_links.extend(resource_link);
     Ok(prepared)
 }
 
@@ -5324,7 +5384,7 @@ fn get_transcript(
     if crate::names::is_name(&request.reference) {
         let address = crate::names::resolve_segment(journal_root, &request.reference)
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-        return read_segment(
+        return read_segment_with_reference(
             journal_root,
             principal,
             snapshot,
@@ -5332,6 +5392,7 @@ fn get_transcript(
             request.cursor.as_deref(),
             moment,
             request.audio.as_ref(),
+            Some(&request.reference),
         );
     }
     let reference = match codec()
@@ -5368,7 +5429,7 @@ fn get_transcript(
         }
         _ => return Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     };
-    read_segment(
+    read_segment_with_reference(
         journal_root,
         principal,
         snapshot,
@@ -5376,10 +5437,12 @@ fn get_transcript(
         request.cursor.as_deref(),
         moment,
         request.audio.as_ref(),
+        Some(&request.reference),
     )
 }
 
 /// One segment's transcript, when this connection may read that segment now.
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn read_segment(
     journal_root: &Path,
     principal: DispatchPrincipal<'_>,
@@ -5388,6 +5451,29 @@ pub(crate) fn read_segment(
     cursor: Option<&str>,
     moment: Option<(u32, Option<&str>)>,
     audio_request: Option<&crate::tools::transcripts::AudioClipRequest>,
+) -> Result<Prepared, DispatchError> {
+    read_segment_with_reference(
+        journal_root,
+        principal,
+        snapshot,
+        reference,
+        cursor,
+        moment,
+        audio_request,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_segment_with_reference(
+    journal_root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    reference: &crate::references::SegmentAddress,
+    cursor: Option<&str>,
+    moment: Option<(u32, Option<&str>)>,
+    audio_request: Option<&crate::tools::transcripts::AudioClipRequest>,
+    wire_reference: Option<&str>,
 ) -> Result<Prepared, DispatchError> {
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
     let segment =
@@ -5625,15 +5711,61 @@ pub(crate) fn read_segment(
     ) {
         response_val["capture_zone"] = zone;
     }
-    // Each transcript entry is made literal after paging; inline base64 audio bytes stay exact.
-    let mut prepared =
-        Prepared::new(response_val, count, vec![target]).served_as_is(&["entries", "data_base64"]);
-    if let Some((info, image)) = screen {
+    // Each transcript entry is made literal after paging; inline base64 audio
+    // bytes and server-minted resource URIs stay exact.
+    let mut prepared = Prepared::new(response_val, count, vec![target]).served_as_is(&[
+        "entries",
+        "data_base64",
+        "resource_uri",
+    ]);
+    if let Some((mut info, image)) = screen {
+        if let (Some(wire_ref), Some(jpeg)) = (wire_reference, image.as_ref()) {
+            let display = info
+                .get("display")
+                .and_then(Value::as_str)
+                .unwrap_or("screen");
+            let offset_ms = moment.map(|(ms, _)| ms).unwrap_or(0);
+            let link =
+                crate::resources::screen_moment_link(wire_ref, reference, offset_ms, display, jpeg);
+            info["resource_uri"] = json!(link.uri);
+            prepared.resource_links.push(link);
+        }
         prepared.value["picture"] = info;
         prepared.images.extend(image);
         prepared.count = prepared.count.max(1);
         Ok(prepared)
-    } else if let Some((info, clip)) = audio {
+    } else if let Some((mut info, clip)) = audio {
+        if let (Some(wire_ref), Some(audio_req)) = (wire_reference, audio_request)
+            && info.get("state").and_then(Value::as_str) == Some("attached")
+        {
+            let track = info.get("track").and_then(Value::as_str).unwrap_or("audio");
+            if let Some(wav) = clip.as_ref() {
+                let filename = info
+                    .get("filename")
+                    .and_then(Value::as_str)
+                    .unwrap_or("audio.wav");
+                let link = crate::resources::audio_clip_link(
+                    wire_ref,
+                    reference,
+                    audio_req.start_ms,
+                    audio_req.duration_ms,
+                    track,
+                    filename,
+                    wav,
+                );
+                info["resource_uri"] = json!(link.uri);
+                prepared.resource_links.push(link);
+            } else {
+                // `audio_encoding: "base64"` intentionally emits one text block
+                // without extra media/link content blocks; still expose the URI.
+                info["resource_uri"] = json!(crate::resources::audio_clip_uri(
+                    wire_ref,
+                    audio_req.start_ms,
+                    audio_req.duration_ms,
+                    track,
+                ));
+            }
+        }
         prepared.value["audio"] = info;
         prepared.audio.extend(clip);
         prepared.count = prepared.count.max(1);
@@ -5944,6 +6076,7 @@ pub(crate) fn canonical_content(value: &Value) -> Value {
                         *key,
                         "reference"
                             | "activity_reference"
+                            | "resource_uri"
                             | "link"
                             | "next_cursor"
                             | "span_reference"
@@ -5981,7 +6114,7 @@ fn index_error(error: solstone_core_indexer_query::IndexAccessError) -> Dispatch
     DispatchError::Tool(tool_error)
 }
 
-fn bounded_photo(bytes: &[u8]) -> Result<Vec<u8>, DispatchError> {
+pub(crate) fn bounded_photo(bytes: &[u8]) -> Result<Vec<u8>, DispatchError> {
     let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
     let image = image.thumbnail(256, 256).to_rgb8();

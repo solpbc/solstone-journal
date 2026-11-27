@@ -21,8 +21,8 @@ use tokio_rustls::TlsAcceptor;
 use crate::dispatch::{DispatchError, DispatchPrincipal, dispatch_authenticated_tool_call};
 use crate::http1::{Http1Connection, Http1Error, HttpMethod, HttpRequest, HttpResponse};
 use crate::jsonrpc::{
-    JsonRpcResponse, McpMethod, classify_method, initialize_result, media_tool_result,
-    parse_request, tool_arguments,
+    JsonRpcResponse, McpMethod, ProtocolVersion, classify_method, initialize_result_for,
+    media_tool_result_with_links, negotiate_protocol_version, parse_request, tool_arguments,
 };
 use crate::oauth::OAuthRuntime;
 use crate::oauth::store::OAuthStore;
@@ -617,6 +617,9 @@ fn delete_session(
     sessions: &SessionTable,
     verified: &VerifiedToken,
 ) -> HttpResponse {
+    if let Err(response) = parse_protocol_version_header(request, true) {
+        return response;
+    }
     if !request.body.is_empty() {
         return HttpResponse::error(400, "Bad Request", "DELETE requests must not have a body");
     }
@@ -680,6 +683,11 @@ fn post_json_rpc(
         Ok(request) => request,
         Err(response) => return json_rpc_response(*response),
     };
+    let header_protocol =
+        match parse_protocol_version_header(request, json_request.method != "initialize") {
+            Ok(version) => version,
+            Err(response) => return response,
+        };
     let session_id = match request.header("mcp-session-id") {
         Ok(session_id) => session_id,
         Err(_) => return HttpResponse::error(400, "Bad Request", "MCP session ID is ambiguous"),
@@ -696,6 +704,9 @@ fn post_json_rpc(
             _ => json_rpc_response(session_error_response(json_request.id.as_ref(), error)),
         };
     }
+    let protocol_version = header_protocol
+        .or_else(|| session_id.and_then(|id| sessions.protocol_version(id)))
+        .unwrap_or(ProtocolVersion::V2025_03_26);
     // A notification (no id) expects no reply, and ping is answered empty, as
     // Streamable HTTP requires; neither touches the journal.
     if json_request.id.is_none() {
@@ -708,16 +719,152 @@ fn post_json_rpc(
         ));
     }
     match classify_method(&json_request) {
-        Ok(McpMethod::Initialize) => match sessions.create(&verified.id) {
-            Ok(session_id) => json_rpc_response(JsonRpcResponse::success(
-                json_request.id.as_ref(),
-                initialize_result(),
-            ))
-            .with_session_id(session_id),
-            Err(error) => {
-                json_rpc_response(session_error_response(json_request.id.as_ref(), error))
+        Ok(McpMethod::Initialize) => {
+            let negotiated = negotiate_protocol_version(&json_request);
+            match sessions.create_with_protocol(&verified.id, negotiated) {
+                Ok(session_id) => json_rpc_response(JsonRpcResponse::success(
+                    json_request.id.as_ref(),
+                    initialize_result_for(negotiated),
+                ))
+                .with_session_id(session_id),
+                Err(error) => {
+                    json_rpc_response(session_error_response(json_request.id.as_ref(), error))
+                }
             }
-        },
+        }
+        Ok(McpMethod::ResourcesList) => {
+            if let Err(message) =
+                crate::resources::validate_list_params(json_request.params.as_ref())
+            {
+                return json_rpc_response(JsonRpcResponse::invalid_arguments(
+                    json_request.id.as_ref(),
+                    message.to_owned(),
+                ));
+            }
+            if check_connection_pause(journal_root, verified).is_err() {
+                return json_rpc_response(JsonRpcResponse::permission_denied(
+                    json_request.id.as_ref(),
+                    "no_permission",
+                ));
+            }
+            json_rpc_response(JsonRpcResponse::success(
+                json_request.id.as_ref(),
+                serde_json::json!({ "resources": [] }),
+            ))
+        }
+        Ok(McpMethod::ResourcesTemplatesList) => {
+            if let Err(message) =
+                crate::resources::validate_list_params(json_request.params.as_ref())
+            {
+                return json_rpc_response(JsonRpcResponse::invalid_arguments(
+                    json_request.id.as_ref(),
+                    message.to_owned(),
+                ));
+            }
+            let pause = match check_connection_pause(journal_root, verified) {
+                Ok(p) => p,
+                Err(_) => {
+                    return json_rpc_response(JsonRpcResponse::permission_denied(
+                        json_request.id.as_ref(),
+                        "no_permission",
+                    ));
+                }
+            };
+            if pause.is_some() {
+                return json_rpc_response(JsonRpcResponse::success(
+                    json_request.id.as_ref(),
+                    serde_json::json!({ "resourceTemplates": [] }),
+                ));
+            }
+            let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
+            let templates =
+                crate::resources::advertised_resource_templates(journal_root, &decision);
+            json_rpc_response(JsonRpcResponse::success(
+                json_request.id.as_ref(),
+                templates,
+            ))
+        }
+        Ok(McpMethod::ResourcesRead) => {
+            let pause = match check_connection_pause(journal_root, verified) {
+                Ok(p) => p,
+                Err(_) => {
+                    return json_rpc_response(JsonRpcResponse::permission_denied(
+                        json_request.id.as_ref(),
+                        "no_permission",
+                    ));
+                }
+            };
+            if let Some(pause) = pause {
+                let now = crate::oauth::current_time();
+                let mut arguments = serde_json::Map::new();
+                if let Some(uri) = json_request
+                    .params
+                    .as_ref()
+                    .and_then(serde_json::Value::as_object)
+                    .and_then(|params| params.get("uri"))
+                    .and_then(serde_json::Value::as_str)
+                {
+                    arguments.insert(
+                        "uri".to_owned(),
+                        serde_json::Value::String(crate::dispatch::reference_fingerprint(uri)),
+                    );
+                }
+                let admission = solstone_core_mcp_audit::Admission {
+                    connection: &verified.id,
+                    agent_identity: &verified.agent_identity,
+                    tool_name: solstone_core_mcp_audit::ToolName::ReadResource,
+                    arguments,
+                    permission: None,
+                };
+                if let Ok(coordinates) =
+                    crate::audit::write_admitted_interaction(journal_root, now, &admission)
+                {
+                    let _ = crate::audit::write_described_outcome(
+                        journal_root,
+                        &coordinates,
+                        now,
+                        solstone_core_mcp_audit::Outcome::Refused,
+                        crate::audit::Reason::Paused,
+                        true,
+                    );
+                }
+                let stamp = match pause {
+                    ConnectionPause::Owner { pause_id } => pause_id,
+                    ConnectionPause::Idle { refresh_expires_at } => refresh_expires_at.to_string(),
+                };
+                let _ = crate::agent_state::bump_attempts(journal_root, &verified.id, &stamp, now);
+                return json_rpc_response(JsonRpcResponse::paused_resource_error(
+                    json_request.id.as_ref(),
+                ));
+            }
+            let uri = match crate::resources::extract_read_uri(json_request.params.as_ref()) {
+                Ok(uri) => uri,
+                Err(message) => {
+                    return json_rpc_response(JsonRpcResponse::invalid_arguments(
+                        json_request.id.as_ref(),
+                        message.to_owned(),
+                    ));
+                }
+            };
+            // Non-mutating staleness check: leave `listed_while_paused` intact
+            // for the next `tools/call` so a resource read never eats its signal.
+            let tools_list_changed = session_id.is_some_and(|session_id| {
+                sessions.tools_list_is_stale(
+                    session_id,
+                    decision_generation(&permissions::evaluate_connection_read(
+                        journal_root,
+                        &verified.id,
+                    )),
+                )
+            });
+            execute_resource_read(
+                &json_request,
+                uri,
+                verified,
+                journal_root,
+                tools_list_changed,
+            )
+        }
         Ok(McpMethod::ToolsList) => {
             let pause = match check_connection_pause(journal_root, verified) {
                 Ok(p) => p,
@@ -825,6 +972,7 @@ fn post_json_rpc(
                 verified,
                 journal_root,
                 tools_list_changed,
+                protocol_version,
             )
         }
         Err(response) => json_rpc_response(*response),
@@ -870,12 +1018,95 @@ fn decision_generation(decision: &permissions::PermissionDecision) -> Option<u64
     }
 }
 
+fn parse_protocol_version_header(
+    request: &HttpRequest,
+    reject_unsupported: bool,
+) -> Result<Option<ProtocolVersion>, HttpResponse> {
+    let raw = match request.header("mcp-protocol-version") {
+        Ok(Some(value)) => value.trim(),
+        Ok(None) => return Ok(None),
+        Err(_) => {
+            return Err(HttpResponse::error(
+                400,
+                "Bad Request",
+                "MCP protocol version header is ambiguous",
+            ));
+        }
+    };
+    match ProtocolVersion::parse(raw) {
+        Some(version) => Ok(Some(version)),
+        None if reject_unsupported => Err(HttpResponse::error(
+            400,
+            "Bad Request",
+            "Unsupported MCP-Protocol-Version header",
+        )),
+        None => Ok(None),
+    }
+}
+
+fn execute_resource_read(
+    request: &crate::jsonrpc::JsonRpcRequest,
+    uri: &str,
+    verified: &VerifiedToken,
+    journal_root: &std::path::Path,
+    tools_list_changed: bool,
+) -> HttpResponse {
+    use crate::resources::{ResourceError, dispatch_authenticated_resource_read};
+    use base64::Engine as _;
+
+    let response = match dispatch_authenticated_resource_read(
+        journal_root,
+        DispatchPrincipal {
+            connection: &verified.id,
+            agent_identity: &verified.agent_identity,
+        },
+        uri,
+        jiff::Timestamp::now(),
+    ) {
+        Ok(output) => JsonRpcResponse::success(
+            request.id.as_ref(),
+            serde_json::json!({
+                "contents": [{
+                    "uri": output.uri,
+                    "mimeType": output.mime_type,
+                    "blob": base64::engine::general_purpose::STANDARD.encode(&output.bytes),
+                }]
+            }),
+        ),
+        Err(ResourceError::InvalidParams(message)) => {
+            JsonRpcResponse::invalid_arguments(request.id.as_ref(), message)
+        }
+        Err(ResourceError::PermissionDenied(reason)) => {
+            JsonRpcResponse::permission_denied(request.id.as_ref(), reason)
+        }
+        Err(ResourceError::KindDenied(kind)) => {
+            JsonRpcResponse::kind_denied(request.id.as_ref(), crate::dispatch::kind_refusal(kind))
+        }
+        Err(ResourceError::NotFound { reason, message }) => {
+            JsonRpcResponse::resource_not_found(request.id.as_ref(), message, uri, reason)
+        }
+        Err(ResourceError::Failed { reason, message }) => {
+            JsonRpcResponse::resource_failed(request.id.as_ref(), reason, message)
+        }
+        Err(ResourceError::AuditUnavailable) => JsonRpcResponse::internal_error(
+            request.id.as_ref(),
+            crate::tools::ToolError::AuditUnavailable.agent_message(),
+        ),
+    };
+    json_rpc_response(if tools_list_changed {
+        response.with_tools_list_changed()
+    } else {
+        response
+    })
+}
+
 fn execute_tool_call(
     request: &crate::jsonrpc::JsonRpcRequest,
     tool_name: crate::jsonrpc::ToolName,
     verified: &VerifiedToken,
     journal_root: &std::path::Path,
     tools_list_changed: bool,
+    protocol_version: ProtocolVersion,
 ) -> HttpResponse {
     if tool_name.is_memory() {
         let authority = match MemoryAuthority::verified(journal_root, verified) {
@@ -909,15 +1140,23 @@ fn execute_tool_call(
         tool_arguments(request),
         jiff::Timestamp::now(),
     ) {
-        Ok(output) => JsonRpcResponse::success(
-            request.id.as_ref(),
-            media_tool_result(
-                output.value,
-                output.empty_note.as_deref(),
-                &output.images,
-                &output.audio,
-            ),
-        ),
+        Ok(output) => {
+            let links = if protocol_version.supports_resource_links() {
+                output.resource_links.as_slice()
+            } else {
+                &[]
+            };
+            JsonRpcResponse::success(
+                request.id.as_ref(),
+                media_tool_result_with_links(
+                    output.value,
+                    output.empty_note.as_deref(),
+                    &output.images,
+                    &output.audio,
+                    links,
+                ),
+            )
+        }
         Err(DispatchError::InvalidInput) => JsonRpcResponse::invalid_arguments(
             request.id.as_ref(),
             crate::registry::invalid_arguments_message(
@@ -2273,7 +2512,10 @@ mod tests {
             json!({"jsonrpc": "2.0", "id": 8, "method": "initialize"}),
         )
         .await;
-        assert_eq!(initialize["result"]["capabilities"], json!({"tools": {}}));
+        assert_eq!(
+            initialize["result"]["capabilities"],
+            json!({"tools": {}, "resources": {}})
+        );
 
         drop(client);
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
@@ -4051,6 +4293,404 @@ mod tests {
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
     }
+
+    #[tokio::test]
+    async fn mcp_protocol_version_negotiation_and_header_validation() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_token("protocol-version-agent");
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+
+        for (requested, expected) in [
+            ("2025-03-26", "2025-03-26"),
+            ("2025-06-18", "2025-06-18"),
+            ("2025-11-25", "2025-11-25"),
+            ("2026-07-28", "2025-11-25"),
+        ] {
+            let (init, headers) = post_json_with_headers(
+                &mut client,
+                &token.token,
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": requested,
+                        "capabilities": {},
+                        "clientInfo": {"name": "test-client", "version": "1.0"}
+                    }
+                }),
+                &[("MCP-Protocol-Version", requested)],
+            )
+            .await;
+            assert_eq!(init["result"]["protocolVersion"], expected);
+            assert_eq!(
+                init["result"]["capabilities"],
+                json!({"tools": {}, "resources": {}})
+            );
+            let session = session_id(&headers);
+
+            let (list, _) = post_json_with_headers(
+                &mut client,
+                &token.token,
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "resources/list",
+                    "params": {"_meta": {"progressToken": 2}}
+                }),
+                &[
+                    ("Mcp-Session-Id", &session),
+                    ("MCP-Protocol-Version", expected),
+                ],
+            )
+            .await;
+            assert_eq!(list["result"]["resources"], json!([]));
+        }
+
+        // Unsupported MCP-Protocol-Version on a non-initialize POST or DELETE returns 400.
+        let (_, headers) = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-11-25"}
+            }),
+            &[],
+        )
+        .await;
+        let session = session_id(&headers);
+        let (bad_status, _, _) = post_json_response_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 11, "method": "resources/list"}),
+            &[
+                ("Mcp-Session-Id", &session),
+                ("MCP-Protocol-Version", "2099-01-01"),
+            ],
+        )
+        .await;
+        assert_eq!(bad_status, 400);
+        drop(client);
+
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let (dup_status, _, _) = post_json_response_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 12, "method": "resources/list"}),
+            &[
+                ("Mcp-Session-Id", &session),
+                ("MCP-Protocol-Version", "2025-06-18"),
+                ("MCP-Protocol-Version", "2025-11-25"),
+            ],
+        )
+        .await;
+        assert_eq!(dup_status, 400);
+        drop(client);
+
+        let mut client = connect_tls(server.address, client_config).await;
+        let bad_delete = format!(
+            "DELETE /mcp HTTP/1.1\r\nHost: {HOSTNAME}\r\nAuthorization: Bearer {}\r\nMcp-Session-Id: {session}\r\nMCP-Protocol-Version: 2099-01-01\r\n\r\n",
+            token.token
+        );
+        let (del_status, _, _) = exchange_http(&mut client, &bad_delete).await;
+        assert_eq!(del_status, 400);
+
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn mcp_resources_wire_read_resource_link_gating_pause_and_audit() {
+        use base64::Engine as _;
+
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let root = server.journal.path();
+
+        // Seed one imported photo entry and index it.
+        let photo_dir = root.join("chronicle/20260831/import.image/120000_1");
+        fs::create_dir_all(&photo_dir).unwrap();
+        fs::write(
+            photo_dir.join("image_transcript.md"),
+            "# Photo\n\nresourcephotoneedle\n",
+        )
+        .unwrap();
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            640,
+            480,
+            image::Rgb([20, 140, 210]),
+        ))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+        fs::write(photo_dir.join("original.png"), &png).unwrap();
+        solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+        let token = server.create_unpermissioned_token("resource-wire-agent");
+        let verified = TokenStore::open(root).verify(&token.token).unwrap();
+        crate::permissions::PermissionStore::open(root)
+            .set_permission(
+                &verified.id,
+                crate::permissions::ReadPermission {
+                    categories: vec!["photos".into()],
+                    scope: crate::permissions::ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+
+        let mut client = connect_tls(server.address, client_config).await;
+
+        // 1. Legacy 2025-03-26 session: fetch returns image + picture.resource_uri, NO resource_link block.
+        let (_, legacy_headers) = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-03-26"}
+            }),
+            &[],
+        )
+        .await;
+        let legacy_session = session_id(&legacy_headers);
+        let search = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "search", "arguments": {"query": "resourcephotoneedle"}}
+            }),
+            &[("Mcp-Session-Id", &legacy_session)],
+        )
+        .await
+        .0;
+        let photo_ref = search["result"]["structuredContent"]["results"][0]["reference"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let legacy_fetch = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "fetch", "arguments": {"reference": photo_ref}}
+            }),
+            &[("Mcp-Session-Id", &legacy_session)],
+        )
+        .await
+        .0;
+        let legacy_content = legacy_fetch["result"]["content"].as_array().unwrap();
+        assert_eq!(legacy_content.len(), 2, "2025-03-26 omits resource_link");
+        assert_eq!(legacy_content[0]["type"], "text");
+        assert_eq!(legacy_content[1]["type"], "image");
+        let resource_uri = legacy_fetch["result"]["structuredContent"]["picture"]["resource_uri"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(resource_uri.starts_with("solstone://media/entry/"));
+
+        // 2. Modern 2025-11-25 session: fetch returns [text, image, resource_link] and resources/read serves exact bytes.
+        let (_, modern_headers) = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-11-25"}
+            }),
+            &[],
+        )
+        .await;
+        let modern_session = session_id(&modern_headers);
+        let templates = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "resources/templates/list",
+                "params": {"_meta": {"progressToken": 5}}
+            }),
+            &[
+                ("Mcp-Session-Id", &modern_session),
+                ("MCP-Protocol-Version", "2025-11-25"),
+            ],
+        )
+        .await
+        .0;
+        let tpl_list = templates["result"]["resourceTemplates"].as_array().unwrap();
+        assert_eq!(tpl_list.len(), 1);
+        assert_eq!(
+            tpl_list[0]["uriTemplate"],
+            "solstone://media/entry/{reference}{?size}"
+        );
+
+        let modern_fetch = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {"name": "fetch", "arguments": {"reference": photo_ref}}
+            }),
+            &[
+                ("Mcp-Session-Id", &modern_session),
+                ("MCP-Protocol-Version", "2025-11-25"),
+            ],
+        )
+        .await
+        .0;
+        let modern_content = modern_fetch["result"]["content"].as_array().unwrap();
+        assert_eq!(modern_content.len(), 3);
+        assert_eq!(modern_content[0]["type"], "text");
+        assert_eq!(modern_content[1]["type"], "image");
+        assert_eq!(modern_content[2]["type"], "resource_link");
+        assert_eq!(modern_content[2]["uri"], resource_uri);
+        assert_eq!(modern_content[2]["mimeType"], "image/jpeg");
+        let fetch_jpeg = base64::engine::general_purpose::STANDARD
+            .decode(modern_content[1]["data"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(modern_content[2]["size"], fetch_jpeg.len());
+
+        let read_res = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "resources/read",
+                "params": {"_meta": {"progressToken": 7}, "uri": resource_uri}
+            }),
+            &[
+                ("Mcp-Session-Id", &modern_session),
+                ("MCP-Protocol-Version", "2025-11-25"),
+            ],
+        )
+        .await
+        .0;
+        let contents = read_res["result"]["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["uri"], resource_uri);
+        assert_eq!(contents[0]["mimeType"], "image/jpeg");
+        let res_jpeg = base64::engine::general_purpose::STANDARD
+            .decode(contents[0]["blob"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(res_jpeg, fetch_jpeg);
+
+        // Non-null cursor rejected with -32602; unknown URI returns -32002 with data.uri; subscribe returns -32601.
+        let bad_cursor = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 8, "method": "resources/list", "params": {"cursor": "c"}}),
+            &[("Mcp-Session-Id", &modern_session)],
+        )
+        .await
+        .0;
+        assert_eq!(bad_cursor["error"]["code"], -32602);
+        let unknown_uri = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 9, "method": "resources/read", "params": {"uri": "https://example.com/x.jpg"}}),
+            &[("Mcp-Session-Id", &modern_session)],
+        )
+        .await
+        .0;
+        assert_eq!(unknown_uri["error"]["code"], -32002);
+        assert_eq!(
+            unknown_uri["error"]["data"]["uri"],
+            "https://example.com/x.jpg"
+        );
+        let subscribe = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 10, "method": "resources/subscribe", "params": {"uri": resource_uri}}),
+            &[("Mcp-Session-Id", &modern_session)],
+        )
+        .await
+        .0;
+        assert_eq!(subscribe["error"]["code"], -32601);
+
+        // 3. Pause connection: templates list returns empty, resources/read refuses with -32001 paused + audit + attempt bump.
+        crate::agent_state::set_owner_pause(
+            root,
+            &verified.id,
+            crate::oauth::store::current_time(),
+            &crate::tokens::SystemRandomSource,
+        )
+        .expect("pause succeeds");
+        let pause_state = crate::agent_state::is_owner_paused(root, &verified.id)
+            .unwrap()
+            .unwrap();
+        let paused_tpl = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 11, "method": "resources/templates/list"}),
+            &[("Mcp-Session-Id", &modern_session)],
+        )
+        .await
+        .0;
+        assert_eq!(paused_tpl["result"]["resourceTemplates"], json!([]));
+
+        let paused_read = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 12, "method": "resources/read", "params": {"uri": resource_uri}}),
+            &[("Mcp-Session-Id", &modern_session)],
+        )
+        .await
+        .0;
+        assert_eq!(paused_read["error"]["code"], -32001);
+        assert_eq!(paused_read["error"]["data"]["paused"], true);
+        assert_eq!(paused_read["error"]["data"]["reason"], "paused");
+        let attempts = crate::agent_state::get_attempts_for_stamp(
+            root,
+            &verified.id,
+            Some(&pause_state.pause_id),
+        )
+        .expect("attempts read");
+        assert_eq!(attempts.count, 1);
+
+        // Audit trail includes served and paused read_resource interactions.
+        let activity = crate::activity::read_activity(
+            root,
+            &crate::activity::ActivityQuery {
+                connection: Some(verified.id.clone()),
+                tool: Some(solstone_core_mcp_audit::ToolName::ReadResource),
+                limit: 20,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(activity.entries.iter().any(|e| {
+            e.outcome == crate::activity::RecordedOutcome::Served
+                && e.result.as_ref().is_some_and(|r| {
+                    r.targets
+                        .iter()
+                        .any(|t| t.contains("import.image/120000_1/image_transcript.md#0"))
+                })
+        }));
+        assert!(
+            activity
+                .entries
+                .iter()
+                .any(|e| e.outcome == crate::activity::RecordedOutcome::Refused && e.paused)
+        );
+
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -5353,6 +5993,97 @@ mod unit_tests {
             )
             .unwrap()
             .is_none()
+        );
+    }
+
+    #[test]
+    fn post_json_rpc_negotiates_protocol_version_and_serves_resource_lists() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-mcp-unit-res-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let sessions = SessionTable::new();
+        let verified = crate::tokens::VerifiedToken {
+            id: "bearer:unit-res".to_owned(),
+            agent_identity: "bearer:unit-res".to_owned(),
+        };
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_permission(
+                &verified.id,
+                crate::permissions::ReadPermission {
+                    categories: vec!["photos".into(), "transcripts".into(), "audio_media".into()],
+                    scope: crate::permissions::ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+
+        let post = |body: serde_json::Value, extra: &[(&str, &str)]| {
+            let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+            for (k, v) in extra {
+                headers.push(((*k).to_owned(), (*v).to_owned()));
+            }
+            super::post_json_rpc(
+                &crate::http1::HttpRequest::from_test_parts(
+                    crate::http1::HttpMethod::Post,
+                    headers,
+                    serde_json::to_vec(&body).unwrap(),
+                ),
+                &sessions,
+                &verified,
+                journal.path(),
+            )
+        };
+
+        let init = post(
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18"}
+            }),
+            &[],
+        );
+        assert_eq!(init.status, 200);
+        let init_json: serde_json::Value = serde_json::from_slice(&init.body).unwrap();
+        assert_eq!(init_json["result"]["protocolVersion"], "2025-06-18");
+        assert_eq!(
+            init_json["result"]["capabilities"],
+            json!({"tools": {}, "resources": {}})
+        );
+        let sid = init.session_id.expect("session id");
+
+        let bad_hdr = post(
+            json!({"jsonrpc": "2.0", "id": 2, "method": "resources/list"}),
+            &[
+                ("mcp-session-id", &sid),
+                ("mcp-protocol-version", "2099-01-01"),
+            ],
+        );
+        assert_eq!(bad_hdr.status, 400);
+
+        let templates = post(
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "resources/templates/list",
+                "params": {"_meta": {"progressToken": 3}}
+            }),
+            &[
+                ("mcp-session-id", &sid),
+                ("mcp-protocol-version", "2025-06-18"),
+            ],
+        );
+        assert_eq!(templates.status, 200);
+        let tpl_json: serde_json::Value = serde_json::from_slice(&templates.body).unwrap();
+        let names: Vec<_> = tpl_json["result"]["resourceTemplates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["journal_entry_picture", "transcript_audio_clip"]
         );
     }
 }

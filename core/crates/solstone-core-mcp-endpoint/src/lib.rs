@@ -82,6 +82,7 @@ mod possible_names_tests;
 mod proxy_preface;
 mod references;
 mod registry;
+mod resources;
 #[cfg(unix)]
 mod rlimit;
 mod screen_picture;

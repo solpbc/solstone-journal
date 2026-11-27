@@ -83,6 +83,7 @@ pub enum ToolName {
     ListActivities,
     GetActivitySources,
     SuggestCorrection,
+    ReadResource,
 }
 
 impl ToolName {
@@ -103,6 +104,7 @@ impl ToolName {
             Self::ListActivities => "list_activities",
             Self::GetActivitySources => "get_activity_sources",
             Self::SuggestCorrection => "suggest_correction",
+            Self::ReadResource => "read_resource",
         }
     }
 
@@ -124,6 +126,7 @@ impl ToolName {
             Self::ListActivities,
             Self::GetActivitySources,
             Self::SuggestCorrection,
+            Self::ReadResource,
         ]
         .into_iter()
         .find(|tool| tool.token() == value)
@@ -960,6 +963,7 @@ mod tests {
             ToolName::ListActivities,
             ToolName::GetActivitySources,
             ToolName::SuggestCorrection,
+            ToolName::ReadResource,
         ] {
             assert_eq!(ToolName::from_token(tool.token()), Some(tool));
         }

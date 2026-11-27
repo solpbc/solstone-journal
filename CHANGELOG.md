@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- connected agents that support MCP resources can now read allowed photos, screenshots, profile pics and audio clips directly from your journal under the same permissions, pause controls and activity trail (listed as `read_resource`).
 - daily maintenance runs at 2 a.m. in your journal’s time zone. you can change the time in settings → storage. if your journal sleeps through that time, it catches up when it wakes.
 - with an updated solstone app on a paired iphone or ipad, sources now lets you bring photos from your Photos library into your journal. the solstone app scans only photo details first without bringing in any photos, then your journal shows how many photos, days and thoughts each date range adds before any photos come in. your journal chooses photos from your moments, leaves out screenshots, videos, near-duplicates and most saved or shared images, and hidden photos are never read. chosen photos come in as small copies at the time and place they were taken. you can pause, widen your range, select photos to move to trash or turn the source off anytime, and photos already in your journal stay if you delete them from Photos or turn the source off.
 - connected agents now have a separate transactions permission (off by default) on the agents page and when connecting an agent, for receipts, orders, bookings, payments and transfers. transaction entries stay out of activities, entities, places and model runs.

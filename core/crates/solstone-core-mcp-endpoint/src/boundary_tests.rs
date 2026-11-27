@@ -23625,3 +23625,682 @@ fn list_activities_group_by_rollup_boundaries_and_zero_duration() {
         json!({"count": 0, "timed_count": 0, "duration_sec": 0})
     );
 }
+
+#[test]
+fn mcp_resources_cover_all_four_media_surfaces_and_enforce_grants_and_barriers() {
+    use crate::resources::{ResourceError, dispatch_authenticated_resource_read};
+    use solstone_core_entity::faceprints as fp;
+
+    let journal = fixture();
+    let root = journal.path();
+
+    let grant = |categories: &[&str], scope: ReadScope| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: categories.iter().map(|c| (*c).to_owned()).collect(),
+                    scope,
+                },
+            )
+            .unwrap();
+    };
+    let read_res = |conn: &str, uri: &str| {
+        dispatch_authenticated_resource_read(
+            root,
+            DispatchPrincipal {
+                connection: conn,
+                agent_identity: conn,
+            },
+            uri,
+            jiff::Timestamp::now(),
+        )
+    };
+    let solid_png = |width: u32, height: u32, rgb: [u8; 3]| {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(width, height, image::Rgb(rgb)))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    };
+
+    // 1. Seed imported photo (facet alpha) + imported screenshot (facet alpha) + screen screenshot segment + audio segment.
+    let photo_dir = root.join(format!("chronicle/{DAY}/import.image/110000_1"));
+    let photo2_dir = root.join(format!("chronicle/{DAY}/import.image/110100_1"));
+    let shot_dir = root.join(format!("chronicle/{DAY}/import.image/110200_1"));
+    for (dir, file, text, facet_json) in [
+        (
+            &photo_dir,
+            "image_transcript.md",
+            "resphotoone\n",
+            r#"[{"facet":"alpha"}]"#,
+        ),
+        (
+            &photo2_dir,
+            "image_transcript.md",
+            "resphototwo\n",
+            r#"[{"facet":"alpha"}]"#,
+        ),
+        (
+            &shot_dir,
+            "screenshot_transcript.md",
+            "resshotone\n",
+            r#"[{"facet":"alpha"}]"#,
+        ),
+    ] {
+        fs::create_dir_all(dir.join("talents")).unwrap();
+        fs::write(dir.join(file), text).unwrap();
+        fs::write(dir.join("talents/facets.json"), facet_json).unwrap();
+    }
+    fs::write(
+        photo_dir.join("original.png"),
+        solid_png(1200, 900, [10, 120, 200]),
+    )
+    .unwrap();
+    fs::write(
+        photo2_dir.join("original.png"),
+        solid_png(1200, 900, [200, 40, 10]),
+    )
+    .unwrap();
+    fs::write(
+        shot_dir.join("original.screenshot.png"),
+        solid_png(800, 600, [30, 180, 90]),
+    )
+    .unwrap();
+
+    // Screen recording segment with two displays to test both single display and choose_display.
+    let screen_seg = root.join(format!("chronicle/{DAY}/{STREAM}/120000_60"));
+    fs::create_dir_all(screen_seg.join("talents")).unwrap();
+    fs::write(
+        screen_seg.join("talents/screen.md"),
+        "screen segment summary\n",
+    )
+    .unwrap();
+    fs::write(
+        screen_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+    fs::write(
+        screen_seg.join("left_screen.jsonl"),
+        "{\"raw\":\"left_screen.webm\"}\n{\"timestamp\":0,\"analysis\":{\"visual_description\":\"a coloured square\"}}\n",
+    )
+    .unwrap();
+    fs::write(screen_seg.join("right_screen.jsonl"), "{}\n").unwrap();
+    fs::write(
+        screen_seg.join("left_screen.webm"),
+        include_bytes!("../../../fixtures/grab_corpus/distinct.mkv"),
+    )
+    .unwrap();
+
+    // Audio transcript segment with a short 2.5s recording (so a clip at start_ms=2000 is 500ms < MIN_CLIP_DURATION_MS).
+    let audio_seg = root.join(format!("chronicle/{DAY}/{STREAM}/130000_10"));
+    fs::create_dir_all(audio_seg.join("talents")).unwrap();
+    fs::write(
+        audio_seg.join("audio.jsonl"),
+        concat!(
+            r#"{"raw":"audio.wav"}"#,
+            "\n",
+            r#"{"start":"13:00:01","speaker":"owner","text":"resource audio clip test"}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        audio_seg.join("talents/facets.json"),
+        r#"[{"facet":"alpha"}]"#,
+    )
+    .unwrap();
+    let secret_meta = b"AUDIO_RESOURCE_SECRET_META";
+    let wav = synthetic_wav_with_metadata(3, secret_meta);
+    fs::write(audio_seg.join("audio.wav"), &wav).unwrap();
+
+    // Confirmed entity profile pic on entity-primary in facet alpha.
+    let mut crop_jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new(&mut crop_jpeg)
+        .encode_image(&image::RgbImage::from_pixel(
+            256,
+            256,
+            image::Rgb([90, 40, 190]),
+        ))
+        .unwrap();
+    let encoder = fp::Encoder {
+        id: "synthetic".into(),
+        sha256: "0".repeat(64),
+        width: 128,
+    };
+    let mut embedding = vec![0.0_f32; 128];
+    embedding[0] = 1.0;
+    let face_key = fp::FaceKey {
+        day: DAY.into(),
+        stream: STREAM.into(),
+        stream_layout: "named".into(),
+        segment_key: SEGMENT.into(),
+        source_name: "screen.webm".into(),
+        frame_id: 0,
+        face_idx: 0,
+    };
+    let crop = format!(
+        "{}-crops/0-0-test.jpg",
+        fp::accumulation::source_prefix("screen.webm")
+    );
+    let crop_file = fp::crop_path(root, &face_key, &crop).unwrap();
+    fs::create_dir_all(crop_file.parent().unwrap()).unwrap();
+    fs::write(&crop_file, &crop_jpeg).unwrap();
+    let face = fp::Face {
+        embedding,
+        metadata: fp::Metadata {
+            schema_version: 1,
+            key: face_key.clone(),
+            activities: BTreeSet::new(),
+            source: fp::Source::Anchored,
+            label_text: None,
+            quality: 0.9,
+            det_score: 1.0,
+            face_w: 100.0,
+            category: "meeting".into(),
+            crop: Some(crop),
+            added_at: "now".into(),
+            rejected: false,
+        },
+    };
+    fp::reconcile(
+        root,
+        &json!(["alpha", DAY, "test-meeting"]).to_string(),
+        &encoder,
+        &std::collections::BTreeMap::from([("entity-primary".into(), vec![face])]),
+    )
+    .unwrap();
+    fp::choose(root, "entity-primary", &face_key).unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+
+    // Full media grant across whole journal.
+    grant(
+        &[
+            "photos",
+            "screen_text",
+            "screenshots",
+            "entities",
+            "profile_pics",
+            "transcripts",
+            "audio_media",
+        ],
+        ReadScope::WholeJournal,
+    );
+
+    // --- Surface A: Imported photo (full, thumb, batch, cross-connection, kind denial, facet scope) ---
+    let p1_ref = probe(&journal, "search", json!({"query": "resphotoone"})).unwrap()["results"][0]
+        ["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let p2_ref = probe(&journal, "search", json!({"query": "resphototwo"})).unwrap()["results"][0]
+        ["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fetched_full = dispatch_output(&journal, "fetch", json!({"reference": p1_ref}));
+    let full_uri = fetched_full.value["picture"]["resource_uri"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(fetched_full.resource_links.len(), 1);
+    assert_eq!(fetched_full.resource_links[0].uri, full_uri);
+    assert_eq!(
+        fetched_full.resource_links[0].size,
+        fetched_full.images[0].len()
+    );
+    let full_blob = read_res(CONNECTION, &full_uri).expect("reads full photo resource");
+    assert_eq!(full_blob.mime_type, "image/jpeg");
+    assert_eq!(full_blob.bytes, fetched_full.images[0]);
+
+    let fetched_thumb = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"reference": p1_ref, "size": "thumb"}),
+    );
+    let thumb_uri = fetched_thumb.value["picture"]["resource_uri"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(thumb_uri.ends_with("?size=thumb"));
+    let thumb_blob = read_res(CONNECTION, &thumb_uri).expect("reads thumb photo resource");
+    assert_eq!(thumb_blob.bytes, fetched_thumb.images[0]);
+    assert!(thumb_blob.bytes.len() < full_blob.bytes.len());
+
+    // Batched fetch preserves image_content_index and generates distinct resource link names.
+    let batch_fetch = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"references": [p1_ref, p2_ref], "size": "thumb"}),
+    );
+    assert_eq!(batch_fetch.images.len(), 2);
+    assert_eq!(batch_fetch.resource_links.len(), 2);
+    assert_ne!(
+        batch_fetch.resource_links[0].name,
+        batch_fetch.resource_links[1].name
+    );
+    assert_eq!(batch_fetch.value["items"][0]["image_content_index"], 1);
+    assert_eq!(batch_fetch.value["items"][1]["image_content_index"], 2);
+    let batch_wire = crate::jsonrpc::media_tool_result_with_links(
+        batch_fetch.value.clone(),
+        None,
+        &batch_fetch.images,
+        &batch_fetch.audio,
+        &batch_fetch.resource_links,
+    );
+    assert_eq!(batch_wire["content"][0]["type"], "text");
+    assert_eq!(batch_wire["content"][1]["type"], "image");
+    assert_eq!(batch_wire["content"][2]["type"], "image");
+    assert_eq!(batch_wire["content"][3]["type"], "resource_link");
+    assert_eq!(batch_wire["content"][4]["type"], "resource_link");
+
+    // Another connection with photos grant cannot redeem CONNECTION's sealed entry token.
+    PermissionStore::open(root)
+        .set_permission(
+            "bearer:other-conn",
+            ReadPermission {
+                categories: vec!["photos".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        read_res("bearer:other-conn", &full_uri),
+        Err(ResourceError::NotFound { .. })
+    ));
+
+    // --- Surface B: Imported screenshot ---
+    let shot_ref = probe(&journal, "search", json!({"query": "resshotone"})).unwrap()["results"][0]
+        ["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fetched_shot = dispatch_output(&journal, "fetch", json!({"reference": shot_ref}));
+    let shot_uri = fetched_shot.value["picture"]["resource_uri"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let shot_blob = read_res(CONNECTION, &shot_uri).expect("reads imported screenshot resource");
+    assert_eq!(shot_blob.bytes, fetched_shot.images[0]);
+
+    // --- Surface C: Entity profile pic (both raw `@` and RFC 6570 `%40`) ---
+    let entities = probe(&journal, "list_entities", json!({})).unwrap();
+    let entity_ref = entities["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            let (_, id) = resolve_entity_reference(root, row["reference"].as_str().unwrap());
+            id == "entity-primary"
+        })
+        .unwrap()["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let got_entity = dispatch_output(&journal, "get_entity", json!({"reference": entity_ref}));
+    let entity_uri = got_entity.value["photo"]["resource_uri"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(got_entity.resource_links.len(), 1);
+    assert_eq!(got_entity.resource_links[0].uri, entity_uri);
+    let entity_blob = read_res(CONNECTION, &entity_uri).expect("reads entity profile pic");
+    assert_eq!(entity_blob.mime_type, "image/jpeg");
+    assert_eq!(entity_blob.bytes, got_entity.images[0]);
+    let encoded_entity_uri = entity_uri.replace('@', "%40");
+    let encoded_blob = read_res(CONNECTION, &encoded_entity_uri).expect("reads %40 entity URI");
+    assert_eq!(encoded_blob.bytes, entity_blob.bytes);
+
+    // --- Surface D: Screen screenshot moment (preserves `&` through literal_journal_values) ---
+    let seg_rows = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap();
+    let screen_ref = seg_rows["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| {
+            r["reference"]
+                .as_str()
+                .is_some_and(|s| s.contains("/120000_60/"))
+        })
+        .unwrap()["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let got_screen = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": screen_ref, "offset_ms": 0, "display": "left_screen"}),
+    );
+    let screen_uri = got_screen.value["picture"]["resource_uri"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        screen_uri.contains("?offset_ms=0&display=left_screen"),
+        "resource_uri must keep exact & delimiter: {screen_uri}"
+    );
+    let screen_blob = read_res(CONNECTION, &screen_uri).expect("reads screen resource");
+    assert_eq!(screen_blob.mime_type, "image/jpeg");
+    assert_eq!(screen_blob.bytes, got_screen.images[0]);
+    // Multi-display screen segment without display returns InvalidParams naming displays.
+    let choose_disp = read_res(
+        CONNECTION,
+        &format!("solstone://media/screen/{screen_ref}?offset_ms=0"),
+    );
+    assert!(
+        matches!(choose_disp, Err(ResourceError::InvalidParams(ref msg)) if msg.contains("left_screen") && msg.contains("right_screen")),
+        "expected choose_display error, got {choose_disp:?}"
+    );
+
+    // --- Surface E: Transcript audio clip (content vs base64, short trailing clip, metadata stripped) ---
+    let audio_ref = seg_rows["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| {
+            r["reference"]
+                .as_str()
+                .is_some_and(|s| s.contains("/130000_10/"))
+        })
+        .unwrap()["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let got_audio = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": audio_ref, "audio": true, "audio_start_ms": 2_500, "audio_duration_ms": 2_000}),
+    );
+    let audio_uri = got_audio.value["audio"]["resource_uri"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        audio_uri.contains("?start_ms=2500&duration_ms=2000&track="),
+        "audio resource_uri preserves requested duration_ms and &: {audio_uri}"
+    );
+    assert_eq!(got_audio.resource_links.len(), 1);
+    assert_eq!(got_audio.resource_links[0].mime_type, "audio/wav");
+    assert_eq!(got_audio.resource_links[0].uri, audio_uri);
+    assert_eq!(got_audio.value["audio"]["audio_content_index"], 1);
+    // Even though actual audio remaining is 500ms (< 1000ms), reading audio_uri back succeeds identically.
+    let audio_blob = read_res(CONNECTION, &audio_uri).expect("reads trailing audio resource");
+    assert_eq!(audio_blob.mime_type, "audio/wav");
+    assert_eq!(audio_blob.bytes, got_audio.audio[0]);
+    assert!(
+        !audio_blob
+            .bytes
+            .windows(secret_meta.len())
+            .any(|w| w == secret_meta),
+        "resource WAV must strip container metadata"
+    );
+
+    // audio_encoding: "base64" exposes audio.resource_uri while emitting zero resource_link blocks (content.len() == 1).
+    let got_b64 = dispatch_output(
+        &journal,
+        "get_transcript",
+        json!({"reference": audio_ref, "audio": true, "audio_duration_ms": 2_000, "audio_encoding": "base64"}),
+    );
+    assert!(got_b64.value["audio"]["resource_uri"].is_string());
+    assert!(got_b64.resource_links.is_empty());
+    let b64_wire = crate::jsonrpc::media_tool_result_with_links(
+        got_b64.value.clone(),
+        None,
+        &got_b64.images,
+        &got_b64.audio,
+        &got_b64.resource_links,
+    );
+    assert_eq!(b64_wire["content"].as_array().unwrap().len(), 1);
+
+    // Out-of-range audio offset returns NotFound("out_of_range").
+    let past_audio_uri =
+        format!("solstone://media/audio/{audio_ref}?start_ms=20000&duration_ms=2000");
+    assert!(matches!(
+        read_res(CONNECTION, &past_audio_uri),
+        Err(ResourceError::NotFound {
+            reason: "out_of_range",
+            ..
+        })
+    ));
+
+    // --- Grant & scope enforcement across all categories ---
+    // Remove audio_media -> audio refused with KindDenied(AudioMedia).
+    grant(&["transcripts"], ReadScope::WholeJournal);
+    assert_eq!(
+        read_res(CONNECTION, &audio_uri),
+        Err(ResourceError::KindDenied(AdmittedCategory::AudioMedia))
+    );
+    assert_eq!(
+        read_res(CONNECTION, &entity_uri),
+        Err(ResourceError::KindDenied(AdmittedCategory::Entities))
+    );
+    assert_eq!(
+        read_res(CONNECTION, &full_uri),
+        Err(ResourceError::PermissionDenied("no_permission"))
+    );
+    // Remove screenshots (keep photos + screen_text) -> screen refused with KindDenied(Screenshots),
+    // and imported screenshot entry reference minted at this generation refused with KindDenied(Screenshots).
+    grant(&["photos", "screen_text"], ReadScope::WholeJournal);
+    assert_eq!(
+        read_res(CONNECTION, &screen_uri),
+        Err(ResourceError::KindDenied(AdmittedCategory::Screenshots))
+    );
+    let fresh_shot_ref = probe(&journal, "search", json!({"query": "resshotone"})).unwrap()
+        ["results"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        read_res(
+            CONNECTION,
+            &format!("solstone://media/entry/{fresh_shot_ref}")
+        ),
+        Err(ResourceError::KindDenied(AdmittedCategory::Screenshots))
+    );
+    // Remove profile_pics via no_profile_pics -> entity profile pic refused with KindDenied(ProfilePics).
+    grant(&["entities", "no_profile_pics"], ReadScope::WholeJournal);
+    assert_eq!(
+        read_res(CONNECTION, &entity_uri),
+        Err(ResourceError::KindDenied(AdmittedCategory::ProfilePics))
+    );
+    // Facet scope excluding alpha -> alpha media returns NotFound.
+    grant(
+        &[
+            "photos",
+            "screen_text",
+            "screenshots",
+            "entities",
+            "profile_pics",
+            "transcripts",
+            "audio_media",
+        ],
+        ReadScope::Facets {
+            ids: vec![FACET_B.into()],
+        },
+    );
+    assert!(matches!(
+        read_res(CONNECTION, &entity_uri),
+        Err(ResourceError::NotFound { .. })
+    ));
+    assert!(matches!(
+        read_res(CONNECTION, &screen_uri),
+        Err(ResourceError::NotFound { .. })
+    ));
+    assert!(matches!(
+        read_res(CONNECTION, &audio_uri),
+        Err(ResourceError::NotFound { .. })
+    ));
+
+    // Owner faces switch off -> entity profile pic returns NotFound even with full grant.
+    grant(&["entities", "profile_pics"], ReadScope::WholeJournal);
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"faces":{"enabled":false}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        read_res(CONNECTION, &entity_uri),
+        Err(ResourceError::NotFound { .. })
+    ));
+
+    // Verify audit trail recorded read_resource served & refused entries without raw sealed tokens.
+    let audit = crate::activity::read_activity(
+        root,
+        &crate::activity::ActivityQuery {
+            connection: Some(CONNECTION.to_owned()),
+            tool: Some(solstone_core_mcp_audit::ToolName::ReadResource),
+            limit: 50,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(audit.entries.len() >= 8);
+    assert!(
+        audit
+            .entries
+            .iter()
+            .all(|e| e.tool_name == solstone_core_mcp_audit::ToolName::ReadResource)
+    );
+    let expected_entity_target = format!("facet:{FACET_A}/entity:entity-primary");
+    assert!(audit.entries.iter().any(|e| {
+        e.outcome == crate::activity::RecordedOutcome::Served
+            && e.result
+                .as_ref()
+                .is_some_and(|r| r.targets.iter().any(|t| t == &expected_entity_target))
+    }));
+    assert!(
+        audit
+            .entries
+            .iter()
+            .any(|e| e.outcome == crate::activity::RecordedOutcome::Refused)
+    );
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn mcp_resource_read_fails_closed_on_mid_read_permission_revocation_and_tombstone() {
+    use crate::resources::{ResourceError, dispatch_authenticated_resource_read};
+    use crate::source_freeze_barrier::{FreezePoint, run_with_source_freeze_barrier};
+
+    // 1. Mid-read permission revocation barrier on an audio resource.
+    let journal = fixture();
+    let root = journal.path().to_path_buf();
+    let seg = root.join("chronicle").join(DAY).join(STREAM).join(SEGMENT);
+    fs::write(
+        seg.join("audio.wav"),
+        synthetic_wav_with_metadata(2, b"revoked-resource"),
+    )
+    .unwrap();
+    PermissionStore::open(&root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "audio_media".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let seg_ref = probe(&journal, "list_transcripts", json!({"day": DAY})).unwrap()["transcripts"]
+        [0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let audio_uri = format!("solstone://media/audio/{seg_ref}?start_ms=0&duration_ms=2000");
+
+    let root_for_revoke = root.clone();
+    let (result, fired) = run_with_source_freeze_barrier(
+        FreezePoint::Before,
+        1,
+        move || {
+            PermissionStore::open(&root_for_revoke)
+                .set_permission(
+                    CONNECTION,
+                    ReadPermission {
+                        categories: vec!["transcripts".into()],
+                        scope: ReadScope::WholeJournal,
+                    },
+                )
+                .unwrap();
+        },
+        || {
+            dispatch_authenticated_resource_read(
+                &root,
+                DispatchPrincipal {
+                    connection: CONNECTION,
+                    agent_identity: CONNECTION,
+                },
+                &audio_uri,
+                jiff::Timestamp::now(),
+            )
+        },
+    );
+    assert!(fired, "revocation must run mid-read before release");
+    assert_eq!(
+        result,
+        Err(ResourceError::PermissionDenied("no_permission"))
+    );
+    let activity = crate::activity::read_activity(
+        &root,
+        &crate::activity::ActivityQuery {
+            connection: Some(CONNECTION.to_owned()),
+            tool: Some(solstone_core_mcp_audit::ToolName::ReadResource),
+            limit: 20,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        activity.entries[0].outcome,
+        crate::activity::RecordedOutcome::Refused
+    );
+
+    // 2. Mid-read tombstone removal barrier fails closed with NotFound.
+    PermissionStore::open(&root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".into(), "audio_media".into()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let root_for_tombstone = root.clone();
+    let (tomb_result, tomb_fired) = run_with_source_freeze_barrier(
+        FreezePoint::Before,
+        1,
+        move || {
+            let target = solstone_core_retention::Target {
+                day: DAY.to_owned(),
+                stream: STREAM.to_owned(),
+                dir: SEGMENT.to_owned(),
+            };
+            let outcome = solstone_core_retention::door::remove_segments(
+                &root_for_tombstone,
+                &[target],
+                "2026-10-17T12:00:00Z",
+                solstone_core_retention::RemovalReason::OwnerSegmentDelete,
+                "mid-read-resource-tombstone",
+            );
+            assert!(outcome.targets[0].not_removed.is_empty());
+        },
+        || {
+            dispatch_authenticated_resource_read(
+                &root,
+                DispatchPrincipal {
+                    connection: CONNECTION,
+                    agent_identity: CONNECTION,
+                },
+                &audio_uri,
+                jiff::Timestamp::now(),
+            )
+        },
+    );
+    assert!(tomb_fired, "tombstone must run mid-read");
+    assert!(matches!(tomb_result, Err(ResourceError::NotFound { .. })));
+}

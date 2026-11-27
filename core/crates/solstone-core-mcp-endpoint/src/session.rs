@@ -11,6 +11,7 @@ use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use tokio::time::Instant;
 
+use crate::jsonrpc::ProtocolVersion;
 use crate::tokens::{RandomSource, SystemRandomSource};
 
 const SESSION_ID_BYTES: usize = 16;
@@ -53,6 +54,7 @@ struct SessionRecord {
     generation: Option<u64>,
     admission_ordinal: u64,
     listed_while_paused: bool,
+    protocol_version: ProtocolVersion,
 }
 
 /// A reason session creation or ownership validation was rejected.
@@ -92,10 +94,26 @@ impl SessionTable {
     }
 
     /// Create one session bound to a durable opaque bearer-token identifier.
+    #[allow(dead_code)]
     pub(crate) fn create(&self, token_id: &str) -> Result<String, SessionError> {
-        self.create_with_generation(token_id, None)
+        self.create_with_protocol(token_id, ProtocolVersion::LATEST)
     }
 
+    /// Create one session recording the protocol revision negotiated during `initialize`.
+    pub(crate) fn create_with_protocol(
+        &self,
+        token_id: &str,
+        protocol_version: ProtocolVersion,
+    ) -> Result<String, SessionError> {
+        self.create_with_random_generation_and_protocol(
+            token_id,
+            None,
+            protocol_version,
+            &SystemRandomSource,
+        )
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn create_with_generation(
         &self,
         token_id: &str,
@@ -117,6 +135,21 @@ impl SessionTable {
         &self,
         token_id: &str,
         generation: Option<u64>,
+        random: &dyn RandomSource,
+    ) -> Result<String, SessionError> {
+        self.create_with_random_generation_and_protocol(
+            token_id,
+            generation,
+            ProtocolVersion::LATEST,
+            random,
+        )
+    }
+
+    fn create_with_random_generation_and_protocol(
+        &self,
+        token_id: &str,
+        generation: Option<u64>,
+        protocol_version: ProtocolVersion,
         random: &dyn RandomSource,
     ) -> Result<String, SessionError> {
         let session_id = complete_session_id(random)?;
@@ -165,9 +198,18 @@ impl SessionTable {
                 generation,
                 admission_ordinal: ordinal,
                 listed_while_paused: false,
+                protocol_version,
             },
         );
         Ok(session_id)
+    }
+
+    /// The protocol version negotiated when this session was initialized.
+    pub(crate) fn protocol_version(&self, session_id: &str) -> Option<ProtocolVersion> {
+        self.sessions
+            .lock()
+            .ok()
+            .and_then(|state| state.sessions.get(session_id).map(|s| s.protocol_version))
     }
 
     /// Verify that a supplied session remains live and belongs to this request's bearer token.
@@ -352,6 +394,27 @@ mod tests {
 
         // An unknown session is never stale.
         assert!(!sessions.tools_list_is_stale("no-such-session", Some(1)));
+    }
+
+    #[tokio::test]
+    async fn sessions_remember_their_negotiated_protocol_version() {
+        use crate::jsonrpc::ProtocolVersion;
+        let sessions = SessionTable::new();
+        let legacy = sessions
+            .create_with_protocol("token-1", ProtocolVersion::V2025_03_26)
+            .expect("legacy session");
+        let modern = sessions
+            .create_with_protocol("token-1", ProtocolVersion::V2025_11_25)
+            .expect("modern session");
+        assert_eq!(
+            sessions.protocol_version(&legacy),
+            Some(ProtocolVersion::V2025_03_26)
+        );
+        assert_eq!(
+            sessions.protocol_version(&modern),
+            Some(ProtocolVersion::V2025_11_25)
+        );
+        assert_eq!(sessions.protocol_version("unknown"), None);
     }
 
     struct SequentialRandom(AtomicUsize);
