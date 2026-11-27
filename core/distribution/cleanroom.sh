@@ -141,10 +141,16 @@ fresh_journal_loop() {
 	solstone journal indexer --rescan
 	solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20200101 --stream default --limit 10 \
 		>"$journal/query.out"
-	grep -Fx 'Total: 1 chunk' "$journal/query.out" >/dev/null \
-		|| refuse "$rung query did not return exactly one chunk"
+	# Two chunks since spoken transcript lines are indexed (8b6c7ca71): the talent
+	# transcript and the audio.jsonl line, each carrying the sentinel.
+	grep -Fx 'Total: 2 chunks' "$journal/query.out" >/dev/null \
+		|| refuse "$rung query did not return exactly two chunks"
 	grep -F 'CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query lost its sentinel"
+	grep -F 'audio: # Audio Transcript  CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
+		|| refuse "$rung query lost its talent transcript chunk"
+	grep -F 'Speaker 1: CLEANROOM_SENTINEL_260817' "$journal/query.out" >/dev/null \
+		|| refuse "$rung query lost its spoken transcript line"
 	solstone call journal read \
 		--path chronicle/20200101/default/120000_001/talents/audio.md --max 16384 \
 		>"$journal/read.out"
@@ -452,8 +458,7 @@ talent_orchestration_rung() {
 	done
 	endpoint=http://$(cat "$journal/generation.addr")
 	setup_fixture_journal "$journal"
-	# Keep cadence out of the controlled daily catchup batch. The valid sense
-	# facet now also exercises the empty entity-suggestion daily path.
+	# Keep cadence out of the controlled daily catchup batch.
 	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"talent_overrides\":{\"talent.system.pulse\":{\"disabled\":true}},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
 		>"$journal/config/journal.json"
 	export SOLSTONE_JOURNAL=$journal
@@ -499,14 +504,32 @@ talent_orchestration_rung() {
 		|| refuse "orchestration daily schedule metadata missing"
 	! grep -F 'fallback' "$journal/config/schedules.json" >/dev/null \
 		|| refuse "orchestration fallback leaked into schedule metadata"
+	# The fixture's Sense reply is idle, and idle hygiene (5fb055ad0) clears
+	# an idle answer's facets, so the reprocessed day has no active facet.
+	# The daily batch must still consider entity_suggest for the setup facet
+	# and skip it for that reason, without a model call or an output file.
+	# With an active facet it would still make no model call here: a fresh
+	# journal has no entity candidates, so cb3777ba2 writes the empty result.
 	sorted=$(LC_ALL=C sort "$journal/generation-evidence")
 	[ "$sorted" = "daily_schedule
-entity_suggest
 morning_briefing
 sense" ] || {
 		cat "$journal/generation-evidence" >&2
 		refuse "generation fixture saw an incomplete or unexpected production daily batch"
 	}
+	facets=$(tr -d '[:space:]' <"$target_segment/talents/facets.json") \
+		|| refuse "orchestration segment facets missing"
+	[ "$facets" = '[]' ] || refuse "orchestration idle sense kept facets: $facets"
+	set -- "$journal/chronicle/$target_day/health"/oplog--think~*--daily~*.jsonl
+	[ -f "$1" ] || refuse "orchestration daily run log missing"
+	cat "$@" | grep -F '"event":"talent.skip"' \
+		| grep -F '"mode":"daily"' \
+		| grep -F '"name":"entities:entity_suggest"' \
+		| grep -F '"reason":"no_active_facets"' \
+		| grep -F '"facet":"personal"' >/dev/null \
+		|| refuse "orchestration daily batch did not skip entity_suggest for no active facet"
+	set -- "$journal"/facets/*/entities/*_observer_suggestions.json
+	[ ! -e "$1" ] || refuse "orchestration skipped entity_suggest still published suggestions"
 	set -- "$journal"/talents/daily_schedule/*.jsonl
 	if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
 		refuse "orchestration daily_schedule terminal event log missing"

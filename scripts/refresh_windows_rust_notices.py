@@ -1448,6 +1448,27 @@ PERMISSIVE_LICENSE_IDS = frozenset(
     }
 )
 LICENSE_FILE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE")
+REUSE_LICENSE_DIRECTORY = "LICENSES"
+
+
+def crate_licence_files(directory: Path) -> list[Path]:
+    """A crate's own licence texts: its top-level licence files, then the
+    regular files directly inside a top-level REUSE `LICENSES/` directory
+    (https://reuse.software/spec/). Some crates publish their texts only
+    there (mail-parser and hashify carry `LICENSES/Apache-2.0.txt` and
+    `LICENSES/MIT.txt`); nothing deeper and no symlink is read."""
+    found = [
+        path for path in sorted(directory.iterdir())
+        if path.is_file() and not path.is_symlink()
+        and path.name.upper().startswith(LICENSE_FILE_PREFIXES)
+    ]
+    reuse = directory / REUSE_LICENSE_DIRECTORY
+    if reuse.is_dir() and not reuse.is_symlink():
+        found += [
+            path for path in sorted(reuse.iterdir())
+            if path.is_file() and not path.is_symlink()
+        ]
+    return found
 
 
 def vendored_package_metadata(
@@ -1694,24 +1715,23 @@ def added_package_rows(
                     path.read_bytes()
                 )
         references = []
-        for path in sorted(directory.iterdir()):
-            if path.is_file() and path.name.upper().startswith(LICENSE_FILE_PREFIXES):
-                data = path.read_bytes()
-                references.append(
-                    (
-                        {
-                            "bytes": len(data),
-                            "sha256": sha256_bytes(data),
-                            "source": {
-                                "archive_sha256": lock_row["checksum"],
-                                "kind": "cargo-registry-archive",
-                                "member": path.name,
-                                "source_url": f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
-                            },
+        for path in crate_licence_files(directory):
+            data = path.read_bytes()
+            references.append(
+                (
+                    {
+                        "bytes": len(data),
+                        "sha256": sha256_bytes(data),
+                        "source": {
+                            "archive_sha256": lock_row["checksum"],
+                            "kind": "cargo-registry-archive",
+                            "member": path.relative_to(directory).as_posix(),
+                            "source_url": f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
                         },
-                        data,
-                    )
+                    },
+                    data,
                 )
+            )
         vcs_path = directory / ".cargo_vcs_info.json"
         vcs = {}
         if vcs_path.is_file():
