@@ -712,13 +712,13 @@ const LLAMA_NOTICES: &[SourceNotice] = &[
     },
     SourceNotice {
         member: "llama/vendor/stb/stb_image.h",
-        bytes: 283010,
-        sha256: "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3",
+        bytes: 277883,
+        sha256: "deb4f18c9ca21b751a1323019031c94c0bf5ca1d2929ef5913cc56f00aab6e91",
     },
     SourceNotice {
         member: "llama/vendor/miniaudio/miniaudio.h",
-        bytes: 4108168,
-        sha256: "ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89",
+        bytes: 4161918,
+        sha256: "6b376c7fbb1352ba1e0e432ab66069b335ea9405e45cb6c30b97ef0f3c9c3e0e",
     },
 ];
 

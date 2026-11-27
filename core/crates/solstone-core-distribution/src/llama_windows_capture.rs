@@ -195,9 +195,9 @@ pub(crate) fn inspect(
 ) -> Result<CaptureEvidence> {
     let inputs: Inputs = json(member(files, "report/inputs.json")?, "inputs")?;
     insist(
-        inputs.product_commit == "b5c8d0af63045d9445067a059f210c8421681266"
+        inputs.product_commit == "46fdaec0d1eec6e60fc4416705bebc3b59af4f54"
             && inputs.cargo_lock_sha256
-                == "93f966c0e8b84b6b1c0c7469cdf41759ee36fa4e6da30d19fdac5d53aa3d9d8d",
+                == "17a5b9a2a8c2d0958ce59a6fe490026b46450e426e06bbaa1ae2abafe0a54f21",
         "invalid product provenance",
     )?;
     insist(
@@ -459,7 +459,7 @@ pub(crate) fn inspect(
         ),
         (
             "engine-build/ggml/src/ggml-vulkan/ggml-vulkan.vcxproj".to_owned(),
-            format!("{sdk_options} /utf-8 /bigobj"),
+            format!("{sdk_options} /external:I \"{}/sdk/include\" /utf-8 /bigobj", norm(run_root)),
             true,
         ),
         (

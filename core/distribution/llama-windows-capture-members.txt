@@ -76,9 +76,9 @@ engine-build/tools/tokenize/INSTALL.vcxproj
 engine-build/tools/tokenize/llama-tokenize.vcxproj
 engine-build/tools/tts/INSTALL.vcxproj
 engine-build/tools/tts/llama-tts.vcxproj
-engine-build/tools/ui/INSTALL.vcxproj
-engine-build/tools/ui/llama-ui-assets.vcxproj
-engine-build/tools/ui/llama-ui.vcxproj
+engine-build/ui/apps/chat/INSTALL.vcxproj
+engine-build/ui/apps/chat/llama-ui-assets.vcxproj
+engine-build/ui/apps/chat/llama-ui.vcxproj
 engine-build/vendor/INSTALL.vcxproj
 engine-build/vendor/cpp-httplib/INSTALL.vcxproj
 engine-build/vendor/cpp-httplib/cpp-httplib.vcxproj
