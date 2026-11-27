@@ -9,8 +9,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - daily maintenance runs at 2 a.m. in your journal’s time zone. you can change the time in settings → storage. if your journal sleeps through that time, it catches up when it wakes.
-
-- exporting your journal now has its own page at `/app/export/` (reached from settings → guide, backup, settings → storage, import, or more, and pinnable to the side rail). your journal measures itself in the background, lets you choose a full copy or a smaller copy without processed audio and video (using the same processing checks as media offload so transcripts, summaries, photos, kept imports and unprocessed recordings always stay in), shows any older days living only in your backup, checks free space on your journal's drive up front, and prepares a resumable copy in the background with a SHA-256 checksum. unused copies are removed automatically after 24 hours of inactivity, or you can discard one anytime. `solstone journal archive export` adds `--without-processed-media` and prints a note when older days live only in your backup.
 - with an updated solstone app on a paired iphone or ipad, sources now lets you bring photos from your Photos library into your journal. the solstone app scans only photo details first without bringing in any photos, then your journal shows how many photos, days and thoughts each date range adds before any photos come in. your journal chooses photos from your moments, leaves out screenshots, videos, near-duplicates and most saved or shared images, and hidden photos are never read. chosen photos come in as small copies at the time and place they were taken. you can pause, widen your range, select photos to move to trash or turn the source off anytime, and photos already in your journal stay if you delete them from Photos or turn the source off.
 - connected agents now have a separate transactions permission (off by default) on the agents page and when connecting an agent, for receipts, orders, bookings, payments and transfers. transaction entries stay out of activities, entities, places and model runs.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
@@ -20,29 +18,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- connected agents can now ask your journal for counts across a date range in a single request (such as transcripts, notes, photos and calendar events), broken down by kind and source with monthly counts by kind.
-- when a connected agent can read your weekly view and body summaries, it can now get monthly and full-range movement, sleep and heart-reading totals alongside daily summaries. the places list your agent receives now adds a combined count of visits and stays and the sum of their known durations for each place, and grouped activity totals now report the number of groups returned.
-- connected agents also receive updated instructions for date-range counts in one request, monthly and full-range body totals, places visit and duration totals, the number of activity groups returned, and building interactive HTML pages when a visual recap or deck includes your photos or profile pics.
 - the import page on android and iphone development journals no longer has a Plaud row.
-- when a connected agent lists activities, filtering by person or activity type now runs directly on your activity list instead of falling back to search, keeping durations, facets and participant details intact, and person or entity filters can now be narrowed by how they took part (such as attended, heard, corresponded or mentioned). connected agents can also ask your journal to group matching activities by month, day, facet, activity type or person for exact counts and summed durations in a single call, or ask for shorter activity entries (without people, place or calendar details) when scanning many activities. filtering by kind of material or place stays in search and transcript lists rather than the activity list.
-- when an agent may see only facets you choose, the activity list now marks each activity that has no source the agent may read, so it knows before it asks for them. thanks @dvanduzer for the report (#415).
-- connected agents also receive updated instructions for filtering activities by person, role or activity type, grouping activities for counts and totals, requesting shorter activity entries, and reading underlying sources before quoting.
-- exporting a journal now skips recompressing larger PNG images that are already compressed, so exports with many screenshots finish faster without changing what is included.
-- when older notes, messages, documents, screenshots or photos from past days land in your journal, your journal now adds activities for the ones those days were missing and leaves the activities already there as they are. days that come in through a synced source after you connect it, like screenshots from your phone or email you sent, are no longer treated as older history: they now count when your journal works out whether it's past its first night, and each gets a daily briefing if one is missing from the past week. in older email, people now come from who a message was from and to, and on days that hold only imported or synced material, newsletters and shared mailboxes like support@ no longer become people.
 
 ### Fixed
 
 - when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
-
-- sources that used to show "your device" can now show the names you gave them in lists and summaries instead of collapsing into numbered device labels (connected agents still group Obsidian notes under Obsidian).
-- background face-matching maintenance no longer reports a failed scheduled run when it waits for other journal work or skips a single unreadable recording, and running a maintenance task manually now clears an earlier failure once it finishes cleanly.
-- when the daily maintenance time changes, your journal no longer runs every daily task at once; the new time takes effect at the next scheduled window.
-- media offload and offloaded-media restores that stop because of another active backup or restore operation or unfinished backup work now report that cause instead of saying your journal could not be confirmed.
-- when you type requests to an agent in a tmux session you've listed in `output_sessions` while you stay attached to it, your journal now keeps those requests as yours and usually describes the work that follows as the agent's, once your solstone app for mac or linux is updated too. before, such a session read as your own. thanks @dvanduzer for the retest (#424).
-- your connected agent can get the first results faster when it searches a large journal for a common word. your agent can also look up a week faster when your journal has a lot of people in it.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- deleting a memory an agent saved now also drops it from detected entities, as deleting a segment does, so a name found only in that memory leaves search. recovering the memory from the trash puts those names back. summaries made from it elsewhere in your journal still stay where they are.
-- you can now import files that used to stop with a size error when you open your journal in a browser from journal setup on windows.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -74,11 +55,40 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the settings page on an iphone, choosing any section but facets or support from the section menu now leaves focus on the menu. before, focus was dropped as the menu closed.
 - on an iphone, choosing from a menu now leaves focus on that menu in more places: in settings, the pronouns, transcription backend and parakeet.cpp device menus; the level menu in health's service logs; the source menu in import; the "call it" menu on a map place; and the type menu when you edit an entity. before, focus was dropped as the menu closed.
 - on an iphone, when a priority change on the settings page can't be saved, its menu no longer opens again by itself.
-- on windows, exporting a journal with large files, many files or long file paths no longer fails, and `solstone journal archive export` writes the archive in one pass instead of copying it through a second temporary file.
 
 ### Removed
 
 - the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
+
+## [2.0.93] - 2026-11-27
+
+### Added
+
+- exporting your journal now has its own page at `/app/export/` (reached from settings → guide, backup, settings → storage, import, or more, and pinnable to the side rail). your journal works out how big each copy will be in the background, lets you choose a full copy or a smaller copy without processed audio and video (using the same processing checks as media offload so transcripts, summaries, photos, kept imports and unprocessed recordings always stay in), shows any older days living only in your backup, checks free space on your journal's drive up front, and prepares a resumable copy in the background with a SHA-256 checksum. unused copies are removed automatically after 24 hours of inactivity, or you can discard one anytime. `solstone journal archive export` adds `--without-processed-media` and prints a note when older days live only in your backup.
+
+### Changed
+
+- connected agents can now ask your journal for counts of what they may see across a date range in a single request (such as transcripts, notes, photos and calendar events), broken down by kind and source with monthly counts by kind.
+- when a connected agent can read your weekly view and body summaries, it can now get monthly and full-range movement, sleep and heart-reading totals alongside daily summaries. the places list your agent receives now adds a combined count of visits and stays and the sum of their known durations for each place.
+- when a connected agent lists activities, filtering by person or activity type now runs directly on your activity list instead of falling back to search, keeping durations, facets and participant details intact, and person or entity filters can now be narrowed by how they took part (such as attended, heard, corresponded or mentioned). connected agents can also ask your journal to group matching activities by month, day, facet, activity type or person for exact counts and summed durations in a single call, or ask for shorter activity entries (without people, place or calendar details) when scanning many activities. filtering by kind of material or place stays in search and transcript lists rather than the activity list.
+- when an agent may see only facets you choose, the activity list now marks each activity that has no source the agent may read, so the agent knows which activities it can't read before asking for their sources. thanks @dvanduzer for the report (#415).
+- connected agents also receive updated instructions for date-range counts in one request, monthly and full-range body totals, places visit and duration totals, building interactive HTML pages when a visual recap or deck includes your photos or profile pics, filtering activities by person, role or activity type, grouping activities for counts and totals, requesting shorter activity entries, and reading underlying sources before quoting.
+- exporting a journal now skips recompressing larger PNG images that are already compressed, so exports with many screenshots finish faster without changing what is included.
+- when older notes, messages, documents, screenshots or photos from past days land in your journal, your journal now adds activities for the ones those days were missing and leaves the activities already there as they are. days that come in through a synced source after you connect it, like screenshots from your phone or email you sent, are no longer treated as older history: they now count when your journal works out whether it's past its first night, and each gets a daily briefing if one is missing from the past week. in older email, people now come from who a message was from and to, and on days that hold only imported or synced material, newsletters and shared mailboxes like support@ no longer become people.
+- in a browser, choosing a large file again after its transfer stopped now starts a fresh import instead of picking up where the earlier transfer left off, so a different file that only looks like the earlier one can't be joined to it. a transfer still open in its original tab carries on there.
+
+### Fixed
+
+- sources that used to show "your device" can now show the names you gave them in lists and summaries instead of collapsing into numbered device labels (connected agents still group Obsidian notes under Obsidian).
+- background face-matching maintenance no longer reports a failed scheduled run when it waits for other journal work or skips a single unreadable recording, and running a maintenance task manually now clears an earlier failure once it finishes cleanly.
+- when the daily maintenance time changes, your journal no longer runs every daily task at once; the new time takes effect at the next scheduled window.
+- media offload and offloaded-media restores that stop because of another active backup or restore operation or unfinished backup work now report that cause instead of saying your journal could not be confirmed.
+- when you type requests to an agent in a tmux session you've listed in `output_sessions` while you stay attached to it, your journal now keeps those requests as yours and usually describes the work that follows as the agent's, once your solstone app for mac or linux is updated too. before, such a session read as your own. thanks @dvanduzer for the retest (#424).
+- your connected agent can get the first results faster when it searches a large journal for a common word. your agent can also look up a week faster when your journal has a lot of people in it.
+- deleting a memory an agent saved now also drops it from detected entities, as deleting a segment does, so a name found only in that memory leaves search. recovering the memory from the trash puts those names back. summaries made from it elsewhere in your journal still stay where they are.
+- on windows, when you open your journal in a browser from journal setup, files that used to stop with a size error now import.
+- on windows, exporting a journal with large files, many files or long file paths no longer fails, and `solstone journal archive export` writes the archive in one pass instead of copying it through a second temporary file.
+- the import review count on the side rail is easier to read, and the pin offer's buttons and the close and dismiss buttons are now full touch size on touch laptops and wider tablets.
 
 ## [2.0.92] - 2026-11-26
 
