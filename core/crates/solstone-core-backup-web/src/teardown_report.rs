@@ -127,15 +127,7 @@ fn run_refusal(value: &TeardownRunRefusal) -> Value {
 }
 
 fn budget(value: AdmissionError) -> &'static str {
-    match value {
-        AdmissionError::ConfigurationUnavailable => "configuration_unavailable",
-        AdmissionError::ConfigurationChanged => "configuration_changed",
-        AdmissionError::JournalIdentityChanged => "journal_identity_changed",
-        AdmissionError::DeadlineExceeded => "deadline_exceeded",
-        AdmissionError::ClockChanged => "clock_changed",
-        AdmissionError::CredentialsExpired => "credentials_expired",
-        AdmissionError::Cancelled => "cancelled",
-    }
+    value.code()
 }
 
 fn configuration(value: TeardownConfigurationRefusal) -> &'static str {

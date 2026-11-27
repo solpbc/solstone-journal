@@ -447,16 +447,7 @@ fn generation(value: &str) -> Result<u64, ApprovalStatusRefusal> {
 fn unused_reason(refusal: &UnusedRefusal) -> String {
     match refusal {
         UnusedRefusal::Start => "worker_start_failed".into(),
-        UnusedRefusal::Budget(error) => match error {
-            AdmissionError::ConfigurationUnavailable => "configuration_unavailable",
-            AdmissionError::ConfigurationChanged => "configuration_changed",
-            AdmissionError::JournalIdentityChanged => "journal_identity_changed",
-            AdmissionError::DeadlineExceeded => "deadline_exceeded",
-            AdmissionError::ClockChanged => "clock_changed",
-            AdmissionError::CredentialsExpired => "credentials_expired",
-            AdmissionError::Cancelled => "cancelled",
-        }
-        .into(),
+        UnusedRefusal::Budget(error) => error.code().into(),
         UnusedRefusal::Tools(error) => error.to_string(),
         UnusedRefusal::ResolverUnknown => "resolver_unknown".into(),
         UnusedRefusal::Trash => "trash_unavailable".into(),

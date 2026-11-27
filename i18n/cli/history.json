@@ -78298,6 +78298,30 @@
       "selector": null
     },
     {
+      "id": "journal.cli.offload.stopped.archive.activity.busy",
+      "resource": "m6a6f75726e616c2e636c692e6f66666c6f61642e73746f707065642e617263686976652e61637469766974792e62757379",
+      "namespace": "journal.cli.offload.stopped.archive.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.offload.stopped.archive.activity.unavailable",
+      "resource": "m6a6f75726e616c2e636c692e6f66666c6f61642e73746f707065642e617263686976652e61637469766974792e756e617661696c61626c65",
+      "namespace": "journal.cli.offload.stopped.archive.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
       "id": "journal.cli.offload.stopped.archive.cancelled",
       "resource": "m6a6f75726e616c2e636c692e6f66666c6f61642e73746f707065642e617263686976652e63616e63656c6c6564",
       "namespace": "journal.cli.offload.stopped.archive",
@@ -78469,6 +78493,18 @@
       "id": "journal.cli.offload.stopped.archive.tool.unavailable",
       "resource": "m6a6f75726e616c2e636c692e6f66666c6f61642e73746f707065642e617263686976652e746f6f6c2e756e617661696c61626c65",
       "namespace": "journal.cli.offload.stopped.archive.tool",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.cli.offload.stopped.archive.unresolved.activity",
+      "resource": "m6a6f75726e616c2e636c692e6f66666c6f61642e73746f707065642e617263686976652e756e7265736f6c7665642e6163746976697479",
+      "namespace": "journal.cli.offload.stopped.archive.unresolved",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,

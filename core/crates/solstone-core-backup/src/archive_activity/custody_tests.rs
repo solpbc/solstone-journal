@@ -283,7 +283,8 @@ fn admission_retires_only_reservations_whose_owner_ended_empty() {
     let live = ArchiveActivity::prepare(Arc::clone(&root)).unwrap();
     let ended = live.carrier().diagnostic_path();
     // A live operation keeps its reservation through any other admission.
-    assert!(ArchiveActivity::prepare(Arc::clone(&root)).is_err());
+    let busy_err = ArchiveActivity::prepare(Arc::clone(&root)).err().unwrap();
+    assert_eq!(busy_err.reason(), AdmissionError::ActivityBusy);
     assert!(ended.is_dir());
     // It ends without retiring the reservation, as on a crash or restart.
     drop(live);
@@ -296,9 +297,82 @@ fn admission_retires_only_reservations_whose_owner_ended_empty() {
     drop(next);
     fs::write(occupied.join("payload"), b"unpublished copy").unwrap();
     let refused = ArchiveActivity::prepare(Arc::clone(&root)).err().unwrap();
+    assert_eq!(refused.reason(), AdmissionError::UnresolvedActivity);
     assert_eq!(refused.error().to_string(), "unresolved journal activity");
     assert_eq!(
         fs::read(occupied.join("payload")).unwrap(),
         b"unpublished copy"
     );
+}
+
+#[test]
+fn preparation_failures_report_distinct_causes_instead_of_journal_identity_changed() {
+    let (_temp, root, clock) = fixture();
+
+    // Busy lock reports ActivityBusy, not JournalIdentityChanged.
+    let held = ActivityLease::try_acquire(Arc::clone(&root)).unwrap();
+    let busy_failure = match OwnedArchivePreparationInput::capture(
+        Arc::clone(&root),
+        ArchiveBudget::new(clock.as_ref()).unwrap(),
+        Arc::clone(&clock),
+    ) {
+        Err(failure) => failure,
+        Ok(_) => panic!("busy lease must refuse capture"),
+    };
+    assert_eq!(busy_failure.reason(), AdmissionError::ActivityBusy);
+    assert_eq!(busy_failure.reason().code(), "activity_busy");
+    assert!(
+        busy_failure
+            .preparation_detail()
+            .as_deref()
+            .is_some_and(|detail| detail.contains("busy")),
+        "expected busy detail: {:?}",
+        busy_failure.preparation_detail()
+    );
+    drop(held);
+
+    // Unresolved journal activity reports UnresolvedActivity, not JournalIdentityChanged.
+    let (input, _custody) = capture(&root, &clock);
+    let occupied = root.canonical_path().join(".tmp-offload-occupied");
+    fs::create_dir(&occupied).unwrap();
+    fs::write(occupied.join("payload"), b"unpublished copy").unwrap();
+    let unresolved = match input.prepare() {
+        Err(failure) => failure,
+        Ok(_) => panic!("unresolved activity must refuse prepare"),
+    };
+    assert_eq!(unresolved.reason(), AdmissionError::UnresolvedActivity);
+    assert_eq!(unresolved.reason().code(), "unresolved_activity");
+    assert_eq!(
+        unresolved.preparation_detail().as_deref(),
+        Some("unresolved journal activity")
+    );
+    drop(_custody);
+    fs::remove_dir_all(&occupied).unwrap();
+
+    // Actual journal root replacement still reports JournalIdentityChanged.
+    let parent = tempfile::tempdir().unwrap();
+    let live_dir = parent.path().join("journal");
+    fs::create_dir_all(live_dir.join("config")).unwrap();
+    fs::write(
+        live_dir.join("config/journal.json"),
+        br#"{"backup":{"enabled":true,"mode":"byo"}}"#,
+    )
+    .unwrap();
+    let live_root = Arc::new(JournalRoot::open(&live_dir).unwrap());
+    let moved_dir = parent.path().join("moved");
+    fs::rename(&live_dir, &moved_dir).unwrap();
+    fs::create_dir_all(live_dir.join("config")).unwrap();
+    let root_changed = match OwnedArchivePreparationInput::capture(
+        Arc::clone(&live_root),
+        ArchiveBudget::new(clock.as_ref()).unwrap(),
+        Arc::clone(&clock),
+    ) {
+        Err(failure) => failure,
+        Ok(_) => panic!("replaced root must refuse capture"),
+    };
+    assert_eq!(
+        root_changed.reason(),
+        AdmissionError::JournalIdentityChanged
+    );
+    assert_eq!(root_changed.reason().code(), "journal_identity_changed");
 }

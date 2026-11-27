@@ -211,15 +211,7 @@ fn with_settlement_detail(
 }
 
 fn admission_code(error: AdmissionError) -> &'static str {
-    match error {
-        AdmissionError::ConfigurationUnavailable => "configuration_unavailable",
-        AdmissionError::ConfigurationChanged => "configuration_changed",
-        AdmissionError::JournalIdentityChanged => "journal_identity_changed",
-        AdmissionError::DeadlineExceeded => "deadline_exceeded",
-        AdmissionError::ClockChanged => "clock_changed",
-        AdmissionError::CredentialsExpired => "credentials_expired",
-        AdmissionError::Cancelled => "cancelled",
-    }
+    error.code()
 }
 
 fn archive_reason(error: &ArchiveError) -> &'static str {
@@ -449,10 +441,13 @@ fn run_read(
     };
     let preparation_refused =
         |failure: OwnedArchivePreparationFailure, custody: Option<ArchivePreparationCustody>| {
-            let result = with_detail(
-                base("refused", "restore_held", day),
-                admission_code(failure.reason()).into(),
-            );
+            let detail = match failure.preparation_detail() {
+                Some(prep_detail) => {
+                    format!("{}: {prep_detail}", admission_code(failure.reason()))
+                }
+                None => admission_code(failure.reason()).into(),
+            };
+            let result = with_detail(base("refused", "restore_held", day), detail);
             OwnedRestoreCliRun::new(
                 Custody::PreparationFailure {
                     _failure: Box::new(failure),

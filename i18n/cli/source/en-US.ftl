@@ -2334,6 +2334,10 @@ journal.cli.offload.result.verification.missing = no backup verification has com
 
 journal.cli.offload.result.verification.overdue = backup verification hasn't succeeded recently enough
 
+journal.cli.offload.stopped.archive.activity.busy = offload stopped: another backup or restore operation is already running.
+
+journal.cli.offload.stopped.archive.activity.unavailable = offload stopped: backup or restore work could not be prepared.
+
 journal.cli.offload.stopped.archive.cancelled = offload stopped: the archive operation was cancelled.
 
 journal.cli.offload.stopped.archive.clock.changed = offload stopped: the archive clock moved backward.
@@ -2363,6 +2367,8 @@ journal.cli.offload.stopped.archive.snapshot.identity.invalid = offload stopped:
 journal.cli.offload.stopped.archive.source.unavailable = offload stopped: the prepared archive files could not be confirmed.
 
 journal.cli.offload.stopped.archive.tool.unavailable = offload stopped: an archive tool is unavailable.
+
+journal.cli.offload.stopped.archive.unresolved.activity = offload stopped: your journal still has unfinished backup or restore work.
 
 journal.cli.offload.stopped.creation = offload stopped: making proposals did not finish.
 

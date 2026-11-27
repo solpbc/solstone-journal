@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive unresolved activity.",
+  "context": "Journal command-line text for stopped archive unresolved activity.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2f63f7d41fa38e435b93f79e4c8157c38cdd86e94da68c88fedb5a20b414987a",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

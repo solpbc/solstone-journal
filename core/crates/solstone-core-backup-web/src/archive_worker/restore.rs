@@ -110,16 +110,7 @@ impl UnusedRefusal {
             Self::Start => "worker_start_failed".into(),
             Self::ResolverUnknown => "resolver_unknown".into(),
             Self::Tools(error) => error.to_string(),
-            Self::Budget(error) => match error {
-                AdmissionError::ConfigurationUnavailable => "configuration_unavailable",
-                AdmissionError::ConfigurationChanged => "configuration_changed",
-                AdmissionError::JournalIdentityChanged => "journal_identity_changed",
-                AdmissionError::DeadlineExceeded => "deadline_exceeded",
-                AdmissionError::ClockChanged => "clock_changed",
-                AdmissionError::CredentialsExpired => "credentials_expired",
-                AdmissionError::Cancelled => "cancelled",
-            }
-            .into(),
+            Self::Budget(error) => error.code().into(),
         }
     }
 }

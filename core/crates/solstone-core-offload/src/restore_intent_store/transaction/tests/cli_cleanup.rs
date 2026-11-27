@@ -380,3 +380,25 @@ fn ordinary_cli_never_reopens_a_replaced_root_before_activity_admission() {
         original_intent
     );
 }
+
+#[test]
+fn busy_activity_lease_refuses_cli_restore_as_activity_busy_not_identity_changed() {
+    let f = Fixture::new(false);
+    let activity =
+        solstone_core_journal_io::activity::ActivityLease::try_acquire(Arc::clone(&f.root))
+            .unwrap();
+    let run = run_cli_restore(f.temp.path(), Arc::new(FixedClock), None);
+    assert_eq!(run.result().status, "refused");
+    assert_eq!(run.result().reason.as_deref(), Some("restore_held"));
+    assert_eq!(run.settlement(), CliRestoreSettlement::NotStarted);
+    let detail = run.result().reason_detail.as_deref().unwrap_or("");
+    assert!(
+        detail.starts_with("activity_busy"),
+        "busy restore must report activity_busy, not journal_identity_changed: {detail:?}"
+    );
+    assert!(
+        !detail.contains("journal_identity_changed"),
+        "busy restore must not report journal_identity_changed: {detail:?}"
+    );
+    drop(activity);
+}

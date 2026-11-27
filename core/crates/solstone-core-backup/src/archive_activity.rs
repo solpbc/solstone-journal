@@ -8,7 +8,9 @@ use std::io;
 use std::sync::Arc;
 
 use solstone_core_journal_io::JournalRoot;
-use solstone_core_journal_io::activity::ActivityLease;
+use solstone_core_journal_io::activity::{
+    ActivityAdmissionError, ActivityLease, ActivityUnavailable,
+};
 use solstone_core_journal_io::activity_obligations::observe_obligations;
 use solstone_core_journal_io::media::{
     ActivityCarrierPreparationFailure, ActivityCarrierRetirement, ActivityCarrierRetirementEffect,
@@ -36,6 +38,7 @@ pub struct ActivityPreparationFailure {
 }
 
 struct ActivityPreparationFailureInner {
+    reason: AdmissionError,
     error: io::Error,
     root: Arc<JournalRoot>,
     lease: Option<Arc<ActivityLease>>,
@@ -45,6 +48,7 @@ struct ActivityPreparationFailureInner {
 impl fmt::Debug for ActivityPreparationFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ActivityPreparationFailure")
+            .field("reason", &self.inner.reason)
             .field("kind", &self.inner.error.kind())
             .finish_non_exhaustive()
     }
@@ -57,6 +61,9 @@ impl fmt::Display for ActivityPreparationFailure {
 impl std::error::Error for ActivityPreparationFailure {}
 
 impl ActivityPreparationFailure {
+    pub fn reason(&self) -> AdmissionError {
+        self.inner.reason
+    }
     pub fn error(&self) -> &io::Error {
         &self.inner.error
     }
@@ -71,6 +78,18 @@ impl ActivityPreparationFailure {
     }
 }
 
+fn activity_admission_reason(error: &ActivityAdmissionError) -> AdmissionError {
+    match error {
+        ActivityAdmissionError::Busy => AdmissionError::ActivityBusy,
+        ActivityAdmissionError::Unavailable(ActivityUnavailable::Root(_)) => {
+            AdmissionError::JournalIdentityChanged
+        }
+        ActivityAdmissionError::Unavailable(
+            ActivityUnavailable::Entry(_) | ActivityUnavailable::Poisoned,
+        ) => AdmissionError::ActivityUnavailable,
+    }
+}
+
 impl ArchiveActivity {
     fn prepare(root: Arc<JournalRoot>) -> Result<Self, ActivityPreparationFailure> {
         let lease = Self::acquire(Arc::clone(&root))?;
@@ -80,6 +99,7 @@ impl ArchiveActivity {
     fn acquire(root: Arc<JournalRoot>) -> Result<Arc<ActivityLease>, ActivityPreparationFailure> {
         ActivityLease::try_acquire(Arc::clone(&root)).map_err(|error| ActivityPreparationFailure {
             inner: Box::new(ActivityPreparationFailureInner {
+                reason: activity_admission_reason(&error),
                 error: io::Error::other(error.to_string()),
                 root,
                 lease: None,
@@ -93,18 +113,21 @@ impl ArchiveActivity {
         lease: Arc<ActivityLease>,
     ) -> Result<Self, ActivityPreparationFailure> {
         let mut failure = ActivityPreparationFailureInner {
+            reason: AdmissionError::ActivityUnavailable,
             error: io::Error::other("activity preparation failed"),
             root: Arc::clone(&root),
             lease: Some(Arc::clone(&lease)),
             partial: None,
         };
         if !Arc::ptr_eq(lease.journal_root(), &root) {
+            failure.reason = AdmissionError::JournalIdentityChanged;
             failure.error = io::Error::other("original activity root changed");
             return Err(ActivityPreparationFailure {
                 inner: Box::new(failure),
             });
         }
         if let Err(error) = lease.revalidate() {
+            failure.reason = activity_admission_reason(&error);
             failure.error = io::Error::other(error);
             return Err(ActivityPreparationFailure {
                 inner: Box::new(failure),
@@ -115,6 +138,7 @@ impl ArchiveActivity {
         // Desktop observation failure still reports nothing retired. An
         // unqualified phone container refuses preparation.
         if let Err(error) = retire_orphan_root_carriers(&lease) {
+            failure.reason = AdmissionError::ActivityUnavailable;
             failure.error = error;
             return Err(ActivityPreparationFailure {
                 inner: Box::new(failure),
@@ -123,6 +147,7 @@ impl ArchiveActivity {
         let census = match observe_obligations(&root) {
             Ok(census) => census,
             Err(error) => {
+                failure.reason = AdmissionError::ActivityUnavailable;
                 failure.error = io::Error::other(error.to_string());
                 return Err(ActivityPreparationFailure {
                     inner: Box::new(failure),
@@ -130,6 +155,7 @@ impl ArchiveActivity {
             }
         };
         if !census.entries().is_empty() {
+            failure.reason = AdmissionError::UnresolvedActivity;
             failure.error = io::Error::other("unresolved journal activity");
             return Err(ActivityPreparationFailure {
                 inner: Box::new(failure),
@@ -143,6 +169,7 @@ impl ArchiveActivity {
                 ),
             }),
             Err(partial) => {
+                failure.reason = AdmissionError::ActivityUnavailable;
                 failure.error = io::Error::new(partial.error().kind(), partial.error().to_string());
                 failure.partial = Some(partial);
                 Err(ActivityPreparationFailure {
@@ -269,6 +296,22 @@ impl OwnedArchivePreparationFailure {
     }
     pub fn preparation(&self) -> Option<&ActivityPreparationFailure> {
         self.preparation.as_ref()
+    }
+    /// Underlying local preparation error when refusal came from activity
+    /// preparation rather than budget, cancellation, or configuration checks.
+    pub fn preparation_detail(&self) -> Option<String> {
+        if !matches!(
+            self.reason,
+            AdmissionError::ActivityBusy
+                | AdmissionError::UnresolvedActivity
+                | AdmissionError::ActivityUnavailable
+                | AdmissionError::JournalIdentityChanged
+        ) {
+            return None;
+        }
+        self.preparation
+            .as_ref()
+            .map(|prep| prep.error().to_string())
     }
     pub fn configuration(&self) -> Option<&ArchiveConfiguration> {
         self.configuration.as_deref()
@@ -498,6 +541,7 @@ impl<'a> PreparedArchiveOperation<'a> {
             if let Some(lease) = lease {
                 failure.preparation = Some(ActivityPreparationFailure {
                     inner: Box::new(ActivityPreparationFailureInner {
+                        reason,
                         error: io::Error::other(reason),
                         root: Arc::clone(&failure.root),
                         lease: Some(lease),
@@ -516,6 +560,7 @@ impl<'a> PreparedArchiveOperation<'a> {
         let activity = match prepared_activity {
             Ok(activity) => activity,
             Err(preparation) => {
+                failure.reason = preparation.reason();
                 failure.preparation = Some(preparation);
                 return Err(ArchiveOperationPreparationFailure {
                     inner: Box::new(failure),
@@ -791,6 +836,7 @@ impl OwnedArchivePreparationInput {
         let lease = match ArchiveActivity::acquire(Arc::clone(&root)) {
             Ok(lease) => lease,
             Err(preparation) => {
+                failure.reason = preparation.reason();
                 failure.preparation = Some(preparation);
                 return Err(failure);
             }

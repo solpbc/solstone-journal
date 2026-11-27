@@ -449,9 +449,7 @@ fn execute(
         Ok(pair) => pair,
         Err(failure) => {
             let mut terminal = Terminal::error("failed");
-            terminal.report = Some(
-                json!({"preparation":{"state":"refused","reason":failure.reason().to_string()}}),
-            );
+            terminal.report = Some(super::preparation_refused_report(&failure));
             return return_owned(
                 slot,
                 ticket,
@@ -466,9 +464,7 @@ fn execute(
     // Original lease custody stays outside preparation, preflight and admission.
     let admitted = catch_unwind(AssertUnwindSafe(|| {
         let prepared = input.prepare().map_err(|failure| {
-            terminal.report = Some(
-                json!({"preparation":{"state":"refused","reason":failure.reason().to_string()}}),
-            );
+            terminal.report = Some(super::preparation_refused_report(&failure));
             ArchivePayload::PreparationFailure(Box::new(failure))
         })?;
         #[cfg(all(test, feature = "full-tests", target_os = "linux"))]

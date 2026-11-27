@@ -275,6 +275,9 @@ impl Drop for LiveArchiveChild {
 pub enum AdmissionError {
     ConfigurationUnavailable,
     ConfigurationChanged,
+    ActivityBusy,
+    UnresolvedActivity,
+    ActivityUnavailable,
     JournalIdentityChanged,
     DeadlineExceeded,
     ClockChanged,
@@ -282,11 +285,31 @@ pub enum AdmissionError {
     Cancelled,
 }
 
+impl AdmissionError {
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::ConfigurationUnavailable => "configuration_unavailable",
+            Self::ConfigurationChanged => "configuration_changed",
+            Self::ActivityBusy => "activity_busy",
+            Self::UnresolvedActivity => "unresolved_activity",
+            Self::ActivityUnavailable => "activity_unavailable",
+            Self::JournalIdentityChanged => "journal_identity_changed",
+            Self::DeadlineExceeded => "deadline_exceeded",
+            Self::ClockChanged => "clock_changed",
+            Self::CredentialsExpired => "credentials_expired",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 impl fmt::Display for AdmissionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::ConfigurationUnavailable => "archive configuration could not be read",
             Self::ConfigurationChanged => "archive configuration changed",
+            Self::ActivityBusy => "another backup or restore operation is already running",
+            Self::UnresolvedActivity => "your journal still has unfinished backup or restore work",
+            Self::ActivityUnavailable => "backup or restore work could not be prepared",
             Self::JournalIdentityChanged => "your journal could not be confirmed",
             Self::DeadlineExceeded => "the archive operation deadline was reached",
             Self::ClockChanged => "the archive clock moved backward",

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive activity busy.",
+  "context": "Journal command-line text for stopped archive activity busy.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "949223922eb3bb25f715de6502e934a00e1589a9a18550e3607a1fa1aeacba7a",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

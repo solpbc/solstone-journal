@@ -14,6 +14,13 @@ pub(super) fn stopped_archive(locale: &str, error: ArchiveError) -> String {
         ArchiveError::ConfigurationChanged => {
             "journal.cli.offload.stopped.archive.configuration.changed"
         }
+        ArchiveError::ActivityBusy => "journal.cli.offload.stopped.archive.activity.busy",
+        ArchiveError::UnresolvedActivity => {
+            "journal.cli.offload.stopped.archive.unresolved.activity"
+        }
+        ArchiveError::ActivityUnavailable => {
+            "journal.cli.offload.stopped.archive.activity.unavailable"
+        }
         ArchiveError::JournalIdentityChanged => {
             "journal.cli.offload.stopped.archive.journal.identity.changed"
         }

@@ -1,0 +1,16 @@
+{
+  "description": "Journal command-line text for stopped archive activity unavailable.",
+  "context": "Journal command-line text for stopped archive activity unavailable.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c834859499d2da2a10610cb23acf49a02c2c14078388bbb7a0675c5e208a7ac1",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ]
+}

@@ -511,7 +511,13 @@ impl OwnedOffloadCliRun {
                 _ => text("journal.cli.offload.guidance.unfinished"),
             };
             match &self.custody {
-                // Name why admission refused; the closed message carries no secret.
+                // Name why preparation or admission refused; the closed message carries no secret.
+                Custody::PreparationFailure { failure, .. } => {
+                    format!(
+                        "{}\n{guidance}\n",
+                        stopped_archive(locale, failure.reason().into())
+                    )
+                }
                 Custody::AdmissionFailure { failure, .. } => {
                     format!("{}\n{guidance}\n", stopped_archive(locale, failure.error()))
                 }

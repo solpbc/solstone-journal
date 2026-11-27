@@ -842,6 +842,20 @@ pub struct PreparedArchiveWorker {
 }
 
 /// Consume one original admission; every refusal is parked before returning.
+pub(super) fn preparation_refused_report(
+    failure: &solstone_core_backup::archive_activity::OwnedArchivePreparationFailure,
+) -> serde_json::Value {
+    let mut preparation = serde_json::Map::from_iter([
+        ("state".to_owned(), json!("refused")),
+        ("code".to_owned(), json!(failure.reason().code())),
+        ("reason".to_owned(), json!(failure.reason().to_string())),
+    ]);
+    if let Some(detail) = failure.preparation_detail() {
+        preparation.insert("detail".to_owned(), json!(detail));
+    }
+    json!({"preparation": preparation})
+}
+
 pub fn prepare_read<'a>(
     slot: &SharedOperationSlot,
     begin: OwnedArchiveBegin,
@@ -896,9 +910,7 @@ pub(crate) fn prepare_read_in<'a>(
         Ok(pair) => pair,
         Err(failure) => {
             let mut terminal = Terminal::error("failed");
-            terminal.report = Some(
-                json!({"preparation":{"state":"refused","reason":failure.reason().to_string()}}),
-            );
+            terminal.report = Some(preparation_refused_report(&failure));
             return_owned(
                 slot,
                 ticket,
@@ -913,9 +925,7 @@ pub(crate) fn prepare_read_in<'a>(
     let mut phase = "preparation";
     let admitted = catch_unwind(AssertUnwindSafe(|| {
         let prepared = input.prepare().map_err(|failure| {
-            terminal.report = Some(
-                json!({"preparation":{"state":"refused","reason":failure.reason().to_string()}}),
-            );
+            terminal.report = Some(preparation_refused_report(&failure));
             ArchivePayload::PreparationFailure(Box::new(failure))
         })?;
         phase = "admission";
