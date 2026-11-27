@@ -30,6 +30,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
+
 - sources that used to show "your device" can now show the names you gave them in lists and summaries instead of collapsing into numbered device labels (connected agents still group Obsidian notes under Obsidian).
 - background face-matching maintenance no longer reports a failed scheduled run when it waits for other journal work or skips a single unreadable recording, and running a maintenance task manually now clears an earlier failure once it finishes cleanly.
 - when the daily maintenance time changes, your journal no longer runs every daily task at once; the new time takes effect at the next scheduled window.

@@ -148,6 +148,7 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-callosum --
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests provider_runtime || exit /b 1
 echo === cargo test --locked (late material reaches an old or finished day) ===
 call :run_exact_library "solstone-core-think-cli" "planner::tests::discovery_reaches_old_segments_and_never_queues_their_day_first" || exit /b 1
+call :run_exact_library "solstone-core-think-cli" "planner::owner_ask_tests::an_experience_ask_is_ranked_and_started_until_its_own_story_is_current" "full-tests" || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
 call :run_exact_library "solstone-core-generate-wire" "confidential::tests::nvattest_directory_refuses_config_outside_an_installed_windows_package" || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1

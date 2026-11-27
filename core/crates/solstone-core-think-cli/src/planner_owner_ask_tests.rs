@@ -238,6 +238,97 @@ fn activity_reference(day: &str, asked: &AskedActivity) -> String {
     format!("supervisor-activity-{day}-{}", unit.id().unwrap())
 }
 
+#[cfg(feature = "full-tests")]
+#[test]
+fn an_experience_ask_is_ranked_and_started_until_its_own_story_is_current() {
+    let root = journal();
+    let journal = root.path();
+    let day = "20260304";
+    activity(journal, day, "reading_100000", "100000_300");
+    assert!(
+        solstone_core_system_health::day_unpublished_segments(journal, day)
+            .unwrap()
+            .is_none()
+    );
+    let exp = owner_ask::AskedExperience {
+        facet: "work".into(),
+        anchor_day: day.into(),
+        experience_id: "exp_garden".into(),
+    };
+    let dir = journal.join("facets/work/experiences");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("20260304.jsonl");
+    let write_story = |composed_at: Option<&str>| {
+        std::fs::write(
+            &file,
+            serde_json::json!({
+                "id": exp.experience_id, "primary_facet": exp.facet, "anchor_day": day,
+                "started_at": "2026-03-04 10:00", "ended_at": "2026-03-04 11:00",
+                "activities": [{"day":day, "id":"reading_100000", "stream":"notes"}],
+                "composed_at": composed_at
+            })
+            .to_string(),
+        )
+        .unwrap();
+    };
+    let asked_at = "2026-03-05T00:00:00Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap()
+        .as_millisecond();
+    write_story(None);
+    let record = |when| {
+        owner_ask::record_experiences(journal, day, std::slice::from_ref(&exp), None, when).unwrap()
+    };
+    let first = record(asked_at);
+    let queue = queue(journal);
+    let offered = || {
+        reconcile_pass(journal, &queue, &AtomicBool::new(false), false)
+            .unwrap()
+            .offered
+    };
+    std::fs::write(&file, b"{").unwrap();
+    assert!(
+        offered()
+            .iter()
+            .all(|t| !t.request.reference.starts_with("supervisor-owner-exp-"))
+    );
+    assert!(
+        owner_ask::read(journal).unwrap()[&first.id]
+            .experiences
+            .contains(&exp)
+    );
+    write_story(None);
+    let task = offered()
+        .into_iter()
+        .find(|t| {
+            t.request
+                .cmd
+                .as_wire()
+                .iter()
+                .any(|arg| arg == "--experience")
+        })
+        .unwrap();
+    let owed = || still_owed(journal, &task, None, &|| Ok(())).unwrap();
+    assert!(
+        owed(),
+        "the story can run while daily work waits for a segment"
+    );
+    write_story(Some("2026-03-05T00:00:00Z"));
+    assert!(!owed(), "a story just composed satisfies the queued ask");
+    let second = record(asked_at + 1);
+    assert!(owed(), "a newer ask wants a new composition");
+    owner_ask::update(journal, &second.id, |_| Some(None)).unwrap();
+    assert!(!owed());
+    assert!(
+        offered()
+            .iter()
+            .all(|t| t.request.reference != task.request.reference)
+    );
+    assert!(!owner_ask::read(journal).unwrap().contains_key(&first.id));
+    write_story(None);
+    assert!(!owed(), "a stale queue entry alone cannot request a story");
+}
+
 #[test]
 fn an_ask_runs_exactly_its_activity_in_band_two_as_a_full_refresh() {
     let root = journal();
