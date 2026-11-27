@@ -2398,6 +2398,10 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
     if pending.backups && backup_erase::backups_on_checked(journal)? {
         backup_erase::write(journal, item)?;
     }
+    // Advance the permanent-erasure epoch BEFORE unlinking any files so a crash
+    // or full-disk epoch-write failure can never delete data while leaving a
+    // pre-erasure prepared export copy alive.
+    erasure_epoch::bump_erasure_epoch(journal)?;
     let files = trash_root(journal).join(&item.id).join(FILES_DIR);
     removal(
         journal,
@@ -2411,12 +2415,6 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
         io.remove_contained_tree(&files)
     })
     .map_err(|error| TrashError::Io(error.to_string()))?;
-    if let Err(error) = erasure_epoch::bump_erasure_epoch(journal) {
-        log::warn!(
-            "trash item {}: erased, but failed to advance erasure epoch: {error}",
-            item.id
-        );
-    }
     remove_item_dir(journal, item)
 }
 
@@ -4758,5 +4756,39 @@ mod tests {
         let after_sweep = read_erasure_epoch(&root).unwrap();
         assert_eq!(after_sweep.epoch, 2);
         assert_ne!(after_sweep.token, after_erase.token);
+    }
+
+    #[test]
+    fn permanent_erase_fails_before_removing_files_when_epoch_bump_fails() {
+        let (_dir, root) = journal();
+        let kind = Erasing::default();
+        let item = trashed_person(&root, &kind);
+        let files_dir = trash_root(&root).join(&item.id).join(FILES_DIR);
+        assert!(files_dir.exists());
+
+        // Block health/trash-erasure-epoch.json creation by placing a regular file at health.
+        let health = root.join("health");
+        if health.is_dir() {
+            std::fs::remove_dir_all(&health).unwrap();
+        }
+        std::fs::write(&health, b"not-a-directory").unwrap();
+
+        let err = erase(&root, &[&kind], &item.id, Action::Erase, web())
+            .expect_err("erase must fail if erasure epoch cannot advance");
+        assert!(matches!(err, TrashError::Io(_)));
+        assert!(
+            files_dir.exists(),
+            "trashed files must NOT be unlinked before erasure epoch advances"
+        );
+        assert_eq!(
+            read_item(&root, &item.id).unwrap().unwrap().state,
+            State::Erasing
+        );
+
+        // Once health/ is restored as a directory, sweep succeeds and bumps the epoch.
+        std::fs::remove_file(&health).unwrap();
+        sweep(&root, &[&kind], Timestamp::now());
+        assert!(read_item(&root, &item.id).unwrap().is_none());
+        assert_eq!(read_erasure_epoch(&root).unwrap().epoch, 1);
     }
 }

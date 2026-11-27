@@ -17,7 +17,7 @@ use solstone_core_journal_io::JournalRoot;
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof, ProofIdentity};
 use crate::live::{
     LIVE_METADATA_MAX_FILE_BYTES, LIVE_METADATA_TOTAL_BUDGET_BYTES, SnapshotMode,
-    is_live_append_only_jsonl, is_live_snapshottable_metadata,
+    is_live_append_only_jsonl, is_live_atomic_rewritable, is_live_snapshottable_metadata,
 };
 use crate::{
     ArchiveError, ArchiveMemberName, Inventory, InventoryEntry, JournalEntryKind,
@@ -400,6 +400,21 @@ impl ArchiveSource {
         if let Some(bytes) = self.live_snapshots.get(entry.member_name().as_str()) {
             return Ok(OpenedInventoryFile::from_snapshot(bytes.as_slice()));
         }
+        let allow_atomic_replace = self.snapshot_mode == SnapshotMode::LiveJournal
+            && is_live_atomic_rewritable(entry.member_name().as_str());
+        if allow_atomic_replace {
+            let (file, current_proof) =
+                open_current_regular_file(&self.root, entry.member_name(), entry.proof())?;
+            return Ok(OpenedInventoryFile::new(
+                File::from(file),
+                current_proof.size,
+                current_proof.size,
+                current_proof.identity,
+                Some((current_proof.mtime_sec, current_proof.mtime_nsec)),
+                false,
+                entry.member_name().clone(),
+            ));
+        }
         let allow_append_only = self.snapshot_mode == SnapshotMode::LiveJournal
             && is_live_append_only_jsonl(entry.member_name().as_str());
         let check_mtime = self.snapshot_mode == SnapshotMode::LiveJournal && !allow_append_only;
@@ -436,6 +451,12 @@ impl ArchiveSource {
                 .live_snapshots
                 .contains_key(entry.member_name().as_str())
             {
+                continue;
+            }
+            let allow_atomic_replace = self.snapshot_mode == SnapshotMode::LiveJournal
+                && is_live_atomic_rewritable(entry.member_name().as_str());
+            if allow_atomic_replace {
+                revalidate_current_regular_file(&self.root, entry)?;
                 continue;
             }
             let allow_append_only = self.snapshot_mode == SnapshotMode::LiveJournal
@@ -577,6 +598,50 @@ fn file_matches_proof(
     } else {
         observed.size == expected.size
     }
+}
+
+fn open_current_regular_file(
+    root: &impl AsFd,
+    member: &ArchiveMemberName,
+    proof: &EntryProof,
+) -> Result<(OwnedFd, FileProof), ArchiveError> {
+    let Some(name) = proof.components.last() else {
+        return Err(changed(Some(member)));
+    };
+    for _attempt in 0..3 {
+        let dir = open_verified_route(root, member, proof)?;
+        let before = match stat_entry(&dir, name, Some(member), "stat live derived file")
+            .map_err(|error| revalidation_error(error, member))
+        {
+            Ok(stat) => stat,
+            Err(ArchiveError::SourceChanged { .. }) => continue,
+            Err(error) => return Err(error),
+        };
+        if !is_regular(&before) {
+            return Err(changed(Some(member)));
+        }
+        let before_proof = file_proof(&before)?;
+        let opened = match open_regular_file(&dir, name, Some(member), true) {
+            Ok(fd) => fd,
+            Err(ArchiveError::SourceChanged { .. }) => continue,
+            Err(error) => return Err(error),
+        };
+        let after = stat_fd(&opened, Some(member), "stat opened live derived file")?;
+        let after_proof = file_proof(&after)?;
+        if is_regular(&after) && after_proof == before_proof {
+            return Ok((opened, after_proof));
+        }
+    }
+    Err(changed(Some(member)))
+}
+
+fn revalidate_current_regular_file(
+    root: &impl AsFd,
+    entry: &InventoryEntry,
+) -> Result<(), ArchiveError> {
+    let (file, _) = open_current_regular_file(root, entry.member_name(), entry.proof())?;
+    drop(file);
+    Ok(())
 }
 
 fn open_verified_file(

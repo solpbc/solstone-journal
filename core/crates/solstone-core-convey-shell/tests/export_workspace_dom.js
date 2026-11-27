@@ -462,6 +462,18 @@ async function run(name, fn) {
     assert.ok(h2.root.textContent.includes('copy handed to Files'));
 
     h2.emitNative({
+      phase: 'handed_off',
+      export_id: 'exp_nat',
+      platform: 'android',
+      destination_display: 'solstone-journal-2026-11-26.zip',
+    });
+    assert.ok(h2.root.querySelector('[data-export-native-state="handed_off"]'));
+    assert.ok(h2.root.textContent.includes('copy handed to the location you chose'));
+    assert.ok(h2.root.textContent.includes('check that location to confirm it finished saving'));
+    assert.ok(h2.root.textContent.includes('solstone-journal-2026-11-26.zip'));
+    assert.ok(!h2.root.textContent.includes('Files app'), 'Android handoff must not tell owner to check Files app');
+
+    h2.emitNative({
       phase: 'error',
       export_id: 'exp_nat',
       platform: 'macos',
@@ -472,7 +484,117 @@ async function run(name, fn) {
     h2.dispose();
   });
 
-  // 7. Server terminal errors: source_changed, expired, erased_invalidated
+  // 7. Stale saved / handed_off receipt for copy A must not hide ready copy B or target B on discard
+  await run('stale native receipt does not hide newer ready copy or discard wrong export', async () => {
+    const deleteCalls = [];
+    const nativeHost = {
+      version: 2,
+      types: ['export.start', 'export.status', 'export.pause', 'export.resume', 'export.cancel', 'export.reveal', 'export.device_space'],
+      send() {
+        return { phase: 'idle' };
+      },
+    };
+    const readyA = {
+      export_id: 'exp_copy_a',
+      mode: 'full',
+      filename: 'solstone-journal-a.zip',
+      size_bytes: 1024,
+      sha256: 'a'.repeat(64),
+      etag: '"' + 'a'.repeat(64) + '"',
+      created_at: '2026-11-26T17:10:00Z',
+      download_path: '/app/export/api/ready/exp_copy_a/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_copy_a',
+    };
+    const readyB = {
+      export_id: 'exp_copy_b',
+      mode: 'full',
+      filename: 'solstone-journal-b.zip',
+      size_bytes: 2048,
+      sha256: 'b'.repeat(64),
+      etag: '"' + 'b'.repeat(64) + '"',
+      created_at: '2026-11-26T17:14:00Z',
+      download_path: '/app/export/api/ready/exp_copy_b/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_copy_b',
+    };
+    let state = { status: 'ready', other_requester_busy: false, active_job: null, ready: readyB };
+    const h = createHarness({
+      nativeHost,
+      fetch: (url, init) => {
+        if (init && init.method === 'DELETE') {
+          deleteCalls.push(url);
+          return jsonResp(200, {});
+        }
+        return url.includes('/estimate') ? jsonResp(200, sampleEstimate()) : jsonResp(200, state);
+      },
+    });
+    await flush();
+
+    // Stale 'saved' receipt for copy A while copy B is ready -> must show ready card for B, not A's saved screen.
+    h.emitNative({
+      phase: 'saved',
+      export_id: 'exp_copy_a',
+      platform: 'macos',
+      bytes_written: 1024,
+      total_bytes: 1024,
+      destination_display: '/tmp/solstone-journal-a.zip',
+      can_reveal: true,
+    });
+    assert.strictEqual(h.root.querySelector('[data-export-native-state="saved"]'), null, 'stale saved A must not hide ready B');
+    assert.strictEqual(h.root.querySelector('[data-export-cleanup-prompt="1"]'), null, 'stale saved A must not offer cleanup targeting B');
+    const saveBtn = h.root.querySelector('#exportPrimarySaveBtn');
+    assert.ok(saveBtn, 'ready copy B remains saveable');
+
+    // Stale 'handed_off' receipt for copy A while copy B is ready -> same invariant.
+    h.emitNative({
+      phase: 'handed_off',
+      export_id: 'exp_copy_a',
+      platform: 'android',
+      destination_display: 'solstone-journal-a.zip',
+    });
+    assert.strictEqual(h.root.querySelector('[data-export-native-state="handed_off"]'), null, 'stale handed_off A must not hide ready B');
+    assert.ok(h.root.querySelector('#exportPrimarySaveBtn'), 'ready copy B remains saveable after stale handed_off A');
+
+    // Matching saved receipt for copy A when A is ready, then server rotates to B before user clicks Discard ->
+    // clicking the bound discard button from A's screen must NOT send DELETE targeting B.
+    state = { status: 'ready', other_requester_busy: false, active_job: null, ready: readyA };
+    const h2 = createHarness({
+      nativeHost,
+      fetch: (url, init) => {
+        if (init && init.method === 'DELETE') {
+          deleteCalls.push(url);
+          return jsonResp(200, {});
+        }
+        return url.includes('/estimate') ? jsonResp(200, sampleEstimate()) : jsonResp(200, state);
+      },
+    });
+    await flush();
+    h2.emitNative({
+      phase: 'saved',
+      export_id: 'exp_copy_a',
+      platform: 'macos',
+      bytes_written: 1024,
+      total_bytes: 1024,
+      destination_display: '/tmp/solstone-journal-a.zip',
+      can_reveal: true,
+    });
+    const staleDiscardBtn = h2.root.querySelector('[data-export-focus="cleanup-discard"]');
+    assert.ok(staleDiscardBtn, 'matching saved A offers cleanup discard');
+    // Poll rotates ready from A to B while user still holds reference to A's button.
+    state = { status: 'ready', other_requester_busy: false, active_job: null, ready: readyB };
+    const pollTimer = h2.timers.find((t) => !t.cleared);
+    assert.ok(pollTimer, 'ready poll timer scheduled');
+    pollTimer.fn();
+    await flush();
+    await flush();
+    // Clicking stale button from A's render must refuse because current ready is now B.
+    staleDiscardBtn.click();
+    await flush();
+    assert.strictEqual(deleteCalls.length, 0, 'bound discard button for A must never DELETE copy B');
+    h.dispose();
+    h2.dispose();
+  });
+
+  // 8. Server terminal errors: source_changed, expired, erased_invalidated
   await run('server error cards', async () => {
     for (const [status, code, snippet] of [
       ['failed', 'source_changed', 'your journal changed while packing'],

@@ -20,7 +20,7 @@ use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -42,15 +42,21 @@ use solstone_core_journal_archive::{
 };
 use solstone_core_journal_config::owner_zone;
 use solstone_core_journal_io::disk_space::JournalDiskSpace;
-use solstone_core_trash::read_erasure_epoch;
+use solstone_core_trash::{ErasureEpoch, read_erasure_epoch};
 
 use self::range::{
-    ActiveDownloadGuard, ActiveTransferHooks, RangeDecision, TrackedRangeStream, evaluate_range,
+    ACTIVITY_TOUCH_INTERVAL_SECS, ActiveDownloadGuard, ActiveTransferHooks, RangeDecision,
+    TrackedRangeStream, TransferAbortReason, evaluate_range,
 };
 use self::staging::{
     ChangeFingerprint, ReadyRecord, RequesterScope, StagingArea, required_staging_bytes,
+    staging_disk_floor_bytes,
 };
 use crate::asset_response;
+
+const ABORT_NONE: u8 = 0;
+const ABORT_REVOKED: u8 = 1;
+const ABORT_ERASED: u8 = 2;
 
 /// Rolling inactivity lifetime for a prepared export copy (24 hours).
 pub(crate) const ROLLING_INACTIVITY_SECS: i64 = 24 * 60 * 60;
@@ -98,7 +104,7 @@ pub(crate) struct ExportService {
 
 struct ExportServiceInner {
     journal_root: PathBuf,
-    staging: StagingArea,
+    staging: Result<StagingArea, String>,
     clock: Arc<dyn ExportClock>,
     disk_probe: Arc<dyn DiskSpaceProbe>,
     state: Mutex<CoordinatorState>,
@@ -161,17 +167,26 @@ struct ReadyEntry {
     active_downloads: usize,
     retired_by_erasure: bool,
     retired_by_revocation: bool,
+    last_persisted_activity_epoch_secs: i64,
+    abort_signal: Arc<AtomicU8>,
 }
 
 impl ExportService {
     /// Create a production export service for `journal_root`, sweeping orphaned
     /// `.part` files and recovering any still-valid prepared copy on disk.
+    ///
+    /// If private per-journal staging cannot be resolved, fails closed for
+    /// export operations while keeping the rest of the journal and dashboard
+    /// operational (never falls back to any shared staging directory).
     pub(crate) fn new(journal_root: PathBuf) -> Self {
-        let staging = StagingArea::resolve(&journal_root).unwrap_or_else(|_| StagingArea {
-            dir: std::env::temp_dir().join("solstone-export-staging-fallback"),
-            same_volume_as_journal: false,
+        let staging = StagingArea::resolve(&journal_root).map_err(|error| {
+            log::warn!(
+                "export staging unavailable for {}: {error}",
+                journal_root.display()
+            );
+            error.to_string()
         });
-        Self::with_deps(
+        Self::with_staging_result(
             journal_root,
             staging,
             Arc::new(SystemExportClock),
@@ -179,34 +194,50 @@ impl ExportService {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn with_deps(
         journal_root: PathBuf,
         staging: StagingArea,
         clock: Arc<dyn ExportClock>,
         disk_probe: Arc<dyn DiskSpaceProbe>,
     ) -> Self {
+        Self::with_staging_result(journal_root, Ok(staging), clock, disk_probe)
+    }
+
+    fn with_staging_result(
+        journal_root: PathBuf,
+        staging: Result<StagingArea, String>,
+        clock: Arc<dyn ExportClock>,
+        disk_probe: Arc<dyn DiskSpaceProbe>,
+    ) -> Self {
         let mut initial_state = CoordinatorState::default();
         let now = clock.now_epoch_secs();
-        if let Some(record) = staging.read_ready_record() {
-            let epoch_matches =
-                read_erasure_epoch(&journal_root).is_ok_and(|epoch| epoch == record.erasure_epoch);
-            let within_window =
-                now.saturating_sub(record.last_activity_epoch_secs) < ROLLING_INACTIVITY_SECS;
-            let authorized = is_requester_authorized(&journal_root, &record.owner);
-            if epoch_matches && within_window && authorized {
-                let keep = record.zip_filename.clone();
-                staging.sweep_orphans(Some(&keep));
-                initial_state.ready = Some(ReadyEntry {
-                    record,
-                    active_downloads: 0,
-                    retired_by_erasure: false,
-                    retired_by_revocation: false,
-                });
+        let has_staging = staging.is_ok();
+        if let Ok(ref staging_area) = staging {
+            if let Some(record) = staging_area.read_ready_record() {
+                let epoch_matches = read_erasure_epoch(&journal_root)
+                    .is_ok_and(|epoch| epoch == record.erasure_epoch);
+                let within_window =
+                    now.saturating_sub(record.last_activity_epoch_secs) < ROLLING_INACTIVITY_SECS;
+                let authorized = is_requester_authorized(&journal_root, &record.owner);
+                if epoch_matches && within_window && authorized {
+                    let keep = record.zip_filename.clone();
+                    let persisted = record.last_activity_epoch_secs;
+                    staging_area.sweep_orphans(Some(&keep));
+                    initial_state.ready = Some(ReadyEntry {
+                        record,
+                        active_downloads: 0,
+                        retired_by_erasure: false,
+                        retired_by_revocation: false,
+                        last_persisted_activity_epoch_secs: persisted,
+                        abort_signal: Arc::new(AtomicU8::new(ABORT_NONE)),
+                    });
+                } else {
+                    staging_area.clear_ready_files(Some(&record));
+                }
             } else {
-                staging.clear_ready_files(Some(&record));
+                staging_area.sweep_orphans(None);
             }
-        } else {
-            staging.sweep_orphans(None);
         }
 
         let inner = Arc::new(ExportServiceInner {
@@ -217,7 +248,9 @@ impl ExportService {
             state: Mutex::new(initial_state),
         });
         let service = Self { inner };
-        service.spawn_reaper();
+        if has_staging {
+            service.spawn_reaper();
+        }
         service
     }
 
@@ -243,6 +276,9 @@ impl ExportService {
     /// Reconcile prepared-copy liveness against Trash erasure epoch, pairing
     /// revocation, and rolling 24-hour inactivity.
     pub(crate) fn reconcile_ready_state(&self) {
+        let Ok(ref staging) = self.inner.staging else {
+            return;
+        };
         let now = self.inner.clock.now_epoch_secs();
         let current_epoch = read_erasure_epoch(&self.inner.journal_root);
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -257,11 +293,18 @@ impl ExportService {
         };
         if epoch_mismatch {
             ready.retired_by_erasure = true;
+            ready.abort_signal.store(ABORT_ERASED, Ordering::Release);
         }
 
         // 2. Check paired device revocation.
         if !is_requester_authorized(&self.inner.journal_root, &ready.record.owner) {
             ready.retired_by_revocation = true;
+            let _ = ready.abort_signal.compare_exchange(
+                ABORT_NONE,
+                ABORT_REVOKED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
         }
 
         // 3. Check 24-hour rolling inactivity ONLY when no transfer is active.
@@ -273,7 +316,7 @@ impl ExportService {
 
         if should_delete {
             let removed = state.ready.take().expect("ready entry present");
-            self.inner.staging.clear_ready_files(Some(&removed.record));
+            staging.clear_ready_files(Some(&removed.record));
             if removed.retired_by_erasure {
                 state.last_terminal = Some(TerminalOutcome {
                     owner: removed.record.owner,
@@ -363,7 +406,18 @@ impl ExportService {
     }
 
     fn estimate_payload(&self) -> Value {
-        let disk = self.inner.disk_probe.read(&self.inner.staging).ok();
+        let staging_available = self.inner.staging.is_ok();
+        let staging_same_vol = self
+            .inner
+            .staging
+            .as_ref()
+            .is_ok_and(|s| s.same_volume_as_journal);
+        let disk = self
+            .inner
+            .staging
+            .as_ref()
+            .ok()
+            .and_then(|s| self.inner.disk_probe.read(s).ok());
         let free_bytes = disk.map(|d| d.free_bytes);
         let total_bytes = disk.map(|d| d.total_bytes);
         let backup = read_backup_summary(&self.inner.journal_root);
@@ -387,14 +441,19 @@ impl ExportService {
         };
         let (full_req, light_req, full_fits, light_fits) = match slot.breakdown {
             Some(ref b) => {
-                let fr = required_staging_bytes(b.full_bytes);
-                let lr = required_staging_bytes(b.light_bytes);
-                (
-                    Some(fr),
-                    Some(lr),
-                    free_bytes.map(|f| f >= fr),
-                    free_bytes.map(|f| f >= lr),
-                )
+                let total = total_bytes.unwrap_or(0);
+                let fr = required_staging_bytes(b.full_bytes, total);
+                let lr = required_staging_bytes(b.light_bytes, total);
+                if !staging_available {
+                    (Some(fr), Some(lr), Some(false), Some(false))
+                } else {
+                    (
+                        Some(fr),
+                        Some(lr),
+                        free_bytes.map(|f| f >= fr),
+                        free_bytes.map(|f| f >= lr),
+                    )
+                }
             }
             None => (None, None, None, None),
         };
@@ -403,6 +462,7 @@ impl ExportService {
         json!({
             "status": status,
             "is_estimate": true,
+            "staging_available": staging_available,
             "measured_at": slot.measured_at_epoch_secs.and_then(format_epoch_utc),
             "days_counted": days_counted,
             "progress": slot.progress,
@@ -410,7 +470,7 @@ impl ExportService {
             "error": slot.error,
             "journal_disk_free_bytes": free_bytes,
             "journal_disk_total_bytes": total_bytes,
-            "staging_volume_same_as_journal": self.inner.staging.same_volume_as_journal,
+            "staging_volume_same_as_journal": staging_same_vol,
             "full_required_bytes": full_req,
             "light_required_bytes": light_req,
             "full_fits": full_fits,
@@ -423,6 +483,17 @@ impl ExportService {
     }
 
     fn state_payload(&self, requester: &RequesterScope) -> Value {
+        if let Err(ref reason) = self.inner.staging {
+            return json!({
+                "status": "unavailable",
+                "staging_available": false,
+                "error_code": "export_staging_unavailable",
+                "error_detail": reason,
+                "other_requester_busy": false,
+                "active_job": Value::Null,
+                "ready": Value::Null,
+            });
+        }
         self.reconcile_ready_state();
         let now = self.inner.clock.now_epoch_secs();
         let current_fp = ChangeFingerprint::capture(&self.inner.journal_root);
@@ -538,10 +609,34 @@ impl ExportService {
         mode: ExportMode,
         replace: bool,
     ) -> Result<(StatusCode, Value), (StatusCode, Value)> {
+        let staging = match &self.inner.staging {
+            Ok(staging) => staging.clone(),
+            Err(reason) => {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    json!({
+                        "code": "export_staging_unavailable",
+                        "detail": reason,
+                    }),
+                ));
+            }
+        };
         self.reconcile_ready_state();
 
-        let disk = self.inner.disk_probe.read(&self.inner.staging).ok();
-        let free_bytes = disk.map(|d| d.free_bytes);
+        // Capture Trash permanent-erasure epoch synchronously before accepting/spawning
+        // the background prepare job (fail closed), eliminating any race where an erase
+        // arrives after `start_job` returns but before the worker thread starts.
+        let start_epoch = read_erasure_epoch(&self.inner.journal_root).map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({
+                    "code": "prepare_failed",
+                    "detail": error.to_string(),
+                }),
+            )
+        })?;
+
+        let disk = self.inner.disk_probe.read(&staging).ok();
 
         let (job_id, cancel) = {
             let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -597,23 +692,24 @@ impl ExportService {
             }
 
             // Preflight staging disk space against cached breakdown if available.
-            if let (Some(free), Some(breakdown)) = (free_bytes, state.estimate.breakdown) {
+            if let (Some(space), Some(breakdown)) = (disk, state.estimate.breakdown) {
                 let est = match mode {
                     ExportMode::Full => breakdown.full_bytes,
                     ExportMode::WithoutProcessedMedia => breakdown.light_bytes,
                 };
-                let required = required_staging_bytes(est);
-                if free < required {
-                    let light_req = required_staging_bytes(breakdown.light_bytes);
+                let required = required_staging_bytes(est, space.total_bytes);
+                if space.free_bytes < required {
+                    let light_req =
+                        required_staging_bytes(breakdown.light_bytes, space.total_bytes);
                     return Err((
                         StatusCode::CONFLICT,
                         json!({
                             "code": "insufficient_journal_space",
                             "required_bytes": required,
-                            "available_bytes": free,
+                            "available_bytes": space.free_bytes,
                             "light_estimated_bytes": breakdown.light_bytes,
                             "light_required_bytes": light_req,
-                            "light_fits": free >= light_req,
+                            "light_fits": space.free_bytes >= light_req,
                         }),
                     ));
                 }
@@ -621,7 +717,7 @@ impl ExportService {
 
             // Clear any idle prior ready copy before claiming the single slot.
             if let Some(old) = state.ready.take() {
-                self.inner.staging.clear_ready_files(Some(&old.record));
+                staging.clear_ready_files(Some(&old.record));
             }
             state.last_terminal = None;
 
@@ -645,7 +741,15 @@ impl ExportService {
         let inner = Arc::clone(&self.inner);
         let worker_job_id = job_id.clone();
         tokio::task::spawn_blocking(move || {
-            run_prepare_worker(inner, worker_job_id, requester, mode, cancel);
+            run_prepare_worker(
+                inner,
+                staging,
+                worker_job_id,
+                requester,
+                mode,
+                cancel,
+                start_epoch,
+            );
         });
 
         Ok((
@@ -676,6 +780,12 @@ impl ExportService {
         export_id: &str,
         force: bool,
     ) -> Result<StatusCode, (StatusCode, Value)> {
+        let Ok(ref staging) = self.inner.staging else {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({ "code": "export_staging_unavailable" }),
+            ));
+        };
         self.reconcile_ready_state();
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ready) = &state.ready else {
@@ -694,7 +804,7 @@ impl ExportService {
             ));
         }
         let removed = state.ready.take().expect("ready entry present");
-        self.inner.staging.clear_ready_files(Some(&removed.record));
+        staging.clear_ready_files(Some(&removed.record));
         state.last_terminal = None;
         Ok(StatusCode::OK)
     }
@@ -707,6 +817,13 @@ impl ExportService {
         method: &Method,
         headers: &HeaderMap,
     ) -> Response {
+        let Ok(ref staging) = self.inner.staging else {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "code": "export_staging_unavailable" })),
+            )
+                .into_response();
+        };
         self.reconcile_ready_state();
 
         let (record, zip_path, guard) = {
@@ -754,21 +871,30 @@ impl ExportService {
                     .into_response();
             }
 
-            // Reset rolling 24-hour inactivity clock on every download request.
+            // Reset rolling 24-hour inactivity clock on every download request;
+            // throttle ready.json disk persistence to ACTIVITY_TOUCH_INTERVAL_SECS.
             let now = self.inner.clock.now_epoch_secs();
             ready.record.last_activity_epoch_secs = now;
-            let _ = self.inner.staging.write_ready_record(&ready.record);
+            if now.saturating_sub(ready.last_persisted_activity_epoch_secs)
+                >= ACTIVITY_TOUCH_INTERVAL_SECS
+            {
+                let _ = staging.write_ready_record(&ready.record);
+                ready.last_persisted_activity_epoch_secs = now;
+            }
 
             let record = ready.record.clone();
-            let zip_path = record.zip_path(&self.inner.staging.dir);
+            let zip_path = record.zip_path(&staging.dir);
             let guard = if *method == Method::HEAD {
                 None
             } else {
                 ready.active_downloads = ready.active_downloads.saturating_add(1);
                 let hooks: Arc<dyn ActiveTransferHooks> = Arc::new(ExportTransferHooks {
                     inner: Arc::clone(&self.inner),
+                    staging: staging.clone(),
                     export_id: record.export_id.clone(),
                     owner: record.owner.clone(),
+                    erasure_epoch: record.erasure_epoch.clone(),
+                    abort_signal: Arc::clone(&ready.abort_signal),
                 });
                 Some(ActiveDownloadGuard::new(hooks))
             };
@@ -860,11 +986,18 @@ impl ExportService {
 
 struct ExportTransferHooks {
     inner: Arc<ExportServiceInner>,
+    staging: StagingArea,
     export_id: String,
     owner: RequesterScope,
+    erasure_epoch: ErasureEpoch,
+    abort_signal: Arc<AtomicU8>,
 }
 
 impl ActiveTransferHooks for ExportTransferHooks {
+    fn now_epoch_secs(&self) -> i64 {
+        self.inner.clock.now_epoch_secs()
+    }
+
     fn touch_activity(&self) {
         let now = self.inner.clock.now_epoch_secs();
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -872,12 +1005,54 @@ impl ActiveTransferHooks for ExportTransferHooks {
             && ready.record.export_id == self.export_id
         {
             ready.record.last_activity_epoch_secs = now;
-            let _ = self.inner.staging.write_ready_record(&ready.record);
+            if now.saturating_sub(ready.last_persisted_activity_epoch_secs)
+                >= ACTIVITY_TOUCH_INTERVAL_SECS
+            {
+                let _ = self.staging.write_ready_record(&ready.record);
+                ready.last_persisted_activity_epoch_secs = now;
+            }
         }
     }
 
-    fn is_revoked(&self) -> bool {
-        !is_requester_authorized(&self.inner.journal_root, &self.owner)
+    fn check_abort_fast(&self) -> Option<TransferAbortReason> {
+        match self.abort_signal.load(Ordering::Acquire) {
+            ABORT_ERASED => Some(TransferAbortReason::Erased),
+            ABORT_REVOKED => Some(TransferAbortReason::Revoked),
+            _ => None,
+        }
+    }
+
+    fn check_abort_disk(&self) -> Option<TransferAbortReason> {
+        let epoch_mismatch = match read_erasure_epoch(&self.inner.journal_root) {
+            Ok(epoch) => epoch != self.erasure_epoch,
+            Err(_) => true,
+        };
+        if epoch_mismatch {
+            self.abort_signal.store(ABORT_ERASED, Ordering::Release);
+            let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ready) = state.ready.as_mut()
+                && ready.record.export_id == self.export_id
+            {
+                ready.retired_by_erasure = true;
+            }
+            return Some(TransferAbortReason::Erased);
+        }
+        if !is_requester_authorized(&self.inner.journal_root, &self.owner) {
+            let _ = self.abort_signal.compare_exchange(
+                ABORT_NONE,
+                ABORT_REVOKED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+            let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ready) = state.ready.as_mut()
+                && ready.record.export_id == self.export_id
+            {
+                ready.retired_by_revocation = true;
+            }
+            return Some(TransferAbortReason::Revoked);
+        }
+        None
     }
 
     fn release_active_download(&self) {
@@ -892,7 +1067,6 @@ impl ActiveTransferHooks for ExportTransferHooks {
         }
         ready.active_downloads = ready.active_downloads.saturating_sub(1);
         ready.record.last_activity_epoch_secs = now;
-        let _ = self.inner.staging.write_ready_record(&ready.record);
 
         let epoch_mismatch = match &current_epoch {
             Ok(epoch) => *epoch != ready.record.erasure_epoch,
@@ -900,14 +1074,21 @@ impl ActiveTransferHooks for ExportTransferHooks {
         };
         if epoch_mismatch {
             ready.retired_by_erasure = true;
+            ready.abort_signal.store(ABORT_ERASED, Ordering::Release);
         }
         if !is_requester_authorized(&self.inner.journal_root, &ready.record.owner) {
             ready.retired_by_revocation = true;
+            let _ = ready.abort_signal.compare_exchange(
+                ABORT_NONE,
+                ABORT_REVOKED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
         }
         if ready.active_downloads == 0 && (ready.retired_by_erasure || ready.retired_by_revocation)
         {
             let removed = state.ready.take().expect("ready present");
-            self.inner.staging.clear_ready_files(Some(&removed.record));
+            self.staging.clear_ready_files(Some(&removed.record));
             if removed.retired_by_erasure {
                 state.last_terminal = Some(TerminalOutcome {
                     owner: removed.record.owner,
@@ -920,18 +1101,25 @@ impl ActiveTransferHooks for ExportTransferHooks {
                     available_bytes: None,
                 });
             }
+        } else if now.saturating_sub(ready.last_persisted_activity_epoch_secs)
+            >= ACTIVITY_TOUCH_INTERVAL_SECS
+        {
+            let _ = self.staging.write_ready_record(&ready.record);
+            ready.last_persisted_activity_epoch_secs = now;
         }
     }
 }
 
 fn run_prepare_worker(
     inner: Arc<ExportServiceInner>,
+    staging: StagingArea,
     job_id: String,
     owner: RequesterScope,
     mode: ExportMode,
     cancel: Arc<AtomicBool>,
+    start_epoch: ErasureEpoch,
 ) {
-    let part_path = inner.staging.dir.join(format!("{job_id}.zip.part"));
+    let part_path = staging.dir.join(format!("{job_id}.zip.part"));
 
     let finish_with_error = |status: &'static str,
                              error_code: &'static str,
@@ -955,20 +1143,17 @@ fn run_prepare_worker(
         });
     };
 
-    // 1. Capture Trash permanent-erasure epoch before scanning (fail closed!).
-    let start_epoch = match read_erasure_epoch(&inner.journal_root) {
-        Ok(epoch) => epoch,
-        Err(error) => {
-            finish_with_error(
-                "failed",
-                "prepare_failed",
-                Some(error.to_string()),
-                None,
-                None,
-            );
-            return;
-        }
-    };
+    // 1. Check whether Trash erasure already invalidated the job before scanning.
+    if !read_erasure_epoch(&inner.journal_root).is_ok_and(|epoch| epoch == start_epoch) {
+        finish_with_error(
+            "erased_invalidated",
+            "export_invalidated_by_erasure",
+            None,
+            None,
+            None,
+        );
+        return;
+    }
     let fingerprint = ChangeFingerprint::capture(&inner.journal_root);
 
     // 2. Open live-journal source snapshot.
@@ -1030,9 +1215,10 @@ fn run_prepare_worker(
         state.estimate.measured_at_epoch_secs = Some(inner.clock.now_epoch_secs());
     }
 
-    // 4. Re-check actual staging volume disk space before writing bytes.
-    if let Ok(space) = inner.disk_probe.read(&inner.staging) {
-        let required = required_staging_bytes(planned_bytes);
+    // 4. Re-check actual staging volume disk space against the journal's
+    //    shared low-space floor (`min(20 GB, total / 4)`) before writing bytes.
+    if let Ok(space) = inner.disk_probe.read(&staging) {
+        let required = required_staging_bytes(planned_bytes, space.total_bytes);
         if space.free_bytes < required {
             finish_with_error(
                 "failed",
@@ -1101,6 +1287,12 @@ fn run_prepare_worker(
     let abort_journal = inner.journal_root.clone();
     let abort_epoch = start_epoch.clone();
     let abort_owner = owner.clone();
+    let abort_disk_probe = Arc::clone(&inner.disk_probe);
+    let abort_clock = Arc::clone(&inner.clock);
+    let abort_staging = staging.clone();
+    let mut last_disk_check_secs = abort_clock.now_epoch_secs();
+    let mut checks_since_disk_check: u32 = 0;
+    let mut floor_breach: Option<(u64, u64)> = None;
     let mut check_abort = || -> Result<(), String> {
         match read_erasure_epoch(&abort_journal) {
             Ok(current) if current == abort_epoch => {}
@@ -1108,6 +1300,23 @@ fn run_prepare_worker(
         }
         if !is_requester_authorized(&abort_journal, &abort_owner) {
             return Err("requester_revoked".to_owned());
+        }
+        let now = abort_clock.now_epoch_secs();
+        let should_check_disk = checks_since_disk_check == 0
+            || checks_since_disk_check >= 16
+            || now.saturating_sub(last_disk_check_secs) >= 2;
+        if should_check_disk {
+            checks_since_disk_check = 0;
+            last_disk_check_secs = now;
+            if let Ok(space) = abort_disk_probe.read(&abort_staging) {
+                let floor = staging_disk_floor_bytes(space.total_bytes);
+                if space.free_bytes < floor {
+                    floor_breach = Some((floor, space.free_bytes));
+                    return Err("insufficient_journal_space".to_owned());
+                }
+            }
+        } else {
+            checks_since_disk_check = checks_since_disk_check.saturating_add(1);
         }
         Ok(())
     };
@@ -1150,6 +1359,13 @@ fn run_prepare_worker(
             }
             EncodeArchiveError::Aborted(ref reason) if reason == "requester_revoked" => {
                 finish_with_error("cancelled", "export_requester_revoked", None, None, None);
+            }
+            EncodeArchiveError::Aborted(ref reason) if reason == "insufficient_journal_space" => {
+                let (req, avail) = match floor_breach {
+                    Some((r, a)) => (Some(r), Some(a)),
+                    None => (None, None),
+                };
+                finish_with_error("failed", "insufficient_journal_space", None, req, avail);
             }
             EncodeArchiveError::Source(ArchiveError::SourceChanged { .. }) => {
                 finish_with_error("failed", "source_changed", None, None, None);
@@ -1201,30 +1417,41 @@ fn run_prepare_worker(
         }
     }
 
-    let (size_bytes, sha256) = match hash_file(&part_path, &cancel) {
-        Ok(pair) => pair,
-        Err(HashError::Cancelled) => {
-            finish_with_error("cancelled", "cancelled", None, None, None);
-            return;
-        }
-        Err(HashError::Io(error)) => {
-            finish_with_error(
-                "failed",
-                "prepare_failed",
-                Some(error.to_string()),
-                None,
-                None,
-            );
-            return;
-        }
-    };
+    let (size_bytes, sha256) =
+        match hash_file(&part_path, &cancel, &inner.journal_root, &start_epoch) {
+            Ok(pair) => pair,
+            Err(HashError::Cancelled) => {
+                finish_with_error("cancelled", "cancelled", None, None, None);
+                return;
+            }
+            Err(HashError::Erased) => {
+                finish_with_error(
+                    "erased_invalidated",
+                    "export_invalidated_by_erasure",
+                    None,
+                    None,
+                    None,
+                );
+                return;
+            }
+            Err(HashError::Io(error)) => {
+                finish_with_error(
+                    "failed",
+                    "prepare_failed",
+                    Some(error.to_string()),
+                    None,
+                    None,
+                );
+                return;
+            }
+        };
 
     // 7. Final atomic gate BEFORE publishing: verify cancel, Trash erasure epoch,
     //    and requester authorization one last time so an obsolete job can NEVER
     //    publish erased material.
     let export_id = job_id.clone();
     let zip_filename = format!("{export_id}.zip");
-    let final_zip_path = inner.staging.dir.join(&zip_filename);
+    let final_zip_path = staging.dir.join(&zip_filename);
     let date_stamp = owner_date_ymd(&inner.journal_root, inner.clock.now_epoch_secs());
     let filename = match mode {
         ExportMode::Full => format!("solstone-journal-{date_stamp}.zip"),
@@ -1299,7 +1526,7 @@ fn run_prepare_worker(
         offloaded_bytes: plan.breakdown.already_offloaded.bytes,
         offload_degraded: plan.breakdown.already_offloaded.degraded,
     };
-    if let Err(error) = inner.staging.write_ready_record(&record) {
+    if let Err(error) = staging.write_ready_record(&record) {
         let _ = std::fs::remove_file(&final_zip_path);
         drop(state);
         finish_with_error(
@@ -1319,22 +1546,38 @@ fn run_prepare_worker(
         active_downloads: 0,
         retired_by_erasure: false,
         retired_by_revocation: false,
+        last_persisted_activity_epoch_secs: now,
+        abort_signal: Arc::new(AtomicU8::new(ABORT_NONE)),
     });
 }
 
 enum HashError {
     Cancelled,
+    Erased,
     Io(std::io::Error),
 }
 
-fn hash_file(path: &Path, cancel: &AtomicBool) -> Result<(u64, String), HashError> {
+fn hash_file(
+    path: &Path,
+    cancel: &AtomicBool,
+    journal_root: &Path,
+    expected_epoch: &ErasureEpoch,
+) -> Result<(u64, String), HashError> {
     let mut file = std::fs::File::open(path).map_err(HashError::Io)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 256 * 1024];
     let mut total = 0u64;
+    let mut bytes_since_epoch_check = 0u64;
+    const EPOCH_CHECK_INTERVAL_BYTES: u64 = 64 * 1024 * 1024;
     loop {
         if cancel.load(Ordering::Acquire) {
             return Err(HashError::Cancelled);
+        }
+        if bytes_since_epoch_check >= EPOCH_CHECK_INTERVAL_BYTES {
+            bytes_since_epoch_check = 0;
+            if !read_erasure_epoch(journal_root).is_ok_and(|epoch| epoch == *expected_epoch) {
+                return Err(HashError::Erased);
+            }
         }
         let n = file.read(&mut buf).map_err(HashError::Io)?;
         if n == 0 {
@@ -1342,6 +1585,7 @@ fn hash_file(path: &Path, cancel: &AtomicBool) -> Result<(u64, String), HashErro
         }
         hasher.update(&buf[..n]);
         total = total.saturating_add(n as u64);
+        bytes_since_epoch_check = bytes_since_epoch_check.saturating_add(n as u64);
     }
     Ok((total, format!("{:x}", hasher.finalize())))
 }
