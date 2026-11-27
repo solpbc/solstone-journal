@@ -26,6 +26,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Gmail sync now finds mail you sent from your Gmail address or aliases already seen in your sent mail even when Gmail does not mark it as sent, and reconnects automatically if the connection drops mid-run. if a scan or sync stops mid-way, opening email in sources shows the stopped scan as paused to resume and an interrupted sync no longer stays stuck. hourly checks with no new mail also finish faster.
+- your journal's thinking now includes email subjects, copied recipients, attachment names, forwarded messages and the message you replied to. short replies and forwards carry their context instead of being skipped as too brief.
+- synced email history now counts toward imports and older history on status and respects its pause button. email history arriving on older finished days no longer reruns their daily work.
+- older email now processes faster in journals with many people, companies and other entities, and alternate addresses you send from in Gmail no longer become people.
 - when a connected agent saves a note, your journal now adds it to search right away so the agent can recall it immediately; if search is busy, it still updates in the background.
 - when a connected agent saves or recalls a note, the activity trail in agents now records the agent's identity the same way other agent requests do.
 - when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
