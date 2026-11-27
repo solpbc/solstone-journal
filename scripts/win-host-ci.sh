@@ -82,7 +82,7 @@ fi
 # Caller metadata for remote build-fence attribution and local lock diagnostics.
 # Explicit SOLPBC_BOOTSTRAP_HOLDER wins; otherwise fall back to an ambient
 # session/job identifier if present, or an explicit untracked local label.
-bootstrap_holder=${SOLPBC_BOOTSTRAP_HOLDER:-${SOLPBC_CI_CALLER:-${EXTRO_SESSION:-${HOPPER_LID:+lode:$HOPPER_LID}}}}
+bootstrap_holder=${SOLPBC_BOOTSTRAP_HOLDER:-${SOLPBC_CI_CALLER:-${EXTRO_SESSION:-${HOPPER_LID:+job:$HOPPER_LID}}}}
 if [ -z "$bootstrap_holder" ]; then
   local_user=${USER:-$(id -un 2>/dev/null || printf 'unknown')}
   local_host=$(uname -n 2>/dev/null || printf 'unknown')
