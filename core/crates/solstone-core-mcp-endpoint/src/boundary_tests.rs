@@ -12106,6 +12106,115 @@ fn get_activity_sources_cross_facet_permissions() {
     assert_eq!(mixed_sources["unreadable"], true);
 }
 
+/// A row says up front when a facet-limited connection may read none of an
+/// activity's sources, so an agent doesn't ask for each one to learn it.
+#[test]
+fn list_activities_marks_rows_whose_sources_are_out_of_reach() {
+    let journal = base_activity_journal();
+    allow_legacy_markdown(&journal);
+    let day = "20260308";
+    let seg_b = "090000_300";
+    let seg_a = "090500_300";
+    write_segment_transcript(
+        journal.path(),
+        day,
+        "default",
+        seg_b,
+        "beta",
+        "betatranscriptneedle\n",
+    );
+    write_segment_transcript(
+        journal.path(),
+        day,
+        "default",
+        seg_a,
+        "alpha",
+        "alphatranscriptneedle\n",
+    );
+    for (id, title, start, segments) in [
+        ("act_only_beta_seg", "Beta Seg Activity", 100, vec![seg_b]),
+        ("act_mixed", "Mixed Seg Activity", 200, vec![seg_a, seg_b]),
+    ] {
+        write_activity_line(
+            journal.path(),
+            "alpha",
+            day,
+            id,
+            title,
+            start,
+            None,
+            Some(segments.as_slice()),
+            None,
+            None,
+            Some("default"),
+            None,
+            None,
+        );
+    }
+    let flags = |args: Value| {
+        let res = probe(&journal, "list_activities", args).unwrap();
+        res["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| {
+                (
+                    a["title"].as_str().unwrap().to_owned(),
+                    a["sources_unreadable"].clone(),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+
+    // The whole journal reads every source: no row is marked.
+    for args in [json!({"day": day}), json!({"day": day, "compact": true})] {
+        let rows = flags(args);
+        assert_eq!(rows["Beta Seg Activity"], Value::Null);
+        assert_eq!(rows["Mixed Seg Activity"], Value::Null);
+    }
+
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "facets".to_owned(),
+                    "transcripts".to_owned(),
+                    "messages".to_owned(),
+                ],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    for args in [json!({"day": day}), json!({"day": day, "compact": true})] {
+        let rows = flags(args);
+        assert_eq!(rows["Beta Seg Activity"], json!(true));
+        assert_eq!(rows["Mixed Seg Activity"], Value::Null);
+    }
+
+    // The mark agrees with the read it saves.
+    let list = probe(&journal, "list_activities", json!({"day": day})).unwrap();
+    for row in list["activities"].as_array().unwrap() {
+        let sources = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference": row["reference"]}),
+        )
+        .unwrap();
+        assert_eq!(
+            sources["units"] == json!([]),
+            row["sources_unreadable"] == json!(true)
+        );
+        if row["sources_unreadable"] == json!(true) {
+            assert_eq!(sources["unreadable"], true);
+        } else {
+            assert!(sources.to_string().contains("alphatranscriptneedle"));
+        }
+    }
+}
+
 /// A facet that can't be read leaves a segment's scope undecided, which a
 /// read reports as an error to try again, never as out of reach for good.
 #[cfg(unix)]
@@ -16724,7 +16833,7 @@ fn a_moment_in_two_facets_is_listed_once_with_both_facets_people() {
             title,
             100,
             Some("meeting"),
-            Some(&segments),
+            Some(segments.as_slice()),
             // Only the copy that isn't shown names Tybalt as an entity.
             Some(if facet == "beta" {
                 &["Benvolio"]

@@ -1973,6 +1973,15 @@ pub(crate) fn execute_list(
             if !item.also_in.is_empty() {
                 activity["also_in"] = json!(item.also_in);
             }
+            if sources_out_of_reach(
+                journal_root,
+                snapshot,
+                &item.facet_dir,
+                &item.day,
+                &item.record,
+            ) {
+                activity["sources_unreadable"] = json!(true);
+            }
             activities.push(activity);
         }
     } else {
@@ -2119,6 +2128,15 @@ pub(crate) fn execute_list(
             if !item.also_in.is_empty() {
                 activity["also_in"] = json!(item.also_in);
             }
+            if sources_out_of_reach(
+                journal_root,
+                snapshot,
+                &item.facet_dir,
+                &item.day,
+                &item.record,
+            ) {
+                activity["sources_unreadable"] = json!(true);
+            }
             if let Some(span) = solstone_core_facets::activity_span(&item.record) {
                 if sees_calendar {
                     let calendar = calendars.entry(item.day.clone()).or_insert_with(|| {
@@ -2220,6 +2238,24 @@ pub(crate) fn execute_list(
     }
 
     Ok(Prepared::new(response_val, count, targets).when_empty(NO_ACTIVITIES_NOTE))
+}
+
+/// An activity whose every segment sits outside a facet-limited connection's
+/// facets says so on its row, so an agent doesn't ask get_activity_sources
+/// for what it can never read. The same scope test that read makes.
+fn sources_out_of_reach(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    facet_dir: &str,
+    day: &str,
+    record: &Map<String, Value>,
+) -> bool {
+    if matches!(snapshot.scope, ConnectionScope::WholeJournal) {
+        return false;
+    }
+    let rel_path = format!("facets/{facet_dir}/activities/{day}.jsonl");
+    let segments = activity_segment_candidates(journal_root, &rel_path, record);
+    crate::may_see::segments_all_out_of_scope(journal_root, snapshot, day, &segments)
 }
 
 pub(crate) fn execute_get_sources(

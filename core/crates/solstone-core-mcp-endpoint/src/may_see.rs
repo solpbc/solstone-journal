@@ -309,6 +309,44 @@ pub(crate) fn segment_scope(
     Some(boundary.allows_scope(&classification))
 }
 
+/// Whether a connection limited to chosen facets may read none of these
+/// segments, so an activity made of them has sources out of its reach on
+/// every ask. Only a settled no answers true: a whole-journal connection, no
+/// segments at all, and a segment whose scope can't be decided answer false.
+pub(crate) fn segments_all_out_of_scope(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+    segments: &[Segment],
+) -> bool {
+    if segments.is_empty()
+        || matches!(
+            snapshot.scope,
+            solstone_core_indexer_query::ConnectionScope::WholeJournal
+        )
+    {
+        return false;
+    }
+    let Some(boundary) = segment_boundary(snapshot, None) else {
+        return false;
+    };
+    let Ok(declarations) = FacetDeclarationSet::from_journal(journal_root) else {
+        return false;
+    };
+    segments.iter().all(|segment| {
+        let Ok(identity) = segment.record_identity() else {
+            return false;
+        };
+        let classification = classify_source(
+            journal_root,
+            &segment_assignment_probe_path(day, identity.stream, identity.name),
+            Some(identity.stream),
+            &declarations,
+        );
+        !classification.unclassified && !boundary.allows_scope(&classification)
+    })
+}
+
 /// [`segment_shown`] for a caller judging many segments in one answer, which
 /// reads the connection's boundary and the facet declarations once.
 #[allow(clippy::too_many_arguments)]
