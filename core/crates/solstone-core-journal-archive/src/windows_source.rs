@@ -961,6 +961,18 @@ mod tests {
                 .iter()
                 .any(|entry| entry.member_name().as_str() == "chronicle/20260101/segment.jsonl")
         );
+        assert!(super::should_skip_live_transient_member(
+            "health/trash-erasure-epoch.json",
+            false
+        ));
+        assert!(!super::should_skip_live_transient_member(
+            "imports/health-dedupe.sqlite",
+            false
+        ));
+        assert!(super::should_skip_live_transient_member(
+            "imports/health-dedupe.sqlite",
+            true
+        ));
     }
 
     #[cfg(feature = "test-hooks")]

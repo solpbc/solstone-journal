@@ -512,12 +512,12 @@ where
 /// enforces `budget`. Entries matched by `prune_directory` are validated and
 /// emitted without descending into them.
 ///
-/// When `skip_transient_member(member, known_regular)` returns `true`, an entry
-/// that vanishes between directory listing and relative open (`known_regular ==
-/// false`) or an already-verified regular file whose file ID rotated due to
-/// atomic replacement (`known_regular == true`) is skipped instead of failing
-/// with `IdentityChanged`. Reparse points, non-regular files, directories, and
-/// non-matching members are never skipped.
+/// When `skip_transient_member(member, known_regular)` returns `true`, a listed
+/// regular-file entry that vanishes between directory listing and relative open
+/// (`known_regular == false`) or is atomically replaced by another verified
+/// regular file (`known_regular == true`) is skipped instead of failing with
+/// `IdentityChanged`. Listed directories, reparse points, non-regular files,
+/// directory/file kind changes, and non-matching members are never skipped.
 pub fn enumerate_windows_inventory_live_pruned<F, G>(
     root: &JournalRoot,
     budget: InventoryBudget,
@@ -1245,9 +1245,10 @@ fn walk_directory<'pred>(
         {
             Ok(handle) => handle,
             Err(WindowsInventoryError::IdentityChanged { .. })
-                if skip_transient_member
-                    .as_deref_mut()
-                    .is_some_and(|pred| pred(&child_member, false)) =>
+                if listed.is_regular_attributes()
+                    && skip_transient_member
+                        .as_deref_mut()
+                        .is_some_and(|pred| pred(&child_member, false)) =>
             {
                 continue;
             }
@@ -1257,7 +1258,8 @@ fn walk_directory<'pred>(
         require_no_reparse(attributes, &child_path)?;
         let identity = file_id(&child, &child_path)?;
         if !identity.matches_windows_file_id(listed.file_id) {
-            if !is_directory(attributes)
+            if listed.is_regular_attributes()
+                && !is_directory(attributes)
                 && skip_transient_member
                     .as_deref_mut()
                     .is_some_and(|pred| pred(&child_member, true))
@@ -1319,6 +1321,13 @@ fn walk_directory<'pred>(
 struct ListedEntry {
     name: OsString,
     file_id: [u8; 16],
+    file_attributes: u32,
+}
+
+impl ListedEntry {
+    fn is_regular_attributes(&self) -> bool {
+        self.file_attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0
+    }
 }
 
 fn list_directory(
@@ -1412,6 +1421,11 @@ fn parse_directory_buffer(
         let name = String::from_utf16(&name).map_err(|_| WindowsInventoryError::InvalidName {
             path: relative.to_path_buf(),
         })?;
+        let file_attributes = directory_u32(
+            header,
+            offset_of!(FILE_ID_EXTD_DIR_INFO, FileAttributes),
+            relative,
+        )?;
         let file_id_start = offset_of!(FILE_ID_EXTD_DIR_INFO, FileId);
         let file_id_end = file_id_start
             .checked_add(16)
@@ -1430,6 +1444,7 @@ fn parse_directory_buffer(
             entries.push(ListedEntry {
                 name: OsString::from(name),
                 file_id,
+                file_attributes,
             });
         }
         let next_entry_offset = directory_u32(
@@ -2649,5 +2664,77 @@ mod tests {
             fail_result,
             Err(WindowsInventoryError::IdentityChanged { .. })
         ));
+    }
+
+    #[test]
+    fn live_pruned_inventory_refuses_directory_replaced_by_file_only_exclusion() {
+        let temporary = TempDir::new();
+        let root_path = temporary.path().join("journal");
+        let owner_dir = root_path.join("health-dedupe.sqlite");
+        fs::create_dir_all(&owner_dir).unwrap();
+        fs::write(owner_dir.join("original.key"), b"owner bytes").unwrap();
+        let root = JournalRoot::open(&root_path).unwrap();
+
+        let moved_aside = temporary.path().join("moved-owner-dir");
+        let dir_for_barrier = owner_dir.clone();
+        let (result, trace) = trace_inventory_scenario(
+            Some((
+                WindowsInventoryPrimitive::BeforeDescendantOpen,
+                Box::new(move || {
+                    // Move the listed owner directory aside and replace its exact name with a
+                    // regular file that matches a regular-file-only exclusion predicate.
+                    fs::rename(&dir_for_barrier, &moved_aside).unwrap();
+                    fs::write(&dir_for_barrier, b"replacement excluded regular file").unwrap();
+                }),
+            )),
+            None,
+            || {
+                enumerate_windows_inventory_live_pruned(
+                    &root,
+                    budget(),
+                    |_| false,
+                    |member, known_regular| known_regular && member == "health-dedupe.sqlite",
+                )
+            },
+        );
+        assert!(trace.barrier_fired);
+        assert!(
+            matches!(result, Err(WindowsInventoryError::IdentityChanged { .. })),
+            "replacing a listed directory with a file-only-excluded regular file must fail closed: {result:?}"
+        );
+
+        // Even when the exclusion predicate is unconditional (`known_regular == false`),
+        // a listed directory that vanishes before open_relative must still fail closed.
+        let temporary2 = TempDir::new();
+        let root_path2 = temporary2.path().join("journal");
+        let dir2 = root_path2.join("transient-dir.tmp");
+        fs::create_dir_all(&dir2).unwrap();
+        let root2 = JournalRoot::open(&root_path2).unwrap();
+        let dir2_for_barrier = dir2.clone();
+        let (vanished_dir_result, vanished_dir_trace) = trace_inventory_scenario(
+            Some((
+                WindowsInventoryPrimitive::BeforeDescendantOpen,
+                Box::new(move || {
+                    fs::remove_dir(&dir2_for_barrier).unwrap();
+                }),
+            )),
+            None,
+            || {
+                enumerate_windows_inventory_live_pruned(
+                    &root2,
+                    budget(),
+                    |_| false,
+                    |member, _known_regular| member == "transient-dir.tmp",
+                )
+            },
+        );
+        assert!(vanished_dir_trace.barrier_fired);
+        assert!(
+            matches!(
+                vanished_dir_result,
+                Err(WindowsInventoryError::IdentityChanged { .. })
+            ),
+            "vanishing a listed directory must fail closed: {vanished_dir_result:?}"
+        );
     }
 }
