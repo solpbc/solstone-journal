@@ -6266,6 +6266,12 @@ m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e636865636b73756d2e626f6479 
 
 m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e636865636b73756d2e7469746c65 = saved file didn't match your journal
 
+m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e636f70792e756e636f6e6669726d65642e616374696f6e = check current copy
+
+m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e636f70792e756e636f6e6669726d65642e626f6479 = couldn't confirm this is still the same prepared copy, so the unfinished save was cleared and any existing file at that location was left untouched. check the current copy before saving again.
+
+m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e636f70792e756e636f6e6669726d65642e7469746c65 = couldn't confirm this prepared copy
+
 m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e646573742e77726974652e626f6479 = the drive disconnected or rejected the write. your progress couldn't be saved there. reconnect the drive or choose another location.
 
 m6a6f75726e616c2e77696e646f772e6578706f72742e6572722e646573742e77726974652e7469746c65 = couldn't finish writing to the chosen drive

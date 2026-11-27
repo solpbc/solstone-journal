@@ -650,6 +650,113 @@ async function run(name, fn) {
     hSame.dispose();
   });
 
+  // 10. export_copy_unconfirmed distinguishes unconfirmed validator from checksum failure,
+  //     refreshes current copy without retrying stale metadata, and allows a fresh save.
+  await run('export_copy_unconfirmed refreshes current copy without retrying stale metadata', async () => {
+    const sent = [];
+    const nativeHost = {
+      version: 2,
+      types: ['export.start', 'export.status', 'export.pause', 'export.resume', 'export.cancel', 'export.reveal', 'export.device_space'],
+      send(msg) {
+        sent.push(msg);
+        return { phase: 'idle' };
+      },
+    };
+    const staleReady = {
+      export_id: 'exp_stale_1',
+      mode: 'full',
+      filename: 'solstone-journal-old.zip',
+      size_bytes: 16777216,
+      sha256: '1'.repeat(64),
+      etag: '"' + '1'.repeat(64) + '"',
+      created_at: '2026-11-26T17:10:00Z',
+      download_path: '/app/export/api/ready/exp_stale_1/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_stale_1',
+    };
+    const freshReady = {
+      export_id: 'exp_fresh_2',
+      mode: 'full',
+      filename: 'solstone-journal-new.zip',
+      size_bytes: 16780000,
+      sha256: '2'.repeat(64),
+      etag: '"' + '2'.repeat(64) + '"',
+      created_at: '2026-11-26T17:20:00Z',
+      download_path: '/app/export/api/ready/exp_fresh_2/download',
+      legacy_download_path: '/app/import/api/journal-archive/export?id=exp_fresh_2',
+    };
+
+    let stateFetches = 0;
+    let currentState = { status: 'ready', other_requester_busy: false, active_job: null, ready: staleReady };
+    const h = createHarness({
+      nativeHost,
+      fetch: (url) => {
+        if (url.includes('/estimate')) return jsonResp(200, sampleEstimate());
+        stateFetches += 1;
+        return jsonResp(200, currentState);
+      },
+    });
+    await flush();
+
+    // Emit export_copy_unconfirmed from native host for staleReady.
+    h.emitNative({
+      phase: 'error',
+      export_id: 'exp_stale_1',
+      platform: 'macos',
+      error_code: 'export_copy_unconfirmed',
+    });
+
+    const errBand = h.root.querySelector('[data-export-error="export_copy_unconfirmed"]');
+    assert.ok(errBand, 'export_copy_unconfirmed error card rendered');
+    assert.ok(errBand.textContent.includes("couldn't confirm this prepared copy"), errBand.textContent);
+    assert.ok(!errBand.textContent.includes('failed verification'), 'must not use checksum mismatch copy');
+    assert.ok(!errBand.textContent.includes('24 hours'), 'must not use expiry copy');
+    assert.ok(!errBand.textContent.includes('packing'), 'must not use source_changed packing copy');
+
+    // Stale Save Copy button must be disabled and must not send export.start with stale metadata.
+    const staleSaveBtn = h.root.querySelector('#exportPrimarySaveBtn');
+    assert.ok(staleSaveBtn && staleSaveBtn.hasAttribute('disabled'), 'save button disabled while copy is unconfirmed');
+    staleSaveBtn.click();
+    assert.strictEqual(sent.filter((m) => m.type === 'export.start').length, 0, 'disabled save must not retry stale metadata');
+
+    // Server now serves freshReady; clicking check current copy refreshes state without auto-retrying stale metadata.
+    currentState = { status: 'ready', other_requester_busy: false, active_job: null, ready: freshReady };
+    const beforeRefreshFetches = stateFetches;
+    const refreshBtn = h.root.querySelector('#exportRefreshCopyBtn');
+    assert.ok(refreshBtn && refreshBtn.textContent.includes('check current copy'), 'recovery action offers check current copy');
+    refreshBtn.click();
+    await flush();
+    await flush();
+
+    assert.strictEqual(stateFetches, beforeRefreshFetches + 1, 'recovery action refreshed /api/state');
+    assert.strictEqual(sent.filter((m) => m.type === 'export.start').length, 0, 'refresh must not auto-start with stale metadata');
+    assert.ok(!h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'), 'unconfirmed error cleared after refresh');
+
+    // Fresh Save Copy button is now enabled and sends freshReady metadata.
+    const freshSaveBtn = h.root.querySelector('#exportPrimarySaveBtn');
+    assert.ok(freshSaveBtn && !freshSaveBtn.hasAttribute('disabled'), 'fresh save button enabled after refresh');
+    freshSaveBtn.click();
+    const starts = sent.filter((m) => m.type === 'export.start');
+    assert.strictEqual(starts.length, 1);
+    assert.strictEqual(starts[0].export_id, 'exp_fresh_2');
+    assert.strictEqual(starts[0].etag, freshReady.etag);
+    assert.strictEqual(starts[0].sha256, freshReady.sha256);
+
+    // Also confirm when refresh finds the copy gone (idle), workspace returns cleanly to choose & size.
+    h.emitNative({
+      phase: 'error',
+      export_id: 'exp_fresh_2',
+      platform: 'ios',
+      error_code: 'export_copy_unconfirmed',
+    });
+    currentState = { status: 'idle', other_requester_busy: false, active_job: null, ready: null };
+    h.root.querySelector('#exportRefreshCopyBtn').click();
+    await flush();
+    await flush();
+    assert.ok(!h.root.querySelector('[data-export-error="export_copy_unconfirmed"]'));
+    assert.ok(h.root.querySelector('#exportPrepareBtn'), 'returns to prepare view when current copy is gone');
+    h.dispose();
+  });
+
   console.log(`DOM CASES: ${passed} passed`);
 })().catch((err) => {
   console.error(err);

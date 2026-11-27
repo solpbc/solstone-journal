@@ -1,0 +1,16 @@
+{
+  "description": "Error heading when the app cannot confirm the server still holds the same prepared export copy.",
+  "context": "journal-window. Error heading when the app cannot confirm the server still holds the same prepared export copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a77f5475a1ce44512ca6e9d578ec50c50a2bc694ee9a2c299e464fb9b5d74d11",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

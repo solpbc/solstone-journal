@@ -1,0 +1,16 @@
+{
+  "description": "Error body when the app cannot confirm the server still holds the same prepared export copy.",
+  "context": "journal-window. Error body when the app cannot confirm the server still holds the same prepared export copy.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e3bedb9458f6350b3227c7387ecc214626a5af1716beac78f9e9fc61f2a61f37",
+  "max_length": 260,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

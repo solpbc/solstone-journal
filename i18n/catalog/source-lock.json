@@ -79410,6 +79410,27 @@
       "locales": []
     },
     {
+      "id": "journal.window.export.err.copy.unconfirmed.action",
+      "source": "efe4b5cd1ebec95c928e88a5893ac15554df1010423f1eed952915892864e421",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.export.err.copy.unconfirmed.body",
+      "source": "e3bedb9458f6350b3227c7387ecc214626a5af1716beac78f9e9fc61f2a61f37",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.export.err.copy.unconfirmed.title",
+      "source": "a77f5475a1ce44512ca6e9d578ec50c50a2bc694ee9a2c299e464fb9b5d74d11",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.export.err.dest.write.body",
       "source": "d75ae0067030bd59426bfdc3f942827ed5b7ad0f60ee869cc4ab133e2c8e7e9b",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

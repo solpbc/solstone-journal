@@ -514,6 +514,18 @@
         label: t('journal.window.export.err.expired.action'),
         onClick: () => actions.clearError(),
       });
+    } else if (code === 'export_copy_unconfirmed') {
+      tone = 'is-warn';
+      title = t('journal.window.export.err.copy.unconfirmed.title');
+      body = t('journal.window.export.err.copy.unconfirmed.body');
+      primaryBtn = createButton(doc, {
+        id: 'exportRefreshCopyBtn',
+        focusKey: 'err-refresh-copy',
+        variant: 'is-primary',
+        disabled: Boolean(actions.isRefreshingCopy && actions.isRefreshingCopy()),
+        label: t('journal.window.export.err.copy.unconfirmed.action'),
+        onClick: () => actions.refreshCurrentCopy(),
+      });
     } else if (code === 'checksum_mismatch' || code === 'export_verification_failed') {
       tone = 'is-err';
       title = t('journal.window.export.err.checksum.title');
@@ -995,8 +1007,16 @@
         )
       );
 
-      // Native error (e.g. checksum mismatch, dest write failed, insufficient device space).
-      if (nativeState && (nativeState.phase === 'error' || nativeState.phase === 'failed')) {
+      // Native error (e.g. unconfirmed prepared copy, checksum mismatch, dest write failed, insufficient device space).
+      const nativeErrorMatchesReady = Boolean(
+        nativeState &&
+          (nativeState.phase === 'error' || nativeState.phase === 'failed') &&
+          (!nativeState.export_id || nativeState.export_id === ready.export_id)
+      );
+      const isUnconfirmedCopyError = Boolean(
+        nativeErrorMatchesReady && nativeState.error_code === 'export_copy_unconfirmed'
+      );
+      if (nativeErrorMatchesReady) {
         root.appendChild(
           renderErrorCard(
             doc,
@@ -1109,8 +1129,11 @@
             id: 'exportPrimarySaveBtn',
             focusKey: 'save-copy',
             variant: 'is-primary',
+            disabled: isUnconfirmedCopyError,
             label: t('journal.window.export.ready.save'),
-            onClick: () => actions.startNativeSave(ready),
+            onClick: () => {
+              if (!isUnconfirmedCopyError) actions.startNativeSave(ready);
+            },
           })
         );
       } else {
@@ -1498,6 +1521,7 @@
       openFolds: {},
       startingJob: false,
       cancellingPrep: false,
+      refreshingCopy: false,
       browserStarted: false,
       confirmDiscard: false,
       discardConflict: false,
@@ -1625,13 +1649,22 @@
               ui.confirmDiscard = false;
               ui.discardConflict = false;
               ui.dismissedSavedCleanup = false;
+              if (
+                ui.nativeState &&
+                (ui.nativeState.phase === 'error' || ui.nativeState.phase === 'failed') &&
+                (!ui.nativeState.export_id || ui.nativeState.export_id === prevReadyId)
+              ) {
+                ui.nativeState = null;
+              }
               if (data.status !== 'ready' || prevReadyId !== nextReadyId) {
                 ui.browserStarted = false;
               }
             }
+            return true;
           }
+          return false;
         })
-        .catch(() => {});
+        .catch(() => false);
     }
 
     const actions = {
@@ -1639,6 +1672,7 @@
       hasNativeExportHost: () => getNativeExportHost() !== null,
       isOlderPairedHost: () => isOlderPairedHost(),
       isSavedCleanupDismissed: () => ui.dismissedSavedCleanup,
+      isRefreshingCopy: () => ui.refreshingCopy,
       selectMode(mode) {
         ui.mode = mode;
         ui.startError = null;
@@ -1801,6 +1835,28 @@
         } else {
           draw();
         }
+      },
+      refreshCurrentCopy() {
+        if (ui.refreshingCopy) return;
+        ui.refreshingCopy = true;
+        draw();
+        Promise.all([loadState(), loadEstimate()])
+          .then(([stateOk]) => {
+            if (ctx.disposed) return;
+            ui.refreshingCopy = false;
+            if (stateOk) {
+              ui.nativeState = null;
+              ui.startError = null;
+              ui.dismissedTerminal = false;
+            }
+            draw();
+            schedulePoll();
+          })
+          .catch(() => {
+            if (ctx.disposed) return;
+            ui.refreshingCopy = false;
+            draw();
+          });
       },
       pauseNative() {
         const contract = getExportContract();

@@ -1,0 +1,16 @@
+{
+  "description": "Action button to refresh the current prepared copy from the journal before saving again.",
+  "context": "journal-window. Action button to refresh the current prepared copy from the journal before saving again.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "efe4b5cd1ebec95c928e88a5893ac15554df1010423f1eed952915892864e421",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

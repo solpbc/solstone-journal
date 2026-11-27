@@ -25431,3 +25431,9 @@ journal.window.export.drive.temp = your journal's temporary drive
 journal.window.export.drive.label.journal = journal drive
 
 journal.window.export.drive.label.temp = journal's temporary drive
+
+journal.window.export.err.copy.unconfirmed.title = couldn't confirm this prepared copy
+
+journal.window.export.err.copy.unconfirmed.body = couldn't confirm this is still the same prepared copy, so the unfinished save was cleared and any existing file at that location was left untouched. check the current copy before saving again.
+
+journal.window.export.err.copy.unconfirmed.action = check current copy
