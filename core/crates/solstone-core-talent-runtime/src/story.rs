@@ -230,6 +230,11 @@ fn quoted_lines(source: &EntrySource) -> Option<Vec<(Framing, &str)>> {
                     || record.get("truncated") == Some(&Value::Bool(true))
                     || solstone_core_format::content::has_partial_input(record)
                     || fields.get("to").is_some()
+                    || fields.get("cc").is_some()
+                    || fields.get("subject").is_some()
+                    || fields.get("reply_to").is_some()
+                    || fields.get("forwarded").is_some()
+                    || fields.get("attachments").is_some()
                     || rendered(index, record)?
                         != solstone_core_transcripts::talent_message_turn(
                             stream,

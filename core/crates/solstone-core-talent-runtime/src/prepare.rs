@@ -2118,4 +2118,81 @@ mod tests {
         assert_eq!(browser_instruction, legacy_instruction);
         assert_ne!(browser_instruction, ordinary_instruction);
     }
+
+    #[test]
+    fn import_email_sense_selects_static_sense_with_subject_reply_and_forwarded_context() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let journal = root.path().join("journal");
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        let templates_dir = root.path().join("templates");
+        let seg_dir = journal.join("chronicle/20261118/import.email/101600_300");
+        for dir in [
+            &talent_root,
+            &apps_root,
+            &templates_dir,
+            &journal.join("config"),
+            &seg_dir,
+        ] {
+            fs::create_dir_all(dir).expect("fixture directory");
+        }
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"preferred":"Maya"},"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .unwrap();
+        let schema = r#"{"type":"object","properties":{}}"#;
+        fs::write(talent_root.join("sense.schema.json"), schema).unwrap();
+        fs::write(talent_root.join("sense_static.schema.json"), schema).unwrap();
+        fs::write(
+            talent_root.join("sense.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schema\":\"sense.schema.json\",\"load\":{\"transcripts\":true,\"percepts\":true,\"talents\":false}\n}\nLive sense.",
+        )
+        .unwrap();
+        fs::write(templates_dir.join("sense_static.md"), "Static sense.").unwrap();
+        fs::write(
+            seg_dir.join("conversation_transcript.jsonl"),
+            concat!(
+                "{\"source\":\"email\",\"provider\":\"gmail\",\"run_id\":\"email-1\",\"email\":{\"account\":\"maya@example.com\"}}\n",
+                "{\"start\":\"00:00:00\",\"sent_at\":\"2026-11-18T17:16:00Z\",\"speaker\":\"You\",\"is_owner\":true,\"to\":[\"Casey\"],\"cc\":[\"Lee\"],\"subject\":\"Permit renewal\",\"text\":\"Sounds good!\",\"attachments\":[{\"name\":\"permit.pdf\"}],\"reply_to\":{\"author\":\"Casey\",\"sent_at\":\"2026-11-18T16:50:00Z\",\"text\":\"Can we file the city permit renewal tomorrow morning?\"}}\n"
+            ),
+        )
+        .unwrap();
+
+        let paths = RuntimePaths {
+            talent_root,
+            apps_root,
+            templates_dir,
+        };
+        let exec_ctx = ExecutionContext { journal };
+        let prepared = prepare(
+            json!({
+                "name": "sense",
+                "day": "20261118",
+                "segment": "101600_300",
+                "stream": "import.email",
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            &paths,
+            &exec_ctx,
+            PrepareMode::Preview,
+        )
+        .expect("prepare");
+        assert!(
+            prepared.config.get("skip_reason").is_none(),
+            "short reply with subject/reply_to must not skip as no_input: {:?}",
+            prepared.config.get("skip_reason")
+        );
+        assert_eq!(prepared.config.get("_sense_static"), Some(&Value::Bool(true)));
+        let transcript = prepared.config["transcript"].as_str().unwrap();
+        assert!(transcript.contains("Subject: Permit renewal"), "{transcript}");
+        assert!(transcript.contains("(cc Lee)"), "{transcript}");
+        assert!(transcript.contains("Attachments: permit.pdf"), "{transcript}");
+        assert!(
+            transcript.contains("Can we file the city permit renewal tomorrow morning?"),
+            "{transcript}"
+        );
+    }
 }

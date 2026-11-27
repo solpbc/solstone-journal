@@ -1715,6 +1715,31 @@ fn process_segment(
     entries
 }
 
+/// Maximum characters kept for each embedded `reply_to` or `forwarded` block
+/// in the talent view so long quoted threads stay within local model budgets.
+const TALENT_CONTEXT_BLOCK_MAX_CHARS: usize = 4_000;
+
+fn bound_talent_context_text(text: &str) -> String {
+    let trimmed = text.trim();
+    let mut chars = trimmed.chars();
+    let head: String = chars.by_ref().take(TALENT_CONTEXT_BLOCK_MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{}\n[...]", head.trim_end())
+    } else {
+        head
+    }
+}
+
+fn format_attachment_names(items: &[Value]) -> Option<String> {
+    let names: Vec<&str> = items
+        .iter()
+        .filter_map(|att| att.get("name").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    (!names.is_empty()).then(|| names.join(", "))
+}
+
 /// The source words and provenance shown to a local talent. The Story writer
 /// uses the same rendering when checking an exact quoted body.
 pub fn talent_message_turn(
@@ -1747,12 +1772,87 @@ pub fn talent_message_turn(
             .join(", ");
         prefix.push(format!("to {names}"));
     }
+    if let Some(cc) = fields["cc"].as_array() {
+        let names = cc
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !names.is_empty() {
+            prefix.push(format!("(cc {names})"));
+        }
+    }
     let body = row["text"].as_str()?;
-    let turn = if prefix.is_empty() {
-        body.to_owned()
-    } else {
-        format!("{}: {body}", prefix.join(" "))
+    let subject = fields["subject"].as_str();
+    let mut turn = match (prefix.is_empty(), subject) {
+        (true, None) => body.to_owned(),
+        (false, None) => format!("{}: {body}", prefix.join(" ")),
+        (true, Some(subj)) => format!("Subject: {subj}\n{body}"),
+        (false, Some(subj)) => format!("{}\nSubject: {subj}\n{body}", prefix.join(" ")),
     };
+    if let Some(atts) = fields["attachments"].as_array()
+        && let Some(names) = format_attachment_names(atts)
+    {
+        turn.push_str("\nAttachments: ");
+        turn.push_str(&names);
+    }
+    if let Some(forwarded) = fields["forwarded"].as_array() {
+        for item in forwarded.iter().filter_map(Value::as_object) {
+            let Some(text) = item.get("text").and_then(Value::as_str) else {
+                continue;
+            };
+            let bounded = bound_talent_context_text(text);
+            if bounded.is_empty() {
+                continue;
+            }
+            let mut meta = Vec::new();
+            if let Some(from) = item.get("from").and_then(Value::as_str) {
+                meta.push(format!("from {from}"));
+            }
+            if let Some(date) = item.get("date").and_then(Value::as_str) {
+                meta.push(date.to_owned());
+            }
+            if let Some(subj) = item.get("subject").and_then(Value::as_str) {
+                meta.push(format!("subject: {subj}"));
+            }
+            if meta.is_empty() {
+                turn.push_str("\n\nForwarded message:\n");
+            } else {
+                turn.push_str(&format!("\n\nForwarded message ({}):\n", meta.join(", ")));
+            }
+            turn.push_str(&bounded);
+        }
+    }
+    if let Some(reply) = fields["reply_to"].as_object()
+        && let Some(text) = reply.get("text").and_then(Value::as_str)
+    {
+        let bounded = bound_talent_context_text(text);
+        if !bounded.is_empty() {
+            let author = reply.get("author").and_then(Value::as_str);
+            let sent_at = reply.get("sent_at").and_then(Value::as_str);
+            match (author, sent_at) {
+                (Some(author), Some(sent_at)) => {
+                    turn.push_str(&format!("\n\nIn reply to {author} [{sent_at}]:\n"));
+                }
+                (Some(author), None) => {
+                    turn.push_str(&format!("\n\nIn reply to {author}:\n"));
+                }
+                (None, Some(sent_at)) => {
+                    turn.push_str(&format!("\n\nIn reply to [{sent_at}]:\n"));
+                }
+                (None, None) => {
+                    turn.push_str("\n\nIn reply to:\n");
+                }
+            }
+            turn.push_str(&bounded);
+            if let Some(atts) = reply.get("attachments").and_then(Value::as_array)
+                && let Some(names) = format_attachment_names(atts)
+            {
+                turn.push_str("\nReply attachments: ");
+                turn.push_str(&names);
+            }
+        }
+    }
     Some(solstone_core_format::content::with_partial_input_notice(
         turn, row,
     ))
@@ -4372,5 +4472,100 @@ mod tests {
             ]
         );
         assert!(page.next.is_none());
+    }
+
+    #[test]
+    fn talent_message_turn_includes_email_context_without_item_refs_and_preserves_plain_chat() {
+        let email_row = serde_json::json!({
+            "start": "00:00:00",
+            "sent_at": "2026-11-18T17:16:00Z",
+            "speaker": "You",
+            "is_owner": true,
+            "to": ["Casey"],
+            "cc": ["Lee"],
+            "subject": "Q4 Board Deck",
+            "text": "Sounds good!",
+            "attachments": [
+                {"name": "deck-v3.pdf", "item_ref": "sha256:secret-ref-1"},
+                {"name": "chart.png", "inline": true}
+            ],
+            "forwarded": [{
+                "from": "Alex",
+                "date": "2026-11-18",
+                "subject": "Metrics",
+                "text": "ARR grew 40% quarter over quarter."
+            }],
+            "reply_to": {
+                "author": "Casey",
+                "sent_at": "2026-11-18T16:50:00Z",
+                "text": "Can we finalize the Q4 board deck before Friday?",
+                "attachments": [{"name": "draft.pdf", "item_ref": "sha256:secret-ref-2"}]
+            }
+        });
+        let rendered = talent_message_turn(
+            "import.email",
+            "conversation_transcript.jsonl",
+            1,
+            email_row.as_object().unwrap(),
+            false,
+        )
+        .expect("email turn renders");
+        assert!(rendered.contains("to Casey (cc Lee)"), "{rendered}");
+        assert!(rendered.contains("Subject: Q4 Board Deck"), "{rendered}");
+        assert!(rendered.contains("Sounds good!"), "{rendered}");
+        assert!(
+            rendered.contains("Attachments: deck-v3.pdf, chart.png"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("Forwarded message (from Alex, 2026-11-18, subject: Metrics):"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("ARR grew 40% quarter over quarter."),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("In reply to Casey [2026-11-18T16:50:00Z]:"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("Can we finalize the Q4 board deck before Friday?"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("Reply attachments: draft.pdf"), "{rendered}");
+        assert!(!rendered.contains("secret-ref-1"), "{rendered}");
+        assert!(!rendered.contains("secret-ref-2"), "{rendered}");
+
+        let counts = SourceCounts {
+            transcripts: 1,
+            ..Default::default()
+        };
+        assert!(
+            !is_no_input(&rendered, &counts),
+            "short reply with subject/reply_to context must clear MIN_INPUT_CHARS"
+        );
+
+        // Plain AI chat turn without email fields must remain byte-identical.
+        let chat_row = serde_json::json!({
+            "start": "00:00:00",
+            "sent_at": "2026-11-18T17:16:00Z",
+            "speaker": "You",
+            "is_owner": true,
+            "source": "import",
+            "text": "Explain Rust lifetimes."
+        });
+        let plain = talent_message_turn(
+            "import.claude",
+            "conversation_transcript.jsonl",
+            1,
+            chat_row.as_object().unwrap(),
+            false,
+        )
+        .expect("chat turn renders");
+        assert_eq!(
+            plain,
+            "[2026-11-18T17:16:00Z] Journal owner: Explain Rust lifetimes."
+        );
     }
 }
