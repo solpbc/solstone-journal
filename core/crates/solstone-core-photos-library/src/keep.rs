@@ -45,8 +45,8 @@ use solstone_core_segment::PHOTOS_SOURCE;
 use solstone_core_segment::photo_observation::{BelongingClass, PhotoTimeProvenance};
 
 use crate::holding::{
-    WantedAssetStatus, holding_root, load_decisions, load_scan_rows, load_wanted_state,
-    lock_holding, save_wanted_state,
+    WantedAssetStatus, holding_root, load_wanted_state, lock_holding, lookup_asset_for_copy,
+    save_wanted_state,
 };
 use crate::received::{
     PhotoReceipt, lookup_received, record_received, record_suppression_for_segment,
@@ -174,16 +174,17 @@ pub fn ingest_photo_copy_with(
     }
     validate_jpeg(jpeg_bytes)?;
 
-    // 1. Read holding metadata & check durable received ledger before slow I/O.
-    let (decision, scan_row, effective_cloud_id, device_name) = {
+    // 1. Read narrow per-asset holding metadata & check durable received ledger before slow I/O.
+    //    Uses `selection_cache.sqlite` in O(1) (falling back to plain JSON once if missing/stale)
+    //    so ingesting a photo never reparses tens of megabytes of holding JSON under lock.
+    let (lookup, effective_cloud_id, device_name) = {
         let _lock = lock_holding(journal)?;
-        let decisions = load_decisions(journal)?;
-        let decision = decisions.into_iter().find(|d| d.id == asset_id);
+        let lookup = lookup_asset_for_copy(journal, asset_id)?;
         let effective_cloud = cloud_id
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_owned)
-            .or_else(|| decision.as_ref().and_then(|d| d.cloud_id.clone()));
+            .or_else(|| lookup.as_ref().and_then(|l| l.cloud_id.clone()));
 
         if let Some(rec) = lookup_received(journal, asset_id, effective_cloud.as_deref())
             .map_err(|e| format!("failed reading photos received ledger: {e}"))?
@@ -195,11 +196,8 @@ pub fn ingest_photo_copy_with(
             });
         }
 
-        let scan_row = load_scan_rows(journal)?
-            .into_iter()
-            .find(|r| r.id == asset_id);
         let device_name = read_device_name(journal, cid);
-        (decision, scan_row, effective_cloud, device_name)
+        (lookup, effective_cloud, device_name)
     };
 
     // 2. Stage JPEG bytes in a private temporary directory outside chronicle/.
@@ -222,9 +220,9 @@ pub fn ingest_photo_copy_with(
     let now_iso = solstone_core_time::utc_rfc3339(Timestamp::now());
 
     // 3. Others'-photos rung: require calibrated face match before keeping.
-    if decision
+    if lookup
         .as_ref()
-        .is_some_and(|d| d.decision == DecisionKind::StageOthersFaceCheck)
+        .is_some_and(|l| l.decision == Some(DecisionKind::StageOthersFaceCheck))
     {
         let matches = query_photo_faces_against_journal(journal, &stage_path, face_detector)?;
         if matches.is_empty() {
@@ -242,48 +240,45 @@ pub fn ingest_photo_copy_with(
     }
 
     // 4. Prepare Part A observation (JPEG vision read + belonging class).
-    let tz_name = decision
+    let tz_name = lookup
         .as_ref()
-        .and_then(|d| d.timezone.clone())
+        .and_then(|l| l.timezone.clone())
         .unwrap_or_else(|| "UTC".to_owned());
     let zone = TimeZone::get(&tz_name).unwrap_or(TimeZone::UTC);
 
     // Prefer exact local ISO derived from capture time + capture location timezone.
-    let client_captured_at = decision
+    let client_captured_at = lookup
         .as_ref()
-        .and_then(|d| d.local_iso.clone().or_else(|| d.captured_at.clone()))
-        .or_else(|| scan_row.as_ref().and_then(|r| r.captured_at.clone()))
+        .and_then(|l| l.local_iso.clone().or_else(|| l.captured_at.clone()))
         .or_else(|| metadata_override.and_then(|m| m.captured_at.clone()));
 
-    let caption = scan_row
+    let caption = lookup
         .as_ref()
-        .and_then(|r| r.extended.as_ref())
-        .and_then(|e| e.caption.clone())
+        .and_then(|l| l.caption.clone())
         .or_else(|| metadata_override.and_then(|m| m.caption.clone()))
         .map(|c| c.trim().to_owned())
         .filter(|c| !c.is_empty());
 
-    let original_filename = scan_row
+    let original_filename = lookup
         .as_ref()
-        .and_then(|r| r.extended.as_ref())
-        .and_then(|e| e.original_filename.clone())
+        .and_then(|l| l.original_filename.clone())
         .or_else(|| metadata_override.and_then(|m| m.original_filename.clone()));
 
-    let camera = scan_row
+    let camera = lookup
         .as_ref()
-        .and_then(|r| r.extended.as_ref())
-        .and_then(|e| e.camera.clone())
+        .and_then(|l| l.camera.clone())
         .or_else(|| metadata_override.and_then(|m| m.camera.clone()));
 
-    let capture_location = scan_row
+    let capture_location = lookup
         .as_ref()
-        .and_then(|r| r.location.as_ref())
-        .map(|loc| CaptureLocation {
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-            accuracy_m: loc.horizontal_accuracy_m,
-            camera_make: None,
-            camera_model: camera.clone(),
+        .and_then(|l| {
+            Some(CaptureLocation {
+                latitude: l.latitude?,
+                longitude: l.longitude?,
+                accuracy_m: l.horizontal_accuracy_m,
+                camera_make: None,
+                camera_model: camera.clone(),
+            })
         })
         .or_else(|| {
             metadata_override.and_then(|m| {

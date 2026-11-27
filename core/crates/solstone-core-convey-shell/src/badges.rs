@@ -108,11 +108,7 @@ pub(crate) fn badges_payload_in(
     }
 
     let email_attention = usize::from(solstone_core_settings_web::email_needs_attention(root));
-    let photos_attention = usize::from(
-        solstone_core_photos_library::photos_library_visible(root)
-            && solstone_core_photos_library::dashboard_state(root)
-                .is_ok_and(|s| s.state == "needs_attention"),
-    );
+    let photos_attention = usize::from(solstone_core_photos_library::photos_needs_attention(root));
     let sources_attention = email_attention + photos_attention;
     if sources_attention > 0 {
         issues += sources_attention;
@@ -461,12 +457,27 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         req_on.extensions_mut().insert(AccessBasis::Localhost);
-        let resp_on = app.oneshot(req_on).await.unwrap();
+        let resp_on = app.clone().oneshot(req_on).await.unwrap();
         let body_on: Value =
             serde_json::from_slice(&to_bytes(resp_on.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
         assert_eq!(body_on["sources"], 1);
         assert_eq!(body_on["home"]["issues"], 1);
         assert_eq!(body_on["home"]["severity"], "amber");
+
+        // Badge polling must read only `state.json`, never parsing `selection/decisions.json`.
+        let sel_dir = dir.path().join("config/photos-library/selection");
+        fs::create_dir_all(&sel_dir).expect("selection dir");
+        fs::write(sel_dir.join("decisions.json"), b"{unparseable").expect("corrupt decisions");
+        let mut req_fast = Request::get("/api/shell/badges")
+            .body(Body::empty())
+            .unwrap();
+        req_fast.extensions_mut().insert(AccessBasis::Localhost);
+        let resp_fast = app.oneshot(req_fast).await.unwrap();
+        assert_eq!(resp_fast.status(), StatusCode::OK);
+        let body_fast: Value =
+            serde_json::from_slice(&to_bytes(resp_fast.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body_fast["sources"], 1);
     }
 }

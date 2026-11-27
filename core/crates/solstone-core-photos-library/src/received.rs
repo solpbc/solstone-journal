@@ -16,6 +16,7 @@
 //! - Fails closed if an existing record cannot be read or parsed rather than
 //!   treating it as absent.
 
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -196,4 +197,134 @@ pub fn is_segment_live(journal: &Path, receipt: &PhotoReceipt) -> bool {
         .join(&receipt.stream)
         .join(&receipt.segment);
     dir.is_dir() && !dir.join("tombstone.json").is_file()
+}
+
+/// Point-in-time directory index of `config/photos/received/` for bulk lookups
+/// (`dashboard_state`, `lease_wanted`).
+///
+/// Enumerates the two-hex-prefix shards once so checking tens of thousands of
+/// scanned assets against `0..N` received receipts avoids tens of thousands of
+/// `ENOENT` syscalls (and avoids SHA-256 hashing altogether when empty), while
+/// preserving the fail-closed semantics of [`lookup_received`]:
+/// - A non-directory `config/photos/received` or unreadable/non-directory shard
+///   returns an error.
+/// - Any matched hash reads and parses its receipt JSON and returns an error on
+///   malformed JSON or I/O failure.
+pub struct ReceivedLedgerSnapshot {
+    journal: PathBuf,
+    present_hashes: HashSet<String>,
+    parsed: HashMap<String, PhotoReceipt>,
+    live_cache: HashMap<(String, String, String), bool>,
+}
+
+impl ReceivedLedgerSnapshot {
+    /// Load the set of existing receipt hashes under `config/photos/received/`.
+    pub fn load(journal: &Path) -> io::Result<Self> {
+        let received_dir = journal.join(RECEIVED_DIR);
+        match std::fs::symlink_metadata(&received_dir) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => {
+                return Err(io::Error::other(
+                    "photos received ledger is not a directory",
+                ));
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                return Ok(Self::empty(journal));
+            }
+            Err(err) => return Err(err),
+        }
+
+        let mut present_hashes = HashSet::new();
+        for shard_entry in std::fs::read_dir(&received_dir)? {
+            let shard_entry = shard_entry?;
+            let shard_name = shard_entry.file_name();
+            let Some(shard_str) = shard_name.to_str() else {
+                continue;
+            };
+            if shard_str.len() != 2 || !shard_str.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            let shard_type = shard_entry.file_type()?;
+            if !shard_type.is_dir() {
+                return Err(io::Error::other("photos received shard is not a directory"));
+            }
+            for item_entry in std::fs::read_dir(shard_entry.path())? {
+                let item_entry = item_entry?;
+                let item_name = item_entry.file_name();
+                if let Some(stem) = item_name.to_str().and_then(|s| s.strip_suffix(".json")) {
+                    present_hashes.insert(stem.to_owned());
+                }
+            }
+        }
+
+        Ok(Self {
+            journal: journal.to_path_buf(),
+            present_hashes,
+            parsed: HashMap::new(),
+            live_cache: HashMap::new(),
+        })
+    }
+
+    #[must_use]
+    pub fn empty(journal: &Path) -> Self {
+        Self {
+            journal: journal.to_path_buf(),
+            present_hashes: HashSet::new(),
+            parsed: HashMap::new(),
+            live_cache: HashMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.present_hashes.is_empty()
+    }
+
+    fn read_cached_hash(&mut self, hash: &str) -> io::Result<PhotoReceipt> {
+        if let Some(rec) = self.parsed.get(hash) {
+            return Ok(rec.clone());
+        }
+        let bytes = std::fs::read(receipt_path(&self.journal, hash))?;
+        let rec: PhotoReceipt = serde_json::from_slice(&bytes)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        self.parsed.insert(hash.to_owned(), rec.clone());
+        Ok(rec)
+    }
+
+    /// Fail-closed lookup matching [`lookup_received`].
+    pub fn lookup(
+        &mut self,
+        asset_id: &str,
+        cloud_id: Option<&str>,
+    ) -> io::Result<Option<PhotoReceipt>> {
+        if self.present_hashes.is_empty() {
+            return Ok(None);
+        }
+        let asset_hash = id_hash("asset", asset_id);
+        if self.present_hashes.contains(&asset_hash) {
+            return self.read_cached_hash(&asset_hash).map(Some);
+        }
+        if let Some(cid) = cloud_id.map(str::trim).filter(|s| !s.is_empty()) {
+            let cloud_hash = id_hash("cloud", cid);
+            if self.present_hashes.contains(&cloud_hash) {
+                return self.read_cached_hash(&cloud_hash).map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Cached check of [`is_segment_live`] for a receipt returned by this snapshot.
+    pub fn is_live(&mut self, receipt: &PhotoReceipt) -> bool {
+        let key = (
+            receipt.day.clone(),
+            receipt.stream.clone(),
+            receipt.segment.clone(),
+        );
+        if let Some(&live) = self.live_cache.get(&key) {
+            return live;
+        }
+        let live = is_segment_live(&self.journal, receipt);
+        self.live_cache.insert(key, live);
+        live
+    }
 }

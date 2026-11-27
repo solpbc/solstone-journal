@@ -14,18 +14,21 @@ pub mod types;
 
 pub use holding::{
     DEVICE_CONNECTED_WINDOW_SECS, HOLDING_DIR_REL, can_run_others_face_check, capable_device_kinds,
-    choose_range, dashboard_state, dashboard_state_at, dashboard_state_with_live_seen,
-    holding_root, lease_wanted, list_landed_photos, mark_wanted_non_copy, photos_library_enabled,
-    photos_library_visible, rebuild_from_plain_json, rebuild_sqlite_index, record_capable_device,
-    remove_capable_device, scan_batch, scan_changes, scan_finish, scan_start, set_paused,
-    sqlite_cache_path, turn_off, update_device_status, widen_range,
+    choose_range, choose_range_with_live_seen, dashboard_state, dashboard_state_at,
+    dashboard_state_with_live_seen, holding_root, lease_wanted, list_landed_photos,
+    mark_wanted_non_copy, photos_library_enabled, photos_library_visible, photos_needs_attention,
+    rebuild_from_plain_json, rebuild_sqlite_index, record_capable_device, remove_capable_device,
+    scan_batch, scan_changes, scan_finish, scan_start, set_paused, set_paused_with_live_seen,
+    sqlite_cache_path, turn_off, turn_off_with_live_seen, update_device_status, widen_range,
+    widen_range_with_live_seen,
 };
 pub use keep::{
     CopyIngestOutcome, CopyMetadataOverride, TrashPhotosResult, TrashSegmentRef, ingest_photo_copy,
     ingest_photo_copy_with, trash_chosen_photos,
 };
 pub use received::{
-    PhotoReceipt, is_segment_live, lookup_received, record_received, record_suppression_for_segment,
+    PhotoReceipt, ReceivedLedgerSnapshot, is_segment_live, lookup_received, record_received,
+    record_suppression_for_segment,
 };
 pub use selection::{SmartAlbumContractError, run_selection, validate_smart_album_contract};
 
@@ -1021,5 +1024,330 @@ mod tests {
         // Unpairing the capable device hides the row again when no photos state exists.
         remove_capable_device(journal, "sha256:new-ipad").unwrap();
         assert!(!photos_library_visible(journal));
+    }
+
+    #[test]
+    fn large_synthetic_40k_library_choose_all_state_wanted_copy_and_noop_delta_stay_fast() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+
+        // Build a purely synthetic 40,000-asset library matching real large-library
+        // populations: ~24k eligible own stills, ~14k kept all-time (~1,700 in last
+        // year), ~3,800 others' photos corroborated near own moments, ~12.2k left out.
+        let now = jiff::Timestamp::from_second(1_795_100_000).unwrap(); // 2026-11-19T14:53:20Z
+        let catalog = vec![
+            SmartAlbumCatalogEntry {
+                id: "sa-cbm".to_owned(),
+                subtype: SMART_CAPTURED_BY_ME,
+                title: Some("Captured by Me".to_owned()),
+                count: 24_000,
+            },
+            SmartAlbumCatalogEntry {
+                id: "sa-saved".to_owned(),
+                subtype: SMART_RECENTLY_SAVED,
+                title: Some("Recently Saved".to_owned()),
+                count: 6_800,
+            },
+            SmartAlbumCatalogEntry {
+                id: "sa-recents".to_owned(),
+                subtype: SMART_RECENTS,
+                title: Some("Recents".to_owned()),
+                count: 40_000,
+            },
+        ];
+
+        scan_start(
+            journal,
+            "sha256:synthetic-scale-device",
+            "Scale Phone",
+            "iphone",
+            "authorized",
+            40_000,
+            catalog.clone(),
+        )
+        .unwrap();
+
+        let mut rows: Vec<ScanAssetRow> = Vec::with_capacity(40_000);
+        let mut anchor_ts: Vec<i64> = Vec::with_capacity(14_000);
+
+        // 1,700 own anchors across the last year (spaced 5 hours apart) +
+        // 12,300 earlier own anchors across prior years (spaced 9 hours apart).
+        for i in 0..14_000usize {
+            let offset_secs = if i < 1_700 {
+                (i as i64 + 1) * 5 * 3600
+            } else {
+                1_700 * 5 * 3600 + ((i - 1_700 + 1) as i64) * 9 * 3600
+            };
+            let ts = now.as_second() - offset_secs;
+            anchor_ts.push(ts);
+            let iso = solstone_core_time::utc_rfc3339(jiff::Timestamp::from_second(ts).unwrap());
+            let mut row = make_row(&format!("syn-own-{i:05}"), &iso, &[SMART_CAPTURED_BY_ME]);
+            row.cloud_id = Some(format!("syn-cloud-own-{i:05}"));
+            if i == 0 || i == 1 {
+                row.location = Some(AssetLocation {
+                    latitude: 40.015,
+                    longitude: -105.2705,
+                    horizontal_accuracy_m: Some(8.0),
+                    altitude: None,
+                });
+                row.extended = Some(AssetExtended {
+                    caption: Some(format!("Synthetic anchor {i}")),
+                    original_filename: Some(format!("SYN_{i:04}.JPG")),
+                    camera: Some("SyntheticCam".to_owned()),
+                    ..AssetExtended::default()
+                });
+            }
+            rows.push(row);
+        }
+
+        // 10,000 near-duplicate own stills (+3 s from first 10k anchors) -> collapsed.
+        for (i, &base_ts) in anchor_ts.iter().take(10_000).enumerate() {
+            let iso =
+                solstone_core_time::utc_rfc3339(jiff::Timestamp::from_second(base_ts + 3).unwrap());
+            rows.push(make_row(
+                &format!("syn-dup-{i:05}"),
+                &iso,
+                &[SMART_CAPTURED_BY_ME],
+            ));
+        }
+
+        // 3,800 others' photos corroborated +20 min from own anchors -> StageOthersFaceCheck.
+        for (i, &base_ts) in anchor_ts.iter().take(3_800).enumerate() {
+            let iso = solstone_core_time::utc_rfc3339(
+                jiff::Timestamp::from_second(base_ts + 1_200).unwrap(),
+            );
+            let mut row = make_row(&format!("syn-oth-{i:05}"), &iso, &[SMART_RECENTLY_SAVED]);
+            row.cloud_id = Some(format!("syn-cloud-oth-{i:05}"));
+            rows.push(row);
+        }
+
+        // 6,000 videos + 3,200 screenshots + 3,000 uncorroborated saved photos = 12,200 left out.
+        let old_base = jiff::Timestamp::from_second(1_200_000_000)
+            .unwrap()
+            .as_second(); // 2008
+        for i in 0..6_000usize {
+            let iso = solstone_core_time::utc_rfc3339(
+                jiff::Timestamp::from_second(old_base + (i as i64) * 300).unwrap(),
+            );
+            let mut row = make_row(&format!("syn-vid-{i:05}"), &iso, &[SMART_CAPTURED_BY_ME]);
+            row.media_type = "video".to_owned();
+            row.duration = Some(12.0);
+            rows.push(row);
+        }
+        for i in 0..3_200usize {
+            let iso = solstone_core_time::utc_rfc3339(
+                jiff::Timestamp::from_second(old_base + 2_000_000 + (i as i64) * 300).unwrap(),
+            );
+            let mut row = make_row(&format!("syn-scr-{i:05}"), &iso, &[SMART_SCREENSHOTS]);
+            row.screenshot = true;
+            rows.push(row);
+        }
+        for i in 0..3_000usize {
+            let iso = solstone_core_time::utc_rfc3339(
+                jiff::Timestamp::from_second(old_base + 4_000_000 + (i as i64) * 300).unwrap(),
+            );
+            rows.push(make_row(
+                &format!("syn-sav-{i:05}"),
+                &iso,
+                &[SMART_RECENTLY_SAVED],
+            ));
+        }
+        assert_eq!(rows.len(), 40_000);
+
+        let sample_unchanged = rows[0].clone();
+        for (idx, chunk) in rows.chunks(1_000).enumerate() {
+            scan_batch(
+                journal,
+                "sha256:synthetic-scale-device",
+                idx as u32,
+                chunk.to_vec(),
+                Some((idx + 1) * 1_000),
+            )
+            .unwrap();
+        }
+        let summary = scan_finish(
+            journal,
+            "sha256:synthetic-scale-device",
+            Some(40_000),
+            None,
+            Some("authorized"),
+            Some(0),
+        )
+        .unwrap();
+        assert_eq!(summary.total_assets, 40_000);
+        assert_eq!(summary.eligible_own_stills, 24_000);
+        assert_eq!(summary.kept, 14_000);
+        assert_eq!(summary.staged_others_face_check, 3_800);
+        assert_eq!(summary.left_out, 22_200);
+
+        // O(1) badge check stays instant and accurate without reading decisions.json.
+        let badge_t0 = std::time::Instant::now();
+        assert!(!photos_needs_attention(journal));
+        assert!(
+            badge_t0.elapsed() < std::time::Duration::from_millis(200),
+            "photos_needs_attention took {:?}",
+            badge_t0.elapsed()
+        );
+
+        // Choose "all" and verify range counts + bringing_in transition stay responsive.
+        let choose_t0 = std::time::Instant::now();
+        let chosen = choose_range(journal, &RangeSpec::Preset("all".to_owned())).unwrap();
+        assert!(
+            choose_t0.elapsed() < std::time::Duration::from_secs(2),
+            "choose_range(\"all\") at 40k scale took {:?}",
+            choose_t0.elapsed()
+        );
+        assert_eq!(chosen.state, "on");
+        assert_eq!(chosen.substate, "bringing_in");
+        assert_eq!(chosen.choice.range.as_deref(), Some("all"));
+        assert_eq!(chosen.ranges["all"].photos, 14_000);
+        assert!(chosen.ranges["1y"].photos >= 1_600 && chosen.ranges["1y"].photos <= 1_800);
+        assert_eq!(chosen.progress.chosen_total, 14_000);
+        assert_eq!(chosen.progress.waiting_on_phone, 14_000);
+
+        // Repeated dashboard_state polls stay fast (cached decisions + snapshot received ledger).
+        let state_t0 = std::time::Instant::now();
+        for _ in 0..5 {
+            let st = dashboard_state_at(journal, None, now).unwrap();
+            assert_eq!(st.progress.waiting_on_phone, 14_000);
+        }
+        assert!(
+            state_t0.elapsed() < std::time::Duration::from_secs(2),
+            "5x dashboard_state_at at 40k scale took {:?}",
+            state_t0.elapsed()
+        );
+
+        // Leasing a wanted batch of 20 stays fast and returns newest-first.
+        let lease_t0 = std::time::Instant::now();
+        let leased = lease_wanted(journal, "sha256:synthetic-scale-device", 20, Some(300)).unwrap();
+        assert!(
+            lease_t0.elapsed() < std::time::Duration::from_secs(2),
+            "lease_wanted at 40k scale took {:?}",
+            lease_t0.elapsed()
+        );
+        assert_eq!(leased.wanted.len(), 20);
+        assert_eq!(leased.wanted[0].asset_id, "syn-own-00000");
+        assert_eq!(leased.remaining, 13_980);
+
+        // Deliver photo 0 via O(1) SQLite v2 lookup (verifying caption + GPS preserved).
+        let wire = SeqWire::new(vec![
+            Ok(generated(
+                r#"{"description":"Sunny ridge trail.","visible_text":null,"belonging_class":"lived_moment"}"#,
+            )),
+            Ok(generated(
+                r#"{"description":"Mountain creek.","visible_text":null,"belonging_class":"lived_moment"}"#,
+            )),
+        ]);
+        let encoder = Encoder {
+            id: "opencv-sface-2021dec".to_owned(),
+            sha256: "test-sface-sha256".to_owned(),
+            width: faceprints::WIDTH,
+        };
+        let no_faces = StubDetector {
+            encoder,
+            faces: vec![],
+        };
+        let copy_t0 = std::time::Instant::now();
+        let out0 = ingest_photo_copy_with(
+            journal,
+            "sha256:synthetic-scale-device",
+            "syn-own-00000",
+            Some("syn-cloud-own-00000"),
+            &distinct_jpeg(10),
+            None,
+            &wire,
+            &no_faces,
+            &NativePublicationOperations,
+        )
+        .unwrap();
+        assert!(
+            copy_t0.elapsed() < std::time::Duration::from_secs(2),
+            "ingest_photo_copy via SQLite v2 at 40k scale took {:?}",
+            copy_t0.elapsed()
+        );
+        let (day0, stream0, seg0) = match out0 {
+            CopyIngestOutcome::Landed {
+                day,
+                stream,
+                segment,
+            } => (day, stream, segment),
+            other => panic!("expected Landed, got {other:?}"),
+        };
+        let seg0_dir = journal
+            .join("chronicle")
+            .join(&day0)
+            .join(&stream0)
+            .join(&seg0);
+        assert!(seg0_dir.join("location.jsonl").is_file());
+        let obs0 = read_photo_observation(&seg0_dir).unwrap();
+        assert_eq!(
+            obs0.owner_caption.as_ref().map(|c| c.text.as_str()),
+            Some("Synthetic anchor 0")
+        );
+
+        // Delete SQLite cache (simulating pre-v2 upgrade or cache deletion): ingest falls back
+        // to plain JSON once, rebuilds SQLite v2, and lands photo 1 with full metadata intact.
+        let db_path = sqlite_cache_path(journal);
+        fs::remove_file(&db_path).unwrap();
+        assert!(!db_path.is_file());
+        let out1 = ingest_photo_copy_with(
+            journal,
+            "sha256:synthetic-scale-device",
+            "syn-own-00001",
+            Some("syn-cloud-own-00001"),
+            &distinct_jpeg(11),
+            None,
+            &wire,
+            &no_faces,
+            &NativePublicationOperations,
+        )
+        .unwrap();
+        assert!(matches!(out1, CopyIngestOutcome::Landed { .. }));
+        assert!(
+            db_path.is_file(),
+            "SQLite v2 cache should auto-rebuild on fallback"
+        );
+
+        // No-op scan_changes (same row + same smart albums) skips full 40k rewrite & rebuild!
+        let dec_path = holding_root(journal).join("selection/decisions.json");
+        let dec_mtime_before = fs::metadata(&dec_path).unwrap().modified().unwrap();
+        let noop_summary = scan_changes(
+            journal,
+            "sha256:synthetic-scale-device",
+            vec![sample_unchanged],
+            vec![],
+            Some(catalog),
+            Some("authorized"),
+            Some(0),
+        )
+        .unwrap();
+        assert_eq!(noop_summary.decisions_sha256, summary.decisions_sha256);
+        assert_eq!(
+            fs::metadata(&dec_path).unwrap().modified().unwrap(),
+            dec_mtime_before,
+            "no-op scan_changes must not rewrite decisions.json"
+        );
+
+        // Verify post-ingest dashboard progress reflects the 2 landed photos.
+        let after = dashboard_state_at(journal, None, now).unwrap();
+        assert_eq!(after.progress.arrived, 2);
+        assert_eq!(after.progress.in_journal, 2);
+        assert_eq!(after.progress.waiting_on_phone, 13_998);
+
+        // Parity check: deleting SQLite and rebuilding from plain JSON yields identical digest.
+        fs::remove_file(&db_path).unwrap();
+        let rebuilt = rebuild_from_plain_json(journal).unwrap();
+        assert_eq!(rebuilt.summary.decisions_sha256, summary.decisions_sha256);
+
+        // Fail-closed check: corrupting a matched receipt in config/photos/received/ must fail lease_wanted.
+        let corrupt_hash = received::id_hash("asset", "syn-own-00000");
+        let corrupt_path = journal
+            .join("config/photos/received")
+            .join(&corrupt_hash[..2])
+            .join(format!("{corrupt_hash}.json"));
+        fs::write(&corrupt_path, b"{not valid json").unwrap();
+        let lease_err = lease_wanted(journal, "sha256:synthetic-scale-device", 20, Some(300))
+            .expect_err("corrupt received receipt must fail lease_wanted closed");
+        assert!(lease_err.contains("photos received ledger"));
     }
 }

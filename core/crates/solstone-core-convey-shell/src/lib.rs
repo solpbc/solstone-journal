@@ -2094,7 +2094,12 @@ async fn sources_shell() -> Response {
 }
 
 async fn photos_sources_shell(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    if !solstone_core_photos_library::photos_library_visible(&root.0) {
+    let visible = tokio::task::spawn_blocking(move || {
+        solstone_core_photos_library::photos_library_visible(&root.0)
+    })
+    .await
+    .unwrap_or(false);
+    if !visible {
         return StatusCode::NOT_FOUND.into_response();
     }
     asset_response("/static/shell.html")

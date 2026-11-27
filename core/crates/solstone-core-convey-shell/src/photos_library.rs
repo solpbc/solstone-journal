@@ -32,9 +32,10 @@ use solstone_core_photos_library::keep::{
 };
 use solstone_core_photos_library::types::{RangeSpec, ScanAssetRow, SmartAlbumCatalogEntry};
 use solstone_core_photos_library::{
-    choose_range, dashboard_state_with_live_seen, lease_wanted, list_landed_photos,
+    choose_range_with_live_seen, dashboard_state_with_live_seen, lease_wanted, list_landed_photos,
     mark_wanted_non_copy, photos_library_enabled, photos_library_visible, scan_batch, scan_changes,
-    scan_finish, scan_start, set_paused, turn_off, update_device_status, widen_range,
+    scan_finish, scan_start, set_paused_with_live_seen, turn_off_with_live_seen,
+    update_device_status, widen_range_with_live_seen,
 };
 
 use crate::JournalRoot;
@@ -173,20 +174,20 @@ async fn device_scan_start(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<ScanStartBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
-    let name = if body.device_name.trim().is_empty() {
-        cid.clone()
-    } else {
-        body.device_name
-    };
     match tokio::task::spawn_blocking(move || {
-        scan_start(
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
+        }
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        let name = if body.device_name.trim().is_empty() {
+            cid.clone()
+        } else {
+            body.device_name
+        };
+        match scan_start(
             &root.0,
             &cid,
             &name,
@@ -194,12 +195,14 @@ async fn device_scan_start(
             &body.access_state,
             body.total_items,
             body.smart_albums,
-        )
+        ) {
+            Ok(()) => Json(json!({ "ok": true })).into_response(),
+            Err(e) => bad_request(e),
+        }
     })
     .await
     {
-        Ok(Ok(())) => Json(json!({ "ok": true })).into_response(),
-        Ok(Err(e)) => bad_request(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("scan start task failed"),
     }
 }
@@ -217,26 +220,28 @@ async fn device_scan_batch(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<ScanBatchBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
     match tokio::task::spawn_blocking(move || {
-        scan_batch(
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
+        }
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        match scan_batch(
             &root.0,
             &cid,
             body.batch_index,
             body.rows,
             body.items_checked,
-        )
+        ) {
+            Ok(accepted) => Json(json!({ "ok": true, "accepted": accepted })).into_response(),
+            Err(e) => bad_request(e),
+        }
     })
     .await
     {
-        Ok(Ok(accepted)) => Json(json!({ "ok": true, "accepted": accepted })).into_response(),
-        Ok(Err(e)) => bad_request(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("scan batch task failed"),
     }
 }
@@ -258,33 +263,35 @@ async fn device_scan_finish(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<ScanFinishBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
     match tokio::task::spawn_blocking(move || {
-        scan_finish(
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
+        }
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        match scan_finish(
             &root.0,
             &cid,
             body.items_checked,
             body.earliest_item_at,
             body.access_state.as_deref(),
             body.icloud_waiting_count,
-        )
+        ) {
+            Ok(summary) => Json(json!({ "ok": true, "summary": summary })).into_response(),
+            Err(e) => error_envelope(
+                "smart_album_contract_failed",
+                "Unprocessable Entity",
+                e,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .into_response(),
+        }
     })
     .await
     {
-        Ok(Ok(summary)) => Json(json!({ "ok": true, "summary": summary })).into_response(),
-        Ok(Err(e)) => error_envelope(
-            "smart_album_contract_failed",
-            "Unprocessable Entity",
-            e,
-            StatusCode::UNPROCESSABLE_ENTITY,
-        )
-        .into_response(),
+        Ok(resp) => resp,
         Err(_) => internal_error("scan finish task failed"),
     }
 }
@@ -308,15 +315,15 @@ async fn device_scan_changes(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<ScanChangesBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
     match tokio::task::spawn_blocking(move || {
-        scan_changes(
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
+        }
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        match scan_changes(
             &root.0,
             &cid,
             body.added_or_updated,
@@ -324,18 +331,20 @@ async fn device_scan_changes(
             body.smart_albums,
             body.access_state.as_deref(),
             body.icloud_waiting_count,
-        )
+        ) {
+            Ok(summary) => Json(json!({ "ok": true, "summary": summary })).into_response(),
+            Err(e) => error_envelope(
+                "smart_album_contract_failed",
+                "Unprocessable Entity",
+                e,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .into_response(),
+        }
     })
     .await
     {
-        Ok(Ok(summary)) => Json(json!({ "ok": true, "summary": summary })).into_response(),
-        Ok(Err(e)) => error_envelope(
-            "smart_album_contract_failed",
-            "Unprocessable Entity",
-            e,
-            StatusCode::UNPROCESSABLE_ENTITY,
-        )
-        .into_response(),
+        Ok(resp) => resp,
         Err(_) => internal_error("scan changes task failed"),
     }
 }
@@ -361,15 +370,15 @@ async fn device_status(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<DeviceStatusBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
     match tokio::task::spawn_blocking(move || {
-        update_device_status(
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
+        }
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        match update_device_status(
             &root.0,
             &cid,
             body.device_name.as_deref(),
@@ -378,12 +387,14 @@ async fn device_status(
             body.icloud_waiting_count,
             body.scan_paused,
             body.source_enabled,
-        )
+        ) {
+            Ok(()) => Json(json!({ "ok": true })).into_response(),
+            Err(e) => bad_request(e),
+        }
     })
     .await
     {
-        Ok(Ok(())) => Json(json!({ "ok": true })).into_response(),
-        Ok(Err(e)) => bad_request(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("device status task failed"),
     }
 }
@@ -403,17 +414,22 @@ async fn device_wanted(
     Extension(basis): Extension<AccessBasis>,
     Query(query): Query<WantedQuery>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
-    match tokio::task::spawn_blocking(move || lease_wanted(&root.0, &cid, query.limit, None)).await
+    match tokio::task::spawn_blocking(move || {
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
+        }
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        match lease_wanted(&root.0, &cid, query.limit, None) {
+            Ok(resp) => Json(resp).into_response(),
+            Err(e) => internal_error(e),
+        }
+    })
+    .await
     {
-        Ok(Ok(resp)) => Json(resp).into_response(),
-        Ok(Err(e)) => internal_error(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("wanted list task failed"),
     }
 }
@@ -437,52 +453,49 @@ async fn device_copy(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<CopyUploadBody>,
 ) -> Response {
-    if !photos_library_enabled(&root.0) {
-        return disabled_response();
-    }
-    let cid = match require_device(&basis) {
-        Ok(c) => c,
-        Err(r) => return *r,
-    };
-    match body.status.as_deref() {
-        Some("gone" | "icloud_waiting") => {
-            let status_str = body.status.unwrap_or_default();
-            match tokio::task::spawn_blocking(move || {
-                mark_wanted_non_copy(&root.0, &cid, &body.asset_id, &status_str)
-            })
-            .await
-            {
-                Ok(Ok(())) => Json(json!({ "ok": true })).into_response(),
-                Ok(Err(e)) => bad_request(e),
-                Err(_) => internal_error("mark non-copy task failed"),
-            }
+    match tokio::task::spawn_blocking(move || {
+        if !photos_library_enabled(&root.0) {
+            return disabled_response();
         }
-        None | Some("ok") => {
-            let Some(b64) = body.jpeg_base64 else {
-                return bad_request("missing jpeg_base64 payload");
-            };
-            let bytes = match decode_copy_jpeg_base64(&b64) {
-                Ok(b) => b,
-                Err(e) => return bad_request(e),
-            };
-            match tokio::task::spawn_blocking(move || {
-                ingest_photo_copy(
+        let cid = match require_device(&basis) {
+            Ok(c) => c,
+            Err(r) => return *r,
+        };
+        match body.status.as_deref() {
+            Some("gone" | "icloud_waiting") => {
+                let status_str = body.status.unwrap_or_default();
+                match mark_wanted_non_copy(&root.0, &cid, &body.asset_id, &status_str) {
+                    Ok(()) => Json(json!({ "ok": true })).into_response(),
+                    Err(e) => bad_request(e),
+                }
+            }
+            None | Some("ok") => {
+                let Some(b64) = body.jpeg_base64 else {
+                    return bad_request("missing jpeg_base64 payload");
+                };
+                let bytes = match decode_copy_jpeg_base64(&b64) {
+                    Ok(b) => b,
+                    Err(e) => return bad_request(e),
+                };
+                match ingest_photo_copy(
                     &root.0,
                     &cid,
                     &body.asset_id,
                     body.cloud_id.as_deref(),
                     &bytes,
                     body.metadata.as_ref(),
-                )
-            })
-            .await
-            {
-                Ok(Ok(outcome)) => Json(outcome).into_response(),
-                Ok(Err(e)) => bad_request(e),
-                Err(_) => internal_error("photo copy ingest task failed"),
+                ) {
+                    Ok(outcome) => Json(outcome).into_response(),
+                    Err(e) => bad_request(e),
+                }
             }
+            Some(other) => bad_request(format!("unsupported copy status: {other}")),
         }
-        Some(other) => bad_request(format!("unsupported copy status: {other}")),
+    })
+    .await
+    {
+        Ok(resp) => resp,
+        Err(_) => internal_error("photo copy task failed"),
     }
 }
 
@@ -490,20 +503,22 @@ async fn api_state(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
         let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
-        dashboard_state_with_live_seen(&root.0, &live_seen)
+        match dashboard_state_with_live_seen(&root.0, &live_seen) {
+            Ok(state) => Json(state).into_response(),
+            Err(e) => internal_error(e),
+        }
     })
     .await
     {
-        Ok(Ok(state)) => Json(state).into_response(),
-        Ok(Err(e)) => internal_error(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("photos state task failed"),
     }
 }
@@ -518,21 +533,22 @@ async fn api_choose_range(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<RangeBody>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
-        let _ = choose_range(&root.0, &body.range)?;
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
         let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
-        dashboard_state_with_live_seen(&root.0, &live_seen)
+        match choose_range_with_live_seen(&root.0, &body.range, Some(&live_seen)) {
+            Ok(state) => Json(state).into_response(),
+            Err(e) => bad_request(e),
+        }
     })
     .await
     {
-        Ok(Ok(state)) => Json(state).into_response(),
-        Ok(Err(e)) => bad_request(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("choose range task failed"),
     }
 }
@@ -542,21 +558,22 @@ async fn api_widen_range(
     Extension(basis): Extension<AccessBasis>,
     Json(body): Json<RangeBody>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
-        let _ = widen_range(&root.0, &body.range)?;
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
         let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
-        dashboard_state_with_live_seen(&root.0, &live_seen)
+        match widen_range_with_live_seen(&root.0, &body.range, Some(&live_seen)) {
+            Ok(state) => Json(state).into_response(),
+            Err(e) => bad_request(e),
+        }
     })
     .await
     {
-        Ok(Ok(state)) => Json(state).into_response(),
-        Ok(Err(e)) => bad_request(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("widen range task failed"),
     }
 }
@@ -565,21 +582,22 @@ async fn api_pause(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
-        let _ = set_paused(&root.0, true)?;
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
         let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
-        dashboard_state_with_live_seen(&root.0, &live_seen)
+        match set_paused_with_live_seen(&root.0, true, Some(&live_seen)) {
+            Ok(state) => Json(state).into_response(),
+            Err(e) => internal_error(e),
+        }
     })
     .await
     {
-        Ok(Ok(state)) => Json(state).into_response(),
-        Ok(Err(e)) => internal_error(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("pause task failed"),
     }
 }
@@ -588,21 +606,22 @@ async fn api_resume(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
-        let _ = set_paused(&root.0, false)?;
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
         let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
-        dashboard_state_with_live_seen(&root.0, &live_seen)
+        match set_paused_with_live_seen(&root.0, false, Some(&live_seen)) {
+            Ok(state) => Json(state).into_response(),
+            Err(e) => internal_error(e),
+        }
     })
     .await
     {
-        Ok(Ok(state)) => Json(state).into_response(),
-        Ok(Err(e)) => internal_error(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("resume task failed"),
     }
 }
@@ -611,21 +630,22 @@ async fn api_turn_off(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
-        let _ = turn_off(&root.0)?;
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
         let live_seen = solstone_core_sol_link::live_seen_for(&root.0);
-        dashboard_state_with_live_seen(&root.0, &live_seen)
+        match turn_off_with_live_seen(&root.0, Some(&live_seen)) {
+            Ok(state) => Json(state).into_response(),
+            Err(e) => internal_error(e),
+        }
     })
     .await
     {
-        Ok(Ok(state)) => Json(state).into_response(),
-        Ok(Err(e)) => internal_error(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("turn off task failed"),
     }
 }
@@ -645,24 +665,26 @@ async fn api_photos(
     Extension(basis): Extension<AccessBasis>,
     Query(query): Query<PhotosListQuery>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     match tokio::task::spawn_blocking(move || {
-        list_landed_photos(
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
+        match list_landed_photos(
             &root.0,
             query.month.as_deref(),
             query.cursor.as_deref(),
             query.limit,
-        )
+        ) {
+            Ok(page) => Json(page).into_response(),
+            Err(e) => internal_error(e),
+        }
     })
     .await
     {
-        Ok(Ok(page)) => Json(page).into_response(),
-        Ok(Err(e)) => internal_error(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("photos listing task failed"),
     }
 }
@@ -678,23 +700,25 @@ async fn api_trash(
     headers: HeaderMap,
     Json(body): Json<TrashBody>,
 ) -> Response {
-    if !photos_library_visible(&root.0) {
-        return disabled_response();
-    }
-    if let Err(r) = require_owner_or_device(&basis) {
-        return *r;
-    }
     let ua = headers
         .get(USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     match tokio::task::spawn_blocking(move || {
-        trash_chosen_photos(&root.0, &body.segments, ua.as_deref())
+        if !photos_library_visible(&root.0) {
+            return disabled_response();
+        }
+        if let Err(r) = require_owner_or_device(&basis) {
+            return *r;
+        }
+        match trash_chosen_photos(&root.0, &body.segments, ua.as_deref()) {
+            Ok(result) => Json(result).into_response(),
+            Err(e) => bad_request(e),
+        }
     })
     .await
     {
-        Ok(Ok(result)) => Json(result).into_response(),
-        Ok(Err(e)) => bad_request(e),
+        Ok(resp) => resp,
         Err(_) => internal_error("photos trash task failed"),
     }
 }

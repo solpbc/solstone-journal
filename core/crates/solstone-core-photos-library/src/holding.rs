@@ -15,14 +15,16 @@
 //! - `turn_off()` removes `config/photos-library/` completely while keeping all
 //!   landed `chronicle/` photos and `config/photos/received/` suppression intact.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
 
 use jiff::{SignedDuration, Timestamp};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use solstone_core_entity::faceprints;
 use solstone_core_journal_io::locking::{FileLock, LockOptions, hold_lock};
@@ -30,7 +32,7 @@ use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, create_direct
 use solstone_core_segment::photo_observation::read_or_project_photo_observation;
 
 use crate::geo::{GeoResolver, parse_utc_ts};
-use crate::received::{PhotoReceipt, is_segment_live, lookup_received};
+use crate::received::{PhotoReceipt, ReceivedLedgerSnapshot};
 use crate::selection::{aggregate_left_out_buckets, run_selection};
 use crate::types::{
     AssetDecision, ChoiceView, DecisionKind, DeviceState, LandedPhotoItem, LandedPhotosPage,
@@ -50,10 +52,18 @@ const DEFAULT_LEASE_SECONDS: i64 = 300;
 const MAX_BATCH_ROWS: usize = 5_000;
 const MAX_WANTED_LIMIT: usize = 100;
 const PHOTOS_PAGE_SIZE: usize = 60;
+const SQLITE_CACHE_SCHEMA_VERSION: &str = "2";
+const DECISIONS_CACHE_CAP: usize = 8;
 /// Presence window matching `solstone_core_sol_link::CLIENT_STALE_MS` (120 s).
 pub const DEVICE_CONNECTED_WINDOW_SECS: i64 = 120;
 const DEVICE_CONNECTED_WINDOW_MS: i64 = DEVICE_CONNECTED_WINDOW_SECS * 1_000;
 const DEVICE_FUTURE_CLOCK_DRIFT_MS: i64 = 60_000;
+
+type DecisionsCacheEntries = Vec<(PathBuf, Arc<CachedDecisions>)>;
+
+static SELECTION_CACHE_GEN: AtomicU64 = AtomicU64::new(1);
+static DECISIONS_CACHE: LazyLock<Mutex<DecisionsCacheEntries>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Feature flag in `config/journal.json` (`photos_library.enabled`).
 /// ON by default: absent config or absent key reads as on, `false` or any
@@ -244,7 +254,7 @@ fn has_existing_photos_state(journal: &Path) -> bool {
     holding_root(journal).is_dir()
         || journal.join("config/photos/received").is_dir()
         || journal.join(TURNED_OFF_MARKER_REL).is_file()
-        || count_live_photos_in_journal(journal) > 0
+        || has_any_live_photo_in_journal(journal)
 }
 
 /// Whether the Photos row (`/app/sources/`) and page (`/app/sources/photos`)
@@ -257,6 +267,20 @@ pub fn photos_library_visible(journal: &Path) -> bool {
         return false;
     }
     !capable_device_kinds(journal).is_empty() || has_existing_photos_state(journal)
+}
+
+/// Fast O(1) attention check for shell badge polling (`GET /api/shell/badges`).
+///
+/// Equivalent to `photos_library_visible(journal) && dashboard_state(journal).state == "needs_attention"`,
+/// without reading `decisions.json`, scanning `chronicle/*/photos/`, or loading the face index.
+#[must_use]
+pub fn photos_needs_attention(journal: &Path) -> bool {
+    if !photos_library_enabled(journal) || !holding_root(journal).is_dir() {
+        return false;
+    }
+    load_holding_state(journal)
+        .ok()
+        .is_some_and(|s| s.attention_reason.is_some())
 }
 
 #[must_use]
@@ -298,6 +322,15 @@ fn write_json_private<T: Serialize>(path: &Path, value: &T) -> Result<(), String
         create_directory_with_mode(parent, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
     }
     let mut bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    atomic_replace(path, &bytes, PRIVATE_FILE).map_err(|e| e.to_string())
+}
+
+fn write_json_compact_private<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        create_directory_with_mode(parent, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
+    }
+    let mut bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
     bytes.push(b'\n');
     atomic_replace(path, &bytes, PRIVATE_FILE).map_err(|e| e.to_string())
 }
@@ -407,6 +440,354 @@ fn filter_non_hidden(rows: Vec<ScanAssetRow>) -> Vec<ScanAssetRow> {
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileFingerprint {
+    len: u64,
+    mtime_ns: i128,
+    ino: u64,
+}
+
+fn file_fingerprint(path: &Path) -> io::Result<Option<FileFingerprint>> {
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    let mtime_ns = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i128);
+    #[cfg(unix)]
+    let ino = {
+        use std::os::unix::fs::MetadataExt;
+        meta.ino()
+    };
+    #[cfg(not(unix))]
+    let ino = 0u64;
+    Ok(Some(FileFingerprint {
+        len: meta.len(),
+        mtime_ns,
+        ino,
+    }))
+}
+
+#[derive(Clone, Debug)]
+struct CompactDecision {
+    id: String,
+    cloud_id: Option<String>,
+    captured_at: Option<String>,
+    captured_ts: f64,
+    local_date: Option<String>,
+    decision: DecisionKind,
+    reason: String,
+}
+
+struct CachedDecisions {
+    fingerprint: Option<FileFingerprint>,
+    generation: u64,
+    all: Vec<CompactDecision>,
+    /// Indices into `all` of `Keep` and `StageOthersFaceCheck`, sorted newest-first
+    /// (`captured_ts DESC`, `id ASC`) so `lease_wanted` never rescans or re-sorts.
+    wanted_order: Vec<usize>,
+}
+
+impl CachedDecisions {
+    fn from_compact(
+        fingerprint: Option<FileFingerprint>,
+        generation: u64,
+        all: Vec<CompactDecision>,
+    ) -> Self {
+        let mut wanted_order = Vec::new();
+        for (idx, d) in all.iter().enumerate() {
+            match d.decision {
+                DecisionKind::Keep | DecisionKind::StageOthersFaceCheck => {
+                    wanted_order.push(idx);
+                }
+                DecisionKind::LeftOut => {}
+            }
+        }
+        wanted_order.sort_by(|&a, &b| {
+            let da = &all[a];
+            let db = &all[b];
+            db.captured_ts
+                .total_cmp(&da.captured_ts)
+                .then_with(|| da.id.cmp(&db.id))
+        });
+        Self {
+            fingerprint,
+            generation,
+            all,
+            wanted_order,
+        }
+    }
+
+    fn from_decisions(
+        fingerprint: Option<FileFingerprint>,
+        generation: u64,
+        decisions: &[AssetDecision],
+    ) -> Self {
+        let all = decisions
+            .iter()
+            .map(|d| CompactDecision {
+                id: d.id.clone(),
+                cloud_id: d.cloud_id.clone(),
+                captured_at: d.captured_at.clone(),
+                captured_ts: d.captured_ts,
+                local_date: d.local_date.clone(),
+                decision: d.decision,
+                reason: d.reason.clone(),
+            })
+            .collect();
+        Self::from_compact(fingerprint, generation, all)
+    }
+
+    fn empty(generation: u64) -> Self {
+        Self {
+            fingerprint: None,
+            generation,
+            all: Vec::new(),
+            wanted_order: Vec::new(),
+        }
+    }
+}
+
+fn decisions_cache_key(journal: &Path) -> PathBuf {
+    let p = holding_root(journal).join("selection/decisions.json");
+    fs::canonicalize(&p).unwrap_or(p)
+}
+
+fn invalidate_decisions_cache(journal: &Path) {
+    SELECTION_CACHE_GEN.fetch_add(1, Ordering::AcqRel);
+    let raw = holding_root(journal).join("selection/decisions.json");
+    let canon = fs::canonicalize(&raw).ok();
+    if let Ok(mut cache) = DECISIONS_CACHE.lock() {
+        cache.retain(|(k, _)| k != &raw && canon.as_ref().is_none_or(|c| k != c));
+    }
+}
+
+fn store_decisions_cache(key: PathBuf, entry: Arc<CachedDecisions>) {
+    if let Ok(mut cache) = DECISIONS_CACHE.lock() {
+        if cache
+            .iter()
+            .any(|(k, existing)| k == &key && existing.generation > entry.generation)
+        {
+            return;
+        }
+        cache.retain(|(k, _)| k != &key);
+        if cache.len() >= DECISIONS_CACHE_CAP {
+            cache.remove(0);
+        }
+        cache.push((key, entry));
+    }
+}
+
+fn parse_decision_kind(raw: &str) -> DecisionKind {
+    match raw {
+        "keep" => DecisionKind::Keep,
+        "stage_others_face_check" => DecisionKind::StageOthersFaceCheck,
+        _ => DecisionKind::LeftOut,
+    }
+}
+
+fn open_verified_sqlite_cache(db_path: &Path, expected: FileFingerprint) -> Option<Connection> {
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    let read_meta = |key: &str| -> Option<String> {
+        conn.query_row(
+            "SELECT value FROM cache_meta WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    };
+    if read_meta("schema_version").as_deref() != Some(SQLITE_CACHE_SCHEMA_VERSION) {
+        return None;
+    }
+    if read_meta("decisions_len")?.parse::<u64>().ok()? != expected.len {
+        return None;
+    }
+    if read_meta("decisions_mtime_ns")?.parse::<i128>().ok()? != expected.mtime_ns {
+        return None;
+    }
+    if read_meta("decisions_ino")?.parse::<u64>().ok()? != expected.ino {
+        return None;
+    }
+    Some(conn)
+}
+
+fn load_compact_decisions_from_sqlite(
+    journal: &Path,
+    expected: FileFingerprint,
+) -> Option<Vec<CompactDecision>> {
+    let conn = open_verified_sqlite_cache(&sqlite_cache_path(journal), expected)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, cloud_id, captured_at_utc, captured_ts, local_date, decision, reason FROM assets",
+        )
+        .ok()?;
+    let rows = stmt
+        .query_map([], |row| {
+            let dec_str: String = row.get(5)?;
+            Ok(CompactDecision {
+                id: row.get(0)?,
+                cloud_id: row.get(1)?,
+                captured_at: row.get(2)?,
+                captured_ts: row.get(3)?,
+                local_date: row.get(4)?,
+                decision: parse_decision_kind(&dec_str),
+                reason: row.get(6)?,
+            })
+        })
+        .ok()?;
+    let mut out = Vec::new();
+    for item in rows {
+        out.push(item.ok()?);
+    }
+    Some(out)
+}
+
+fn load_cached_decisions(journal: &Path) -> Result<Arc<CachedDecisions>, String> {
+    let dec_path = holding_root(journal).join("selection/decisions.json");
+    let fp =
+        file_fingerprint(&dec_path).map_err(|e| format!("stat {}: {e}", dec_path.display()))?;
+    let generation = SELECTION_CACHE_GEN.load(Ordering::Acquire);
+    let Some(fp) = fp else {
+        invalidate_decisions_cache(journal);
+        return Ok(Arc::new(CachedDecisions::empty(generation)));
+    };
+    let key = decisions_cache_key(journal);
+    if let Ok(cache) = DECISIONS_CACHE.lock()
+        && let Some((_, existing)) = cache.iter().find(|(k, _)| k == &key)
+        && existing.fingerprint == Some(fp)
+        && existing.generation == generation
+    {
+        return Ok(Arc::clone(existing));
+    }
+
+    let built = if let Some(compact) = load_compact_decisions_from_sqlite(journal, fp) {
+        Arc::new(CachedDecisions::from_compact(Some(fp), generation, compact))
+    } else {
+        let decisions = load_decisions(journal)?;
+        Arc::new(CachedDecisions::from_decisions(
+            Some(fp),
+            generation,
+            &decisions,
+        ))
+    };
+    store_decisions_cache(key, Arc::clone(&built));
+    Ok(built)
+}
+
+/// Narrow single-asset metadata needed by `ingest_photo_copy_with`, fetched in
+/// O(1) from `selection_cache.sqlite` (rebuilding once from plain JSON if the
+/// cache is absent or older than `decisions.json`).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CopyAssetLookup {
+    pub decision: Option<DecisionKind>,
+    pub cloud_id: Option<String>,
+    pub timezone: Option<String>,
+    pub local_iso: Option<String>,
+    pub captured_at: Option<String>,
+    pub caption: Option<String>,
+    pub original_filename: Option<String>,
+    pub camera: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub horizontal_accuracy_m: Option<f64>,
+}
+
+fn copy_lookup_from_rows(
+    decision: Option<&AssetDecision>,
+    scan_row: Option<&ScanAssetRow>,
+) -> Option<CopyAssetLookup> {
+    if decision.is_none() && scan_row.is_none() {
+        return None;
+    }
+    let ext = scan_row.and_then(|r| r.extended.as_ref());
+    let loc = scan_row.and_then(|r| r.location.as_ref());
+    Some(CopyAssetLookup {
+        decision: decision.map(|d| d.decision),
+        cloud_id: decision
+            .and_then(|d| d.cloud_id.clone())
+            .or_else(|| scan_row.and_then(|r| r.cloud_id.clone())),
+        timezone: decision.and_then(|d| d.timezone.clone()),
+        local_iso: decision.and_then(|d| d.local_iso.clone()),
+        captured_at: decision
+            .and_then(|d| d.captured_at.clone())
+            .or_else(|| scan_row.and_then(|r| r.captured_at.clone())),
+        caption: ext.and_then(|e| e.caption.clone()),
+        original_filename: ext.and_then(|e| e.original_filename.clone()),
+        camera: ext.and_then(|e| e.camera.clone()),
+        latitude: loc.map(|l| l.latitude),
+        longitude: loc.map(|l| l.longitude),
+        horizontal_accuracy_m: loc.and_then(|l| l.horizontal_accuracy_m),
+    })
+}
+
+/// Look up one asset's decision and scan metadata for Keep & Read ingest.
+/// Caller holds [`lock_holding`].
+pub(crate) fn lookup_asset_for_copy(
+    journal: &Path,
+    asset_id: &str,
+) -> Result<Option<CopyAssetLookup>, String> {
+    let dec_path = holding_root(journal).join("selection/decisions.json");
+    let fp =
+        file_fingerprint(&dec_path).map_err(|e| format!("stat {}: {e}", dec_path.display()))?;
+    if let Some(fp) = fp {
+        if let Some(conn) = open_verified_sqlite_cache(&sqlite_cache_path(journal), fp) {
+            let found = conn
+                .query_row(
+                    "SELECT decision, cloud_id, timezone, local_iso, captured_at_utc, \
+                     caption, original_filename, camera, latitude, longitude, horizontal_accuracy_m \
+                     FROM assets WHERE id = ?1",
+                    params![asset_id],
+                    |row| {
+                        let dec_str: String = row.get(0)?;
+                        Ok(CopyAssetLookup {
+                            decision: Some(parse_decision_kind(&dec_str)),
+                            cloud_id: row.get(1)?,
+                            timezone: row.get(2)?,
+                            local_iso: row.get(3)?,
+                            captured_at: row.get(4)?,
+                            caption: row.get(5)?,
+                            original_filename: row.get(6)?,
+                            camera: row.get(7)?,
+                            latitude: row.get(8)?,
+                            longitude: row.get(9)?,
+                            horizontal_accuracy_m: row.get(10)?,
+                        })
+                    },
+                )
+                .optional();
+            if let Ok(row_opt) = found {
+                return Ok(row_opt);
+            }
+        }
+        // SQLite cache missing, stale, or pre-v2 (e.g. first photo after upgrading from 2.0.92/2.0.93):
+        // load plain JSON once and rebuild the SQLite cache so subsequent photos stay O(1).
+        let decisions = load_decisions(journal)?;
+        let scan_rows = load_scan_rows(journal)?;
+        if let Err(err) = rebuild_sqlite_index(&sqlite_cache_path(journal), &scan_rows, &decisions)
+        {
+            log::warn!("photos selection sqlite cache refresh skipped: {err}");
+        }
+        let decision = decisions.iter().find(|d| d.id == asset_id);
+        let scan_row = scan_rows.iter().find(|r| r.id == asset_id);
+        return Ok(copy_lookup_from_rows(decision, scan_row));
+    }
+
+    // No `decisions.json` yet: check plain scan batches directly if present.
+    let scan_rows = load_scan_rows(journal)?;
+    let scan_row = scan_rows.iter().find(|r| r.id == asset_id);
+    Ok(copy_lookup_from_rows(None, scan_row))
+}
+
 /// Rebuild the fast SQLite query cache from plain JSON scan & decision files.
 /// Safe to delete and call at any time; never owns authoritative state.
 pub fn rebuild_sqlite_index(
@@ -417,12 +798,23 @@ pub fn rebuild_sqlite_index(
     if let Some(parent) = db_path.parent() {
         create_directory_with_mode(parent, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
     }
+    let decisions_fp = db_path.parent().and_then(|parent| {
+        file_fingerprint(&parent.join("decisions.json"))
+            .ok()
+            .flatten()
+    });
     let tmp_path = db_path.with_extension("sqlite.tmp");
     let _ = fs::remove_file(&tmp_path);
 
     let mut conn = Connection::open(&tmp_path).map_err(|e| e.to_string())?;
     conn.execute_batch(
-        "CREATE TABLE assets (
+        "PRAGMA synchronous = OFF;
+        PRAGMA journal_mode = OFF;
+        CREATE TABLE cache_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE assets (
             id TEXT PRIMARY KEY,
             cloud_id TEXT,
             captured_at_utc TEXT,
@@ -442,27 +834,59 @@ pub fn rebuild_sqlite_index(
             reason TEXT,
             moment_id TEXT,
             collapsed_into TEXT,
-            near_moment_id TEXT
+            near_moment_id TEXT,
+            caption TEXT,
+            original_filename TEXT,
+            camera TEXT,
+            latitude REAL,
+            longitude REAL,
+            horizontal_accuracy_m REAL
         );
         CREATE INDEX idx_assets_local_date ON assets(local_date);
         CREATE INDEX idx_assets_decision ON assets(decision, reason);
-        CREATE INDEX idx_assets_moment ON assets(moment_id);",
+        CREATE INDEX idx_assets_moment ON assets(moment_id);
+        CREATE INDEX idx_assets_wanted ON assets(decision, captured_ts DESC, id ASC);",
     )
     .map_err(|e| e.to_string())?;
 
     let by_id: BTreeMap<&str, &ScanAssetRow> = rows.iter().map(|r| (r.id.as_str(), r)).collect();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     {
+        tx.execute(
+            "INSERT INTO cache_meta (key, value) VALUES (?1, ?2)",
+            params!["schema_version", SQLITE_CACHE_SCHEMA_VERSION],
+        )
+        .map_err(|e| e.to_string())?;
+        if let Some(fp) = decisions_fp {
+            tx.execute(
+                "INSERT INTO cache_meta (key, value) VALUES (?1, ?2)",
+                params!["decisions_len", fp.len.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT INTO cache_meta (key, value) VALUES (?1, ?2)",
+                params!["decisions_mtime_ns", fp.mtime_ns.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT INTO cache_meta (key, value) VALUES (?1, ?2)",
+                params!["decisions_ino", fp.ino.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         let mut stmt = tx
             .prepare(
-                "INSERT INTO assets VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+                "INSERT INTO assets VALUES (\
+                 ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,\
+                 ?21,?22,?23,?24,?25,?26)",
             )
             .map_err(|e| e.to_string())?;
         for d in decisions {
-            let cap_utc = by_id
-                .get(d.id.as_str())
-                .and_then(|r| r.captured_at.as_deref())
-                .or(d.captured_at.as_deref());
+            let scan_row = by_id.get(d.id.as_str()).copied();
+            let cap_utc = d
+                .captured_at
+                .as_deref()
+                .or_else(|| scan_row.and_then(|r| r.captured_at.as_deref()));
             let away_i: Option<i64> = d.away_from_routine.map(i64::from);
             let marks_json =
                 serde_json::to_string(&d.owner_marks).unwrap_or_else(|_| "[]".to_owned());
@@ -471,6 +895,8 @@ pub fn rebuild_sqlite_index(
                 DecisionKind::StageOthersFaceCheck => "stage_others_face_check",
                 DecisionKind::LeftOut => "left_out",
             };
+            let ext = scan_row.and_then(|r| r.extended.as_ref());
+            let loc = scan_row.and_then(|r| r.location.as_ref());
             stmt.execute(params![
                 d.id,
                 d.cloud_id,
@@ -492,6 +918,12 @@ pub fn rebuild_sqlite_index(
                 d.moment_id,
                 d.collapsed_into,
                 d.near_moment_id,
+                ext.and_then(|e| e.caption.as_deref()),
+                ext.and_then(|e| e.original_filename.as_deref()),
+                ext.and_then(|e| e.camera.as_deref()),
+                loc.map(|l| l.latitude),
+                loc.map(|l| l.longitude),
+                loc.and_then(|l| l.horizontal_accuracy_m),
             ])
             .map_err(|e| e.to_string())?;
         }
@@ -590,7 +1022,7 @@ pub(crate) fn load_wanted_state(journal: &Path) -> Result<WantedStateFile, Strin
 }
 
 pub(crate) fn save_wanted_state(journal: &Path, state: &WantedStateFile) -> Result<(), String> {
-    write_json_private(&holding_root(journal).join("wanted/state.json"), state)
+    write_json_compact_private(&holding_root(journal).join("wanted/state.json"), state)
 }
 
 pub fn load_decisions(journal: &Path) -> Result<Vec<AssetDecision>, String> {
@@ -612,11 +1044,24 @@ fn write_selection_outputs(
     let sel_dir = holding_root(journal).join("selection");
     create_directory_with_mode(&sel_dir, PRIVATE_DIR_MODE).map_err(|e| e.to_string())?;
     write_json_private(&sel_dir.join("summary.json"), &out.summary)?;
-    write_json_private(&sel_dir.join("decisions.json"), &out.decisions)?;
-    write_json_private(&sel_dir.join("left_out.json"), &out.left_out)?;
-    write_json_private(&sel_dir.join("moments.json"), &out.moments)?;
-    write_json_private(&sel_dir.join("routine_places.json"), &out.routine_places)?;
+    let dec_path = sel_dir.join("decisions.json");
+    write_json_compact_private(&dec_path, &out.decisions)?;
+    write_json_compact_private(&sel_dir.join("left_out.json"), &out.left_out)?;
+    write_json_compact_private(&sel_dir.join("moments.json"), &out.moments)?;
+    write_json_compact_private(&sel_dir.join("routine_places.json"), &out.routine_places)?;
     rebuild_sqlite_index(&sqlite_cache_path(journal), rows, &out.decisions)?;
+    let generation = SELECTION_CACHE_GEN.fetch_add(1, Ordering::AcqRel) + 1;
+    let fp = file_fingerprint(&dec_path).ok().flatten();
+    if let Some(fp) = fp {
+        let entry = Arc::new(CachedDecisions::from_decisions(
+            Some(fp),
+            generation,
+            &out.decisions,
+        ));
+        store_decisions_cache(decisions_cache_key(journal), entry);
+    } else {
+        invalidate_decisions_cache(journal);
+    }
     Ok(())
 }
 
@@ -629,19 +1074,27 @@ pub fn rebuild_from_plain_json(journal: &Path) -> Result<SelectionOutput, String
 
 fn rebuild_locked(journal: &Path, config: &SelectionConfig) -> Result<SelectionOutput, String> {
     let rows = load_scan_rows(journal)?;
+    rebuild_locked_with_rows(journal, &rows, config)
+}
+
+fn rebuild_locked_with_rows(
+    journal: &Path,
+    rows: &[ScanAssetRow],
+    config: &SelectionConfig,
+) -> Result<SelectionOutput, String> {
     let smart_catalog = load_smart_catalog(journal)?;
     let corrections = load_corrections(journal)?;
     let mut state = load_holding_state(journal)?;
 
     match run_selection(
-        &rows,
+        rows,
         config,
         &corrections,
         smart_catalog.as_deref(),
         GeoResolver::shared(),
     ) {
         Ok(out) => {
-            write_selection_outputs(journal, &rows, &out)?;
+            write_selection_outputs(journal, rows, &out)?;
             if state.attention_reason.as_deref() == Some("smart_album_contract_failed") {
                 state.attention_reason = None;
                 state.attention_detail = None;
@@ -749,7 +1202,7 @@ pub fn scan_batch(
     }
 
     let batch_path = root.join(format!("scan/batch-{batch_index:06}.json"));
-    write_json_private(
+    write_json_compact_private(
         &batch_path,
         &ScanBatchFile {
             batch_index,
@@ -859,64 +1312,105 @@ pub fn scan_changes(
     let root = ensure_holding_dirs(journal)?;
     let now = solstone_core_time::utc_rfc3339(Timestamp::now());
 
+    let mut catalog_changed = false;
     if let Some(catalog) = smart_albums {
-        write_json_private(&root.join("scan/smart_albums.json"), &catalog)?;
-    }
-
-    let mut by_id: BTreeMap<String, ScanAssetRow> = load_scan_rows(journal)?
-        .into_iter()
-        .map(|r| (r.id.clone(), r))
-        .collect();
-    for rid in &removed_ids {
-        by_id.remove(rid);
-    }
-    for row in filter_non_hidden(added_or_updated) {
-        by_id.insert(row.id.clone(), row);
-    }
-
-    // Rewrite compact canonical batch files so plain JSON stays authoritative.
-    let scan_dir = root.join("scan");
-    if let Ok(entries) = fs::read_dir(&scan_dir) {
-        for entry in entries.filter_map(Result::ok) {
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|n| n.starts_with("batch-") && n.ends_with(".json"))
-            {
-                let _ = fs::remove_file(entry.path());
-            }
+        let existing_catalog = load_smart_catalog(journal)?;
+        if existing_catalog.as_ref() != Some(&catalog) {
+            write_json_private(&root.join("scan/smart_albums.json"), &catalog)?;
+            catalog_changed = true;
         }
     }
-    let all_rows: Vec<ScanAssetRow> = by_id.into_values().collect();
-    let total_rows = all_rows.len();
-    for (idx, chunk) in all_rows.chunks(1_000).enumerate() {
-        let batch_path = scan_dir.join(format!("batch-{idx:06}.json"));
-        write_json_private(
-            &batch_path,
-            &ScanBatchFile {
-                batch_index: idx as u32,
-                rows: chunk.to_vec(),
-            },
-        )?;
-    }
+
+    let incoming_rows = filter_non_hidden(added_or_updated);
+    let mut state = load_holding_state(journal)?;
+    let had_contract_error =
+        state.attention_reason.as_deref() == Some("smart_album_contract_failed");
+
+    let has_existing_selection = holding_root(journal)
+        .join("selection/decisions.json")
+        .is_file()
+        && load_summary(journal)?.is_some();
+
+    let (rows_changed, total_rows, all_rows) = if incoming_rows.is_empty()
+        && removed_ids.is_empty()
+        && !catalog_changed
+        && !had_contract_error
+        && has_existing_selection
+    {
+        (false, state.scan_items_total, None)
+    } else {
+        let mut by_id: BTreeMap<String, ScanAssetRow> = load_scan_rows(journal)?
+            .into_iter()
+            .map(|r| (r.id.clone(), r))
+            .collect();
+        let mut changed = false;
+        for rid in &removed_ids {
+            if by_id.remove(rid).is_some() {
+                changed = true;
+            }
+        }
+        for row in incoming_rows {
+            if by_id.get(&row.id) != Some(&row) {
+                by_id.insert(row.id.clone(), row);
+                changed = true;
+            }
+        }
+
+        let total = by_id.len();
+        let rows_opt = if changed {
+            // Rewrite compact canonical batch files so plain JSON stays authoritative.
+            let scan_dir = root.join("scan");
+            if let Ok(entries) = fs::read_dir(&scan_dir) {
+                for entry in entries.filter_map(Result::ok) {
+                    if entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|n| n.starts_with("batch-") && n.ends_with(".json"))
+                    {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+            let rows: Vec<ScanAssetRow> = by_id.into_values().collect();
+            for (idx, chunk) in rows.chunks(1_000).enumerate() {
+                let batch_path = scan_dir.join(format!("batch-{idx:06}.json"));
+                write_json_compact_private(
+                    &batch_path,
+                    &ScanBatchFile {
+                        batch_index: idx as u32,
+                        rows: chunk.to_vec(),
+                    },
+                )?;
+            }
+            Some(rows)
+        } else if catalog_changed || had_contract_error || !has_existing_selection {
+            Some(by_id.into_values().collect())
+        } else {
+            None
+        };
+        (changed, total, rows_opt)
+    };
 
     // Mark removed IDs as Gone in wanted state if they had not landed yet.
     if !removed_ids.is_empty() {
         let mut wanted = load_wanted_state(journal)?;
+        let mut wanted_dirty = false;
         for rid in &removed_ids {
             if !matches!(
                 wanted.assets.get(rid),
-                Some(WantedAssetStatus::Landed { .. })
+                Some(WantedAssetStatus::Landed { .. } | WantedAssetStatus::Gone { .. })
             ) {
                 wanted
                     .assets
                     .insert(rid.clone(), WantedAssetStatus::Gone { at: now.clone() });
+                wanted_dirty = true;
             }
         }
-        save_wanted_state(journal, &wanted)?;
+        if wanted_dirty {
+            save_wanted_state(journal, &wanted)?;
+        }
     }
 
-    let mut state = load_holding_state(journal)?;
     state.scan_active = false;
     state.scan_complete = true;
     state.scan_items_checked = total_rows;
@@ -942,7 +1436,21 @@ pub fn scan_changes(
         save_devices(journal, &devices)?;
     }
 
-    let out = rebuild_locked(journal, &SelectionConfig::v2())?;
+    if !rows_changed
+        && !catalog_changed
+        && !had_contract_error
+        && holding_root(journal)
+            .join("selection/decisions.json")
+            .is_file()
+        && let Some(existing_summary) = load_summary(journal)?
+    {
+        return Ok(existing_summary);
+    }
+
+    let out = match all_rows {
+        Some(rows) => rebuild_locked_with_rows(journal, &rows, &SelectionConfig::v2())?,
+        None => rebuild_locked(journal, &SelectionConfig::v2())?,
+    };
     Ok(out.summary)
 }
 
@@ -1112,6 +1620,16 @@ fn parse_date_or_rfc3339(raw: &str, end_of_day: bool) -> Option<Timestamp> {
 
 /// Save the owner's initial range choice and publish the wanted list.
 pub fn choose_range(journal: &Path, spec: &RangeSpec) -> Result<PhotosDashboardState, String> {
+    choose_range_with_live_seen(journal, spec, None)
+}
+
+/// Save the owner's initial range choice and return the dashboard snapshot once,
+/// using optional live in-process link presence.
+pub fn choose_range_with_live_seen(
+    journal: &Path,
+    spec: &RangeSpec,
+    live_seen: Option<&BTreeMap<String, String>>,
+) -> Result<PhotosDashboardState, String> {
     let _lock = lock_holding(journal)?;
     let now = Timestamp::now();
     let (key, start_at, end_at) = resolve_range_bounds(spec, now)?;
@@ -1124,11 +1642,20 @@ pub fn choose_range(journal: &Path, spec: &RangeSpec) -> Result<PhotosDashboardS
     state.updated_at = Some(solstone_core_time::utc_rfc3339(now));
     save_holding_state(journal, &state)?;
     drop(_lock);
-    dashboard_state(journal)
+    dashboard_state_at(journal, live_seen, now)
 }
 
 /// Widen the owner's lookback range without re-requesting already-received photos.
 pub fn widen_range(journal: &Path, spec: &RangeSpec) -> Result<PhotosDashboardState, String> {
+    widen_range_with_live_seen(journal, spec, None)
+}
+
+/// Widen the owner's lookback range and return the dashboard snapshot once.
+pub fn widen_range_with_live_seen(
+    journal: &Path,
+    spec: &RangeSpec,
+    live_seen: Option<&BTreeMap<String, String>>,
+) -> Result<PhotosDashboardState, String> {
     let _lock = lock_holding(journal)?;
     let now = Timestamp::now();
     let (key, new_start_at, new_end_at) = resolve_range_bounds(spec, now)?;
@@ -1157,45 +1684,65 @@ pub fn widen_range(journal: &Path, spec: &RangeSpec) -> Result<PhotosDashboardSt
     state.updated_at = Some(solstone_core_time::utc_rfc3339(now));
     save_holding_state(journal, &state)?;
     drop(_lock);
-    dashboard_state(journal)
+    dashboard_state_at(journal, live_seen, now)
 }
 
 /// Pause source arrival (stops asking paired devices for 512 px copies and new photos).
 pub fn set_paused(journal: &Path, paused: bool) -> Result<PhotosDashboardState, String> {
+    set_paused_with_live_seen(journal, paused, None)
+}
+
+/// Pause or resume source arrival and return the dashboard snapshot once.
+pub fn set_paused_with_live_seen(
+    journal: &Path,
+    paused: bool,
+    live_seen: Option<&BTreeMap<String, String>>,
+) -> Result<PhotosDashboardState, String> {
     let _lock = lock_holding(journal)?;
+    let now = Timestamp::now();
     let mut state = load_holding_state(journal)?;
     state.paused = paused;
-    state.updated_at = Some(solstone_core_time::utc_rfc3339(Timestamp::now()));
+    state.updated_at = Some(solstone_core_time::utc_rfc3339(now));
     save_holding_state(journal, &state)?;
     drop(_lock);
-    dashboard_state(journal)
+    dashboard_state_at(journal, live_seen, now)
 }
 
 /// Turn off the Photos Library source and delete the private holding area
 /// (`config/photos-library/`). Landed `chronicle/` photos and durable
 /// `config/photos/received/` suppression stay untouched.
 pub fn turn_off(journal: &Path) -> Result<PhotosDashboardState, String> {
+    turn_off_with_live_seen(journal, None)
+}
+
+/// Turn off the Photos Library source and return the dashboard snapshot once.
+pub fn turn_off_with_live_seen(
+    journal: &Path,
+    live_seen: Option<&BTreeMap<String, String>>,
+) -> Result<PhotosDashboardState, String> {
     let root = holding_root(journal);
     if root.exists() {
         let lock = lock_holding(journal)?;
         drop(lock);
         fs::remove_dir_all(&root).map_err(|e| format!("remove holding area: {e}"))?;
     }
+    invalidate_decisions_cache(journal);
     let marker = journal.join(TURNED_OFF_MARKER_REL);
-    let now = solstone_core_time::utc_rfc3339(Timestamp::now());
-    write_json_private(&marker, &serde_json::json!({ "turned_off_at": now }))?;
-    dashboard_state(journal)
+    let now = Timestamp::now();
+    let now_iso = solstone_core_time::utc_rfc3339(now);
+    write_json_private(&marker, &serde_json::json!({ "turned_off_at": now_iso }))?;
+    dashboard_state_at(journal, live_seen, now)
 }
 
-/// Whether an asset decision falls within `[start_ts, end_ts]` bounds.
-fn decision_in_window(d: &AssetDecision, start_ts: Option<f64>, end_ts: Option<f64>) -> bool {
+/// Whether a capture timestamp falls within `[start_ts, end_ts]` bounds.
+fn decision_in_window_ts(captured_ts: f64, start_ts: Option<f64>, end_ts: Option<f64>) -> bool {
     if let Some(s) = start_ts
-        && d.captured_ts < s
+        && captured_ts < s
     {
         return false;
     }
     if let Some(e) = end_ts
-        && d.captured_ts > e
+        && captured_ts > e
     {
         return false;
     }
@@ -1227,6 +1774,17 @@ pub fn lease_wanted(
     limit: usize,
     lease_seconds: Option<i64>,
 ) -> Result<WantedResponse, String> {
+    // Check meeting face availability outside `.photos-library.lock` so we never
+    // nest `.entity-trust.lock` inside `.photos-library.lock`.
+    let pre_state = load_holding_state(journal).ok();
+    let others_enabled = if pre_state.as_ref().is_some_and(|s| {
+        !s.paused && s.attention_reason.is_none() && s.scan_complete && s.chosen_range.is_some()
+    }) {
+        can_run_others_face_check(journal)
+    } else {
+        false
+    };
+
     let _lock = lock_holding(journal)?;
     let now = Timestamp::now();
     let now_iso = solstone_core_time::utc_rfc3339(now);
@@ -1254,9 +1812,10 @@ pub fn lease_wanted(
         .as_deref()
         .map(|s| parse_utc_ts(Some(s)));
     let end_ts = state.range_end_at.as_deref().map(|s| parse_utc_ts(Some(s)));
-    let decisions = load_decisions(journal)?;
+    let cached = load_cached_decisions(journal)?;
     let mut wanted_state = load_wanted_state(journal)?;
-    let others_enabled = can_run_others_face_check(journal);
+    let mut received = ReceivedLedgerSnapshot::load(journal)
+        .map_err(|e| format!("failed reading photos received ledger: {e}"))?;
 
     let now_ts = now.as_second() as f64;
     let lease_secs = lease_seconds.unwrap_or(DEFAULT_LEASE_SECONDS).max(30);
@@ -1264,23 +1823,23 @@ pub fn lease_wanted(
         now.checked_add(SignedDuration::from_secs(lease_secs))
             .unwrap_or(now),
     );
+    let take_n = limit.clamp(1, MAX_WANTED_LIMIT);
 
-    // Collect eligible uncompleted candidates in chosen range, sorted newest-first.
-    let mut candidates: Vec<&AssetDecision> = Vec::new();
-    for d in &decisions {
-        if !decision_in_window(d, start_ts, end_ts) {
+    // `cached.wanted_order` is already filtered to Keep/StageOthersFaceCheck and
+    // sorted newest-first (deterministic tie-break by id).
+    let mut total_candidates = 0usize;
+    let mut leased = Vec::with_capacity(take_n);
+    for &idx in &cached.wanted_order {
+        let d = &cached.all[idx];
+        if !decision_in_window_ts(d.captured_ts, start_ts, end_ts) {
             continue;
         }
-        let wanted_kind = match d.decision {
-            DecisionKind::Keep => true,
-            DecisionKind::StageOthersFaceCheck => others_enabled,
-            DecisionKind::LeftOut => false,
-        };
-        if !wanted_kind {
+        if d.decision == DecisionKind::StageOthersFaceCheck && !others_enabled {
             continue;
         }
         // Fail-closed durable suppression check (survives trash erase & turn-off).
-        if lookup_received(journal, &d.id, d.cloud_id.as_deref())
+        if received
+            .lookup(&d.id, d.cloud_id.as_deref())
             .map_err(|e| format!("failed reading photos received ledger: {e}"))?
             .is_some()
         {
@@ -1306,20 +1865,14 @@ pub fn lease_wanted(
             }
             Some(WantedAssetStatus::IcloudWaiting { .. }) | None => {}
         }
-        candidates.push(d);
+        total_candidates += 1;
+        if leased.len() < take_n {
+            leased.push(d);
+        }
     }
 
-    // Newest first (deterministic tie-break by id).
-    candidates.sort_by(|a, b| {
-        b.captured_ts
-            .total_cmp(&a.captured_ts)
-            .then_with(|| a.id.cmp(&b.id))
-    });
-
-    let take_n = limit.clamp(1, MAX_WANTED_LIMIT);
-    let total_candidates = candidates.len();
-    let mut leased = Vec::with_capacity(take_n.min(total_candidates));
-    for d in candidates.into_iter().take(take_n) {
+    let mut out_items = Vec::with_capacity(leased.len());
+    for d in leased {
         wanted_state.assets.insert(
             d.id.clone(),
             WantedAssetStatus::Leased {
@@ -1328,7 +1881,7 @@ pub fn lease_wanted(
                 expires_at: expires_iso.clone(),
             },
         );
-        leased.push(WantedItem {
+        out_items.push(WantedItem {
             asset_id: d.id.clone(),
             cloud_id: d.cloud_id.clone(),
             max_edge: 512,
@@ -1339,15 +1892,15 @@ pub fn lease_wanted(
             },
         });
     }
-    if !leased.is_empty() {
+    if !out_items.is_empty() {
         save_wanted_state(journal, &wanted_state)?;
     }
 
     Ok(WantedResponse {
         paused: false,
         range,
-        remaining: total_candidates.saturating_sub(leased.len()),
-        wanted: leased,
+        remaining: total_candidates.saturating_sub(out_items.len()),
+        wanted: out_items,
     })
 }
 
@@ -1389,6 +1942,28 @@ pub fn mark_wanted_non_copy(
     Ok(())
 }
 
+/// Fast short-circuit check for whether at least one live photo exists under `chronicle/*/photos/`.
+fn has_any_live_photo_in_journal(journal: &Path) -> bool {
+    let chronicle = journal.join("chronicle");
+    let Ok(days) = fs::read_dir(&chronicle) else {
+        return false;
+    };
+    for day_entry in days.filter_map(Result::ok) {
+        let photos_dir = day_entry.path().join("photos");
+        let Ok(segs) = fs::read_dir(&photos_dir) else {
+            continue;
+        };
+        for seg_entry in segs.filter_map(Result::ok) {
+            if seg_entry.file_type().is_ok_and(|t| t.is_dir())
+                && !seg_entry.path().join("tombstone.json").is_file()
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Count all live landed library photos in `chronicle/*/photos/`.
 fn count_live_photos_in_journal(journal: &Path) -> usize {
     let chronicle = journal.join("chronicle");
@@ -1402,8 +1977,9 @@ fn count_live_photos_in_journal(journal: &Path) -> usize {
             continue;
         };
         for seg_entry in segs.filter_map(Result::ok) {
-            let p = seg_entry.path();
-            if p.is_dir() && !p.join("tombstone.json").is_file() {
+            if seg_entry.file_type().is_ok_and(|t| t.is_dir())
+                && !seg_entry.path().join("tombstone.json").is_file()
+            {
                 count += 1;
             }
         }
@@ -1411,90 +1987,79 @@ fn count_live_photos_in_journal(journal: &Path) -> usize {
     count
 }
 
-fn estimate_range(
-    decisions: &[AssetDecision],
-    start_ts: Option<f64>,
-    current_start_ts: Option<f64>,
-    has_active_choice: bool,
-    current_range_is_all: bool,
-    journal: &Path,
-    wanted_assets: &BTreeMap<String, WantedAssetStatus>,
-) -> RangeEstimate {
-    let mut photos = 0usize;
-    let mut days: BTreeSet<&str> = BTreeSet::new();
-    let mut delta_photos = 0usize;
-    let mut delta_days: BTreeSet<&str> = BTreeSet::new();
-    let mut earliest_date: Option<&str> = None;
-    let mut left_out_reasons: Vec<&str> = Vec::new();
+#[derive(Default)]
+struct PresetAccumulator<'a> {
+    photos: usize,
+    days: HashSet<&'a str>,
+    delta_photos: usize,
+    delta_days: HashSet<&'a str>,
+    earliest_date: Option<&'a str>,
+    left_out_reasons: Vec<&'a str>,
+}
 
-    for d in decisions {
-        if !decision_in_window(d, start_ts, None) {
-            continue;
-        }
+impl<'a> PresetAccumulator<'a> {
+    fn observe(
+        &mut self,
+        d: &'a CompactDecision,
+        wanted_status: Option<&WantedAssetStatus>,
+        is_received: bool,
+        has_active_choice: bool,
+        current_range_is_all: bool,
+        current_start_ts: Option<f64>,
+    ) {
         if let Some(ld) = d.local_date.as_deref()
-            && earliest_date.is_none_or(|e| ld < e)
+            && self.earliest_date.is_none_or(|e| ld < e)
         {
-            earliest_date = Some(ld);
+            self.earliest_date = Some(ld);
         }
         match d.decision {
             DecisionKind::Keep => {
-                photos += 1;
+                self.photos += 1;
                 if let Some(ld) = d.local_date.as_deref() {
-                    days.insert(ld);
+                    self.days.insert(ld);
                 }
                 let already_covered = current_range_is_all
                     || (has_active_choice
                         && current_start_ts.is_some_and(|cs| d.captured_ts >= cs))
-                    || lookup_received(journal, &d.id, d.cloud_id.as_deref())
-                        .ok()
-                        .flatten()
-                        .is_some();
+                    || is_received;
                 if !already_covered {
-                    delta_photos += 1;
+                    self.delta_photos += 1;
                     if let Some(ld) = d.local_date.as_deref() {
-                        delta_days.insert(ld);
+                        self.delta_days.insert(ld);
                     }
                 }
-                if matches!(
-                    wanted_assets.get(&d.id),
-                    Some(WantedAssetStatus::NoiseDropped { .. })
-                ) {
-                    left_out_reasons.push("read_as_noise");
+                if matches!(wanted_status, Some(WantedAssetStatus::NoiseDropped { .. })) {
+                    self.left_out_reasons.push("read_as_noise");
                 }
             }
             DecisionKind::StageOthersFaceCheck => {
                 if matches!(
-                    wanted_assets.get(&d.id),
+                    wanted_status,
                     Some(WantedAssetStatus::OthersNoFaceMatch { .. })
                 ) {
-                    left_out_reasons.push("others_no_face_match");
+                    self.left_out_reasons.push("others_no_face_match");
                 } else {
-                    left_out_reasons.push(d.reason.as_str());
+                    self.left_out_reasons.push(d.reason.as_str());
                 }
             }
             DecisionKind::LeftOut => {
-                left_out_reasons.push(d.reason.as_str());
+                self.left_out_reasons.push(d.reason.as_str());
             }
         }
     }
 
-    let covered = has_active_choice
-        && (current_range_is_all
-            || match (current_start_ts, start_ts) {
-                (Some(cur), Some(cand)) => cur <= cand,
-                _ => false,
-            });
-
-    RangeEstimate {
-        photos,
-        days: days.len(),
-        thoughts: photos,
-        delta_photos: if covered { 0 } else { delta_photos },
-        delta_days: if covered { 0 } else { delta_days.len() },
-        delta_thoughts: if covered { 0 } else { delta_photos },
-        covered,
-        earliest_date: earliest_date.map(str::to_owned),
-        left_out: aggregate_left_out_buckets(left_out_reasons),
+    fn finish(self, covered: bool) -> RangeEstimate {
+        RangeEstimate {
+            photos: self.photos,
+            days: self.days.len(),
+            thoughts: self.photos,
+            delta_photos: if covered { 0 } else { self.delta_photos },
+            delta_days: if covered { 0 } else { self.delta_days.len() },
+            delta_thoughts: if covered { 0 } else { self.delta_photos },
+            covered,
+            earliest_date: self.earliest_date.map(str::to_owned),
+            left_out: aggregate_left_out_buckets(self.left_out_reasons),
+        }
     }
 }
 
@@ -1609,8 +2174,10 @@ pub fn dashboard_state_at(
 
     let state = load_holding_state(journal)?;
     let devices_file = load_devices(journal)?;
-    let decisions = load_decisions(journal)?;
+    let cached = load_cached_decisions(journal)?;
     let wanted = load_wanted_state(journal)?;
+    let mut received = ReceivedLedgerSnapshot::load(journal)
+        .unwrap_or_else(|_| ReceivedLedgerSnapshot::empty(journal));
 
     let has_active_choice = state.chosen_range.is_some();
     let current_range_is_all = state.chosen_range.as_deref() == Some("all");
@@ -1620,36 +2187,21 @@ pub fn dashboard_state_at(
         .map(|s| parse_utc_ts(Some(s)));
     let current_end_ts = state.range_end_at.as_deref().map(|s| parse_utc_ts(Some(s)));
 
-    // Precompute standard 5-choice ranges (zero money figures).
-    let mut ranges = BTreeMap::new();
-    for preset in ["30d", "6m", "1y", "all", "none"] {
-        if preset == "none" {
-            ranges.insert(
-                "none".to_owned(),
-                RangeEstimate {
-                    covered: state.chosen_range.as_deref() == Some("none"),
-                    ..RangeEstimate::default()
-                },
-            );
-            continue;
-        }
-        let (_, bound_iso, _) = resolve_range_bounds(&RangeSpec::Preset(preset.to_owned()), now)?;
-        let bound_ts = bound_iso.as_deref().map(|s| parse_utc_ts(Some(s)));
-        ranges.insert(
-            preset.to_owned(),
-            estimate_range(
-                &decisions,
-                bound_ts,
-                current_start_ts,
-                has_active_choice,
-                current_range_is_all,
-                journal,
-                &wanted.assets,
-            ),
-        );
+    // Single pass across cached decisions for all 4 standard presets + active range.
+    const PRESETS: [&str; 4] = ["30d", "6m", "1y", "all"];
+    let mut preset_bounds = [None; 4];
+    for (idx, preset) in PRESETS.iter().enumerate() {
+        let (_, bound_iso, _) =
+            resolve_range_bounds(&RangeSpec::Preset((*preset).to_owned()), now)?;
+        preset_bounds[idx] = bound_iso.as_deref().map(|s| parse_utc_ts(Some(s)));
     }
+    let mut preset_accs = [
+        PresetAccumulator::default(),
+        PresetAccumulator::default(),
+        PresetAccumulator::default(),
+        PresetAccumulator::default(),
+    ];
 
-    // Compute active-range progress and left-out breakdown.
     let mut chosen_total = 0usize;
     let mut arrived = 0usize;
     let mut in_journal_in_range = 0usize;
@@ -1657,22 +2209,42 @@ pub fn dashboard_state_at(
     let mut waiting_on_phone = 0usize;
     let mut active_left_out_reasons: Vec<&str> = Vec::new();
 
-    for d in &decisions {
-        if has_active_choice && !decision_in_window(d, current_start_ts, current_end_ts) {
+    for d in &cached.all {
+        let wanted_status = wanted.assets.get(&d.id);
+        let receipt: Option<PhotoReceipt> =
+            if !received.is_empty() && d.decision != DecisionKind::LeftOut {
+                received.lookup(&d.id, d.cloud_id.as_deref()).ok().flatten()
+            } else {
+                None
+            };
+        let is_received = receipt.is_some();
+
+        for (idx, acc) in preset_accs.iter_mut().enumerate() {
+            if decision_in_window_ts(d.captured_ts, preset_bounds[idx], None) {
+                acc.observe(
+                    d,
+                    wanted_status,
+                    is_received,
+                    has_active_choice,
+                    current_range_is_all,
+                    current_start_ts,
+                );
+            }
+        }
+
+        if has_active_choice
+            && !decision_in_window_ts(d.captured_ts, current_start_ts, current_end_ts)
+        {
             continue;
         }
         match d.decision {
             DecisionKind::Keep => {
                 if has_active_choice {
                     chosen_total += 1;
-                    let receipt: Option<PhotoReceipt> =
-                        lookup_received(journal, &d.id, d.cloud_id.as_deref())
-                            .ok()
-                            .flatten();
-                    match (receipt, wanted.assets.get(&d.id)) {
+                    match (receipt.as_ref(), wanted_status) {
                         (Some(rec), _) => {
                             arrived += 1;
-                            if is_segment_live(journal, &rec) {
+                            if received.is_live(rec) {
                                 in_journal_in_range += 1;
                             } else {
                                 moved_to_trash += 1;
@@ -1691,54 +2263,64 @@ pub fn dashboard_state_at(
                     }
                 }
             }
-            DecisionKind::StageOthersFaceCheck => {
-                let receipt = lookup_received(journal, &d.id, d.cloud_id.as_deref())
-                    .ok()
-                    .flatten();
-                match (receipt, wanted.assets.get(&d.id)) {
-                    (Some(rec), _) => {
-                        if has_active_choice {
-                            chosen_total += 1;
-                            arrived += 1;
-                            if is_segment_live(journal, &rec) {
-                                in_journal_in_range += 1;
-                            } else {
-                                moved_to_trash += 1;
-                            }
-                        }
-                    }
-                    (None, Some(WantedAssetStatus::NoiseDropped { .. })) => {
-                        active_left_out_reasons.push("read_as_noise");
-                    }
-                    (None, Some(WantedAssetStatus::OthersNoFaceMatch { .. })) => {
-                        active_left_out_reasons.push("others_no_face_match");
-                    }
-                    (
-                        None,
-                        Some(WantedAssetStatus::Gone { .. } | WantedAssetStatus::Landed { .. }),
-                    ) => {}
-                    (
-                        None,
-                        None
-                        | Some(
-                            WantedAssetStatus::Leased { .. }
-                            | WantedAssetStatus::IcloudWaiting { .. },
-                        ),
-                    ) => {
-                        if has_active_choice && profile_pics_enabled {
-                            chosen_total += 1;
-                            waiting_on_phone += 1;
+            DecisionKind::StageOthersFaceCheck => match (receipt.as_ref(), wanted_status) {
+                (Some(rec), _) => {
+                    if has_active_choice {
+                        chosen_total += 1;
+                        arrived += 1;
+                        if received.is_live(rec) {
+                            in_journal_in_range += 1;
                         } else {
-                            active_left_out_reasons.push(d.reason.as_str());
+                            moved_to_trash += 1;
                         }
                     }
                 }
-            }
+                (None, Some(WantedAssetStatus::NoiseDropped { .. })) => {
+                    active_left_out_reasons.push("read_as_noise");
+                }
+                (None, Some(WantedAssetStatus::OthersNoFaceMatch { .. })) => {
+                    active_left_out_reasons.push("others_no_face_match");
+                }
+                (None, Some(WantedAssetStatus::Gone { .. } | WantedAssetStatus::Landed { .. })) => {
+                }
+                (
+                    None,
+                    None
+                    | Some(
+                        WantedAssetStatus::Leased { .. } | WantedAssetStatus::IcloudWaiting { .. },
+                    ),
+                ) => {
+                    if has_active_choice && profile_pics_enabled {
+                        chosen_total += 1;
+                        waiting_on_phone += 1;
+                    } else {
+                        active_left_out_reasons.push(d.reason.as_str());
+                    }
+                }
+            },
             DecisionKind::LeftOut => {
                 active_left_out_reasons.push(d.reason.as_str());
             }
         }
     }
+
+    let mut ranges = BTreeMap::new();
+    for (idx, (preset, acc)) in PRESETS.iter().zip(preset_accs).enumerate() {
+        let covered = has_active_choice
+            && (current_range_is_all
+                || match (current_start_ts, preset_bounds[idx]) {
+                    (Some(cur), Some(cand)) => cur <= cand,
+                    _ => false,
+                });
+        ranges.insert((*preset).to_owned(), acc.finish(covered));
+    }
+    ranges.insert(
+        "none".to_owned(),
+        RangeEstimate {
+            covered: state.chosen_range.as_deref() == Some("none"),
+            ..RangeEstimate::default()
+        },
+    );
 
     let left_out = aggregate_left_out_buckets(active_left_out_reasons);
 
