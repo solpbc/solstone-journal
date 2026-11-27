@@ -113,16 +113,32 @@ fn setup_memory_env(day: &str) -> (tempfile::TempDir, RuntimePaths, ExecutionCon
 }
 
 fn tmux_screen_jsonl(segment_key: &str, frame_count: usize) -> String {
+    tmux_screen_jsonl_with_lines(segment_key, frame_count, 0)
+}
+
+fn tmux_screen_jsonl_with_lines(
+    segment_key: &str,
+    frame_count: usize,
+    extra_lines_per_pane: usize,
+) -> String {
+    const FILLER: &str = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu";
+    let pane_body = |f: usize, pane: usize, tag: &str| {
+        let mut body = format!("S{segment_key}-F{f}-P{pane} {tag}\n");
+        for line in 0..extra_lines_per_pane {
+            body.push_str(&format!("S{segment_key}-F{f}-P{pane}-L{line} {FILLER}\n"));
+        }
+        body
+    };
     let mut out = String::new();
     for f in 0..frame_count {
         let time = f as f64 * 10.0;
         let p0 = json!({
             "id": "%0", "index": 0, "left": 0, "top": 0, "width": 80, "height": 24, "active": true,
-            "content": format!("S{segment_key}-F{f}-P0 cmd\n")
+            "content": pane_body(f, 0, "cmd")
         });
         let p1 = json!({
             "id": "%1", "index": 1, "left": 0, "top": 0, "width": 80, "height": 24, "active": false,
-            "content": format!("S{segment_key}-F{f}-P1 log\n")
+            "content": pane_body(f, 1, "log")
         });
         let raw = json!({
             "timestamp": time,
@@ -891,8 +907,10 @@ $activity_preamble"#,
     )
     .unwrap();
 
+    // Enough padded segments to exceed the participation floor budget so
+    // leaving sample_to_floor on would sample and drop frames.
     let mut span = Vec::new();
-    for i in 0..288 {
+    for i in 0..16 {
         let s = i * 300;
         let h = s / 3600;
         let m = (s % 3600) / 60;
@@ -902,7 +920,7 @@ $activity_preamble"#,
         fs::create_dir_all(&seg_dir).unwrap();
         fs::write(
             seg_dir.join("main_screen.jsonl"),
-            tmux_screen_jsonl(&key, 2),
+            tmux_screen_jsonl_with_lines(&key, 2, 12),
         )
         .unwrap();
         span.push(key);
@@ -932,6 +950,14 @@ $activity_preamble"#,
     let transcript = prep_part.config["transcript"].as_str().unwrap();
     assert!(!transcript.contains("left out"));
     assert!(prep_part.participation_floor.is_none());
+    let floor_input = solstone_core_local::generate::compute_input_budget(
+        6912,
+        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
+    );
+    assert!(
+        solstone_core_tokens::count(transcript) > floor_input,
+        "fixture must overflow the participation floor so sampling would fire if left on"
+    );
 
     // Work and conversation also contain every frame id and no left out note
     let mut req_work = request.clone();
