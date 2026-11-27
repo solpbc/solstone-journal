@@ -1708,6 +1708,8 @@ mod tests {
         }
 
         // Zero budget forces early stop after day 0 even with 0 findings -> Incomplete, never Ok!
+        // A low host disk adds a tier-1 finding that promotes the receipt to NeedsAttention,
+        // matching the guard below for the completed pass.
         let incomplete = run_integrity_scan(
             dir.path(),
             IntegrityScanOptions {
@@ -1717,7 +1719,18 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(incomplete.state, IntegrityState::Incomplete);
+        assert_ne!(incomplete.state, IntegrityState::Ok);
+        if incomplete.journal_disk.as_ref().is_some_and(|d| d.low) {
+            assert_eq!(incomplete.state, IntegrityState::NeedsAttention);
+            let mut without_low_disk = incomplete.clone();
+            without_low_disk
+                .findings
+                .retain(|finding| finding.kind != "low_disk_space");
+            without_low_disk.recompute_verdict();
+            assert_eq!(without_low_disk.state, IntegrityState::Incomplete);
+        } else {
+            assert_eq!(incomplete.state, IntegrityState::Incomplete);
+        }
         assert!(incomplete.incomplete);
         assert!(incomplete.rolling_cursor_day.is_some());
         assert!(incomplete.days_checked < incomplete.days_total);
