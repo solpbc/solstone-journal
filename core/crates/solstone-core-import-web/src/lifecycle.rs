@@ -7579,6 +7579,55 @@ mod tests {
         assert!((crate::multipart::MAX_PART_BYTES as u64) < MAX_EXPORT_BYTES);
     }
 
+    // Waits out the import lock's ten seconds, so it runs in the full gate.
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn discard_refuses_while_the_import_lock_is_held() {
+        let root = TempDir::new().unwrap();
+        let make_staged = |id: &str, extra: Value| {
+            let dir = root.path().join("imports").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            let file_path = dir.join("export.zip");
+            fs::write(&file_path, b"PK\x03\x04dummy").unwrap();
+            let mut meta: ImportMetadata = serde_json::from_value(json!({
+                "import_id": id,
+                "original_filename": "export.zip",
+                "file_path": file_path.to_string_lossy(),
+                "file_size": 9,
+                "source_hash": "0123456789abcdef",
+                "source_timestamp": id,
+                "source_hint": "apple_health",
+                "is_local_path": false,
+            }))
+            .unwrap();
+            solstone_core_import::saved_start::initialize_saved_start(&mut meta, id).unwrap();
+            if let Some(src) = extra.as_object() {
+                for (k, v) in src {
+                    meta.insert(k.clone(), v.clone());
+                }
+            }
+            fs::write(dir.join("import.json"), serde_json::to_vec(&meta).unwrap()).unwrap();
+            dir
+        };
+
+        // Refuses 409 while the import lock is held (an active run).
+        let active_id = "20261122_140005";
+        let active_dir = make_staged(active_id, json!({}));
+        let held_lock = solstone_core_import::hold_import_lock(root.path(), active_id).unwrap();
+        let resp_active = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post(format!("/app/import/api/{active_id}/discard"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        drop(held_lock);
+        assert_eq!(resp_active.status(), StatusCode::CONFLICT);
+        assert!(active_dir.exists());
+    }
+
     #[tokio::test]
     async fn discard_removes_eligible_saved_upload_and_refuses_invalid_or_active_states() {
         let root = TempDir::new().unwrap();
@@ -7709,23 +7758,6 @@ mod tests {
             .unwrap();
         assert_eq!(resp_started.status(), StatusCode::CONFLICT);
         assert!(started_dir.exists());
-
-        // 7. Refuses 409 when import lock is currently held (active run).
-        let active_id = "20261122_140005";
-        let active_dir = make_staged(active_id, json!({}));
-        let held_lock = solstone_core_import::hold_import_lock(root.path(), active_id).unwrap();
-        let resp_active = crate::routes(root.path().to_path_buf())
-            .oneshot(
-                Request::post(format!("/app/import/api/{active_id}/discard"))
-                    .header("content-type", "application/json")
-                    .body(Body::from("{}"))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        drop(held_lock);
-        assert_eq!(resp_active.status(), StatusCode::CONFLICT);
-        assert!(active_dir.exists());
 
         // 8. Refuses 409 when apple_card_already_ran (body-progress.json present).
         let ran_id = "20261122_140006";
