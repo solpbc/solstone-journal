@@ -6,7 +6,7 @@ mod connection;
 mod frame;
 mod framing;
 mod local_inference_client;
-#[cfg(feature = "full-tests")]
+#[cfg(feature = "test-fixtures")]
 pub mod one_shot_fixture;
 mod server;
 

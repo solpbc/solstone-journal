@@ -17,7 +17,11 @@ default = []
 wire = ["dep:log", "dep:tokio"]
 # Hidden door for live-socket wire tests. Production crates must not enable this.
 test-hooks = []
-full-tests = ["wire"]
+# Cross-crate test fixtures (one-shot listener and Windows pipe namespace),
+# kept separate from full-tests so Cargo dev-dependency unification never pulls
+# Callosum's own full-tests into routine make ci.
+test-fixtures = ["wire"]
+full-tests = ["wire", "test-fixtures"]
 
 [dependencies]
 serde = { workspace = true }

@@ -191,7 +191,7 @@ pub use reader::{
     read_durable_events, read_reported_zone,
 };
 pub use registry::callosum_registry;
-#[cfg(feature = "full-tests")]
+#[cfg(all(feature = "wire", feature = "test-fixtures"))]
 #[doc(hidden)]
 pub use wire::one_shot_fixture as test_fixture;
 #[cfg(all(feature = "wire", any(test, feature = "test-hooks")))]

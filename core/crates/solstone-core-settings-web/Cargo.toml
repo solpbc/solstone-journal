@@ -60,7 +60,7 @@ tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-solstone-core-callosum = { workspace = true, features = ["full-tests"] }
+solstone-core-callosum = { workspace = true, features = ["test-fixtures"] }
 
 [features]
 full-tests = []

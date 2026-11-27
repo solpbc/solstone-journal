@@ -326,7 +326,7 @@ solstone-core-mcp-endpoint.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 
 [target.'cfg(windows)'.dev-dependencies]
-solstone-core-callosum = { workspace = true, features = ["full-tests", "test-hooks"] }
+solstone-core-callosum = { workspace = true, features = ["test-fixtures", "test-hooks"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", windows))'.dependencies]
 solstone-core-local-endpoint.workspace = true

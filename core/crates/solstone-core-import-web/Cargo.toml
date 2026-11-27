@@ -43,7 +43,7 @@ tokio-util = { version = "0.7.16", features = ["io"] }
 
 [dev-dependencies]
 filetime = "0.2.29"
-solstone-core-callosum = { workspace = true, features = ["full-tests"] }
+solstone-core-callosum = { workspace = true, features = ["test-fixtures"] }
 solstone-core-convey-shell.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt"] }
 tower.workspace = true

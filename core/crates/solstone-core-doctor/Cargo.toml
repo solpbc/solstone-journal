@@ -55,4 +55,4 @@ solstone-core-sense.workspace = true
 tempfile = "3.24.0"
 
 [features]
-full-tests = ["solstone-core-callosum/full-tests"]
+full-tests = ["solstone-core-callosum/test-fixtures"]
