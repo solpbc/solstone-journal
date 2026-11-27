@@ -45,12 +45,13 @@ pub use who_spoke::{
 
 pub use segment_page::{
     AgentSpeakers, BodyReadPolicy, MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS,
-    MessageBounds, POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, ResolvedSpeechLine, SegmentClock,
-    SegmentTranscriptCursor, SegmentTranscriptEntry, SegmentTranscriptPage,
-    SegmentTranscriptReadError, SegmentTranscriptVersion, SpeechLineCache, TurnPart,
-    read_segment_transcript_page, read_segment_transcript_page_leaving_out,
-    read_segment_transcript_page_with_body_policy, read_segment_transcript_page_with_permissions,
-    read_spoken_conversation, read_talent_conversation, segment_clock, segment_has_permitted_files,
+    MessageBounds, POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, PermittedSummaryFile,
+    ResolvedSpeechLine, SegmentClock, SegmentTranscriptCursor, SegmentTranscriptEntry,
+    SegmentTranscriptPage, SegmentTranscriptReadError, SegmentTranscriptVersion, SpeechLineCache,
+    TurnPart, permitted_segment_files_for_summary, read_segment_transcript_page,
+    read_segment_transcript_page_leaving_out, read_segment_transcript_page_with_body_policy,
+    read_segment_transcript_page_with_permissions, read_spoken_conversation,
+    read_talent_conversation, segment_clock, segment_has_permitted_files,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

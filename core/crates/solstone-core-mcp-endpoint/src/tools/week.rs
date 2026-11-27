@@ -1491,21 +1491,39 @@ pub(crate) fn project_range_with_limits(
 
     let mut body_days = BTreeMap::new();
     let mut body_targets = Vec::new();
+    let mut body_totals: Option<Vec<Value>> = None;
     let mut body_summary_note = None;
     if !candidate_day_keys.is_empty()
         && include.contains(&AdmittedCategory::Body)
         && snapshot.categories.contains(&AdmittedCategory::Body)
     {
-        let mut body_keys = candidate_day_keys.clone();
-        if let Ok(previous) = page_start.yesterday() {
-            body_keys.insert(0, solstone_core_time::day_key(previous));
-        }
-        match crate::body_source::week_totals(journal, snapshot, &body_keys) {
-            Ok((totals, targets)) => {
-                body_days = totals;
-                body_targets = targets;
+        if cursor.is_none() {
+            match crate::body_source::range_totals(
+                journal,
+                snapshot,
+                day_from,
+                &effective_end_day,
+                &candidate_day_keys,
+            ) {
+                Ok(summary) => {
+                    body_days = summary.days;
+                    body_totals = Some(summary.totals);
+                    body_targets = summary.targets;
+                }
+                Err(_) => body_summary_note = Some(ToolError::FileUnreadable.agent_message()),
             }
-            Err(_) => body_summary_note = Some(ToolError::FileUnreadable.agent_message()),
+        } else {
+            let mut body_keys = candidate_day_keys.clone();
+            if let Ok(previous) = page_start.yesterday() {
+                body_keys.insert(0, solstone_core_time::day_key(previous));
+            }
+            match crate::body_source::week_totals(journal, snapshot, &body_keys) {
+                Ok((totals, targets)) => {
+                    body_days = totals;
+                    body_targets = targets;
+                }
+                Err(_) => body_summary_note = Some(ToolError::FileUnreadable.agent_message()),
+            }
         }
     }
     let mut places = BTreeMap::new();
@@ -1569,7 +1587,13 @@ pub(crate) fn project_range_with_limits(
             let p_bytes = serde_json::to_string(&summary.people).map_or(0, |s| s.len());
             let c_bytes = serde_json::to_string(&summary.co_occurrence).map_or(0, |s| s.len());
             p_bytes.saturating_add(c_bytes)
-        }));
+        }))
+        .saturating_add(
+            body_totals
+                .as_ref()
+                .and_then(|totals| serde_json::to_string(totals).ok())
+                .map_or(0, |s| s.len()),
+        );
     let mut last_served_day: Option<String> = None;
     let mut resume_date: Option<Date> = None;
 
@@ -1653,7 +1677,10 @@ pub(crate) fn project_range_with_limits(
         resume_date = last_date.tomorrow().ok().filter(|d| d <= &effective_end);
     }
 
-    if let Some(ref last) = last_served_day {
+    if body_totals.is_some() {
+        // Page 1 rolled up the entire span, so audit every source read for it.
+        extra_targets.extend(body_targets);
+    } else if let Some(ref last) = last_served_day {
         for target in body_targets {
             if target.split('/').next().is_some_and(|d| d <= last.as_str()) {
                 extra_targets.push(target);
@@ -1718,6 +1745,15 @@ pub(crate) fn project_range_with_limits(
         if roster.truncated {
             value["places_truncated"] = Value::Bool(true);
         }
+    }
+    if let Some(totals) = body_totals {
+        value["body_totals"] = Value::Array(totals);
+    } else if cursor.is_none()
+        && include.contains(&AdmittedCategory::Body)
+        && snapshot.categories.contains(&AdmittedCategory::Body)
+        && let Some(note) = body_summary_note
+    {
+        value["body_totals_note"] = json!(note);
     }
     if let Some(summary) = people_summary {
         value["people"] = Value::Array(summary.people);
@@ -4596,5 +4632,280 @@ mod tests {
             .filter_map(|p| p["id"].as_str())
             .collect();
         assert!(restored_ids.contains(&"trashed_bob"));
+    }
+
+    #[test]
+    fn range_body_totals_emit_pure_held_span_and_month_totals_with_split_nights_and_hides() {
+        use solstone_core_format::content::body_hidden_days::{
+            hidden_days_bytes, hidden_days_path,
+        };
+
+        let root = journal("solstone-week-body-totals-");
+        let p = root.path();
+        write_raw(
+            p,
+            "config/journal.json",
+            &json!({"identity": {"timezone": "UTC"}}).to_string(),
+        );
+        write_raw(
+            p,
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "work"}).to_string(),
+        );
+        write_raw(
+            p,
+            "streams/import.apple_health.json",
+            &json!({
+                "name": "import.apple_health", "kind": "import", "host": null, "platform": null,
+                "created_at": 1, "last_day": null, "last_segment": null, "seq": 1
+            })
+            .to_string(),
+        );
+
+        let write_body = |day: &str, seg: &str, rows: &[Value]| {
+            let text = rows
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            write_raw(
+                p,
+                &format!("chronicle/{day}/import.apple_health/{seg}/body.jsonl"),
+                &format!("{text}\n"),
+            );
+        };
+
+        // 20241231 (look-back day before range): its movement/readings must NOT
+        // enter 20250101..20250228 totals, while its sleep waking on 20250101 MUST.
+        write_body(
+            "20241231",
+            "060000_300",
+            &[
+                json!({"v":1,"id":"prev-steps","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"99999","unit":"count","start":"2024-12-31T08:00:00Z","end":"2024-12-31T09:00:00Z"}),
+                json!({"v":1,"id":"prev-rhr","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierRestingHeartRate","label":"resting heart rate","value":"99","unit":"count/min","start":"2024-12-31T07:00:00Z"}),
+                json!({"v":1,"id":"sleep-jan1","kind":"experience","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","experience":"sleep","label":"sleep","start":"2024-12-31T23:00:00Z","end":"2025-01-01T07:00:00Z"}),
+                json!({"v":1,"id":"sleep-jan1-s1","kind":"stage","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","of":"sleep-jan1","label":"asleep core","start":"2024-12-31T23:00:00Z","end":"2025-01-01T07:00:00Z"}),
+            ],
+        );
+
+        // 20250101: movement + readings + second recorder ("Watch").
+        write_body(
+            "20250101",
+            "060000_300",
+            &[
+                json!({"v":1,"id":"j1-steps","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"12000","unit":"count","start":"2025-01-01T09:00:00Z","end":"2025-01-01T10:00:00Z"}),
+                json!({"v":1,"id":"j1-dist","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierDistanceWalkingRunning","label":"distance walking running","value":"9.5","unit":"km","start":"2025-01-01T09:00:00Z","end":"2025-01-01T10:00:00Z"}),
+                json!({"v":1,"id":"j1-kcal","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierActiveEnergyBurned","label":"active energy burned","value":"550","unit":"kcal","start":"2025-01-01T09:00:00Z","end":"2025-01-01T10:00:00Z"}),
+                json!({"v":1,"id":"j1-rhr","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierRestingHeartRate","label":"resting heart rate","value":"60","unit":"count/min","start":"2025-01-01T07:00:00Z"}),
+                json!({"v":1,"id":"j1-hr1","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierHeartRate","label":"heart rate","value":"55","unit":"count/min","start":"2025-01-01T06:30:00Z"}),
+                json!({"v":1,"id":"j1-hr2","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierHeartRate","label":"heart rate","value":"142","unit":"count/min","start":"2025-01-01T14:00:00Z"}),
+                json!({"v":1,"id":"j1-hrv","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierHeartRateVariabilitySDNN","label":"heart rate variability sdnn","value":"48","unit":"ms","start":"2025-01-01T06:45:00Z"}),
+                // Separate recorder must stay separate.
+                json!({"v":1,"id":"j1-watch-steps","kind":"count","source":"apple_health","by":"Watch","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"3000","unit":"count","start":"2025-01-01T11:00:00Z","end":"2025-01-01T11:30:00Z"}),
+            ],
+        );
+
+        // 20250102: split night (two sleep sessions waking on 20250102: 4h + 2h = 6h = 21600s)
+        // plus overlapping step observations (uncombinable_days = 1).
+        write_body(
+            "20250102",
+            "060000_300",
+            &[
+                json!({"v":1,"id":"j2-steps-a","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"1000","unit":"count","start":"2025-01-02T09:00:00Z","end":"2025-01-02T10:00:00Z"}),
+                json!({"v":1,"id":"j2-steps-b","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"1500","unit":"count","start":"2025-01-02T09:30:00Z","end":"2025-01-02T10:30:00Z"}),
+                json!({"v":1,"id":"sleep-jan2-a","kind":"experience","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","experience":"sleep","label":"sleep","start":"2025-01-02T00:00:00Z","end":"2025-01-02T04:00:00Z"}),
+                json!({"v":1,"id":"sleep-jan2-a-s","kind":"stage","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","of":"sleep-jan2-a","label":"asleep deep","start":"2025-01-02T00:00:00Z","end":"2025-01-02T04:00:00Z"}),
+                json!({"v":1,"id":"sleep-jan2-b","kind":"experience","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","experience":"sleep","label":"sleep","start":"2025-01-02T05:00:00Z","end":"2025-01-02T07:00:00Z"}),
+                json!({"v":1,"id":"sleep-jan2-b-s","kind":"stage","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","of":"sleep-jan2-b","label":"asleep rem","start":"2025-01-02T05:00:00Z","end":"2025-01-02T07:00:00Z"}),
+            ],
+        );
+
+        // 20250103: hidden day — neither its steps nor a night started on it may appear.
+        write_body(
+            "20250103",
+            "060000_300",
+            &[
+                json!({"v":1,"id":"j3-steps","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"77777","unit":"count","start":"2025-01-03T09:00:00Z","end":"2025-01-03T10:00:00Z"}),
+                json!({"v":1,"id":"sleep-hidden","kind":"experience","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","experience":"sleep","label":"sleep","start":"2025-01-03T23:00:00Z","end":"2025-01-04T07:00:00Z"}),
+                json!({"v":1,"id":"sleep-hidden-s","kind":"stage","source":"apple_health","type":"HKCategoryTypeIdentifierSleepAnalysis","of":"sleep-hidden","label":"asleep core","start":"2025-01-03T23:00:00Z","end":"2025-01-04T07:00:00Z"}),
+            ],
+        );
+        let hidden_path = hidden_days_path(p);
+        fs::create_dir_all(hidden_path.parent().unwrap()).unwrap();
+        fs::write(
+            &hidden_path,
+            hidden_days_bytes(&BTreeSet::from(["20250103".to_owned()])),
+        )
+        .unwrap();
+
+        // 20250215: second month data.
+        write_body(
+            "20250215",
+            "060000_300",
+            &[
+                json!({"v":1,"id":"f15-steps","kind":"count","source":"apple_health","type":"HKQuantityTypeIdentifierStepCount","label":"step count","value":"4000","unit":"count","start":"2025-02-15T10:00:00Z","end":"2025-02-15T11:00:00Z"}),
+                json!({"v":1,"id":"f15-rhr","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierRestingHeartRate","label":"resting heart rate","value":"64","unit":"count/min","start":"2025-02-15T07:00:00Z"}),
+                json!({"v":1,"id":"f15-hr","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierHeartRate","label":"heart rate","value":"52","unit":"count/min","start":"2025-02-15T06:00:00Z"}),
+                json!({"v":1,"id":"f15-hrv","kind":"reading","source":"apple_health","type":"HKQuantityTypeIdentifierHeartRateVariabilitySDNN","label":"heart rate variability sdnn","value":"61","unit":"ms","start":"2025-02-15T06:15:00Z"}),
+            ],
+        );
+
+        grant(
+            p,
+            &["transcripts", "facets", "body"],
+            ReadScope::WholeJournal,
+        );
+
+        let range = probe(
+            p,
+            json!({"day_from": "20250101", "day_to": "20250228", "include": ["body"]}),
+        )
+        .unwrap();
+        let totals = range["body_totals"]
+            .as_array()
+            .expect("page 1 range get_week includes body_totals");
+        assert_eq!(totals.len(), 2, "two recorders stay separate: {totals:?}");
+
+        let primary = totals
+            .iter()
+            .find(|r| r["source"] == "Apple Health · imported" && r["recorded_by"].is_null())
+            .expect("primary recorder");
+        // Hidden day (77777) and look-back day (99999) are excluded; uncombinable 20250102 counted separately.
+        assert_eq!(primary["steps"]["total"], json!(16000.0));
+        assert_eq!(primary["steps"]["days"], json!(2));
+        assert_eq!(primary["steps"]["min"], json!(4000.0));
+        assert_eq!(primary["steps"]["min_day"], json!("20250215"));
+        assert_eq!(primary["steps"]["max"], json!(12000.0));
+        assert_eq!(primary["steps"]["max_day"], json!("20250101"));
+        assert_eq!(primary["steps"]["uncombinable_days"], json!(1));
+        assert_eq!(primary["distance_m"]["total"], json!(9500.0));
+        assert_eq!(primary["active_energy_kcal"]["total"], json!(550.0));
+        // Sleep: 20250101 (28800s, started on look-back 20241231) + 20250102 split night (21600s) = 50400s across 2 nights.
+        assert_eq!(primary["sleep"]["nights"], json!(2));
+        assert_eq!(primary["sleep"]["asleep_seconds"], json!(50400));
+        assert_eq!(primary["sleep"]["min_asleep_seconds"], json!(21600));
+        assert_eq!(primary["sleep"]["min_day"], json!("20250102"));
+        assert_eq!(primary["sleep"]["max_asleep_seconds"], json!(28800));
+        assert_eq!(primary["sleep"]["max_day"], json!("20250101"));
+        assert_eq!(primary["sleep"]["split_nights"], json!(1));
+        // RHR: pure held sum (60 + 64 = 124) + count (2) + min/max with dates.
+        assert_eq!(primary["resting_heart_rate_bpm"]["sum"], json!(124.0));
+        assert_eq!(primary["resting_heart_rate_bpm"]["count"], json!(2));
+        assert_eq!(primary["resting_heart_rate_bpm"]["days"], json!(2));
+        assert_eq!(primary["resting_heart_rate_bpm"]["min"], json!(60.0));
+        assert_eq!(
+            primary["resting_heart_rate_bpm"]["min_day"],
+            json!("20250101")
+        );
+        assert_eq!(primary["resting_heart_rate_bpm"]["max"], json!(64.0));
+        assert_eq!(
+            primary["resting_heart_rate_bpm"]["max_day"],
+            json!("20250215")
+        );
+        // HR & HRV bounds.
+        assert_eq!(primary["heart_rate_bpm"]["count"], json!(3));
+        assert_eq!(primary["heart_rate_bpm"]["min"], json!(52.0));
+        assert_eq!(primary["heart_rate_bpm"]["min_day"], json!("20250215"));
+        assert_eq!(primary["heart_rate_bpm"]["max"], json!(142.0));
+        assert_eq!(primary["heart_rate_bpm"]["max_day"], json!("20250101"));
+        assert_eq!(primary["hrv_sdnn_ms"]["count"], json!(2));
+        assert_eq!(primary["hrv_sdnn_ms"]["min"], json!(48.0));
+        assert_eq!(primary["hrv_sdnn_ms"]["max"], json!(61.0));
+
+        // Monthly breakdown holds both 2025-01 and 2025-02.
+        let months = primary["by_month"].as_array().unwrap();
+        assert_eq!(months.len(), 2);
+        assert_eq!(months[0]["month"], json!("2025-01"));
+        assert_eq!(months[0]["steps"]["total"], json!(12000.0));
+        assert_eq!(months[0]["sleep"]["nights"], json!(2));
+        assert_eq!(months[0]["sleep"]["asleep_seconds"], json!(50400));
+        assert_eq!(months[1]["month"], json!("2025-02"));
+        assert_eq!(months[1]["steps"]["total"], json!(4000.0));
+
+        let watch = totals
+            .iter()
+            .find(|r| r["recorded_by"] == "Watch")
+            .expect("Watch recorder kept separate");
+        assert_eq!(watch["steps"]["total"], json!(3000.0));
+
+        // Zero interpretive keys anywhere in body_totals.
+        fn has_forbidden_key(v: &Value) -> bool {
+            const FORBIDDEN: &[&str] = &[
+                "mean",
+                "avg",
+                "average",
+                "median",
+                "trend",
+                "baseline",
+                "score",
+                "days_over_10k",
+            ];
+            match v {
+                Value::Object(map) => {
+                    map.keys().any(|k| {
+                        let low = k.to_lowercase();
+                        FORBIDDEN.iter().any(|word| low.contains(word))
+                    }) || map.values().any(has_forbidden_key)
+                }
+                Value::Array(arr) => arr.iter().any(has_forbidden_key),
+                _ => false,
+            }
+        }
+        assert!(
+            !has_forbidden_key(&range["body_totals"]),
+            "body_totals must contain held values only: {}",
+            range["body_totals"]
+        );
+
+        // Single-week mode omits body_totals to stay lean.
+        let single = probe(p, json!({"week": "20250101", "include": ["body"]})).unwrap();
+        assert!(single.get("body_totals").is_none());
+
+        // Page 2 (continuation cursor) omits body_totals while page 1 carries it.
+        let decision = evaluate_connection_read(p, CONNECTION);
+        let crate::permissions::PermissionDecision::Snapshot(snapshot) = decision else {
+            panic!("expected granted snapshot");
+        };
+        let principal = DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        };
+        let include = BTreeSet::from([super::AdmittedCategory::Body]);
+        let page1 = super::project_range_with_limits(
+            p,
+            "20250101",
+            "20250228",
+            None,
+            principal,
+            &snapshot,
+            &include,
+            1,
+            super::MAX_SPAN_PAGE_BYTES,
+        )
+        .unwrap();
+        assert!(page1.value.get("body_totals").is_some());
+        let cursor = page1.value["next_cursor"].as_str().unwrap().to_owned();
+        let page2 = super::project_range_with_limits(
+            p,
+            "20250101",
+            "20250228",
+            Some(&cursor),
+            principal,
+            &snapshot,
+            &include,
+            1,
+            super::MAX_SPAN_PAGE_BYTES,
+        )
+        .unwrap();
+        assert!(page2.value.get("body_totals").is_none());
+
+        // Missing body permission omits body_totals completely.
+        grant(p, &["transcripts", "facets"], ReadScope::WholeJournal);
+        let no_body = probe(
+            p,
+            json!({"day_from": "20250101", "day_to": "20250228", "include": ["body"]}),
+        )
+        .unwrap();
+        assert!(no_body.get("body_totals").is_none());
     }
 }

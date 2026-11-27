@@ -1255,6 +1255,7 @@ fn empty_activities_response(request: &ValidatedListActivities) -> Prepared {
         let mut response = json!({
             "group_by": dims.iter().map(|d| d.as_str()).collect::<Vec<_>>(),
             "groups": [],
+            "groups_count": 0,
             "total": {
                 "count": 0,
                 "timed_count": 0,
@@ -1846,6 +1847,7 @@ pub(crate) fn execute_list(
         let mut response_val = json!({
             "group_by": dims.iter().map(|d| d.as_str()).collect::<Vec<_>>(),
             "groups": groups,
+            "groups_count": count,
             "total": {
                 "count": total_count,
                 "timed_count": total_timed_count,
@@ -3143,5 +3145,135 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn group_by_always_emits_groups_count_for_empty_normal_and_truncated_results() {
+        use crate::dispatch::run_mcp_probe;
+        use crate::permissions::{PermissionStore, ReadPermission, ReadScope};
+        use std::fs;
+
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-mcp-groups-count-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let root = dir.path();
+        let facet_id = "123e4567-e89b-42d3-a456-426614174000";
+        let facet_dir = root.join("facets/work");
+        fs::create_dir_all(facet_dir.join("activities")).unwrap();
+        fs::write(
+            facet_dir.join("facet.json"),
+            json!({"id": facet_id, "title": "Work", "description": "work"}).to_string(),
+        )
+        .unwrap();
+        let connection = "bearer:groups-count";
+        PermissionStore::open(root)
+            .set_permission(
+                connection,
+                ReadPermission {
+                    categories: vec!["facets".to_owned(), "entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+
+        // 1. Empty result still emits groups_count: 0.
+        let empty = run_mcp_probe(
+            root,
+            connection,
+            "list_activities",
+            &json!({"day_from": "20250101", "day_to": "20250105", "group_by": ["person"]}),
+        )
+        .unwrap();
+        assert_eq!(empty["groups"], json!([]));
+        assert_eq!(empty["groups_count"], json!(0));
+        assert!(empty.get("truncated").is_none());
+        assert!(empty.get("groups_total").is_none());
+
+        // 2. Non-truncated result emits exact groups_count matching groups.len().
+        let day_lines = [
+            json!({
+                "id": "a1",
+                "title": "Coffee",
+                "activity_type": "social",
+                "start": "09:00:00",
+                "end": "09:30:00",
+                "created_at": 1,
+                "participation": [
+                    {"entity_id": "p1", "name": "Alice", "role": "attendee"},
+                    {"entity_id": "p2", "name": "Bob", "role": "heard"}
+                ]
+            }),
+            json!({
+                "id": "a2",
+                "title": "Design",
+                "activity_type": "writing",
+                "start": "10:00:00",
+                "end": "11:00:00",
+                "created_at": 2,
+                "participation": [
+                    {"entity_id": "p3", "name": "Clara", "role": "attendee"}
+                ]
+            }),
+        ]
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+        fs::write(
+            facet_dir.join("activities/20250102.jsonl"),
+            format!("{day_lines}\n"),
+        )
+        .unwrap();
+
+        let small = run_mcp_probe(
+            root,
+            connection,
+            "list_activities",
+            &json!({"day_from": "20250101", "day_to": "20250105", "group_by": ["person"]}),
+        )
+        .unwrap();
+        assert_eq!(small["groups"].as_array().unwrap().len(), 3);
+        assert_eq!(small["groups_count"], json!(3));
+        assert_eq!(small["total"]["count"], json!(2));
+        assert!(small.get("truncated").is_none());
+        assert!(small.get("groups_total").is_none());
+
+        // 3. Truncated result (> 500 groups) emits groups_count: 500 alongside truncated & groups_total.
+        let mut many_lines = Vec::new();
+        for idx in 0..505_u32 {
+            many_lines.push(
+                json!({
+                    "id": format!("m{idx}"),
+                    "title": format!("Sync {idx}"),
+                    "activity_type": "meeting",
+                    "start": "12:00:00",
+                    "end": "12:15:00",
+                    "created_at": i64::from(idx) + 10,
+                    "participation": [
+                        {"entity_id": format!("person_{idx:04}"), "name": format!("Person {idx:04}"), "role": "attendee"}
+                    ]
+                })
+                .to_string(),
+            );
+        }
+        fs::write(
+            facet_dir.join("activities/20250103.jsonl"),
+            format!("{}\n", many_lines.join("\n")),
+        )
+        .unwrap();
+
+        let truncated = run_mcp_probe(
+            root,
+            connection,
+            "list_activities",
+            &json!({"day_from": "20250101", "day_to": "20250105", "group_by": ["person"]}),
+        )
+        .unwrap();
+        assert_eq!(truncated["groups"].as_array().unwrap().len(), 500);
+        assert_eq!(truncated["groups_count"], json!(500));
+        assert_eq!(truncated["truncated"], json!(true));
+        assert_eq!(truncated["groups_total"], json!(508));
+        assert_eq!(truncated["total"]["count"], json!(507));
     }
 }

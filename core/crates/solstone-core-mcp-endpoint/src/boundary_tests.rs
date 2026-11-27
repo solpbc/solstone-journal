@@ -21495,8 +21495,17 @@ fn places_precision_tiers_roster_week_cap_dedup_hidden_suppression_and_tools_lis
         .unwrap();
     assert_eq!(ansell["alias"], "home");
     assert_eq!(ansell["days_count"], 2);
+    assert_eq!(ansell["visits"], 3);
+    assert_eq!(ansell["duration_sec"], 16_200);
     assert_eq!(ansell["lat"], 51.515);
     assert_eq!(ansell["lon"], -0.0815);
+    let bell = roster_full
+        .iter()
+        .find(|p| p["name"] == "The Bell, Carter Lane")
+        .unwrap();
+    assert_eq!(bell["days_count"], 2);
+    assert_eq!(bell["visits"], 2);
+    assert_eq!(bell["duration_sec"], 7_200);
 
     let day1_places = &week_full["days"][0]["summary"]["places"];
     let day1_items = day1_places["items"].as_array().unwrap();
@@ -21632,6 +21641,8 @@ fn places_precision_tiers_roster_week_cap_dedup_hidden_suppression_and_tools_lis
         .find(|p| p["name"] == "Mistress Ansell's house")
         .unwrap();
     assert_eq!(ansell_approx["h3"], "88194ad301fffff");
+    assert_eq!(ansell_approx["visits"], 3);
+    assert_eq!(ansell_approx["duration_sec"], 16_200);
     let fetch_approx = probe(
         &journal,
         "fetch",
@@ -21663,6 +21674,14 @@ fn places_precision_tiers_roster_week_cap_dedup_hidden_suppression_and_tools_lis
         .unwrap();
         assert_eq!(week_names["places_precision"], "names", "words={words:?}");
         assert_eq!(week_names["places"].as_array().unwrap().len(), 2);
+        let ansell_names = week_names["places"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Mistress Ansell's house")
+            .unwrap();
+        assert_eq!(ansell_names["visits"], 3);
+        assert_eq!(ansell_names["duration_sec"], 16_200);
         assert_eq!(
             week_names["days"][0]["summary"]["places"]["items"]
                 .as_array()

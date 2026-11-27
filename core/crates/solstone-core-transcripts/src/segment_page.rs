@@ -573,6 +573,59 @@ fn is_left_out(
     )
 }
 
+/// One permitted file inside a segment, paired with its admitted content kind,
+/// for lightweight cross-source summaries without paginating transcript rows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PermittedSummaryFile {
+    pub path: PathBuf,
+    pub kind: solstone_core_format::content::AdmittedCategory,
+}
+
+/// List every transcript/import file in `segment` that `permissions` admits,
+/// plus whether `segment` holds permitted screen-text material (either a stored
+/// screen description when `screen_text` is granted, or screen media when
+/// `screenshots` is also granted).
+pub fn permitted_segment_files_for_summary(
+    segment: &Segment,
+    permissions: &BTreeSet<solstone_core_format::content::AdmittedCategory>,
+) -> Result<(Vec<PermittedSummaryFile>, bool), SegmentTranscriptReadError> {
+    use solstone_core_format::content::{AdmittedCategory, kinds::segment_file_permission};
+
+    let files = transcript_files(segment.path())?;
+    let origin = segment_origin(segment.path());
+    let mut permitted = Vec::new();
+    for path in files {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let relative = format!("{origin}/{name}");
+        let medium = file_medium(&path, &relative);
+        let ordinary = segment_file_permission(&relative);
+        let required: &[_] = match medium {
+            Some(medium) => medium.required_permissions(),
+            None => std::slice::from_ref(&ordinary),
+        };
+        if !required.iter().all(|kind| permissions.contains(kind)) {
+            continue;
+        }
+        let kind = match required {
+            [single] => *single,
+            _ => ordinary,
+        };
+        permitted.push(PermittedSummaryFile { path, kind });
+    }
+    let already_screen = permitted
+        .iter()
+        .any(|file| file.kind == AdmittedCategory::ScreenText);
+    let has_screen = !already_screen
+        && permissions.contains(&AdmittedCategory::ScreenText)
+        && (has_screen_description(segment.path())
+            || (permissions.contains(&AdmittedCategory::Screenshots)
+                && has_screen_media(segment.path(), &origin)?));
+    Ok((permitted, has_screen))
+}
+
 /// Whether this segment can supply a transcript page under these permissions.
 pub fn segment_has_permitted_files(
     segment: &Segment,

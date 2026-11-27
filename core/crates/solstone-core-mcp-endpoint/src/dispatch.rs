@@ -4817,6 +4817,9 @@ fn list_transcripts(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedListTranscripts,
 ) -> Result<Prepared, DispatchError> {
+    if request.summary {
+        return crate::tools::transcripts::execute_summary(journal_root, snapshot, &request);
+    }
     let cursor = request
         .cursor
         .as_deref()

@@ -84,11 +84,29 @@ pub enum ProvenancePart {
     Unknown,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeviceGroup {
+    Named(DeviceWord),
+    Generic,
+}
+
 impl ProvenancePart {
     pub fn device_word(&self) -> Option<DeviceWord> {
         match self {
             Self::Bound { device, .. } => *device,
             Self::Unbound { device, .. } => Some(*device),
+            _ => None,
+        }
+    }
+
+    fn device_group(&self) -> Option<DeviceGroup> {
+        match self {
+            Self::Bound {
+                device: Some(device),
+                ..
+            }
+            | Self::Unbound { device, .. } => Some(DeviceGroup::Named(*device)),
+            Self::Bound { device: None, .. } => Some(DeviceGroup::Generic),
             _ => None,
         }
     }
@@ -114,6 +132,10 @@ pub struct StreamLabelRow {
     pub name: String,
     pub part: ProvenancePart,
     pub created_at: u64,
+    /// True when `part.identity()` came from an explicit owner-set
+    /// `owner_label` in `link/client-descriptions.json` rather than an
+    /// auto-reported client name, ledger label, or unbound host stem.
+    pub owner_named: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -161,11 +183,13 @@ pub fn load_stream_labels(journal: &Path) -> StreamLabelTable {
 
     let mut rows = Vec::with_capacity(records.len());
     for (stem, record) in records {
-        let part = classify_record(&stem, &record, &descriptions, &ledger_clients);
+        let (part, owner_named) =
+            classify_record_with_origin(&stem, &record, &descriptions, &ledger_clients);
         rows.push(StreamLabelRow {
             name: stem,
             part,
             created_at: record.created_at,
+            owner_named,
         });
     }
 
@@ -179,6 +203,7 @@ pub fn load_stream_labels(journal: &Path) -> StreamLabelTable {
     }
 }
 
+#[cfg(test)]
 fn classify_record(
     stem: &str,
     record: &solstone_core_segment::StreamRecord,
@@ -188,20 +213,35 @@ fn classify_record(
     >,
     ledger_clients: &BTreeMap<String, ClientEntry>,
 ) -> ProvenancePart {
+    classify_record_with_origin(stem, record, descriptions, ledger_clients).0
+}
+
+fn classify_record_with_origin(
+    stem: &str,
+    record: &solstone_core_segment::StreamRecord,
+    descriptions: &BTreeMap<
+        String,
+        solstone_core_sol_link::client_description::StoredClientDescription,
+    >,
+    ledger_clients: &BTreeMap<String, ClientEntry>,
+) -> (ProvenancePart, bool) {
     // 1. Key import.<source> -> Import { source }
     if let Some(source) = stem.strip_prefix("import.") {
-        return ProvenancePart::Import {
-            source: if stem.starts_with(solstone_core_format::content::granola::STREAM_PREFIX) {
-                "granola".to_owned()
-            } else {
-                source.to_owned()
+        return (
+            ProvenancePart::Import {
+                source: if stem.starts_with(solstone_core_format::content::granola::STREAM_PREFIX) {
+                    "granola".to_owned()
+                } else {
+                    source.to_owned()
+                },
             },
-        };
+            false,
+        );
     }
 
     // 2. record.kind == "agent_memory" -> Agent
     if record.kind == "agent_memory" {
-        return ProvenancePart::Agent;
+        return (ProvenancePart::Agent, false);
     }
 
     // 3. Bound when cid and source are both Some (Some("") is bound)
@@ -209,28 +249,34 @@ fn classify_record(
         let description = descriptions.get(cid);
         let ledger_entry = ledger_clients.get(cid);
 
-        let (device, what, identity) =
+        let (device, what, identity, owner_named) =
             classify_bound_source(source, record, description, ledger_entry);
-        return ProvenancePart::Bound {
-            device,
-            what,
-            identity,
-        };
+        return (
+            ProvenancePart::Bound {
+                device,
+                what,
+                identity,
+            },
+            owner_named,
+        );
     }
 
     // 3b. Synced photo-library stream (`photos` or source == "photos" without a single device cid).
     if stem == solstone_core_segment::PHOTOS_SOURCE
         || record.source.as_deref() == Some(solstone_core_segment::PHOTOS_SOURCE)
     {
-        return ProvenancePart::Photos;
+        return (ProvenancePart::Photos, false);
     }
 
     // 4. Otherwise: unbound
     if record.kind == "browser" {
-        return ProvenancePart::Unbound {
-            device: DeviceWord::Browser,
-            identity: None,
-        };
+        return (
+            ProvenancePart::Unbound {
+                device: DeviceWord::Browser,
+                identity: None,
+            },
+            false,
+        );
     }
 
     if !stem.contains('.') && stem != "_default" {
@@ -252,15 +298,15 @@ fn classify_record(
             } else {
                 Some(ident.to_owned())
             };
-            return ProvenancePart::Unbound { device, identity };
+            return (ProvenancePart::Unbound { device, identity }, false);
         }
-        return ProvenancePart::Unknown;
+        return (ProvenancePart::Unknown, false);
     }
 
     let dots = stem.chars().filter(|&c| c == '.').count();
     if dots == 1 {
         let Some((host, qualifier)) = stem.split_once('.') else {
-            return ProvenancePart::Unknown;
+            return (ProvenancePart::Unknown, false);
         };
         let device = match qualifier {
             "tmux" => Some(DeviceWord::Terminal),
@@ -276,13 +322,13 @@ fn classify_record(
             } else {
                 Some(host.to_owned())
             };
-            return ProvenancePart::Unbound { device, identity };
+            return (ProvenancePart::Unbound { device, identity }, false);
         }
-        return ProvenancePart::Unknown;
+        return (ProvenancePart::Unknown, false);
     }
 
     // 5. _default and anything else -> Unknown
-    ProvenancePart::Unknown
+    (ProvenancePart::Unknown, false)
 }
 
 /// A read text fact, trimmed and lowercased; an empty value was not reported.
@@ -338,8 +384,8 @@ fn classify_bound_source(
     record: &solstone_core_segment::StreamRecord,
     description: Option<&solstone_core_sol_link::client_description::StoredClientDescription>,
     ledger_entry: Option<&ClientEntry>,
-) -> (Option<DeviceWord>, Option<WhatWord>, Option<String>) {
-    let identity = bound_identity(description, ledger_entry);
+) -> (Option<DeviceWord>, Option<WhatWord>, Option<String>, bool) {
+    let (identity, owner_named) = bound_identity(description, ledger_entry);
 
     let (device, what) = match source {
         "watch-audio" => (Some(DeviceWord::Watch), Some(WhatWord::Audio)),
@@ -366,7 +412,7 @@ fn classify_bound_source(
         _ => (None, None),
     };
 
-    (device, what, identity)
+    (device, what, identity, owner_named)
 }
 
 fn resolve_platform_device_word(
@@ -415,13 +461,13 @@ fn resolve_platform_device_word(
 fn bound_identity(
     description: Option<&solstone_core_sol_link::client_description::StoredClientDescription>,
     ledger_entry: Option<&ClientEntry>,
-) -> Option<String> {
+) -> (Option<String>, bool) {
     if let Some(owner) = description
         .and_then(|d| d.owner_label.as_deref())
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        return Some(owner.to_owned());
+        return (Some(owner.to_owned()), true);
     }
 
     if let Some(reported_name) = description
@@ -430,21 +476,21 @@ fn bound_identity(
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        return Some(reported_name.to_owned());
+        return (Some(reported_name.to_owned()), false);
     }
 
     if let Some(entry) = ledger_entry {
         let base = entry.base_label().trim();
         if !base.is_empty() {
             if entry.label_ordinal != 1 {
-                return Some(format!("{base} {}", entry.label_ordinal));
+                return (Some(format!("{base} {}", entry.label_ordinal)), false);
             } else {
-                return Some(base.to_owned());
+                return (Some(base.to_owned()), false);
             }
         }
     }
 
-    None
+    (None, false)
 }
 
 pub fn resolve_stream_label(table: &StreamLabelTable, name: &str) -> ProvenancePart {
@@ -509,6 +555,9 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
             device: None, what, ..
         } => {
             let mut label = "your device".to_owned();
+            if let Some(paren) = parenthetical {
+                label.push_str(&format!(" ({paren})"));
+            }
             if let Some(what) = what {
                 label.push_str(&format!(" · {}", what.as_str()));
             }
@@ -536,6 +585,27 @@ fn agent_short_key(stream: &str) -> Option<&str> {
         .then_some(short)
 }
 
+/// Render one stream row's provenance label.
+///
+/// When a bound stream has no recognized device word (`device: None`) and the
+/// owner explicitly set `owner_label`, surface the owner's chosen label directly
+/// instead of wrapping it under generic `"your device"`.
+fn render_row_label(row: &StreamLabelRow, parenthetical: Option<&str>) -> String {
+    if row.owner_named
+        && let ProvenancePart::Bound {
+            device: None, what, ..
+        } = &row.part
+        && let Some(owner_label) = parenthetical
+    {
+        let mut label = owner_label.to_owned();
+        if let Some(what) = what {
+            label.push_str(&format!(" · {}", what.as_str()));
+        }
+        return label;
+    }
+    provenance_label(&row.part, parenthetical)
+}
+
 pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<String, String>> {
     if table.status == LabelTableStatus::Failed {
         return None;
@@ -544,7 +614,7 @@ pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<Strin
     let mut result = BTreeMap::new();
     for row in &table.rows {
         let parenthetical = compute_parenthetical(row, &table.rows);
-        let mut rendered = provenance_label(&row.part, parenthetical);
+        let mut rendered = render_row_label(row, parenthetical);
         if row.part == ProvenancePart::Agent
             && let Some(key) = agent_short_key(&row.name)
         {
@@ -562,21 +632,21 @@ pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<Strin
 /// The second element is `true` when multiple streams intentionally share this
 /// source word (for example `import.text` and `import.image`, or imported and
 /// bound Obsidian streams) and must not be disambiguated with `(1)`/`(2)`.
-fn agent_provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> (String, bool) {
-    match part {
+fn agent_provenance_label(row: &StreamLabelRow, parenthetical: Option<&str>) -> (String, bool) {
+    match &row.part {
         ProvenancePart::Import { source } => match source.as_str() {
             "text" | "image" => ("imported file".to_owned(), true),
             "obsidian" => ("Obsidian".to_owned(), true),
             "evernote" => ("Evernote".to_owned(), true),
             "document" => ("PDF".to_owned(), true),
-            _ => (provenance_label(part, parenthetical), false),
+            _ => (provenance_label(&row.part, parenthetical), false),
         },
         ProvenancePart::Photos => ("photos".to_owned(), true),
         ProvenancePart::Bound {
             what: Some(WhatWord::Notes),
             ..
         } => ("Obsidian".to_owned(), true),
-        _ => (provenance_label(part, parenthetical), false),
+        _ => (render_row_label(row, parenthetical), false),
     }
 }
 
@@ -584,9 +654,11 @@ fn agent_provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) ->
 ///
 /// Unified import sources (`imported file`, `Obsidian`, `Evernote`, `PDF`)
 /// share one source label across their backing streams so narrowing by source
-/// matches all of them without synthetic numbering. Other streams that would
-/// still read alike are numbered in the order they were created
-/// (`"your mac · audio (2)"`). A client name that contains a stream name is
+/// matches all of them without synthetic numbering. Explicit owner labels on
+/// generic (`device: None`) streams surface directly so distinct streams never
+/// collapse into `"your device (1)/(2)"`. Other streams that would still read
+/// alike are numbered in the order they were created (`"your mac · audio (2)"`).
+/// An auto-reported or unbound client name that contains a stream name is
 /// dropped. A failed table yields no labels.
 pub fn agent_stream_labels(table: &StreamLabelTable) -> BTreeMap<String, String> {
     if table.status == LabelTableStatus::Failed {
@@ -602,10 +674,17 @@ pub fn agent_stream_labels(table: &StreamLabelTable) -> BTreeMap<String, String>
         .iter()
         .map(|row| {
             let parenthetical = compute_parenthetical(row, &table.rows).filter(|identity| {
+                // Explicit owner-set labels are the owner's own words and must
+                // not be discarded merely because an English word happens to
+                // match another stream stem; auto-reported/unbound names are
+                // still filtered so host/stream names never leak to an agent.
+                if row.owner_named {
+                    return true;
+                }
                 let identity = identity.to_lowercase();
                 !names.iter().any(|name| identity.contains(name.as_str()))
             });
-            let (label, shared) = agent_provenance_label(&row.part, parenthetical);
+            let (label, shared) = agent_provenance_label(row, parenthetical);
             (row, label, shared)
         })
         .collect();
@@ -673,24 +752,35 @@ pub fn rendered_stream_says(table: &StreamLabelTable) -> Option<BTreeMap<String,
     )
 }
 
+/// Guard against leaking FQDNs/hostnames (`.`) or filesystem paths (`/`, `\`).
+fn is_safe_identity(identity: &str) -> bool {
+    !identity.contains('.') && !identity.contains('/') && !identity.contains('\\')
+}
+
 fn compute_parenthetical<'a>(
     row: &'a StreamLabelRow,
     all_rows: &'a [StreamLabelRow],
 ) -> Option<&'a str> {
-    let device = row.part.device_word()?;
+    let group = row.part.device_group()?;
     let identity = row.part.identity()?;
 
-    if identity.contains('.') {
+    if !is_safe_identity(identity) {
         return None;
+    }
+
+    // When a bound stream has no recognized device word and the owner explicitly
+    // named it, keep the owner's label even without a peer stream.
+    if group == DeviceGroup::Generic && row.owner_named {
+        return Some(identity);
     }
 
     let has_differentiating_peer = all_rows.iter().any(|other| {
         other.name != row.name
-            && other.part.device_word() == Some(device)
+            && other.part.device_group() == Some(group)
             && other
                 .part
                 .identity()
-                .is_some_and(|other_id| other_id != identity && !other_id.contains('.'))
+                .is_some_and(|other_id| other_id != identity && is_safe_identity(other_id))
     });
 
     if has_differentiating_peer {
@@ -1271,6 +1361,7 @@ mod tests {
             name: name.to_owned(),
             part: ProvenancePart::Agent,
             created_at: 1,
+            owner_named: false,
         };
         let table = StreamLabelTable {
             status: LabelTableStatus::Complete,
@@ -2260,5 +2351,250 @@ mod tests {
             Some("your device · photos")
         );
         assert_eq!(says["iphone_photos"].what, Some("photos"));
+    }
+
+    type OwnerDescribeEntry<'a> = (
+        &'a str,
+        Option<&'a str>,
+        Option<&'a str>,
+        Option<&'a str>,
+        Option<&'a str>,
+    );
+
+    fn describe_with_owner(root: &Path, entries: &[OwnerDescribeEntry<'_>]) {
+        let mut map = serde_json::Map::new();
+        for (cid, owner_label, reported_name, platform, device_type) in entries {
+            let reported = if reported_name.is_some() || platform.is_some() || device_type.is_some()
+            {
+                json!({
+                    "name": reported_name,
+                    "platform": platform,
+                    "device_type": device_type,
+                    "app_id": null,
+                    "app_version": null,
+                })
+            } else {
+                serde_json::Value::Null
+            };
+            map.insert(
+                (*cid).to_owned(),
+                json!({
+                    "protocol_version": 1,
+                    "revision": 1,
+                    "owner_label": owner_label,
+                    "updated_at": null,
+                    "reported": reported,
+                }),
+            );
+        }
+        write_file(
+            root,
+            "link/client-descriptions.json",
+            &serde_json::Value::Object(map).to_string(),
+        );
+    }
+
+    #[test]
+    fn generic_bound_streams_with_owner_labels_keep_owner_words_without_numbering() {
+        let root = make_journal();
+        describe_with_owner(
+            root.path(),
+            &[
+                ("sha256:t", Some("studio talk"), None, None, None),
+                ("sha256:m", Some("field memos"), None, None, None),
+                ("sha256:c", Some("desk calls"), None, None, None),
+                ("sha256:d", Some("work desk"), None, None, None),
+                ("sha256:o", Some("field notebook"), None, None, None),
+            ],
+        );
+        write_stream(
+            root.path(),
+            "talk",
+            "observer",
+            Some("sha256:t"),
+            Some("microphone"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "memos",
+            "observer",
+            Some("sha256:m"),
+            Some("voice_memo"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "calls",
+            "observer",
+            Some("sha256:c"),
+            Some("call"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "desk",
+            "observer",
+            Some("sha256:d"),
+            Some("screen"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "obsidian",
+            "observer",
+            Some("sha256:o"),
+            Some("obsidian"),
+            None,
+        );
+
+        let table = load_stream_labels(root.path());
+        let agent = agent_stream_labels(&table);
+        let dashboard = rendered_stream_labels(&table).unwrap();
+
+        // Distinct owner_labels on device:None streams surface cleanly instead
+        // of collapsing to "your device (1)/(2)/(3)", even when an English word
+        // inside an explicit owner_label overlaps a stream stem ("talk").
+        assert_eq!(agent["talk"], "studio talk");
+        assert_eq!(agent["memos"], "field memos");
+        assert_eq!(agent["calls"], "desk calls");
+        assert_eq!(agent["desk"], "work desk · screen");
+        // Unified Obsidian agent label remains shared across bound/imported notes.
+        assert_eq!(agent["obsidian"], "Obsidian");
+
+        assert_eq!(dashboard["talk"], "studio talk");
+        assert_eq!(dashboard["memos"], "field memos");
+        assert_eq!(dashboard["calls"], "desk calls");
+        assert_eq!(dashboard["desk"], "work desk · screen");
+        assert_eq!(dashboard["obsidian"], "field notebook · Obsidian notes");
+    }
+
+    #[test]
+    fn single_generic_bound_stream_with_owner_label_uses_owner_label() {
+        let root = make_journal();
+        describe_with_owner(
+            root.path(),
+            &[("sha256:1", Some("lapel recorder"), None, None, None)],
+        );
+        write_stream(
+            root.path(),
+            "accessory",
+            "observer",
+            Some("sha256:1"),
+            Some("omi-audio"),
+            None,
+        );
+        let table = load_stream_labels(root.path());
+        assert_eq!(agent_stream_labels(&table)["accessory"], "lapel recorder");
+        assert_eq!(
+            rendered_stream_labels(&table).unwrap()["accessory"],
+            "lapel recorder"
+        );
+    }
+
+    #[test]
+    fn generic_bound_streams_with_reported_names_disambiguate_and_guard_hostnames() {
+        let root = make_journal();
+        describe_with_owner(
+            root.path(),
+            &[
+                ("sha256:1", None, Some("pendant"), None, None),
+                ("sha256:2", None, Some("lapel"), None, None),
+                ("sha256:3", None, Some("host.local"), None, None),
+                ("sha256:4", Some("bad/path"), None, None, None),
+                ("sha256:5", Some("bad.host"), None, None, None),
+                ("sha256:6", None, Some("stream_six_box"), None, None),
+            ],
+        );
+        write_stream(
+            root.path(),
+            "s1",
+            "observer",
+            Some("sha256:1"),
+            Some("omi-audio"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "s2",
+            "observer",
+            Some("sha256:2"),
+            Some("pin-audio"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "s3",
+            "observer",
+            Some("sha256:3"),
+            Some("other"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "s4",
+            "observer",
+            Some("sha256:4"),
+            Some("other"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "s5",
+            "observer",
+            Some("sha256:5"),
+            Some("other"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "stream_six",
+            "observer",
+            Some("sha256:6"),
+            Some("other"),
+            None,
+        );
+
+        let table = load_stream_labels(root.path());
+        let agent = agent_stream_labels(&table);
+        assert_eq!(agent["s1"], "your device (pendant)");
+        assert_eq!(agent["s2"], "your device (lapel)");
+        // Dotted hostnames, paths, and auto-reported names containing a stream
+        // stem never leak to agents.
+        assert!(!agent["s3"].contains("host.local"));
+        assert!(!agent["s4"].contains("bad/path"));
+        assert!(!agent["s5"].contains("bad.host"));
+        assert!(!agent["stream_six"].contains("stream_six"));
+    }
+
+    #[test]
+    fn duplicate_owner_labels_on_generic_streams_still_disambiguate() {
+        let root = make_journal();
+        describe_with_owner(
+            root.path(),
+            &[
+                ("sha256:1", Some("studio mic"), None, None, None),
+                ("sha256:2", Some("studio mic"), None, None, None),
+            ],
+        );
+        write_stream(
+            root.path(),
+            "a",
+            "observer",
+            Some("sha256:1"),
+            Some("mic"),
+            None,
+        );
+        write_stream(
+            root.path(),
+            "b",
+            "observer",
+            Some("sha256:2"),
+            Some("mic"),
+            None,
+        );
+        let agent = agent_stream_labels(&load_stream_labels(root.path()));
+        assert_eq!(agent["a"], "studio mic (1)");
+        assert_eq!(agent["b"], "studio mic (2)");
     }
 }

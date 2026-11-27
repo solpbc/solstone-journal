@@ -18,6 +18,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- connected agents can now ask your journal for counts across a date range in a single request (such as transcripts, notes, photos and calendar events), broken down by kind and source with monthly counts by kind.
+- when a connected agent can read your weekly view and body summaries, it can now get monthly and full-range movement, sleep and heart-reading totals alongside daily summaries. the places list your agent receives now adds a combined count of visits and stays and the sum of their known durations for each place, and grouped activity totals now report the number of groups returned.
 - the import page on android and iphone development journals no longer has a Plaud row.
 - when a connected agent lists activities, filtering by person or activity type now runs directly on your activity list instead of falling back to search, keeping durations, facets and participant details intact, and person or entity filters can now be narrowed by how they took part (such as attended, heard, corresponded or mentioned). connected agents can also ask your journal to group matching activities by month, day, facet, activity type or person for exact counts and summed durations in a single call, or ask for shorter activity entries (without people, place or calendar details) when scanning many activities. filtering by kind of material or place stays in search and transcript lists rather than the activity list.
 - when an agent may see only facets you choose, the activity list now marks each activity that has no source the agent may read, so it knows before it asks for them. thanks @dvanduzer for the report (#415).
@@ -27,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- sources that used to show "your device" can now show the names you gave them in lists and summaries instead of collapsing into numbered device labels (connected agents still group Obsidian notes under Obsidian).
 - background face-matching maintenance no longer reports a failed scheduled run when it waits for other journal work or skips a single unreadable recording, and running a maintenance task manually now clears an earlier failure once it finishes cleanly.
 - when the daily maintenance time changes, your journal no longer runs every daily task at once; the new time takes effect at the next scheduled window.
 - media offload and offloaded-media restores that stop because of another active backup or restore operation or unfinished backup work now report that cause instead of saying your journal could not be confirmed.

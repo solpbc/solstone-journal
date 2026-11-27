@@ -163,6 +163,59 @@ pub fn scheduled_on_day(journal: &Path, day: &str) -> Result<Vec<ScheduledEvent>
     Ok(events)
 }
 
+/// One active scheduled calendar event day row from the latest calendar listing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScheduledEventHit {
+    pub day: String,
+    pub path: String,
+    pub stream: String,
+    pub event: String,
+    pub occurrence: String,
+}
+
+/// Latest-version scheduled calendar event hits within optional inclusive
+/// `[from, to]` (`YYYYMMDD`) bounds. Returns empty when no index or calendar
+/// listing exists.
+pub fn scheduled_event_hits(
+    journal: &Path,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<Vec<ScheduledEventHit>, StoreError> {
+    if !db_path(journal).is_file() {
+        return Ok(Vec::new());
+    }
+    let conn = open_index_reader(journal)?;
+    let has_table: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='calendar_hits')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_table {
+        return Ok(Vec::new());
+    }
+    let mut statement = conn.prepare(
+        "SELECT DISTINCT c.day, h.path, c.stream, h.event, h.occurrence \
+         FROM calendar_hits h \
+         JOIN chunks c ON c.rowid=h.rowid AND c.path=h.path \
+         WHERE h.version='latest' \
+           AND (?1 IS NULL OR c.day>=?1) \
+           AND (?2 IS NULL OR c.day<=?2) \
+         ORDER BY c.day, h.event, h.occurrence",
+    )?;
+    let hits = statement
+        .query_map(params![from, to], |row| {
+            Ok(ScheduledEventHit {
+                day: row.get(0)?,
+                path: row.get(1)?,
+                stream: row.get(2)?,
+                event: row.get(3)?,
+                occurrence: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(hits)
+}
+
 /// Non-declined scheduled calendar event counts per day across `[from, to]`.
 pub fn scheduled_day_counts_between(
     journal: &Path,

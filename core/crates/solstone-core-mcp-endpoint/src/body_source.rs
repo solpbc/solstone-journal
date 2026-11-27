@@ -477,7 +477,45 @@ fn readable_windows(
     if !holds_body(snapshot) {
         return Ok(Vec::new());
     }
-    windows_in_scope(journal_root, snapshot, hides, day, stream)
+    windows_in_scope_with_declarations(journal_root, snapshot, hides, day, stream, None)
+}
+
+fn stream_segments_for_day(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+) -> Result<Vec<Segment>, DispatchError> {
+    let day_dir = solstone_core_journal_io::paths::day_path(journal_root, day, false)
+        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    match std::fs::metadata(&day_dir) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Ok(Vec::new()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(DispatchError::Tool(ToolError::FileUnreadable)),
+    }
+    let stream_dir = day_dir.join(stream);
+    match std::fs::metadata(&stream_dir) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Ok(Vec::new()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            if std::fs::read_dir(&day_dir).is_err() {
+                return Err(DispatchError::Tool(ToolError::FileUnreadable));
+            }
+            return Ok(Vec::new());
+        }
+        Err(_) => return Err(DispatchError::Tool(ToolError::FileUnreadable)),
+    }
+    match solstone_core_journal_io::paths::iter_stream_segments(journal_root, day, stream) {
+        Ok(segments) => Ok(segments),
+        Err(_) => {
+            if std::fs::read_dir(&day_dir).is_err() {
+                Err(DispatchError::Tool(ToolError::FileUnreadable))
+            } else {
+                Ok(Vec::new())
+            }
+        }
+    }
 }
 
 /// The body window a live, in-scope, unreleased segment is, in time order. One
@@ -490,14 +528,24 @@ fn windows_in_scope(
     day: &str,
     stream: &str,
 ) -> Result<Vec<Window>, DispatchError> {
+    windows_in_scope_with_declarations(journal_root, snapshot, hides, day, stream, None)
+}
+
+fn windows_in_scope_with_declarations(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    hides: &BodyHides,
+    day: &str,
+    stream: &str,
+    declarations: Option<&solstone_core_indexer_store::classification::FacetDeclarationSet>,
+) -> Result<Vec<Window>, DispatchError> {
     // A hidden day's windows aren't there to read, and while which days are
     // hidden can't be read, no day's are.
     if hides.day_hidden(day) {
         return Ok(Vec::new());
     }
     let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Body), None);
-    let segments = iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(day))
-        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    let segments = stream_segments_for_day(journal_root, day, stream)?;
     let mut windows = Vec::new();
     for segment in segments {
         let Ok(identity) = segment.record_identity() else {
@@ -515,9 +563,19 @@ fn windows_in_scope(
             continue;
         };
         let probe = segment_assignment_probe_path(day, stream, &name);
-        if !live_allows(journal_root, &transcript_boundary, &probe, Some(stream))
-            || !released(journal_root, day, stream, &name)
-        {
+        let allowed_scope = match declarations {
+            Some(decls) => {
+                let classification = solstone_core_indexer_store::classification::classify_source(
+                    journal_root,
+                    &probe,
+                    Some(stream),
+                    decls,
+                );
+                transcript_boundary.allows_classification(journal_root, &classification)
+            }
+            None => live_allows(journal_root, &transcript_boundary, &probe, Some(stream)),
+        };
+        if !allowed_scope || !released(journal_root, day, stream, &name) {
             continue;
         }
         // One holding only rows of a night that started on a hidden day, or
@@ -546,6 +604,712 @@ fn windows_in_scope(
     Ok(windows)
 }
 
+/// Page-1 daily body summaries plus full-span held totals and per-month totals
+/// for a date-range `get_week(include=["body"])` read.
+pub(crate) struct BodyRangeSummary {
+    pub(crate) days: BTreeMap<String, Value>,
+    pub(crate) totals: Vec<Value>,
+    pub(crate) targets: Vec<String>,
+}
+
+fn clean_f64(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
+}
+
+#[derive(Default)]
+struct MetricRollup {
+    total: f64,
+    days: u64,
+    min: Option<(f64, String)>,
+    max: Option<(f64, String)>,
+    uncombinable_days: u64,
+}
+
+impl MetricRollup {
+    fn record(&mut self, day: &str, result: Result<Option<f64>, &'static str>) {
+        match result {
+            Ok(Some(value)) => {
+                self.total += value;
+                self.days += 1;
+                if self.min.as_ref().is_none_or(|(cur, cur_day)| {
+                    value < *cur || (value == *cur && day < cur_day.as_str())
+                }) {
+                    self.min = Some((value, day.to_owned()));
+                }
+                if self.max.as_ref().is_none_or(|(cur, cur_day)| {
+                    value > *cur || (value == *cur && day < cur_day.as_str())
+                }) {
+                    self.max = Some((value, day.to_owned()));
+                }
+            }
+            Ok(None) => {}
+            Err(_) => {
+                self.uncombinable_days += 1;
+            }
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.days == 0 && self.uncombinable_days == 0
+    }
+
+    fn to_json(&self, include_days: bool) -> Value {
+        let mut obj = serde_json::Map::new();
+        if self.days > 0 {
+            obj.insert("total".to_owned(), json!(clean_f64(self.total)));
+            obj.insert("days".to_owned(), json!(self.days));
+            if let Some((min, min_day)) = &self.min {
+                obj.insert("min".to_owned(), json!(clean_f64(*min)));
+                if include_days {
+                    obj.insert("min_day".to_owned(), json!(min_day));
+                }
+            }
+            if let Some((max, max_day)) = &self.max {
+                obj.insert("max".to_owned(), json!(clean_f64(*max)));
+                if include_days {
+                    obj.insert("max_day".to_owned(), json!(max_day));
+                }
+            }
+        }
+        if self.uncombinable_days > 0 {
+            obj.insert(
+                "uncombinable_days".to_owned(),
+                json!(self.uncombinable_days),
+            );
+        }
+        Value::Object(obj)
+    }
+}
+
+#[derive(Default)]
+struct ReadingRollup {
+    sum: f64,
+    count: u64,
+    days: u64,
+    min: Option<(f64, String, Option<String>)>,
+    max: Option<(f64, String, Option<String>)>,
+    unreadable_days: u64,
+}
+
+impl ReadingRollup {
+    fn record(&mut self, day: &str, summary: &ReadingSummary) {
+        match summary {
+            ReadingSummary::Empty => {}
+            ReadingSummary::Note(_) => {
+                self.unreadable_days += 1;
+            }
+            ReadingSummary::Bounds {
+                sum,
+                min,
+                max,
+                count,
+                min_at,
+                max_at,
+            } => {
+                self.sum += *sum;
+                self.count += *count;
+                self.days += 1;
+                if self.min.as_ref().is_none_or(|(cur, cur_day, _)| {
+                    *min < *cur || (*min == *cur && day < cur_day.as_str())
+                }) {
+                    self.min = Some((*min, day.to_owned(), min_at.clone()));
+                }
+                if self.max.as_ref().is_none_or(|(cur, cur_day, _)| {
+                    *max > *cur || (*max == *cur && day < cur_day.as_str())
+                }) {
+                    self.max = Some((*max, day.to_owned(), max_at.clone()));
+                }
+            }
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.days == 0 && self.unreadable_days == 0
+    }
+
+    fn to_json(&self, include_sum: bool, include_days: bool, include_at: bool) -> Value {
+        let mut obj = serde_json::Map::new();
+        if self.days > 0 {
+            if include_sum {
+                obj.insert("sum".to_owned(), json!(clean_f64(self.sum)));
+            }
+            obj.insert("count".to_owned(), json!(self.count));
+            obj.insert("days".to_owned(), json!(self.days));
+            if let Some((min, min_day, min_at)) = &self.min {
+                obj.insert("min".to_owned(), json!(clean_f64(*min)));
+                if include_days {
+                    obj.insert("min_day".to_owned(), json!(min_day));
+                }
+                if include_at && let Some(at) = min_at {
+                    obj.insert("min_at".to_owned(), json!(at));
+                }
+            }
+            if let Some((max, max_day, max_at)) = &self.max {
+                obj.insert("max".to_owned(), json!(clean_f64(*max)));
+                if include_days {
+                    obj.insert("max_day".to_owned(), json!(max_day));
+                }
+                if include_at && let Some(at) = max_at {
+                    obj.insert("max_at".to_owned(), json!(at));
+                }
+            }
+        }
+        if self.unreadable_days > 0 {
+            obj.insert("unreadable_days".to_owned(), json!(self.unreadable_days));
+        }
+        Value::Object(obj)
+    }
+}
+
+#[derive(Default)]
+struct SleepRollup {
+    nights: u64,
+    asleep_seconds: u64,
+    min: Option<(u64, String)>,
+    max: Option<(u64, String)>,
+    split_nights: u64,
+}
+
+impl SleepRollup {
+    fn record_morning(&mut self, day: &str, asleep_seconds: u64, sessions: usize) {
+        self.nights += 1;
+        self.asleep_seconds = self.asleep_seconds.saturating_add(asleep_seconds);
+        if sessions > 1 {
+            self.split_nights += 1;
+        }
+        if self.min.as_ref().is_none_or(|(cur, cur_day)| {
+            asleep_seconds < *cur || (asleep_seconds == *cur && day < cur_day.as_str())
+        }) {
+            self.min = Some((asleep_seconds, day.to_owned()));
+        }
+        if self.max.as_ref().is_none_or(|(cur, cur_day)| {
+            asleep_seconds > *cur || (asleep_seconds == *cur && day < cur_day.as_str())
+        }) {
+            self.max = Some((asleep_seconds, day.to_owned()));
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.nights == 0
+    }
+
+    fn to_json(&self, include_days: bool) -> Value {
+        let mut obj = serde_json::Map::new();
+        obj.insert("nights".to_owned(), json!(self.nights));
+        obj.insert("asleep_seconds".to_owned(), json!(self.asleep_seconds));
+        if let Some((min, min_day)) = &self.min {
+            obj.insert("min_asleep_seconds".to_owned(), json!(min));
+            if include_days {
+                obj.insert("min_day".to_owned(), json!(min_day));
+            }
+        }
+        if let Some((max, max_day)) = &self.max {
+            obj.insert("max_asleep_seconds".to_owned(), json!(max));
+            if include_days {
+                obj.insert("max_day".to_owned(), json!(max_day));
+            }
+        }
+        if self.split_nights > 0 {
+            obj.insert("split_nights".to_owned(), json!(self.split_nights));
+        }
+        Value::Object(obj)
+    }
+}
+
+#[derive(Default)]
+struct PeriodBodyRollup {
+    days_with_data: BTreeSet<String>,
+    steps: MetricRollup,
+    distance_m: MetricRollup,
+    active_energy_kcal: MetricRollup,
+    sleep: SleepRollup,
+    resting_heart_rate_bpm: ReadingRollup,
+    heart_rate_bpm: ReadingRollup,
+    hrv_sdnn_ms: ReadingRollup,
+}
+
+impl PeriodBodyRollup {
+    fn is_empty(&self) -> bool {
+        self.days_with_data.is_empty()
+            && self.steps.is_empty()
+            && self.distance_m.is_empty()
+            && self.active_energy_kcal.is_empty()
+            && self.sleep.is_empty()
+            && self.resting_heart_rate_bpm.is_empty()
+            && self.heart_rate_bpm.is_empty()
+            && self.hrv_sdnn_ms.is_empty()
+    }
+
+    fn insert_metrics(&self, obj: &mut serde_json::Map<String, Value>, include_days: bool) {
+        obj.insert(
+            "days_with_data".to_owned(),
+            json!(self.days_with_data.len()),
+        );
+        if !self.steps.is_empty() {
+            obj.insert("steps".to_owned(), self.steps.to_json(include_days));
+        }
+        if !self.distance_m.is_empty() {
+            obj.insert(
+                "distance_m".to_owned(),
+                self.distance_m.to_json(include_days),
+            );
+        }
+        if !self.active_energy_kcal.is_empty() {
+            obj.insert(
+                "active_energy_kcal".to_owned(),
+                self.active_energy_kcal.to_json(include_days),
+            );
+        }
+        if !self.sleep.is_empty() {
+            obj.insert("sleep".to_owned(), self.sleep.to_json(include_days));
+        }
+        if !self.resting_heart_rate_bpm.is_empty() {
+            obj.insert(
+                "resting_heart_rate_bpm".to_owned(),
+                self.resting_heart_rate_bpm
+                    .to_json(true, include_days, false),
+            );
+        }
+        if !self.heart_rate_bpm.is_empty() {
+            obj.insert(
+                "heart_rate_bpm".to_owned(),
+                self.heart_rate_bpm
+                    .to_json(false, include_days, include_days),
+            );
+        }
+        if !self.hrv_sdnn_ms.is_empty() {
+            obj.insert(
+                "hrv_sdnn_ms".to_owned(),
+                self.hrv_sdnn_ms.to_json(false, include_days, false),
+            );
+        }
+    }
+}
+
+#[derive(Default)]
+struct SourceRecorderRollup {
+    span: PeriodBodyRollup,
+    by_month: BTreeMap<String, PeriodBodyRollup>,
+}
+
+fn month_key(day: &str) -> String {
+    if day.len() >= 6 {
+        format!("{}-{}", &day[..4], &day[4..6])
+    } else {
+        day.to_owned()
+    }
+}
+
+/// Daily summaries for `page_days` plus full-span and per-month held body
+/// totals across `[day_from, day_to]` in one pass per source.
+///
+/// Emits strictly held totals, coverage counts and held extremes with dates —
+/// never computed averages, medians, baselines, trends or thresholds.
+pub(crate) fn range_totals(
+    journal: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day_from: &str,
+    day_to: &str,
+    page_days: &[String],
+) -> Result<BodyRangeSummary, DispatchError> {
+    if !holds_body(snapshot) {
+        return Ok(BodyRangeSummary {
+            days: BTreeMap::new(),
+            totals: Vec::new(),
+            targets: Vec::new(),
+        });
+    }
+    let (Some(start_date), Some(end_date)) = (
+        solstone_core_time::parse_day(day_from),
+        solstone_core_time::parse_day(day_to),
+    ) else {
+        return Err(DispatchError::Tool(ToolError::InvalidInput));
+    };
+    let mut scan_days = Vec::new();
+    if let Ok(previous) = start_date.yesterday() {
+        scan_days.push(solstone_core_time::day_key(previous));
+    }
+    let mut cur = start_date;
+    while cur <= end_date {
+        scan_days.push(solstone_core_time::day_key(cur));
+        let Ok(next) = cur.tomorrow() else {
+            break;
+        };
+        cur = next;
+    }
+    let page_set: BTreeSet<&str> = page_days.iter().map(String::as_str).collect();
+    let mut summaries = BTreeMap::new();
+    let mut targets = Vec::new();
+    let mut rollups: BTreeMap<(String, Option<String>), SourceRecorderRollup> = BTreeMap::new();
+    let hides = BodyHides::read(journal);
+    let labels = source_labels(journal);
+    let declarations =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(journal)
+            .ok();
+
+    for stream in BODY_RECORD_STREAMS {
+        let mut nights = BTreeMap::new();
+        let mut stages = BTreeMap::<String, NightStages>::new();
+        let mut seen = BTreeSet::new();
+        let stream_label = source_label(&labels, stream);
+
+        for day in &scan_days {
+            let in_span = day.as_str() >= day_from && day.as_str() <= day_to;
+            let in_page = page_set.contains(day.as_str());
+            let mut movement = BTreeMap::<Option<String>, Movement>::new();
+            let mut readings = BTreeMap::<Option<String>, DayReadings>::new();
+            let mut windows = windows_in_scope_with_declarations(
+                journal,
+                snapshot,
+                &hides,
+                day,
+                stream,
+                declarations.as_ref(),
+            )?;
+            windows.sort_by_key(|window| {
+                (
+                    solstone_core_format::content::body_records::copy_rank(&window.name),
+                    window.name.clone(),
+                )
+            });
+            for window in windows {
+                let segment_path = format!("{day}/{stream}/{}", window.name);
+                let path = format!("chronicle/{segment_path}/{BODY_RECORDS_FILE}");
+                let Some(bytes) = crate::activity_admit::read_contained_source(journal, &path)
+                else {
+                    continue;
+                };
+                let text = std::str::from_utf8(&bytes)
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+                if !crate::source_release::check_indexed_source_release(journal, &path) {
+                    continue;
+                }
+                let mut used = false;
+                for row in text
+                    .lines()
+                    .filter_map(|line| serde_json::from_str::<BodyRow>(line).ok())
+                {
+                    if row.kind == RowKind::Moved
+                        || window.left_out.contains(&row.id)
+                        || (!holds_womens_health(snapshot) && is_womens_health_row(&row))
+                        || !seen.insert(row.id.clone())
+                    {
+                        continue;
+                    }
+                    match row.kind {
+                        RowKind::Count
+                            if in_span
+                                && matches!(
+                                    row.label.as_str(),
+                                    "step count"
+                                        | "distance walking running"
+                                        | "active energy burned"
+                                ) =>
+                        {
+                            movement.entry(row.by.clone()).or_default().add_count(&row);
+                        }
+                        RowKind::Reading
+                            if in_span
+                                && matches!(
+                                    row.label.as_str(),
+                                    "resting heart rate"
+                                        | "heart rate variability sdnn"
+                                        | "heart rate"
+                                ) =>
+                        {
+                            readings
+                                .entry(row.by.clone())
+                                .or_default()
+                                .add_reading(&row);
+                        }
+                        RowKind::Dated if in_span && row.record_type == "daily_activity" => {
+                            let mut matched = false;
+                            if let Some(steps) =
+                                row.fields.get("steps").filter(|value| !value.is_null())
+                            {
+                                let counts = &mut movement.entry(row.by.clone()).or_default().steps;
+                                if let Some(steps) = steps.as_f64() {
+                                    counts.add(steps, None);
+                                } else {
+                                    counts.note = Some("a stored step count could not be read");
+                                }
+                                matched = true;
+                            }
+                            if let Some(kcal) = row
+                                .fields
+                                .get("active_calories")
+                                .or_else(|| row.fields.get("activeKilocalories"))
+                                .filter(|value| !value.is_null())
+                            {
+                                let counts = &mut movement
+                                    .entry(row.by.clone())
+                                    .or_default()
+                                    .active_energy_kcal;
+                                if let Some(kcal) = kcal.as_f64() {
+                                    counts.add(kcal, None);
+                                } else {
+                                    counts.note =
+                                        Some("a stored active energy count could not be read");
+                                }
+                                matched = true;
+                            }
+                            if !matched {
+                                continue;
+                            }
+                        }
+                        RowKind::Experience if row.experience.as_deref() == Some("sleep") => {
+                            nights.insert(row.id.clone(), row);
+                        }
+                        RowKind::Stage
+                            if let (Some(stage), Some(parent), Some(interval)) =
+                                (sleep_stage_key(&row.label), &row.of, row_interval(&row)) =>
+                        {
+                            let entry = stages.entry(parent.clone()).or_default();
+                            if stage.counts_as_asleep {
+                                entry.asleep.push(interval);
+                            }
+                            entry.by_stage.entry(stage.key).or_default().push(interval);
+                        }
+                        _ => continue,
+                    }
+                    used = true;
+                }
+                if used {
+                    targets.push(segment_path);
+                }
+            }
+
+            if !in_span {
+                continue;
+            }
+            let month = month_key(day);
+            for (recorder, movement) in movement {
+                let steps = movement.steps.total();
+                let distance_m = movement.distance_m.total();
+                let active_energy_kcal = movement.active_energy_kcal.total();
+                if steps != Ok(None) || distance_m != Ok(None) || active_energy_kcal != Ok(None) {
+                    let rollup = rollups
+                        .entry((stream_label.clone(), recorder.clone()))
+                        .or_default();
+                    let month_rollup = rollup.by_month.entry(month.clone()).or_default();
+                    rollup.span.days_with_data.insert(day.clone());
+                    month_rollup.days_with_data.insert(day.clone());
+                    rollup.span.steps.record(day, steps);
+                    month_rollup.steps.record(day, steps);
+                    rollup.span.distance_m.record(day, distance_m);
+                    month_rollup.distance_m.record(day, distance_m);
+                    rollup
+                        .span
+                        .active_energy_kcal
+                        .record(day, active_energy_kcal);
+                    month_rollup
+                        .active_energy_kcal
+                        .record(day, active_energy_kcal);
+
+                    if in_page {
+                        let mut record = json!({
+                            "source": stream_label, "recorded_by": recorder,
+                            "steps": steps.ok().flatten(), "distance_m": distance_m.ok().flatten(),
+                        });
+                        if let Err(note) = steps {
+                            record["steps_note"] = json!(note);
+                        }
+                        if let Err(note) = distance_m {
+                            record["distance_note"] = json!(note);
+                        }
+                        match active_energy_kcal {
+                            Ok(Some(kcal)) => record["active_energy_kcal"] = json!(kcal),
+                            Ok(None) => {}
+                            Err(note) => record["active_energy_note"] = json!(note),
+                        }
+                        let entry = summaries.entry(day.clone()).or_insert_with(|| json!({}));
+                        let list = entry
+                            .as_object_mut()
+                            .expect("body summary object")
+                            .entry("movement")
+                            .or_insert_with(|| json!([]));
+                        list.as_array_mut().expect("movement array").push(record);
+                    }
+                }
+            }
+            for (recorder, day_readings) in readings {
+                let rhr = day_readings.resting_heart_rate_bpm.finish();
+                let hrv = day_readings.hrv_sdnn_ms.finish();
+                let hr = day_readings.heart_rate_bpm.finish();
+                if rhr.is_empty() && hrv.is_empty() && hr.is_empty() {
+                    continue;
+                }
+                let rollup = rollups
+                    .entry((stream_label.clone(), recorder.clone()))
+                    .or_default();
+                let month_rollup = rollup.by_month.entry(month.clone()).or_default();
+                rollup.span.days_with_data.insert(day.clone());
+                month_rollup.days_with_data.insert(day.clone());
+                rollup.span.resting_heart_rate_bpm.record(day, &rhr);
+                month_rollup.resting_heart_rate_bpm.record(day, &rhr);
+                rollup.span.hrv_sdnn_ms.record(day, &hrv);
+                month_rollup.hrv_sdnn_ms.record(day, &hrv);
+                rollup.span.heart_rate_bpm.record(day, &hr);
+                month_rollup.heart_rate_bpm.record(day, &hr);
+
+                if in_page
+                    && let Some(record) =
+                        readings_summary_to_json(stream_label.clone(), recorder, rhr, hrv, hr)
+                {
+                    let entry = summaries.entry(day.clone()).or_insert_with(|| json!({}));
+                    let list = entry
+                        .as_object_mut()
+                        .expect("body summary object")
+                        .entry("readings")
+                        .or_insert_with(|| json!([]));
+                    list.as_array_mut().expect("readings array").push(record);
+                }
+            }
+        }
+
+        // Combine sleep sessions waking on the same morning for the same
+        // (source, recorded_by), unioning stage spans across split nights while
+        // preserving individual per-session rows on daily page summaries.
+        #[derive(Default)]
+        struct MorningSleep {
+            stage_spans: Vec<(i64, i64)>,
+            fallback_seconds: u64,
+            has_asleep: bool,
+            sessions: usize,
+        }
+        let mut mornings: BTreeMap<(Option<String>, String), MorningSleep> = BTreeMap::new();
+        let zone = source_zone(journal, stream);
+        for (id, row) in nights {
+            let Some(wake) = row.end.as_deref().and_then(parse_source_time) else {
+                continue;
+            };
+            let day = solstone_core_time::day_key(zone.as_ref().map_or_else(
+                || wake.date(),
+                |zone| wake.with_time_zone(zone.clone()).date(),
+            ));
+            if day.as_str() < day_from || day.as_str() > day_to || hides.day_hidden(&day) {
+                continue;
+            }
+            let night_stages = stages.remove(&id);
+            let asleep_seconds = night_stages
+                .as_ref()
+                .filter(|stage| !stage.asleep.is_empty())
+                .map(|stage| covered_seconds(stage.asleep.clone()))
+                .or_else(|| {
+                    row.fields
+                        .get("total_sleep_duration")
+                        .or_else(|| row.fields.get("sleepTimeSeconds"))
+                        .and_then(Value::as_u64)
+                });
+            if asleep_seconds.is_some_and(|s| s > 0) {
+                let morning = mornings.entry((row.by.clone(), day.clone())).or_default();
+                morning.sessions += 1;
+                morning.has_asleep = true;
+                if let Some(ref stage) = night_stages
+                    && !stage.asleep.is_empty()
+                {
+                    morning.stage_spans.extend(stage.asleep.iter().copied());
+                } else if let Some(fallback) = asleep_seconds {
+                    morning.fallback_seconds = morning.fallback_seconds.saturating_add(fallback);
+                }
+            }
+            if page_set.contains(day.as_str()) {
+                let mut stages_seconds = serde_json::Map::new();
+                if let Some(night_stages) = night_stages {
+                    for (stage_name, spans) in night_stages.by_stage {
+                        let seconds = covered_seconds(spans);
+                        if seconds > 0 {
+                            stages_seconds.insert(stage_name.to_owned(), json!(seconds));
+                        }
+                    }
+                } else {
+                    for (field, key) in [
+                        ("awake_time", "awake"),
+                        ("awakeSleepSeconds", "awake"),
+                        ("deep_sleep_duration", "deep"),
+                        ("deepSleepSeconds", "deep"),
+                        ("light_sleep_duration", "light"),
+                        ("lightSleepSeconds", "light"),
+                        ("rem_sleep_duration", "rem"),
+                        ("remSleepSeconds", "rem"),
+                    ] {
+                        if !stages_seconds.contains_key(key)
+                            && let Some(seconds) = row.fields.get(field).and_then(Value::as_u64)
+                            && seconds > 0
+                        {
+                            stages_seconds.insert(key.to_owned(), json!(seconds));
+                        }
+                    }
+                }
+                let mut night = json!({
+                    "source": stream_label, "recorded_by": row.by,
+                    "to_bed": row.start, "waking": row.end, "asleep_seconds": asleep_seconds,
+                });
+                if !stages_seconds.is_empty() {
+                    night["stages_seconds"] = Value::Object(stages_seconds);
+                }
+                let entry = summaries.entry(day).or_insert_with(|| json!({}));
+                let list = entry
+                    .as_object_mut()
+                    .expect("body summary object")
+                    .entry("nights")
+                    .or_insert_with(|| json!([]));
+                list.as_array_mut().expect("nights array").push(night);
+            }
+        }
+
+        for ((recorder, day), morning) in mornings {
+            if !morning.has_asleep {
+                continue;
+            }
+            let total_asleep =
+                covered_seconds(morning.stage_spans).saturating_add(morning.fallback_seconds);
+            let month = month_key(&day);
+            let rollup = rollups.entry((stream_label.clone(), recorder)).or_default();
+            let month_rollup = rollup.by_month.entry(month).or_default();
+            rollup.span.days_with_data.insert(day.clone());
+            month_rollup.days_with_data.insert(day.clone());
+            rollup
+                .span
+                .sleep
+                .record_morning(&day, total_asleep, morning.sessions);
+            month_rollup
+                .sleep
+                .record_morning(&day, total_asleep, morning.sessions);
+        }
+    }
+
+    let totals = rollups
+        .into_iter()
+        .filter(|(_, rollup)| !rollup.span.is_empty())
+        .map(|((source, recorded_by), rollup)| {
+            let mut obj = serde_json::Map::new();
+            obj.insert("source".to_owned(), json!(source));
+            obj.insert("recorded_by".to_owned(), json!(recorded_by));
+            rollup.span.insert_metrics(&mut obj, true);
+            let months: Vec<Value> = rollup
+                .by_month
+                .into_iter()
+                .filter(|(_, m)| !m.is_empty())
+                .map(|(month, m)| {
+                    let mut mobj = serde_json::Map::new();
+                    mobj.insert("month".to_owned(), json!(month));
+                    m.insert_metrics(&mut mobj, false);
+                    Value::Object(mobj)
+                })
+                .collect();
+            obj.insert("by_month".to_owned(), Value::Array(months));
+            Value::Object(obj)
+        })
+        .collect();
+
+    Ok(BodyRangeSummary {
+        days: summaries,
+        totals,
+        targets,
+    })
+}
+
 /// Daily movement totals, sleep and bounded reading measures from the same
 /// windows the transcript reader can serve. Keep different recorders separate.
 pub(crate) fn week_totals(
@@ -557,6 +1321,9 @@ pub(crate) fn week_totals(
     let mut targets = Vec::new();
     let hides = BodyHides::read(journal);
     let labels = source_labels(journal);
+    let declarations =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(journal)
+            .ok();
     for stream in BODY_RECORD_STREAMS {
         let mut nights = BTreeMap::new();
         let mut stages = BTreeMap::<String, NightStages>::new();
@@ -564,7 +1331,18 @@ pub(crate) fn week_totals(
         for day in days {
             let mut movement = BTreeMap::<Option<String>, Movement>::new();
             let mut readings = BTreeMap::<Option<String>, DayReadings>::new();
-            let mut windows = readable_windows(journal, snapshot, &hides, day, stream)?;
+            let mut windows = if holds_body(snapshot) {
+                windows_in_scope_with_declarations(
+                    journal,
+                    snapshot,
+                    &hides,
+                    day,
+                    stream,
+                    declarations.as_ref(),
+                )?
+            } else {
+                Vec::new()
+            };
             windows.sort_by_key(|window| {
                 (
                     solstone_core_format::content::body_records::copy_rank(&window.name),
@@ -938,71 +1716,82 @@ impl DayReadings {
         let rhr = self.resting_heart_rate_bpm.finish();
         let hrv = self.hrv_sdnn_ms.finish();
         let hr = self.heart_rate_bpm.finish();
-        if rhr.is_empty() && hrv.is_empty() && hr.is_empty() {
-            return None;
-        }
-        let mut record = json!({
-            "source": source,
-            "recorded_by": recorded_by,
-        });
-        match rhr {
-            ReadingSummary::Empty => {}
-            ReadingSummary::Bounds {
-                min, max, count, ..
-            } => {
-                record["resting_heart_rate_bpm"] = json!({
-                    "min": min,
-                    "max": max,
-                    "count": count,
-                });
-            }
-            ReadingSummary::Note(note) => {
-                record["resting_heart_rate_note"] = json!(note);
-            }
-        }
-        match hrv {
-            ReadingSummary::Empty => {}
-            ReadingSummary::Bounds {
-                min, max, count, ..
-            } => {
-                record["hrv_sdnn_ms"] = json!({
-                    "min": min,
-                    "max": max,
-                    "count": count,
-                });
-            }
-            ReadingSummary::Note(note) => {
-                record["hrv_sdnn_note"] = json!(note);
-            }
-        }
-        match hr {
-            ReadingSummary::Empty => {}
-            ReadingSummary::Bounds {
-                min,
-                max,
-                count,
-                min_at,
-                max_at,
-            } => {
-                let mut value = json!({
-                    "min": min,
-                    "max": max,
-                    "count": count,
-                });
-                if let Some(at) = min_at {
-                    value["min_at"] = json!(at);
-                }
-                if let Some(at) = max_at {
-                    value["max_at"] = json!(at);
-                }
-                record["heart_rate_bpm"] = value;
-            }
-            ReadingSummary::Note(note) => {
-                record["heart_rate_note"] = json!(note);
-            }
-        }
-        Some(record)
+        readings_summary_to_json(source, recorded_by, rhr, hrv, hr)
     }
+}
+
+fn readings_summary_to_json(
+    source: String,
+    recorded_by: Option<String>,
+    rhr: ReadingSummary,
+    hrv: ReadingSummary,
+    hr: ReadingSummary,
+) -> Option<Value> {
+    if rhr.is_empty() && hrv.is_empty() && hr.is_empty() {
+        return None;
+    }
+    let mut record = json!({
+        "source": source,
+        "recorded_by": recorded_by,
+    });
+    match rhr {
+        ReadingSummary::Empty => {}
+        ReadingSummary::Bounds {
+            min, max, count, ..
+        } => {
+            record["resting_heart_rate_bpm"] = json!({
+                "min": min,
+                "max": max,
+                "count": count,
+            });
+        }
+        ReadingSummary::Note(note) => {
+            record["resting_heart_rate_note"] = json!(note);
+        }
+    }
+    match hrv {
+        ReadingSummary::Empty => {}
+        ReadingSummary::Bounds {
+            min, max, count, ..
+        } => {
+            record["hrv_sdnn_ms"] = json!({
+                "min": min,
+                "max": max,
+                "count": count,
+            });
+        }
+        ReadingSummary::Note(note) => {
+            record["hrv_sdnn_note"] = json!(note);
+        }
+    }
+    match hr {
+        ReadingSummary::Empty => {}
+        ReadingSummary::Bounds {
+            min,
+            max,
+            count,
+            min_at,
+            max_at,
+            ..
+        } => {
+            let mut value = json!({
+                "min": min,
+                "max": max,
+                "count": count,
+            });
+            if let Some(at) = min_at {
+                value["min_at"] = json!(at);
+            }
+            if let Some(at) = max_at {
+                value["max_at"] = json!(at);
+            }
+            record["heart_rate_bpm"] = value;
+        }
+        ReadingSummary::Note(note) => {
+            record["heart_rate_note"] = json!(note);
+        }
+    }
+    Some(record)
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -1028,6 +1817,7 @@ impl ReadingKey {
 
 #[derive(Default)]
 struct ReadingBounds {
+    sum: f64,
     count: u64,
     min: Option<(f64, ReadingKey, Option<String>)>,
     max: Option<(f64, ReadingKey, Option<String>)>,
@@ -1037,6 +1827,7 @@ struct ReadingBounds {
 enum ReadingSummary {
     Empty,
     Bounds {
+        sum: f64,
         min: f64,
         max: f64,
         count: u64,
@@ -1054,6 +1845,7 @@ impl ReadingSummary {
 
 impl ReadingBounds {
     fn add(&mut self, value: f64, row: &BodyRow) {
+        self.sum += value;
         self.count += 1;
         let key = ReadingKey::from_row(row);
         let at = row.begins().map(str::to_owned);
@@ -1083,6 +1875,7 @@ impl ReadingBounds {
         }
         match (self.min, self.max) {
             (Some((min, _, min_at)), Some((max, _, max_at))) => ReadingSummary::Bounds {
+                sum: self.sum,
                 min,
                 max,
                 count: self.count,

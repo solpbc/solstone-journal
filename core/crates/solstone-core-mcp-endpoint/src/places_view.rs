@@ -526,9 +526,16 @@ pub(crate) fn build_places_roster(
         });
     }
 
+    #[derive(Default)]
+    struct PlaceTally {
+        days: BTreeSet<String>,
+        visits: usize,
+        duration_sec: u64,
+    }
+
     let stays = solstone_core_location::projection::stays_between(journal, eff_from, eff_to);
     let mut live_days: BTreeMap<String, bool> = BTreeMap::new();
-    let mut days_by_place: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+    let mut tallies_by_place: BTreeMap<&str, PlaceTally> = BTreeMap::new();
     for stay in &stays {
         if stay.day.as_str() > eff_to {
             continue;
@@ -545,31 +552,35 @@ pub(crate) fn build_places_roster(
             && !place.hidden
             && !place.dormant
         {
-            days_by_place
-                .entry(place.id.as_str())
-                .or_default()
-                .insert(stay.day.clone());
+            let tally = tallies_by_place.entry(place.id.as_str()).or_default();
+            tally.days.insert(stay.day.clone());
+            tally.visits += 1;
+            if let (Some(start), Some(end)) = (stay.start, stay.end)
+                && let Some(elapsed) = end.checked_sub(start).and_then(|s| u64::try_from(s).ok())
+            {
+                tally.duration_sec = tally.duration_sec.saturating_add(elapsed);
+            }
         }
     }
 
-    let mut rows: Vec<(&Place, Option<String>, BTreeSet<String>)> = store
+    let mut rows: Vec<(&Place, Option<String>, PlaceTally)> = store
         .places
         .iter()
         .filter(|place| !place.hidden && !place.dormant)
         .filter_map(|place| {
-            let days = days_by_place.remove(place.id.as_str())?;
-            if days.is_empty() {
+            let tally = tallies_by_place.remove(place.id.as_str())?;
+            if tally.days.is_empty() {
                 return None;
             }
             let area = tier.name_point(place.latitude, place.longitude).label();
             if !place_matches_filters(place, area.as_deref(), filter_query, filter_place) {
                 return None;
             }
-            Some((place, area, days))
+            Some((place, area, tally))
         })
         .collect();
 
-    rows.sort_by(|(a_place, a_area, a_days), (b_place, b_area, b_days)| {
+    rows.sort_by(|(a_place, a_area, a_tally), (b_place, b_area, b_tally)| {
         let a_label = a_place
             .name
             .as_deref()
@@ -584,8 +595,8 @@ pub(crate) fn build_places_roster(
             .or(b_area.as_deref())
             .unwrap_or("")
             .to_lowercase();
-        Reverse(a_days.len())
-            .cmp(&Reverse(b_days.len()))
+        Reverse(a_tally.days.len())
+            .cmp(&Reverse(b_tally.days.len()))
             .then_with(|| a_label.cmp(&b_label))
             .then_with(|| a_place.id.cmp(&b_place.id))
     });
@@ -594,7 +605,7 @@ pub(crate) fn build_places_roster(
     let items = rows
         .into_iter()
         .take(MAX_ROSTER_PLACES)
-        .map(|(place, area, days)| {
+        .map(|(place, area, tally)| {
             let mut obj = Map::new();
             obj.insert("id".to_owned(), json!(place.id));
             if let Some(name) = &place.name {
@@ -606,11 +617,13 @@ pub(crate) fn build_places_roster(
             if let Some(area) = area {
                 obj.insert("area".to_owned(), json!(area));
             }
-            obj.insert("days_count".to_owned(), json!(days.len()));
-            if let Some(first) = days.first() {
+            obj.insert("days_count".to_owned(), json!(tally.days.len()));
+            obj.insert("visits".to_owned(), json!(tally.visits));
+            obj.insert("duration_sec".to_owned(), json!(tally.duration_sec));
+            if let Some(first) = tally.days.first() {
                 obj.insert("first_day".to_owned(), json!(first));
             }
-            if let Some(last) = days.last() {
+            if let Some(last) = tally.days.last() {
                 obj.insert("last_day".to_owned(), json!(last));
             }
             attach_point_precision(&mut obj, precision, place.latitude, place.longitude);
