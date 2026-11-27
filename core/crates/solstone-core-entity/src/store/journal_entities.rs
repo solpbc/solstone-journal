@@ -137,16 +137,40 @@ fn live_journal_entities_in(
 /// caller that must account for each folder, such as an import reading
 /// another journal. A lookup by id wants `load_all_journal_entities`.
 pub fn every_journal_entity(journal_root: &Path) -> Result<Vec<JournalEntity>, EntityStoreError> {
+    let (entities, _) = every_journal_entity_with_resolved_identities(journal_root)?;
+    Ok(entities)
+}
+
+/// Read every journal entity once, returning both the flat entity list and the
+/// resolved `entity_id -> (winner_entity_dir, identity_json)` map so callers
+/// avoid re-scanning `entities/*/identity.json` per facet.
+pub fn every_journal_entity_with_resolved_identities(
+    journal_root: &Path,
+) -> Result<
+    (
+        Vec<JournalEntity>,
+        std::collections::HashMap<String, (String, Value)>,
+    ),
+    EntityStoreError,
+> {
     let (groups, _) = super::map::identity_groups(journal_root)?;
-    Ok(groups
-        .into_iter()
-        .flat_map(|(id, members)| {
-            members.into_iter().map(move |(_, identity)| JournalEntity {
+    let mut resolved = std::collections::HashMap::with_capacity(groups.len());
+    let mut entities = Vec::with_capacity(groups.len());
+    for (id, members) in groups {
+        if let Some((winner_dir, winner_identity)) = members.first() {
+            resolved.insert(
+                id.clone(),
+                (winner_dir.clone(), winner_identity.value().clone()),
+            );
+        }
+        for (_, identity) in members {
+            entities.push(JournalEntity {
                 id: id.clone(),
                 value: identity.value().clone(),
-            })
-        })
-        .collect())
+            });
+        }
+    }
+    Ok((entities, resolved))
 }
 
 fn string_field(value: &Value, field: &str) -> String {

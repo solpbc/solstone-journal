@@ -3418,25 +3418,24 @@ pub(crate) fn consolidate_historical_backfill_span(
     let today_date = zone.to_datetime(now).date();
     let today_str = solstone_core_time::day_key(today_date);
 
-    let mut backfill_days: Vec<(String, bool)> = solstone_core_journal_io::day_dirs(journal)
+    let mut past_days: Vec<String> = solstone_core_journal_io::day_dirs(journal)
         .map_err(|error| error.to_string())?
         .into_keys()
-        .filter_map(|day| {
-            if day.as_str() >= today_str.as_str() {
-                return None;
-            }
-            if solstone_core_segment::day_holds_only_backfill_streams(journal, &day) {
-                Some((day, true))
-            } else if solstone_core_segment::day_holds_historical_backfill(journal, &day) {
-                Some((day, false))
-            } else {
-                None
-            }
-        })
+        .filter(|day| day.as_str() < today_str.as_str())
         .collect();
     // In day order: the listing has none, and the stamp and the notes kept
     // for an entity both depend on it.
-    backfill_days.sort_by(|a, b| a.0.cmp(&b.0));
+    past_days.sort();
+    let mixed_before_str = solstone_core_time::day_key(
+        today_date
+            - jiff::Span::new()
+                .days(solstone_core_system::daily_coverage::CONTRACT_REOWE_CLOSED_DAYS),
+    );
+    let backfill_days = solstone_core_segment::classify_historical_backfill_days(
+        journal,
+        &past_days,
+        &mixed_before_str,
+    );
     if backfill_days.is_empty() {
         return Ok(());
     }
@@ -3552,9 +3551,16 @@ fn consolidate_span_days(
             emails: vec![alias],
         });
     }
-    if !enabled_facets.is_empty() {
-        match solstone_core_entity::every_journal_entity(journal) {
-            Ok(entities) => {
+    // Read entities/*/identity.json once across the entire consolidation pass
+    // for owner/blocked exclusions, resolved identity map, and per-facet joins.
+    let (resolved_identities, mut resolved_ids) = if enabled_facets.is_empty() {
+        (
+            std::collections::HashMap::new(),
+            std::collections::HashMap::new(),
+        )
+    } else {
+        match solstone_core_entity::every_journal_entity_with_resolved_identities(journal) {
+            Ok((entities, resolved_identities)) => {
                 for entity in entities {
                     if entity.is_principal() || entity.is_blocked() {
                         let res = entity.resolution_entity();
@@ -3568,23 +3574,14 @@ fn consolidate_span_days(
                         );
                     }
                 }
+                let resolved_ids = resolved_identities
+                    .iter()
+                    .map(|(id, (dir, _))| (id.clone(), dir.clone()))
+                    .collect();
+                (resolved_identities, resolved_ids)
             }
             // Without the owner and the blocked names nobody can be promoted
             // safely, so no facet is read.
-            Err(error) => {
-                failures.push(format!("entities: {error}"));
-                return failures;
-            }
-        }
-    }
-
-    // Read the journal entity identity map once across all facets and promoted
-    // candidates instead of rescanning entities/*/identity.json per facet or per candidate.
-    let mut resolved_ids = if enabled_facets.is_empty() {
-        std::collections::HashMap::new()
-    } else {
-        match solstone_core_entity::read_identity_map(journal) {
-            Ok(map) => map.resolved,
             Err(error) => {
                 failures.push(format!("entities: {error}"));
                 return failures;
@@ -3617,12 +3614,12 @@ fn consolidate_span_days(
                 continue;
             }
         };
-        let scoped = match solstone_core_facets::list_scoped_facet_entities_with_resolved_ids(
+        let scoped = match solstone_core_facets::list_scoped_facet_entities_with_identities(
             journal,
             facet,
             true,
             true,
-            &resolved_ids,
+            &resolved_identities,
         ) {
             Ok(scoped) => scoped,
             Err(error) => {

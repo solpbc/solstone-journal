@@ -160,8 +160,8 @@ pub use store::{
     create_facet_entity_if_absent, detach_facet_entity, iter_detected_entity_names_since,
     iter_detected_entity_names_since_strict, list_scoped_facet_entities,
     list_scoped_facet_entities_tolerant, list_scoped_facet_entities_tolerant_with_resolved_ids,
-    list_scoped_facet_entities_with_resolved_ids, move_facet_entity,
-    update_facet_entity_description, update_facet_entity_identity,
+    list_scoped_facet_entities_with_identities, list_scoped_facet_entities_with_resolved_ids,
+    move_facet_entity, update_facet_entity_description, update_facet_entity_identity,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::{

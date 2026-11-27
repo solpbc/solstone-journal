@@ -107,6 +107,46 @@ pub fn list_scoped_facet_entities_with_resolved_ids(
     Ok(entities)
 }
 
+/// Like [`list_scoped_facet_entities_with_resolved_ids`], reusing already-loaded
+/// `(entity_dir, identity_json)` entries so callers spanning multiple facets
+/// avoid re-reading `entities/*/identity.json` from disk.
+pub fn list_scoped_facet_entities_with_identities(
+    journal_root: &Path,
+    facet_dir: &str,
+    include_detached: bool,
+    include_blocked: bool,
+    resolved_identities: &HashMap<String, (String, Value)>,
+) -> Result<Vec<ScopedFacetEntity>, FacetEntityWriteError> {
+    let mut entities = Vec::new();
+    for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {
+        let Some(link) = read_facet_entity_link(journal_root, facet_dir, &relationship_dir)? else {
+            continue;
+        };
+        let detached = link.value().get("detached") == Some(&Value::Bool(true));
+        if detached && !include_detached {
+            continue;
+        }
+        let entity_id = link.entity_id().to_owned();
+        let Some((entity_dir, identity)) = resolved_identities.get(&entity_id) else {
+            continue;
+        };
+        let blocked = identity.get("blocked") == Some(&Value::Bool(true));
+        if blocked && !include_blocked {
+            continue;
+        }
+        entities.push(ScopedFacetEntity {
+            entity_id,
+            entity_dir: entity_dir.clone(),
+            relationship_dir,
+            relationship: link.value().clone(),
+            identity: identity.clone(),
+            detached,
+            blocked,
+        });
+    }
+    Ok(entities)
+}
+
 /// List facet links joined through their stored effective journal identity IDs,
 /// skipping malformed individual relationship or identity records.
 pub fn list_scoped_facet_entities_tolerant(

@@ -134,6 +134,131 @@ pub fn day_holds_historical_backfill(journal: &Path, day: &str) -> bool {
     false
 }
 
+/// Classify each day in `days` for historical backfill consolidation in a single
+/// pass per day, caching stream metadata and owner timezone across the call.
+///
+/// Returns `(day, backfill_only)` entries in input order:
+/// - `backfill_only == true` when the day holds at least one live segment and
+///   every live segment sits in a backfill stream (matching
+///   [`day_holds_only_backfill_streams`]).
+/// - `backfill_only == false` when `day < mixed_before_day`, the day also holds
+///   live capture, and it holds at least one live non-body-only,
+///   non-transactions, non-calendar segment from a stream that arrived as
+///   historical backfill on that day (matching [`day_holds_historical_backfill`]).
+#[must_use]
+pub fn classify_historical_backfill_days(
+    journal: &Path,
+    days: &[String],
+    mixed_before_day: &str,
+) -> Vec<(String, bool)> {
+    #[derive(Clone)]
+    struct StreamMeta {
+        is_backfill: bool,
+        is_calendar: bool,
+        syncing_began_day: Option<String>,
+    }
+
+    let owner_zone = solstone_core_journal_config::owner_zone(journal);
+    let mut cache: std::collections::HashMap<String, StreamMeta> = std::collections::HashMap::new();
+    let mut stream_meta = |stream: &str| -> StreamMeta {
+        if let Some(meta) = cache.get(stream) {
+            return meta.clone();
+        }
+        let meta = if !is_safe_stream_component(stream) {
+            StreamMeta {
+                is_backfill: false,
+                is_calendar: false,
+                syncing_began_day: None,
+            }
+        } else {
+            let record = read_typed_stream_record(&stream_record_path(journal, stream))
+                .ok()
+                .flatten();
+            let source = record.as_ref().and_then(|r| r.source.as_deref());
+            let is_calendar = source == Some(CALENDAR_SOURCE);
+            let is_syncing = stream.starts_with("import.granola.")
+                || stream == PHOTOS_SOURCE
+                || stream == EMAIL_SYNC_STREAM
+                || source.is_some_and(is_syncing_source_name);
+            let is_backfill =
+                stream != "import.archive" && (stream.starts_with("import.") || is_syncing);
+            let syncing_began_day = if is_syncing {
+                record
+                    .filter(|r| r.created_at > 0)
+                    .and_then(|r| i64::try_from(r.created_at.saturating_mul(1_000)).ok())
+                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                    .map(|ts| {
+                        let d = owner_zone.to_datetime(ts).date();
+                        format!("{:04}{:02}{:02}", d.year(), d.month(), d.day())
+                    })
+            } else {
+                None
+            };
+            StreamMeta {
+                is_backfill,
+                is_calendar,
+                syncing_began_day,
+            }
+        };
+        cache.insert(stream.to_owned(), meta.clone());
+        meta
+    };
+
+    let mut out = Vec::new();
+    for day in days {
+        let Ok(segments) = iter_segments(journal, PathOrDay::Day(day)) else {
+            continue;
+        };
+        let allow_mixed = day.as_str() < mixed_before_day;
+        let mut has_live = false;
+        let mut all_backfill = true;
+        let mut has_historical_backfill = false;
+        for segment in &segments {
+            if segment.path().join("tombstone.json").is_file() {
+                continue;
+            }
+            has_live = true;
+            let Some(name) = segment.stream().directory().and_then(|s| s.to_str()) else {
+                all_backfill = false;
+                if !allow_mixed || has_historical_backfill {
+                    break;
+                }
+                continue;
+            };
+            let meta = stream_meta(name);
+            if !meta.is_backfill {
+                all_backfill = false;
+                if !allow_mixed || has_historical_backfill {
+                    break;
+                }
+                continue;
+            }
+            if allow_mixed
+                && !has_historical_backfill
+                && !meta.is_calendar
+                && meta
+                    .syncing_began_day
+                    .as_deref()
+                    .is_none_or(|began| day.as_str() < began)
+                && !crate::is_body_only_segment(segment)
+                && !crate::is_transactions_segment(segment)
+                && !is_activity_only_folder_segment(segment)
+            {
+                has_historical_backfill = true;
+                if !all_backfill {
+                    break;
+                }
+            }
+        }
+        if has_live && all_backfill {
+            out.push((day.clone(), true));
+        } else if allow_mixed && has_historical_backfill {
+            out.push((day.clone(), false));
+        }
+    }
+    out
+}
+
 /// Whether everything `day` holds arrived as history: every segment sits in a
 /// backfill stream, and none of them was captured as the day happened.
 ///
@@ -476,5 +601,24 @@ mod tests {
         fs::create_dir_all(&recent_live).unwrap();
         fs::write(recent_live.join("audio.jsonl"), "{}").unwrap();
         assert!(!day_holds_historical_backfill(root, "20260702"));
+
+        // Single-pass classifier matches pure-backfill vs older-mixed vs recent-mixed cutoff.
+        let days: Vec<String> = ["20260228", "20260530", "20260615", "20260702"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(
+            classify_historical_backfill_days(root, &days, "20260605"),
+            vec![
+                ("20260228".to_owned(), true),
+                ("20260530".to_owned(), false),
+                ("20260615".to_owned(), true),
+            ]
+        );
+        // When mixed_before_day excludes 20260530, that recent mixed day is omitted.
+        assert_eq!(
+            classify_historical_backfill_days(root, &days, "20260530"),
+            vec![("20260228".to_owned(), true), ("20260615".to_owned(), true),]
+        );
     }
 }
