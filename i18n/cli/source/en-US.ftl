@@ -13664,7 +13664,7 @@ journal.cli.importer.summary.archive = journal export: { $days }, { $entities },
 
 journal.cli.importer.force.pdf.day.notice = notice: this file's name dates to { $fresh }, and a previous import was recorded on { $stored }. the PDF's own dates may select a different day. choose --timestamp to set its date. existing recordings are not moved.
 
-journal.cli.journal.archive.export.help.v2 = usage: { $syntax }{ $line_break }{ $line_break }create a portable { $token_zip } of your journal, including settings and credentials.{ $line_break }processing logs, rebuildable search indexes, caches, lock files and temporary files are left out.{ $line_break }with { $flag_without_processed_media }, processed audio and video (including imported audio) are left out while transcripts, summaries, photos, non-media imports, kept import originals and unprocessed or failed media stay in.{ $line_break }with a date filter, only the selected days are included (not settings, credentials, entities, facets, or imports).
+journal.cli.journal.archive.export.help.v2 = Usage: { $syntax }{ $line_break }{ $line_break }create a portable { $token_zip } of your journal, including settings and credentials.{ $line_break }processing logs, rebuildable search indexes, caches, lock files and temporary files are left out.{ $line_break }with { $flag_without_processed_media }, processed audio and video (including imported audio) are left out while transcripts, summaries, photos, non-media imports, kept import originals and unprocessed or failed media stay in.{ $line_break }with a date filter, only the selected days are included (not settings, credentials, entities, facets, or imports).
 
 journal.cli.journal.archive.offload.note =
     { $days ->
