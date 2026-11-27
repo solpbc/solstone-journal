@@ -506,7 +506,7 @@ class Build:
         openssl = self.openssl()
         flags = [f"-DJOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR={source}",
                  f"-DJOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY={identity}",
-                 "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11960", "-DLLAMA_BUILD_COMMIT=8642541",
+                 "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=12774", "-DLLAMA_BUILD_COMMIT=1715275",
                  f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include",
                  f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a",
                  f"-DOPENSSL_SSL_LIBRARY={openssl}/lib/libssl.a", "-DOPENSSL_USE_STATIC_LIBS=TRUE"]

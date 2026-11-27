@@ -47,7 +47,7 @@ target_include_directories(journal_mobile_qwen PUBLIC "${CMAKE_CURRENT_SOURCE_DI
 target_include_directories(journal_mobile_qwen PRIVATE "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/tools/server")
 target_compile_definitions(journal_mobile_qwen PRIVATE
     JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
-    JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
+    JOURNAL_MOBILE_QWEN_SOURCE_REVISION="171527522610996f5f0acf12334e185156ca8f44")
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_compile_definitions(ggml-metal PRIVATE GGML_METAL_RESIDENCY_DISABLED=1)
     target_compile_definitions(journal_mobile_qwen PRIVATE JOURNAL_MOBILE_QWEN_METAL=1)
@@ -69,7 +69,7 @@ if(JOURNAL_MOBILE_QWEN_TESTS)
     target_include_directories(journal_mobile_qwen_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_definitions(journal_mobile_qwen_tests PRIVATE
         JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
-        JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
+        JOURNAL_MOBILE_QWEN_SOURCE_REVISION="171527522610996f5f0acf12334e185156ca8f44")
     target_compile_options(journal_mobile_qwen_tests PRIVATE -UNDEBUG)
     add_executable(journal_mobile_qwen_dynamic_tests tests/dynamic_test.cpp)
     target_link_libraries(journal_mobile_qwen_dynamic_tests PRIVATE journal_mobile_qwen ${CMAKE_DL_LIBS})
@@ -94,7 +94,7 @@ if(JOURNAL_MOBILE_QWEN_TESTS)
     target_compile_definitions(journal_mobile_qwen_response_retirement_tests PRIVATE
         JOURNAL_MOBILE_QWEN_TEST_SILENT_LOOP_EXIT=1
         JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
-        JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
+        JOURNAL_MOBILE_QWEN_SOURCE_REVISION="171527522610996f5f0acf12334e185156ca8f44")
     target_link_libraries(journal_mobile_qwen_response_retirement_tests PRIVATE llama-server-impl cpp-httplib Threads::Threads)
     if(ANDROID)
         target_link_libraries(journal_mobile_qwen_response_retirement_tests PRIVATE log)

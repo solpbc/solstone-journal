@@ -15,14 +15,14 @@ use sha2::{Digest, Sha256};
 use crate::controlled_build::InputIdentityEntry;
 use crate::digest::sha256_hex;
 
-pub const LLAMA_COMMIT: &str = "8642541b255bfb5dc39cd351a178be09013a55d6";
+pub const LLAMA_COMMIT: &str = "171527522610996f5f0acf12334e185156ca8f44";
 pub const LOADER_COMMIT: &str = "5f157b62e333c63260d05d81bf66faa216ab0fb8";
 /// The archive `prepare-source` produces.
-pub const SOURCE_SHA256: &str = "5220a407dc59f6b90884b464da624f5283dc705c7d2c1d239125a3300434e21c";
-pub const SOURCE_BYTES: u64 = 41143332;
+pub const SOURCE_SHA256: &str = "8c11cdea6159fc200969101fbd1c23d54168b54c5c1bae9102214a3c5a049e71";
+pub const SOURCE_BYTES: u64 = 42269296;
 pub const SDK_SHA256: &str = "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d";
 pub const SDK_BYTES: u64 = 287_971_024;
-const MANIFEST_SHA256: &str = "71da06dfba88d00ab94fe5a38bfdefac2e82effbdf37ac81a321aa0a3a54545f";
+const MANIFEST_SHA256: &str = "2038b729a7db9a9c526f55bcfbdf77418aa9a277cc996012bc7953771aa7817c";
 const MAX_MEMBER_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_MEMBERS: usize = 20_000;
@@ -44,8 +44,8 @@ const UPSTREAM: [UpstreamInput; 2] = [
         component: "llama",
         repository: "https://github.com/ggml-org/llama.cpp.git",
         commit: LLAMA_COMMIT,
-        tarball_sha256: "d52d30960d5fa3bd76394b292aca0aafd248b4d6506dbf4fc6d21a7271d00f7f",
-        tarball_bytes: 38563413,
+        tarball_sha256: "244c31c0498dddbb41489e08f34c8d486cd6a4cd737da4804e3eb01a0b73bad7",
+        tarball_bytes: 39645064,
     },
     UpstreamInput {
         component: "loader",

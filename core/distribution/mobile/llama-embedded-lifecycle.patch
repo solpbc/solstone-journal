@@ -1,4 +1,5 @@
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+index da2f0ac..31e463b 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.m
 +++ b/ggml/src/ggml-metal/ggml-metal-device.m
 @@ -11,6 +11,10 @@
@@ -12,7 +13,7 @@ diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-
  
  #ifndef TARGET_OS_VISION
  #define TARGET_OS_VISION 0
-@@ -2168,7 +2172,17 @@
+@@ -2223,7 +2227,17 @@ ggml_metal_buffer_t ggml_metal_buffer_init(ggml_metal_device_t dev, size_t size,
  
      if (size_aligned > 0 && (res->all_data == NULL || res->buffers[0].metal == nil)) {
          GGML_LOG_ERROR("%s: error: failed to allocate buffer, size = %8.2f MiB\n", __func__, size_aligned / 1024.0 / 1024.0);
@@ -31,7 +32,7 @@ diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-
          return NULL;
      }
  
-@@ -2176,7 +2190,7 @@
+@@ -2231,7 +2245,7 @@ ggml_metal_buffer_t ggml_metal_buffer_init(ggml_metal_device_t dev, size_t size,
  
      if (!ggml_metal_buffer_rset_init(res)) {
          GGML_LOG_ERROR("%s: error: failed to initialize residency set\n", __func__);
@@ -40,21 +41,23 @@ diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-
          return NULL;
      }
  
-diff --git a/tools/mtmd/clip.cpp b/tools/mtmd/clip.cpp
---- a/tools/mtmd/clip.cpp
-+++ b/tools/mtmd/clip.cpp
-@@ -4211,6 +4211,10 @@
+diff --git a/tools/mtmd/mtmd-model.cpp b/tools/mtmd/mtmd-model.cpp
+index 508dfbe..bbb7708 100644
+--- a/tools/mtmd/mtmd-model.cpp
++++ b/tools/mtmd/mtmd-model.cpp
+@@ -4442,6 +4442,10 @@ struct mtmd_model_loader {
+ 
              // alloc memory and offload data
-             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(ctx_clip.backend);
-             ctx_clip.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_clip.ctx_data.get(), buft));
-+            if (!ctx_clip.buf) {
-+                throw std::runtime_error(string_format("%s: failed to allocate projector weights (%zu bytes) on %s\n",
+             model.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(model.ctx_data.get(), buft));
++            if (!model.buf) {
++                throw std::runtime_error(mtmd_format("%s: failed to allocate projector weights (%zu bytes) on %s\n",
 +                    __func__, total_data_size, ggml_backend_buft_name(buft)));
 +            }
-             ggml_backend_buffer_set_usage(ctx_clip.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+             ggml_backend_buffer_set_usage(model.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
              // read the weight from file
-             if (!ctx_clip.no_alloc) {
+             if (!no_alloc) {
 diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index a904026..b2c5fb0 100644
 --- a/tools/server/server-context.cpp
 +++ b/tools/server/server-context.cpp
 @@ -1,3 +1,4 @@
@@ -62,7 +65,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  #include "server-context.h"
  #include <atomic>
  #include <thread>
-@@ -413,7 +414,7 @@
+@@ -428,7 +429,7 @@ struct server_slot {
      std::vector<uint64_t> n_accepted_per_pos;
  
      std::function<void(int /* id_slot */)>   callback_on_release;
@@ -71,12 +74,10 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  
      // this is for printing timings with slot progress, not part of metrics
      int64_t t_print_last = 0;
-@@ -711,6 +712,34 @@
-         }
- 
+@@ -732,6 +733,34 @@ struct server_slot {
          return stop_pos;
-+    }
-+
+     }
+ 
 +    server_embedded_progress_reporter progress;
 +    void report_progress(server_embedded_phase phase, bool terminal = false) noexcept {
 +        if (!task || task->type != SERVER_TASK_TYPE_COMPLETION) return;
@@ -103,10 +104,12 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
 +            if (stats.t_gen_last > 0) value.decode_ms = stats.t_gen_ms();
 +        }
 +        progress.report(value, ggml_time_us());
-     }
- 
++    }
++
      void print_timings_tg() {
-@@ -1015,6 +1044,7 @@
+         if (stats.n_gen < 100) {
+             return;
+@@ -1034,6 +1063,7 @@ static bool add_mtmd_chunk(const server_slot & slot, const mtmd_input_chunk * ch
  
  struct server_context_impl {
      friend struct server_context;
@@ -114,17 +117,17 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  
  public:
      // only use these pointers outside of this class:
-@@ -1165,6 +1195,9 @@
-         }
+@@ -1187,6 +1217,9 @@ private:
          sleeping = new_state;
      }
-+
+ 
 +    llama_progress_callback caller_load_progress_callback = nullptr;
 +    void * caller_load_progress_user_data = nullptr;
- 
++
      struct load_progress_data {
          server_context_impl * ctx;
-@@ -1176,6 +1209,12 @@
+         std::string stage;
+@@ -1197,6 +1230,12 @@ private:
      static bool load_progress_callback(float progress, void * user_data) {
          auto * d = static_cast<load_progress_data *>(user_data);
          GGML_ASSERT(d);
@@ -137,7 +140,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
          // always emit the first and final sample; throttle the rest to one per 200ms
          {
              auto & t_last = d->t_last_load_progress_ms;
-@@ -1207,6 +1246,12 @@
+@@ -1228,6 +1267,12 @@ private:
  
          const bool is_resume = sleeping;
  
@@ -150,7 +153,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
          params_base = params;
          const auto output_limits = server_output_limits(params_base);
          params_base.n_outputs_max = output_limits.total;
-@@ -1539,7 +1584,9 @@
+@@ -1569,7 +1614,9 @@ private:
                  queue_tasks.pop_deferred_task(id_slot);
              };
  
@@ -161,7 +164,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
                  // flush the generated token stats before reset()
                  if (slot.stats.n_gen > 0) {
                      metrics_on_prediction(slot);
-@@ -2130,6 +2177,7 @@
+@@ -2114,6 +2161,7 @@ private:
          // reset server kill-switch counter
          n_empty_consecutive = 0;
  
@@ -169,7 +172,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
          SLT_INF(slot, "processing task, is_child = %d\n", slot.task->is_child());
          return true;
      }
-@@ -2401,6 +2449,7 @@
+@@ -2385,6 +2433,7 @@ private:
      }
  
      void send_final_response(server_slot & slot) {
@@ -177,7 +180,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
          auto res = std::make_unique<server_task_result_cmpl_final>();
  
          res->id      = slot.task->id;
-@@ -3091,6 +3140,7 @@
+@@ -3066,6 +3115,7 @@ private:
                      // release slot linked with the task id
                      for (auto & slot : slots) {
                          if (slot.task && slot.task->id == task.id_target) {
@@ -185,7 +188,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
                              slot.release();
                              break;
                          }
-@@ -3538,6 +3588,15 @@
+@@ -3519,6 +3569,15 @@ private:
      }
  
      void update_slots() {
@@ -201,7 +204,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  #ifdef DEBUG_TIMINGS
          static int64_t t_prev = 0;
          int64_t t_start = ggml_time_us();
-@@ -4715,7 +4774,9 @@
+@@ -4685,7 +4744,9 @@ private:
                      err = "Compute error.";
                  }
  
@@ -212,7 +215,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  
                  if (!err.empty()) {
                      SRV_ERR("%s off = %d, n_batch = %d, ret = %d\n", err.c_str(), off, n_batch, ret);
-@@ -5201,11 +5262,29 @@
+@@ -5172,13 +5233,31 @@ bool server_context::load_model(common_params & params) {
  
  void server_context::start_loop() {
      auto & params = impl->params_base;
@@ -235,14 +238,17 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
 +
  void server_context::terminate() {
      impl->queue_tasks.terminate();
-+}
-+
-+void server_context::cancel_pending_responses() {
-+    impl->queue_results.cancel_waiters();
  }
  
++void server_context::cancel_pending_responses() {
++    impl->queue_results.cancel_waiters();
++}
++
  llama_context * server_context::get_llama_context() const {
+     return impl->ctx_tgt;
+ }
 diff --git a/tools/server/server-context.h b/tools/server/server-context.h
+index 2c91d53..b96ab67 100644
 --- a/tools/server/server-context.h
 +++ b/tools/server/server-context.h
 @@ -12,6 +12,7 @@
@@ -250,10 +256,10 @@ diff --git a/tools/server/server-context.h b/tools/server/server-context.h
  
  struct server_context_impl; // private implementation
 +struct server_embedded_progress;
+ struct mtmd_helper_video_decoder; // see mtmd-helper.h
  
  struct server_context_meta {
-     std::string build_info;
-@@ -75,6 +76,7 @@
+@@ -77,6 +78,7 @@ struct server_context {
  
      // terminate main loop (will unblock start_loop)
      void terminate();
@@ -261,17 +267,18 @@ diff --git a/tools/server/server-context.h b/tools/server/server-context.h
  
      // get the underlaying llama_context, can return nullptr if sleeping
      // not thread-safe, should only be used from the main thread
-@@ -89,6 +91,8 @@
+@@ -91,6 +93,8 @@ struct server_context {
  
      // note: must be set before load_model() is called
      void set_state_callback(server_state_callback_t callback);
 +    // Private embedding callback: set before load_model; invoked only by loop.
 +    void set_progress_callback(std::function<void(const server_embedded_progress &)> callback);
- };
  
- 
+     // decode video with a custom decoder instead of ffmpeg, the decoder must outlive the server
+     // note: must be set before load_model() is called
 diff --git a/tools/server/server-embedded.h b/tools/server/server-embedded.h
 new file mode 100644
+index 0000000..301ad0e
 --- /dev/null
 +++ b/tools/server/server-embedded.h
 @@ -0,0 +1,86 @@
@@ -362,9 +369,10 @@ new file mode 100644
 +
 +int llama_server_embedded(common_params & params, server_embedded_control & control);
 diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
+index d1f31e3..096e92b 100644
 --- a/tools/server/server-http.cpp
 +++ b/tools/server/server-http.cpp
-@@ -89,11 +89,11 @@
+@@ -175,11 +175,11 @@ struct gcp_params {
      int port;
  
      // Ref: https://docs.cloud.google.com/vertex-ai/docs/predictions/custom-container-requirements#aip-variables
@@ -381,21 +389,20 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
      }
  
      static std::string getenv(const char * name, const std::string & default_value, bool ensure_leading_slash = false) {
-@@ -109,9 +109,10 @@
+@@ -195,9 +195,10 @@ struct gcp_params {
      }
  };
  
 -bool server_http_context::init(const common_params & params) {
 -    const gcp_params gcp;
--
 +bool server_http_context::init(const common_params & params, bool local_auth_only) {
 +    const gcp_params gcp(!local_auth_only);
-+
+ 
 +    allow_gcp_compat = !local_auth_only;
      path_prefix = params.api_prefix;
      port = params.port;
  
-@@ -138,7 +139,7 @@
+@@ -224,7 +225,7 @@ bool server_http_context::init(const common_params & params) {
      }
      for (size_t i = 0; i < pimpl->hosts.size(); ++i) {
          pimpl->servers.emplace_back();
@@ -404,7 +411,7 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
              return false;
          }
          // with multiple TCP addresses, [::] must not also claim 0.0.0.0
-@@ -156,7 +157,7 @@
+@@ -242,7 +243,7 @@ bool server_http_context::init(const common_params & params) {
      return true;
  }
  
@@ -413,7 +420,7 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
      auto & srv = pimpl->servers.back();
  
  #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-@@ -227,11 +228,11 @@
+@@ -313,11 +314,11 @@ bool server_http_context::init_listener(const common_params & params) {
          }
      });
  
@@ -427,7 +434,7 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
          SRV_TRC("api_keys: %zu keys loaded\n", params.api_keys.size());
      }
  
-@@ -258,14 +259,14 @@
+@@ -344,14 +345,14 @@ bool server_http_context::init_listener(const common_params & params) {
          return endpoints;
      }();
  
@@ -444,18 +451,18 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
              return true;
          }
  
-@@ -329,7 +330,7 @@
-     };
+@@ -421,7 +422,7 @@ bool server_http_context::init_listener(const common_params & params) {
+     const bool managed_by_router = std::getenv(SERVER_ENV_ROUTER_PORT) != nullptr;
  
      // register server middlewares
--    srv->set_pre_routing_handler([&params, middleware_validate_api_key, middleware_server_state](const httplib::Request & req, httplib::Response & res) {
-+    srv->set_pre_routing_handler([&params, middleware_validate_api_key, middleware_server_state, local_auth_only](const httplib::Request & req, httplib::Response & res) {
-         if (params.cors_credentials && params.cors_origins == "*") {
-             // special case: echo back the Origin header to allow any origin to access the server with credentials
-             res.set_header("Access-Control-Allow-Origin", req.get_header_value("Origin"));
-@@ -352,10 +353,13 @@
-             res.set_content("", "text/html"); // blank response, no data
-             return httplib::Server::HandlerResponse::Handled; // skip further processing
+-    srv->set_pre_routing_handler([&params, managed_by_router, middleware_validate_api_key, middleware_server_state](const httplib::Request & req, httplib::Response & res) {
++    srv->set_pre_routing_handler([&params, managed_by_router, middleware_validate_api_key, middleware_server_state, local_auth_only](const httplib::Request & req, httplib::Response & res) {
+         if (managed_by_router && (req.has_header("Origin") || req.has_header("Sec-Fetch-Site") || req.has_header("Sec-Fetch-Mode"))) {
+             SRV_WRN("rejected browser request on router child: %s %s\n", req.method.c_str(), req.path.c_str());
+             res.status = 403;
+@@ -470,10 +471,13 @@ bool server_http_context::init_listener(const common_params & params) {
+             );
+             return httplib::Server::HandlerResponse::Handled;
          }
 +        if (local_auth_only && !middleware_validate_api_key(req, res)) {
 +            return httplib::Server::HandlerResponse::Handled;
@@ -468,7 +475,7 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
              return httplib::Server::HandlerResponse::Handled;
          }
          return httplib::Server::HandlerResponse::Unhandled;
-@@ -863,6 +867,7 @@
+@@ -985,6 +989,7 @@ static json parse_gcp_predict_response(const server_http_res_ptr & res) {
  }
  
  void server_http_context::register_gcp_compat() const {
@@ -477,9 +484,10 @@ diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
  
      if (!gcp.enabled) {
 diff --git a/tools/server/server-http.h b/tools/server/server-http.h
+index d123535..6ff2a07 100644
 --- a/tools/server/server-http.h
 +++ b/tools/server/server-http.h
-@@ -91,11 +91,12 @@
+@@ -91,11 +91,12 @@ struct server_http_context {
      std::string path_prefix;
      int port    = 9931;
      bool is_ssl = false;
@@ -493,7 +501,7 @@ diff --git a/tools/server/server-http.h b/tools/server/server-http.h
      bool start();
      void stop() const;
      void join();
-@@ -113,5 +114,5 @@
+@@ -113,5 +114,5 @@ struct server_http_context {
      std::vector<std::string> listening_addresses;
  
  private:
@@ -501,9 +509,10 @@ diff --git a/tools/server/server-http.h b/tools/server/server-http.h
 +    bool init_listener(const common_params & params, bool local_auth_only);
  };
 diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
+index 75daebb..c2fb94e 100644
 --- a/tools/server/server-queue.cpp
 +++ b/tools/server/server-queue.cpp
-@@ -132,6 +132,7 @@
+@@ -137,6 +137,7 @@ void server_queue::release_inflight() {
  void server_queue::terminate() {
      std::unique_lock<std::mutex> lock(mutex_tasks);
      running = false;
@@ -511,7 +520,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
      condition_tasks.notify_all();
  }
  
-@@ -276,7 +277,11 @@
+@@ -281,7 +282,11 @@ void server_queue::yield_to_queue(std::function<void()> && work) {
  }
  
  void server_queue::start_loop(int64_t idle_sleep_ms) {
@@ -524,7 +533,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
      time_last_task = ggml_time_ms();
  
      // spawn the worker thread used by yield_to_queue()
-@@ -386,15 +391,25 @@
+@@ -391,15 +396,25 @@ void server_queue::cleanup_pending_task(int id_target) {
  // server_response
  //
  
@@ -550,7 +559,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
  
      for (const auto & id_task : id_tasks) {
          RES_DBG("add task %d to waiting list. current waiting = %d (before add)\n", id_task, (int) waiting_task_ids.size());
-@@ -428,12 +443,16 @@
+@@ -433,12 +448,16 @@ server_task_result_ptr server_response::recv(const std::unordered_set<int> & id_
      while (true) {
          std::unique_lock<std::mutex> lock(mutex_results);
          condition_results.wait(lock, [&]{
@@ -567,7 +576,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
  
          for (size_t i = 0; i < queue_results.size(); i++) {
              if (id_tasks.find(queue_results[i]->id) != id_tasks.end()) {
-@@ -451,6 +470,9 @@
+@@ -456,6 +475,9 @@ server_task_result_ptr server_response::recv_with_timeout(const std::unordered_s
      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout);
      while (true) {
          std::unique_lock<std::mutex> lock(mutex_results);
@@ -577,7 +586,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
  
          for (int i = 0; i < (int) queue_results.size(); i++) {
              if (id_tasks.find(queue_results[i]->id) != id_tasks.end()) {
-@@ -461,6 +483,9 @@
+@@ -466,6 +488,9 @@ server_task_result_ptr server_response::recv_with_timeout(const std::unordered_s
          }
  
          std::cv_status cr_res = condition_results.wait_until(lock, deadline);
@@ -587,7 +596,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
          if (!running) {
              RES_DBG("%s : queue result stop\n", __func__);
              std::terminate(); // we cannot return here since the caller is HTTP code
-@@ -482,6 +507,7 @@
+@@ -487,6 +512,7 @@ void server_response::send(server_task_result_ptr && result) {
      RES_DBG("sending result for task id = %d\n", result->id);
  
      std::unique_lock<std::mutex> lock(mutex_results);
@@ -595,7 +604,7 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
      for (const auto & id_task : waiting_task_ids) {
          if (result->id == id_task) {
              RES_DBG("task id = %d pushed to result queue\n", result->id);
-@@ -495,6 +521,7 @@
+@@ -500,6 +526,7 @@ void server_response::send(server_task_result_ptr && result) {
  
  void server_response::broadcast(server_task_result_ptr && result) {
      std::unique_lock<std::mutex> lock(mutex_results);
@@ -603,25 +612,26 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
      for (const auto & id_task : waiting_task_ids) {
          RES_DBG("task id = %d pushed to result queue\n", id_task);
          server_task_result_ptr res_copy(result->clone());
-@@ -506,6 +533,14 @@
+@@ -514,6 +541,14 @@ void server_response::terminate() {
+     condition_results.notify_all();
+ }
  
- void server_response::terminate() {
-     running = false;
-+    condition_results.notify_all();
-+}
-+
 +void server_response::cancel_waiters() {
 +    std::unique_lock<std::mutex> lock(mutex_results);
 +    if (embedded_cancelled) { return; }
 +    embedded_cancelled = true;
 +    queue_results.clear();
-     condition_results.notify_all();
- }
- 
++    condition_results.notify_all();
++}
++
+ //
+ // server_response_reader
+ //
 diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
+index f9d66be..2e77c20 100644
 --- a/tools/server/server-queue.h
 +++ b/tools/server/server-queue.h
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,7 @@ struct server_queue {
  private:
      int id = 0;
      bool running  = false;
@@ -629,7 +639,7 @@ diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
      bool sleeping = false;
      bool req_stop_sleeping = false;
      int64_t time_last_task = 0;
-@@ -154,6 +155,9 @@
+@@ -159,6 +160,9 @@ private:
  struct server_response {
  private:
      bool running = true;
@@ -639,7 +649,7 @@ diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
  
      // for keeping track of all tasks waiting for the result
      std::unordered_set<int> waiting_task_ids;
-@@ -195,6 +199,10 @@
+@@ -200,6 +204,10 @@ public:
  
      // terminate the waiting loop
      void terminate();
@@ -651,6 +661,7 @@ diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
  
  // RAII wrapper to make working with server_queue and server_response easier
 diff --git a/tools/server/server.cpp b/tools/server/server.cpp
+index 8b9b73d..b51df97 100644
 --- a/tools/server/server.cpp
 +++ b/tools/server/server.cpp
 @@ -1,5 +1,6 @@
@@ -660,7 +671,7 @@ diff --git a/tools/server/server.cpp b/tools/server/server.cpp
  #include "server-http.h"
  #include "server-models.h"
  #include "server-cors-proxy.h"
-@@ -811,3 +812,74 @@
+@@ -899,3 +900,74 @@ int llama_server(common_params & params, int argc, char ** argv) {
      server_role role;
      return server_run(params, argc, argv, role, opts);
  }
@@ -736,9 +747,10 @@ diff --git a/tools/server/server.cpp b/tools/server/server.cpp
 +    return 0;
 +}
 diff --git a/vendor/cpp-httplib/httplib.cpp b/vendor/cpp-httplib/httplib.cpp
+index 094154e..0bd7942 100644
 --- a/vendor/cpp-httplib/httplib.cpp
 +++ b/vendor/cpp-httplib/httplib.cpp
-@@ -1842,6 +1842,9 @@
+@@ -1865,6 +1865,9 @@ ssize_t read_socket(socket_t sock, void *ptr, size_t size, int flags) {
  
  ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
                             int flags) {
@@ -748,7 +760,7 @@ diff --git a/vendor/cpp-httplib/httplib.cpp b/vendor/cpp-httplib/httplib.cpp
    return handle_EINTR([&]() {
      return send(sock,
  #ifdef _WIN32
-@@ -2542,6 +2545,12 @@
+@@ -2581,6 +2584,12 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
  #endif
  
      if (sock != INVALID_SOCKET) {
@@ -761,7 +773,7 @@ diff --git a/vendor/cpp-httplib/httplib.cpp b/vendor/cpp-httplib/httplib.cpp
        sockaddr_un addr{};
        addr.sun_family = AF_UNIX;
  
-@@ -2621,6 +2630,12 @@
+@@ -2660,6 +2669,12 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
  
  #endif
      if (sock == INVALID_SOCKET) { continue; }
@@ -774,7 +786,7 @@ diff --git a/vendor/cpp-httplib/httplib.cpp b/vendor/cpp-httplib/httplib.cpp
  
  #if !defined _WIN32 && !defined SOCK_CLOEXEC
      if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
-@@ -8664,9 +8679,6 @@
+@@ -8790,9 +8805,6 @@ Server::Server()
          return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT,
                                CPPHTTPLIB_THREAD_POOL_MAX_COUNT);
        }) {
@@ -784,7 +796,7 @@ diff --git a/vendor/cpp-httplib/httplib.cpp b/vendor/cpp-httplib/httplib.cpp
  }
  
  Server::~Server() = default;
-@@ -9772,6 +9784,12 @@
+@@ -9882,6 +9894,12 @@ bool Server::listen_internal() {
          break;
        }
  

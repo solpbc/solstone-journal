@@ -245,7 +245,7 @@ try {
     Assert-NoNative 'host-after-fence'
     $git=Join-Path $GitRoot 'cmd\git.exe'
     foreach ($path in @($SourceArchive,$SdkArchive,$CmakeArchive,$git)) {Require-File $path}
-    if ((Digest $SourceArchive) -cne '5220a407dc59f6b90884b464da624f5283dc705c7d2c1d239125a3300434e21c') {throw 'source archive digest mismatch'}
+    if ((Digest $SourceArchive) -cne '8c11cdea6159fc200969101fbd1c23d54168b54c5c1bae9102214a3c5a049e71') {throw 'source archive digest mismatch'}
     if ((Digest $SdkArchive) -cne '81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d') {throw 'SDK archive digest mismatch'}
     if ((Digest $CmakeArchive) -cne '0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c') {throw 'CMake archive digest mismatch'}
     foreach ($entry in @(Get-ChildItem Env:)) {

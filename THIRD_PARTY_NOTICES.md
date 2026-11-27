@@ -893,7 +893,7 @@ SOFTWARE.
 ## app-bundled mobile local thinking engine
 
 The Android and iOS apps bundle a native llama.cpp runtime for Qwen local
-thinking, built from revision `8642541b255bfb5dc39cd351a178be09013a55d6`.
+thinking, built from revision `171527522610996f5f0acf12334e185156ca8f44`.
 The Android image is `libjournal_mobile_qwen.so`; the iOS image is
 `JournalMobileQwen.framework/JournalMobileQwen`.
 
@@ -903,8 +903,8 @@ the app in `assets/qwen-runtime/llama-LICENSE.txt` and
 `assets/qwen-runtime/openssl-LICENSE.txt` on Android, and
 `QwenRuntime/llama-LICENSE.txt` and `QwenRuntime/openssl-LICENSE.txt` on iOS.
 Additional dependency notices accompany those files as
-`qwen-THIRD_PARTY_NOTICES.txt`, including cpp-httplib 0.62.0 and nlohmann/json
-3.12.0 from the same pinned source.
+`qwen-THIRD_PARTY_NOTICES.txt`, including cpp-httplib 0.67.0, nlohmann/json
+3.12.0, and sheredom/subprocess.h from the same pinned source.
 The package's `manifest.json` records the pinned source and native image.
 
 ## runtime-downloaded provider artifacts (llama.cpp CUDA)
@@ -918,8 +918,8 @@ this repository.
 ### llama.cpp and ggml runtime
 
 Files: `llama-server`, `libllama-server-impl.so`,
-`libllama-common.so.0`, `libmtmd.so.0`, `libllama.so.0`,
-`libggml.so.0`, `libggml-base.so.0`, `libggml-cuda.so`, and the
+`libllama-common.so.1`, `libmtmd.so.1`, `libllama.so.1`,
+`libggml.so.1`, `libggml-base.so.1`, `libggml-cuda.so`, and the
 architecture-specific `libggml-cpu-*.so` files.
 
 Source: https://github.com/ggml-org/llama.cpp
@@ -937,17 +937,17 @@ Files: `libcudart.so.13`, `libcublas.so.13`,
 `libcublasLt.so.13`.
 
 Source:
-- linux x86_64 archive `llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz` and linux arm64 archive `llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz` each carry CUDA Toolkit 13.4.1 components. Each archive is packaged with the MIT license file `licenses/llama.cpp-LICENSE.txt` and the unmodified EULA at `licenses/NVIDIA-CUDA-EULA-13.4.1.html`. The archive root also contains `provenance.json`.
+- linux x86_64 archive `llama-b12774-bin-linux-cuda13-amd64-sol1.tar.gz` and linux arm64 archive `llama-b12774-bin-linux-cuda13-arm64-sol1.tar.gz` each carry CUDA Toolkit 13.5.0 components. Each archive is packaged with the MIT license file `licenses/llama.cpp-LICENSE.txt` and the unmodified EULA at `licenses/NVIDIA-CUDA-EULA-13.5.html`. The archive root also contains `provenance.json`.
 
-License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.4.1
+License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.5
 for linux x86_64 and linux arm64, including the CUDA Toolkit
 Supplement, Attachment A, and Attachment B.
 
 These files are proprietary NVIDIA software. They are not licensed under
 solstone's AGPL-3.0-only license or the llama.cpp MIT license. Their use and
 redistribution remain subject to the NVIDIA CUDA Toolkit EULA. A verbatim
-copy of the unmodified 13.4.1 EULA accompanies each selected linux archive at
-`licenses/NVIDIA-CUDA-EULA-13.4.1.html`. NVIDIA does not sponsor or endorse solstone.
+copy of the unmodified 13.5 EULA accompanies each selected linux archive at
+`licenses/NVIDIA-CUDA-EULA-13.5.html`. NVIDIA does not sponsor or endorse solstone.
 
 sol pbc redistributes these CUDA components from `updates.solstone.app` only as
 Attachment-A distributable portions: unmodified except for unzipping, inside
@@ -958,10 +958,10 @@ those NVIDIA CUDA Toolkit EULA bounds.
 
 ### llama.cpp hash components
 
-The llama.cpp b11960 Linux and Windows runtimes include the following hash components.
+The llama.cpp b12774 Linux and Windows runtimes include the following hash components.
 their upstream license texts are reproduced below.
 
-Source: https://github.com/ggml-org/llama.cpp/tree/8642541b255bfb5dc39cd351a178be09013a55d6/vendor/hash
+Source: https://github.com/ggml-org/llama.cpp/tree/171527522610996f5f0acf12334e185156ca8f44/vendor/hash
 
 #### xxHash
 
@@ -1045,8 +1045,8 @@ this repository.
 
 Files: `llama-server`, extracted from
 `llama-b11669-bin-macos-arm64.tar.gz`,
-`llama-b11960-bin-ubuntu-vulkan-arm64.tar.gz`, and
-`llama-b11960-bin-ubuntu-vulkan-x64.tar.gz`.
+`llama-b12774-bin-ubuntu-vulkan-arm64.tar.gz`, and
+`llama-b12774-bin-ubuntu-vulkan-x64.tar.gz`.
 
 Source: https://github.com/ggml-org/llama.cpp
 

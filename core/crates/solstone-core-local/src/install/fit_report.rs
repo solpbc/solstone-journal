@@ -1569,8 +1569,16 @@ mod tests {
             .iter()
             .find(|check| check.name == "disk")
             .unwrap();
+        let required = local_model_downloads("local/qwen3.5-4b")
+            .iter()
+            .map(|(_, size)| size)
+            .sum::<u64>()
+            + pins::cuda_pin("x86_64-unknown-linux-gnu").unwrap().2;
         assert_eq!(disk.severity, FitSeverity::Ok);
-        assert_eq!(disk.detail, "20 GB free for 3.7 GB known downloads");
+        assert_eq!(
+            disk.detail,
+            format!("20 GB free for {} GB known downloads", gb_label(required))
+        );
     }
 
     #[test]

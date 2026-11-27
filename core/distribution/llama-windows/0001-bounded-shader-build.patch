@@ -1,6 +1,8 @@
+diff --git a/ggml/src/ggml-vulkan/CMakeLists.txt b/ggml/src/ggml-vulkan/CMakeLists.txt
+index d8fa6ef..2fe8bbe 100644
 --- a/ggml/src/ggml-vulkan/CMakeLists.txt
 +++ b/ggml/src/ggml-vulkan/CMakeLists.txt
-@@ -2,8 +2,8 @@
+@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.19)
  cmake_policy(SET CMP0114 NEW)
  cmake_policy(SET CMP0116 NEW)
  if (POLICY CMP0147)
@@ -11,8 +13,8 @@
  endif()
  
  find_package(Vulkan COMPONENTS glslc REQUIRED)
-@@ -14,8 +14,8 @@
- find_package(SPIRV-Headers CONFIG REQUIRED)
+@@ -19,8 +19,8 @@ if (GGML_VULKAN_SPIRV_INCLUDE_DIR)
+ endif()
  
  if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 -    # Parallel build object files
@@ -22,7 +24,7 @@
  endif()
  
  function(detect_host_compiler)
-@@ -176,13 +176,18 @@
+@@ -198,13 +198,18 @@ if (Vulkan_FOUND)
  
      ExternalProject_Add(
          vulkan-shaders-gen
@@ -42,9 +44,11 @@
          BUILD_ALWAYS  TRUE
  
          # NOTE: When DESTDIR is set using Makefile generators and
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+index fb99f8f..7535554 100644
 --- a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
 +++ b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
-@@ -327,7 +327,7 @@
+@@ -340,7 +340,7 @@ using compile_count_guard = std::unique_ptr<uint32_t, decltype(&decrement_compil
  compile_count_guard acquire_compile_slot() {
      // wait until fewer than N compiles are in progress.
      // 16 is an arbitrary limit, the goal is to avoid "failed to create pipe" errors.

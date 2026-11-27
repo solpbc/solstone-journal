@@ -18,7 +18,7 @@ use std::path::Path;
 type Result<T> = std::result::Result<T, String>;
 const SHADER_DIR: &str =
     "engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build";
-const DRIVER_SHA: &str = "0833e123cbc79ed5411c530d450ab38a2c01cd0ec5aed495c79e4139c49b3d3e";
+const DRIVER_SHA: &str = "1227c52ff03b79ece7b9391d3280e4750432d50675b7d9b5c760db26e52330e2";
 const HELPER_SHA: &str = "a4959a5aca1b346a915e87c4019e64169a153f27af2a724012eb01dca13fe605";
 
 #[derive(Deserialize)]
@@ -552,13 +552,13 @@ fn validate_source_census(
             for (path, size, hash) in [
                 (
                     "llama/ggml/src/ggml-vulkan/CMakeLists.txt",
-                    11150,
-                    "3fa1145ac58b6d6f20b067054d8539b978c447a90f68855dd1f9fd226511291e",
+                    11650,
+                    "5c0cf107af45b9246031631d8362fc1c715aca4aeee7d6cf3d6603a334f3599e",
                 ),
                 (
                     "llama/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp",
-                    82912,
-                    "8ec0c25922cc9f6895cc1fffa033a307cfe57d5f1c9bc8dd01e6c34445e1aa8a",
+                    78222,
+                    "9ffe80664fbed6b9768f54b4796925b2def7ef0ad86f6423b317a9c4afbf4716",
                 ),
             ] {
                 insist(

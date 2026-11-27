@@ -232,13 +232,13 @@ fn validate_sources(
     for (name, size, digest) in [
         (
             "llama/ggml/src/ggml-vulkan/CMakeLists.txt",
-            11150,
-            "3fa1145ac58b6d6f20b067054d8539b978c447a90f68855dd1f9fd226511291e",
+            11650,
+            "5c0cf107af45b9246031631d8362fc1c715aca4aeee7d6cf3d6603a334f3599e",
         ),
         (
             "llama/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp",
-            82912,
-            "8ec0c25922cc9f6895cc1fffa033a307cfe57d5f1c9bc8dd01e6c34445e1aa8a",
+            78222,
+            "9ffe80664fbed6b9768f54b4796925b2def7ef0ad86f6423b317a9c4afbf4716",
         ),
     ] {
         if patched.insert(name.into(), (size, digest.into())).is_none() {
@@ -645,15 +645,15 @@ mod tests {
         capture.source_patched.insert(
             "llama/ggml/src/ggml-vulkan/CMakeLists.txt".into(),
             (
-                11150,
-                "3fa1145ac58b6d6f20b067054d8539b978c447a90f68855dd1f9fd226511291e".into(),
+                11650,
+                "5c0cf107af45b9246031631d8362fc1c715aca4aeee7d6cf3d6603a334f3599e".into(),
             ),
         );
         capture.source_patched.insert(
             "llama/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp".into(),
             (
-                82912,
-                "8ec0c25922cc9f6895cc1fffa033a307cfe57d5f1c9bc8dd01e6c34445e1aa8a".into(),
+                78222,
+                "9ffe80664fbed6b9768f54b4796925b2def7ef0ad86f6423b317a9c4afbf4716".into(),
             ),
         );
         capture.source_after = capture.source_patched.clone();

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-#include "clip.h"
+#include "mtmd-model.h"
 #include "mtmd.h"
 #include "ggml-backend.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <string>
 #if defined(__linux__)
@@ -27,11 +28,9 @@ int main(int argc, char ** argv) {
         return 1;
     }
     ggml_backend_load_all();
-    clip_context_params params{};
-    params.flash_attn_type = CLIP_FLASH_ATTN_TYPE_AUTO;
-    // Preserve normal weights and CPU tensor loading; omit inference warmup.
-    params.use_gpu = false;
-    params.warmup = false;
+    ggml_backend_buffer_type_t cpu_buft = ggml_backend_dev_buffer_type(
+        ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU));
+    mtmd_model_params params{};
     for (int generation = 0; generation != 2; ++generation) {
         const pid_t child = fork();
         if (child < 0) { return 1; }
@@ -43,8 +42,14 @@ int main(int argc, char ** argv) {
             mtmd_log_set([](ggml_log_level level, const char * text, void * data) {
                 if (level == GGML_LOG_LEVEL_ERROR) { static_cast<std::string *>(data)->append(text); }
             }, &errors);
-            const auto loaded = clip_init(projector, params);
-            const bool refused = !loaded.ctx_v && !loaded.ctx_a && !loaded.ctx_gen_a;
+            bool refused = false;
+            try {
+                const auto loaded = mtmd_model_load(projector, params, cpu_buft);
+                refused = !loaded.v && !loaded.a && !loaded.gen_a;
+            } catch (const std::exception & err) {
+                refused = true;
+                errors.append(err.what());
+            }
             const bool allocation_error = errors.find("failed to allocate projector weights") != std::string::npos;
             std::fprintf(stderr, "limited generation %d: refused=%d allocation_error=%d\n", generation, refused, allocation_error);
             std::fflush(stderr);
@@ -59,9 +64,8 @@ int main(int argc, char ** argv) {
     }
     // Positive control: the same unmodified projector still loads without the
     // child memory restriction after both failed generations have been reaped.
-    const auto loaded = clip_init(projector, params);
-    if (!loaded.ctx_v || loaded.ctx_a || loaded.ctx_gen_a) { return 1; }
-    clip_free(loaded.ctx_v);
+    const auto loaded = mtmd_model_load(projector, params, cpu_buft);
+    if (!loaded.v || loaded.a || loaded.gen_a) { return 1; }
     std::fprintf(stderr, "unlimited real-projector positive control passed\n");
     return 0;
 #else

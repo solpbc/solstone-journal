@@ -19,31 +19,31 @@ pub const LLAMA_SERVER_PINS: &[(&str, &str, &str, &str, &str)] = &[
     ),
     (
         "x86_64-unknown-linux-gnu",
-        "b11960",
-        "llama-b11960-bin-ubuntu-vulkan-x64.tar.gz",
-        "164199e978304bb32a8a6c24b8efa015528ddf286821596eab676c90b375feac",
+        "b12774",
+        "llama-b12774-bin-ubuntu-vulkan-x64.tar.gz",
+        "75b7044df1232bd5bc78ffc753f14a5a44d9f3b5c67228b6103705c57084d02d",
         "llama-server",
     ),
     (
         "aarch64-unknown-linux-gnu",
-        "b11960",
-        "llama-b11960-bin-ubuntu-vulkan-arm64.tar.gz",
-        "22d1f852055a95a5c969b90326a2b68b4618eca6c54638bae27b4ee603031d53",
+        "b12774",
+        "llama-b12774-bin-ubuntu-vulkan-arm64.tar.gz",
+        "e5023727501802ee7692396cf2a018790bb2f0acf989d8c8964bb44ea2b25c7b",
         "llama-server",
     ),
 ];
 pub const CUDA_ARTIFACTS: &[(&str, &str, &str, u64)] = &[
     (
         "x86_64-unknown-linux-gnu",
-        "https://updates.solstone.app/runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-amd64-sol1.tar.gz",
-        "3ccec5a44eaad84cce4320eca17289d112c27f71ad906b69dceeb451d5fba25e",
-        598930370,
+        "https://updates.solstone.app/runtimes/llama-cuda13/b12774/llama-b12774-bin-linux-cuda13-amd64-sol1.tar.gz",
+        "7fd3d7c987006e8ff3d7f8070465b6c8fa79ec3224a2cbb4447bf08943a2ea6c",
+        664531542,
     ),
     (
         "aarch64-unknown-linux-gnu",
-        "https://updates.solstone.app/runtimes/llama-cuda13/b11960/llama-b11960-bin-linux-cuda13-arm64-sol1.tar.gz",
-        "b80a4a657c6f06ded0ae1bef4b1ff32553529d3a0efa57a0b682753ff43e0532",
-        706647607,
+        "https://updates.solstone.app/runtimes/llama-cuda13/b12774/llama-b12774-bin-linux-cuda13-arm64-sol1.tar.gz",
+        "1471fd4da85fa9b2dd5f285b5c6e20be7c68c7f9d725148d39146cb83b1232dc",
+        775664664,
     ),
 ];
 
@@ -626,6 +626,148 @@ pub const VULKAN_LINUX_ARM64_B11960_REQUIRED: &[RequiredMember] = &[
     RequiredMember::Regular("llama-server"),
 ];
 
+pub const VULKAN_LINUX_X64_B12774_REQUIRED: &[RequiredMember] = &[
+    RequiredMember::Regular("LICENSE"),
+    RequiredMember::Link {
+        name: "libggml-base.so",
+        target: "libggml-base.so.1",
+    },
+    RequiredMember::Link {
+        name: "libggml-base.so.1",
+        target: "libggml-base.so.1.1.1",
+    },
+    RequiredMember::Regular("libggml-base.so.1.1.1"),
+    RequiredMember::Regular("libggml-cpu-alderlake.so"),
+    RequiredMember::Regular("libggml-cpu-cannonlake.so"),
+    RequiredMember::Regular("libggml-cpu-cascadelake.so"),
+    RequiredMember::Regular("libggml-cpu-cooperlake.so"),
+    RequiredMember::Regular("libggml-cpu-haswell.so"),
+    RequiredMember::Regular("libggml-cpu-icelake.so"),
+    RequiredMember::Regular("libggml-cpu-ivybridge.so"),
+    RequiredMember::Regular("libggml-cpu-piledriver.so"),
+    RequiredMember::Regular("libggml-cpu-sandybridge.so"),
+    RequiredMember::Regular("libggml-cpu-sapphirerapids.so"),
+    RequiredMember::Regular("libggml-cpu-skylakex.so"),
+    RequiredMember::Regular("libggml-cpu-sse42.so"),
+    RequiredMember::Regular("libggml-cpu-x64.so"),
+    RequiredMember::Regular("libggml-cpu-zen4.so"),
+    RequiredMember::Regular("libggml-rpc.so"),
+    RequiredMember::Regular("libggml-vulkan.so"),
+    RequiredMember::Link {
+        name: "libggml.so",
+        target: "libggml.so.1",
+    },
+    RequiredMember::Link {
+        name: "libggml.so.1",
+        target: "libggml.so.1.1.1",
+    },
+    RequiredMember::Regular("libggml.so.1.1.1"),
+    RequiredMember::Regular("libllama-batched-bench-impl.so"),
+    RequiredMember::Regular("libllama-bench-impl.so"),
+    RequiredMember::Regular("libllama-cli-impl.so"),
+    RequiredMember::Link {
+        name: "libllama-common.so",
+        target: "libllama-common.so.1",
+    },
+    RequiredMember::Link {
+        name: "libllama-common.so.1",
+        target: "libllama-common.so.1.1.0",
+    },
+    RequiredMember::Regular("libllama-common.so.1.1.0"),
+    RequiredMember::Regular("libllama-completion-impl.so"),
+    RequiredMember::Regular("libllama-fit-params-impl.so"),
+    RequiredMember::Regular("libllama-perplexity-impl.so"),
+    RequiredMember::Regular("libllama-quantize-impl.so"),
+    RequiredMember::Regular("libllama-server-impl.so"),
+    RequiredMember::Link {
+        name: "libllama.so",
+        target: "libllama.so.1",
+    },
+    RequiredMember::Link {
+        name: "libllama.so.1",
+        target: "libllama.so.1.1.0",
+    },
+    RequiredMember::Regular("libllama.so.1.1.0"),
+    RequiredMember::Link {
+        name: "libmtmd.so",
+        target: "libmtmd.so.1",
+    },
+    RequiredMember::Link {
+        name: "libmtmd.so.1",
+        target: "libmtmd.so.1.1.0",
+    },
+    RequiredMember::Regular("libmtmd.so.1.1.0"),
+    RequiredMember::Regular("llama-server"),
+];
+
+pub const VULKAN_LINUX_ARM64_B12774_REQUIRED: &[RequiredMember] = &[
+    RequiredMember::Regular("LICENSE"),
+    RequiredMember::Link {
+        name: "libggml-base.so",
+        target: "libggml-base.so.1",
+    },
+    RequiredMember::Link {
+        name: "libggml-base.so.1",
+        target: "libggml-base.so.1.1.1",
+    },
+    RequiredMember::Regular("libggml-base.so.1.1.1"),
+    RequiredMember::Regular("libggml-cpu-armv8.0_1.so"),
+    RequiredMember::Regular("libggml-cpu-armv8.2_1.so"),
+    RequiredMember::Regular("libggml-cpu-armv8.2_2.so"),
+    RequiredMember::Regular("libggml-cpu-armv8.2_3.so"),
+    RequiredMember::Regular("libggml-cpu-armv8.6_1.so"),
+    RequiredMember::Regular("libggml-cpu-armv8.6_2.so"),
+    RequiredMember::Regular("libggml-cpu-armv9.2_1.so"),
+    RequiredMember::Regular("libggml-cpu-armv9.2_2.so"),
+    RequiredMember::Regular("libggml-rpc.so"),
+    RequiredMember::Regular("libggml-vulkan.so"),
+    RequiredMember::Link {
+        name: "libggml.so",
+        target: "libggml.so.1",
+    },
+    RequiredMember::Link {
+        name: "libggml.so.1",
+        target: "libggml.so.1.1.1",
+    },
+    RequiredMember::Regular("libggml.so.1.1.1"),
+    RequiredMember::Regular("libllama-batched-bench-impl.so"),
+    RequiredMember::Regular("libllama-bench-impl.so"),
+    RequiredMember::Regular("libllama-cli-impl.so"),
+    RequiredMember::Link {
+        name: "libllama-common.so",
+        target: "libllama-common.so.1",
+    },
+    RequiredMember::Link {
+        name: "libllama-common.so.1",
+        target: "libllama-common.so.1.1.0",
+    },
+    RequiredMember::Regular("libllama-common.so.1.1.0"),
+    RequiredMember::Regular("libllama-completion-impl.so"),
+    RequiredMember::Regular("libllama-fit-params-impl.so"),
+    RequiredMember::Regular("libllama-perplexity-impl.so"),
+    RequiredMember::Regular("libllama-quantize-impl.so"),
+    RequiredMember::Regular("libllama-server-impl.so"),
+    RequiredMember::Link {
+        name: "libllama.so",
+        target: "libllama.so.1",
+    },
+    RequiredMember::Link {
+        name: "libllama.so.1",
+        target: "libllama.so.1.1.0",
+    },
+    RequiredMember::Regular("libllama.so.1.1.0"),
+    RequiredMember::Link {
+        name: "libmtmd.so",
+        target: "libmtmd.so.1",
+    },
+    RequiredMember::Link {
+        name: "libmtmd.so.1",
+        target: "libmtmd.so.1.1.0",
+    },
+    RequiredMember::Regular("libmtmd.so.1.1.0"),
+    RequiredMember::Regular("llama-server"),
+];
+
 pub const B10068_REQUIRED: &[RequiredMember] = &[RequiredMember::Regular("llama-server")];
 
 pub fn required_members_for(
@@ -641,6 +783,8 @@ pub fn required_members_for(
         ("b11669", "aarch64-apple-darwin") => Some(METAL_MACOS_ARM64_B11669_REQUIRED),
         ("b11960", "x86_64-unknown-linux-gnu") => Some(VULKAN_LINUX_X64_B11960_REQUIRED),
         ("b11960", "aarch64-unknown-linux-gnu") => Some(VULKAN_LINUX_ARM64_B11960_REQUIRED),
+        ("b12774", "x86_64-unknown-linux-gnu") => Some(VULKAN_LINUX_X64_B12774_REQUIRED),
+        ("b12774", "aarch64-unknown-linux-gnu") => Some(VULKAN_LINUX_ARM64_B12774_REQUIRED),
         ("b10068", _) => Some(B10068_REQUIRED),
         _ => None,
     }
@@ -694,11 +838,11 @@ pub const PARAKEET_MODEL: (&str, &str, &str, &str, u64) = (
 pub const CUDA_SHARED_WANTED_FILES: &[&str] = &[
     "llama-server",
     "libllama-server-impl.so",
-    "libllama-common.so.0",
-    "libmtmd.so.0",
-    "libllama.so.0",
-    "libggml.so.0",
-    "libggml-base.so.0",
+    "libllama-common.so.1",
+    "libmtmd.so.1",
+    "libllama.so.1",
+    "libggml.so.1",
+    "libggml-base.so.1",
     "libggml-cuda.so",
     "libcudart.so.13",
     "libcublas.so.13",
@@ -775,6 +919,7 @@ pub const CUDA_RELEASE_REVISIONS: &[(&str, &str)] = &[
     ("b11429", "d81235049384534c167caea52b85a694f6103d14"),
     ("b11669", "620d2225cc436ab0b001e3200e590e3b286ef9ab"),
     ("b11960", "8642541b255bfb5dc39cd351a178be09013a55d6"),
+    ("b12774", "171527522610996f5f0acf12334e185156ca8f44"),
 ];
 
 pub fn cuda_identity(key: &str) -> Option<Value> {
@@ -790,33 +935,33 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
         "amd64" => json!([
             {
                 "role": "engine",
-                "filename": "llama-b11960-bin-ubuntu-cuda-13.4-x64.tar.gz",
-                "sha256": "0cf758b28483593a5a15e0d2c9b686c40840d1f8be9b5bb2417f04a053113907",
-                "size_bytes": 163957335,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
+                "filename": "llama-b12774-bin-ubuntu-cuda-13.5-x64.tar.gz",
+                "sha256": "15ffe2e6ab20d9383d22ce96e1376a05966b343c3b23e8b4294a602318b5274f",
+                "size_bytes": 225744161,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b12774/"
             },
             {
                 "role": "cudart",
-                "filename": "cudart-llama-b11960-bin-ubuntu-cuda-13.4-x64.tar.gz",
-                "sha256": "756e14988abb5daa60d25f27a9766a9a78f04c88647c4b92a88fb749488d72f7",
-                "size_bytes": 440232534,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
+                "filename": "cudart-llama-b12774-bin-ubuntu-cuda-13.5-x64.tar.gz",
+                "sha256": "bf83f2f5c3a0885fd99b3910cf69997d62976fd6b81b9a8e1230d6f698306bf5",
+                "size_bytes": 444078957,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b12774/"
             }
         ]),
         "arm64" => json!([
             {
                 "role": "engine",
-                "filename": "llama-b11960-bin-ubuntu-cuda-13.4-arm64.tar.gz",
-                "sha256": "a66743e250e2975d7181b9f51048bfbea7903106035b711bea5c552360323452",
-                "size_bytes": 159059972,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
+                "filename": "llama-b12774-bin-ubuntu-cuda-13.5-arm64.tar.gz",
+                "sha256": "3f654b5d2043a6706af30a506fe732dd8a13e01dcb006a0ba54bf767df7fcca9",
+                "size_bytes": 220732422,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b12774/"
             },
             {
                 "role": "cudart",
-                "filename": "cudart-llama-b11960-bin-ubuntu-cuda-13.4-arm64.tar.gz",
-                "sha256": "4b20f8c8dab2eb49c9f46ab93e11858877f1c031696f665ed5584b045187d0a0",
-                "size_bytes": 552521522,
-                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/"
+                "filename": "cudart-llama-b12774-bin-ubuntu-cuda-13.5-arm64.tar.gz",
+                "sha256": "1037bcd9fafa31d1d348cba306af4150da2fdb642fe2535c776a1e89bfac744e",
+                "size_bytes": 559874054,
+                "url_prefix": "https://github.com/ggml-org/llama.cpp/releases/download/b12774/"
             }
         ]),
         _ => return None,
@@ -830,7 +975,7 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
         "size_bytes": size_bytes,
         "release_tag": release_tag,
         "llama_cpp_revision": llama_cpp_revision,
-        "cuda_toolkit": "13.4.1",
+        "cuda_toolkit": "13.5.0",
         "repack_revision": "sol1",
         "inputs": inputs,
         "arch": arch,
