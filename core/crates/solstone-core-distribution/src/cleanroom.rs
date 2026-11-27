@@ -295,7 +295,7 @@ fn generation_completion(prompt: &str) -> Result<(&'static str, &'static str), &
     {
         return Ok((
             "sense",
-            r#"{"density":"active","content_type":"work","activity_summary":"Held a synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Cleanroom interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
+            r#"{"density":"active","content_type":"planning","activity_summary":"Held a synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Cleanroom interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
         ));
     }
     if prompt.contains("You are generating the morning briefing")
@@ -554,6 +554,16 @@ mod tests {
             serde_json::from_str(sense_text).expect("valid sense JSON");
         assert_ne!(sense_json["density"], "idle");
         assert_ne!(sense_json["content_type"], "idle");
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../payload/solstone/talent/sense.schema.json"
+        ))
+        .unwrap();
+        assert!(
+            schema["properties"]["content_type"]["enum"]
+                .as_array()
+                .unwrap()
+                .contains(&sense_json["content_type"])
+        );
         assert!(
             sense_json["facets"]
                 .as_array()

@@ -2951,7 +2951,7 @@ mod tests {
             let today = daily_coverage::local_day(root.path(), jiff::Timestamp::now());
             let unit = Unit::Daily {
                 day: today.clone(),
-                talent: "daily_schedule".into(),
+                talent: "morning_briefing".into(),
                 facet: None,
             };
             let evidence = work_retry::daily::evidence_with_roots(
