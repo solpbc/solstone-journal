@@ -154,6 +154,19 @@ pub fn aggregate_speculative_facets_with_backfill(
     today: Date,
     min_count: usize,
 ) -> Result<Vec<SpeculativeFacetCandidate>, PathError> {
+    aggregate_speculative_facets_with_backfill_until(journal_root, today, min_count, &|| false)
+        .map(Option::unwrap_or_default)
+}
+
+/// [`aggregate_speculative_facets_with_backfill`], given up when `stopped`
+/// says so. It reads every segment of every day, so it asks before each day
+/// and returns `None` on the first yes.
+pub fn aggregate_speculative_facets_with_backfill_until(
+    journal_root: &Path,
+    today: Date,
+    min_count: usize,
+    stopped: &dyn Fn() -> bool,
+) -> Result<Option<Vec<SpeculativeFacetCandidate>>, PathError> {
     let mut recent = aggregate_speculative_facets(journal_root, today, min_count)?;
     let cutoff = solstone_core_time::day_key(
         today
@@ -163,7 +176,7 @@ pub fn aggregate_speculative_facets_with_backfill(
     let mut all_days: Vec<_> = day_dirs(journal_root)?.into_keys().collect();
     all_days.sort();
     if !all_days.iter().any(|day| day < &cutoff) {
-        return Ok(recent);
+        return Ok(Some(recent));
     }
 
     let mut excluded_keys = BTreeSet::<String>::new();
@@ -204,6 +217,9 @@ pub fn aggregate_speculative_facets_with_backfill(
     let mut max_hist_date: Option<Date> = None;
 
     for day in &all_days {
+        if stopped() {
+            return Ok(None);
+        }
         let parsed_date = solstone_core_time::parse_day(day);
         if day < &cutoff
             && let Some(d) = parsed_date
@@ -306,7 +322,7 @@ pub fn aggregate_speculative_facets_with_backfill(
     });
     backfill_additions.truncate(BACKFILL_FACET_CANDIDATE_CAP);
     recent.extend(backfill_additions.into_iter().map(|(_, c)| c));
-    Ok(recent)
+    Ok(Some(recent))
 }
 
 fn collapse_python_whitespace(value: &str) -> String {

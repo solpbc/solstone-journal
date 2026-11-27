@@ -395,4 +395,13 @@ fn backfill_aggregation_surfaces_multi_week_former_areas_outside_fourteen_day_wi
     assert_eq!(candidates[0].name, "Kestrel Robotics");
     assert_eq!(candidates[0].count, 5);
     assert!(candidates[0].window_days > 14);
+
+    // Told to stop, the read of every day gives up and says so.
+    assert_eq!(
+        crate::aggregate_speculative_facets_with_backfill_until(root, day(2026, 8, 10), 3, &|| {
+            true
+        })
+        .unwrap(),
+        None
+    );
 }

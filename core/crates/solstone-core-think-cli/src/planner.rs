@@ -386,7 +386,9 @@ impl WorkDiscovery {
                     if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
                         return;
                     }
-                    history_walk.after_pass(&journal, &backlog);
+                    history_walk.after_pass(&journal, &backlog, &|| {
+                        worker_stop.load(Ordering::Acquire) || checkpoint().is_err()
+                    });
                     if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
                         return;
                     }
@@ -1929,11 +1931,12 @@ impl HistoryWalk {
     /// said once. No model is asked, and a failure holds nothing else back.
     /// The pass has published and handed over its work by now, so this holds
     /// no lock and no part of the queue.
-    fn after_pass(&mut self, journal: &Path, backlog: &Backlog) {
+    fn after_pass(&mut self, journal: &Path, backlog: &Backlog, stopped: &dyn Fn() -> bool) {
         if self.ended(backlog.history)
-            && let Err(error) = crate::segment::consolidate_historical_backfill_span(
+            && let Err(error) = crate::segment::consolidate_historical_backfill_span_until(
                 journal,
                 jiff::Timestamp::now().as_millisecond(),
+                stopped,
             )
         {
             log::warn!("history consolidation: {error}");
@@ -3970,7 +3973,7 @@ mod tests {
         // What the worker does after each of its passes.
         let pass = |walk: &mut HistoryWalk| {
             let backlog = reconcile_pass(root.path(), &queue, &stopped, false).unwrap();
-            walk.after_pass(root.path(), &backlog);
+            walk.after_pass(root.path(), &backlog, &|| false);
             backlog.history.unwrap().left
         };
 
@@ -3988,6 +3991,19 @@ mod tests {
         // again with its last day done (here, gone), the first pass to find
         // none left reads all of history, once, and later passes not again.
         std::fs::remove_dir_all(root.path().join("chronicle/19990102")).unwrap();
+
+        // A stop that lands while history is being read: the read is given
+        // up part way and stamps nothing, so the next start makes it again.
+        let asked = std::cell::Cell::new(0);
+        let backlog = reconcile_pass(root.path(), &queue, &stopped, false).unwrap();
+        HistoryWalk::default().after_pass(root.path(), &backlog, &|| {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        });
+        assert_eq!(reads(), before + 1);
+        assert!(!stamp.exists());
+        let before = reads();
+
         let mut walk = HistoryWalk::default();
         for _ in 0..3 {
             assert!(!pass(&mut walk));

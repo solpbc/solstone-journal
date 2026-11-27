@@ -3402,9 +3402,23 @@ fn correspondent_address(addresses: &[(String, String)], name: &str) -> Option<S
 /// It runs only when what it reads has changed. Whatever it could not write
 /// is returned once and marked on the stamp, so the same refusal is not met
 /// again on every call: the span is read again when its inputs change.
+#[cfg(test)]
 pub(crate) fn consolidate_historical_backfill_span(
     journal: &std::path::Path,
     now_ms: i64,
+) -> Result<(), String> {
+    consolidate_historical_backfill_span_until(journal, now_ms, &|| false)
+}
+
+/// [`consolidate_historical_backfill_span`], given up when `stopped` says so.
+///
+/// Work discovery runs this on its own thread, and a stop waits for that
+/// thread. The read asks before each day of its longest scan and before each
+/// facet, and a read that was stopped leaves no stamp, so it is made again.
+pub(crate) fn consolidate_historical_backfill_span_until(
+    journal: &std::path::Path,
+    now_ms: i64,
+    stopped: &dyn Fn() -> bool,
 ) -> Result<(), String> {
     let zone = solstone_core_journal_config::owner_zone(journal);
     let now = jiff::Timestamp::from_millisecond(now_ms).map_err(|error| error.to_string())?;
@@ -3429,7 +3443,7 @@ pub(crate) fn consolidate_historical_backfill_span(
         &past_days,
         &mixed_before_str,
     );
-    if backfill_days.is_empty() {
+    if backfill_days.is_empty() || stopped() {
         return Ok(());
     }
 
@@ -3459,10 +3473,14 @@ pub(crate) fn consolidate_historical_backfill_span(
         now_ms,
         &zone,
         today_date,
-        &today_str,
         &backfill_days,
         &enabled_facets,
+        stopped,
     );
+    // A read that was stopped is not a read: nothing is stamped.
+    if stopped() {
+        return Ok(());
+    }
     if !failures.is_empty() {
         stamp[SPAN_FAILED] = Value::String(failures.join("; "));
     }
@@ -3500,19 +3518,23 @@ fn consolidate_span_days(
     now_ms: i64,
     zone: &jiff::tz::TimeZone,
     today_date: jiff::civil::Date,
-    today_str: &str,
     backfill_days: &[(String, bool)],
     enabled_facets: &[String],
+    stopped: &dyn Fn() -> bool,
 ) -> Vec<String> {
+    let today_str = solstone_core_time::day_key(today_date);
+    let today_str = today_str.as_str();
     let mut failures: Vec<String> = Vec::new();
     let mut read_addresses = BTreeMap::new();
-    match solstone_core_facets::aggregate_speculative_facets_with_backfill(
+    match solstone_core_facets::aggregate_speculative_facets_with_backfill_until(
         journal,
         today_date,
         solstone_core_facets::FACET_CANDIDATE_MIN_SEGMENTS,
+        stopped,
     ) {
-        Ok(candidates) if candidates.is_empty() => {}
-        Ok(candidates) => {
+        Ok(None) => return failures,
+        Ok(Some(candidates)) if candidates.is_empty() => {}
+        Ok(Some(candidates)) => {
             if let Err(error) =
                 solstone_core_facets::record_facet_candidates(journal, today_str, &candidates)
             {
@@ -3608,6 +3630,9 @@ fn consolidate_span_days(
     }
 
     for facet in enabled_facets {
+        if stopped() {
+            return failures;
+        }
         let hides = match solstone_core_facets::hidden_names::facet_hidden_keys(journal, facet) {
             Ok(hides) => hides,
             Err(error) => {

@@ -54,7 +54,7 @@ pub use speculative_facets::{
     BACKFILL_FACET_CANDIDATE_CAP, BACKFILL_FACET_CANDIDATE_MIN_SEGMENTS,
     FACET_CANDIDATE_MIN_SEGMENTS, FACET_CANDIDATE_WINDOW_DAYS, SpeculativeFacetCandidate,
     SpeculativeFacetSample, aggregate_speculative_facets,
-    aggregate_speculative_facets_with_backfill,
+    aggregate_speculative_facets_with_backfill, aggregate_speculative_facets_with_backfill_until,
 };
 pub use store::stretch;
 pub use store::{
