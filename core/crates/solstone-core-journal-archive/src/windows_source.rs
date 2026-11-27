@@ -79,8 +79,8 @@ impl ArchiveSource {
         if snapshot_mode == SnapshotMode::LiveJournal {
             let mut snapshotted_total = 0u64;
             for entry in &mut inventory.entries {
-                let member = entry.member_name().as_str();
-                if !is_live_snapshottable_metadata(member) {
+                let member = entry.member_name().as_str().to_owned();
+                if !is_live_snapshottable_metadata(&member) {
                     continue;
                 }
                 if entry.size() > LIVE_METADATA_MAX_FILE_BYTES
@@ -100,7 +100,7 @@ impl ArchiveSource {
                 let len = bytes.len() as u64;
                 entry.set_live_snapshot_size(len);
                 snapshotted_total = snapshotted_total.saturating_add(len);
-                live_snapshots.insert(member.to_owned(), bytes);
+                live_snapshots.insert(member, bytes);
             }
         }
         Ok(Self {
