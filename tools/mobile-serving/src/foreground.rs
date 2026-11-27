@@ -6451,7 +6451,11 @@ mod processing_proofs {
         });
         assert_eq!(read_json(&temp.path().join("stats.json"))["day_count"], 0);
         let schedules = read_json(&temp.path().join("config/schedules.json"));
-        assert_eq!(schedules["daily_time"], "00:15");
+        assert!(schedules.get("maintenance_time").is_none());
+        assert_eq!(
+            solstone_core_system::schedule::maintenance_time(temp.path()).unwrap(),
+            "02:00"
+        );
         assert_eq!(schedules["weekly_time"], "03:15");
         host.shutdown().unwrap();
     }
