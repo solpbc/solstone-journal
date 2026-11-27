@@ -1265,6 +1265,23 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
         .unwrap()
         .to_owned();
 
+    // Populate 100 State::Trashed items so every check proves O(1) bounded work
+    // with populated Trash rather than scanning .trash/*/item.json.
+    for idx in 0..100 {
+        let p = journal.join(format!("entities/trashed-filler-{idx:03}/entity.json"));
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, format!(r#"{{"id":"trashed-filler-{idx:03}"}}"#)).unwrap();
+        let _ = detach(
+            &journal,
+            &FakeTrashKind,
+            Unit::Entity,
+            Action::EntityDelete,
+            web_surface(),
+            vec![format!("entities/trashed-filler-{idx:03}")],
+        )
+        .unwrap();
+    }
+
     let entity_path = journal.join("entities/barrier-target/entity.json");
     fs::create_dir_all(entity_path.parent().unwrap()).unwrap();
     fs::write(&entity_path, br#"{"id":"barrier-target"}"#).unwrap();
@@ -1279,8 +1296,8 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
     .unwrap();
     let epoch_before = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
 
-    // Ordinary State::Trashed must NOT invalidate exports.
-    assert!(!super::permanent_erasure_invalidated_synchronized(
+    // 101 ordinary State::Trashed items must NOT invalidate exports.
+    assert!(!super::permanent_erasure_invalidated(
         &journal,
         &epoch_before
     ));
@@ -1290,7 +1307,8 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
     );
 
     // Start permanent erase on a background thread and block inside Kind::erasing()
-    // AFTER State::Erasing is published and BEFORE bump_erasure_epoch() runs.
+    // BEFORE backup work or file unlinking finishes. Trash must already have advanced
+    // the O(1) erasure epoch and set erasing=true before Kind::erasing() ran.
     let (entered_tx, entered_rx) = std::sync::mpsc::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let journal_for_erase = journal.clone();
@@ -1313,15 +1331,16 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("erase must reach Kind::erasing barrier");
 
-    // Epoch has NOT bumped yet; barrier remains held indefinitely beyond any retry window.
-    assert_eq!(
-        solstone_core_trash::read_erasure_epoch(&journal).unwrap(),
-        epoch_before,
-        "barrier must hold erase BEFORE bump_erasure_epoch runs"
+    // Epoch already advanced and erasing=true is visible in O(1) while Kind::erasing()
+    // remains blocked indefinitely before any files are unlinked.
+    let epoch_during = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
+    assert_eq!(epoch_during.epoch, epoch_before.epoch + 1);
+    assert!(
+        epoch_during.erasing,
+        "erasing flag must be set while Kind::erasing barrier is held"
     );
-    assert!(solstone_core_trash::has_erasing_items(&journal).unwrap());
 
-    // 1. Existing ready copy is invalidated immediately while bump_erasure_epoch is still blocked.
+    // 1. Existing ready copy is invalidated immediately while Kind::erasing is blocked.
     let dl_while_blocked = service
         .serve_download(
             &RequesterScope::Local,
@@ -1333,7 +1352,7 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
     assert_eq!(dl_while_blocked.status(), StatusCode::GONE);
     assert!(!staging.join(format!("{initial_id}.zip")).exists());
 
-    // 2. Preparing while bump_erasure_epoch is held indefinitely beyond any retry window
+    // 2. Starting a new prepare while permanent erasure is still held in Kind::erasing
     //    classifies deterministically as erased_invalidated (never source_changed).
     service
         .start_job(RequesterScope::Local, ExportMode::Full, false)
@@ -1348,22 +1367,19 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
         "export_invalidated_by_erasure"
     );
     assert!(outcome_while_blocked["ready"].is_null());
-    // Prove the barrier was STILL held (epoch still unbumped) when classification completed.
-    assert_eq!(
-        solstone_core_trash::read_erasure_epoch(&journal).unwrap(),
-        epoch_before
-    );
-
-    // Release the barrier and confirm erase finishes cleanly and subsequent prepare succeeds.
-    release_tx.send(()).unwrap();
-    erase_handle.join().unwrap().unwrap();
-    assert_eq!(
+    assert!(
         solstone_core_trash::read_erasure_epoch(&journal)
             .unwrap()
-            .epoch,
-        epoch_before.epoch + 1
+            .erasing
     );
-    assert!(!solstone_core_trash::has_erasing_items(&journal).unwrap());
+
+    // Release the barrier and confirm erase settles erasing=false without double-bumping epoch.
+    release_tx.send(()).unwrap();
+    erase_handle.join().unwrap().unwrap();
+    let epoch_settled = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
+    assert_eq!(epoch_settled.epoch, epoch_before.epoch + 1);
+    assert_eq!(epoch_settled.token, epoch_during.token);
+    assert!(!epoch_settled.erasing);
 
     // 3. Mid-encode permanent erase held behind the barrier (even if a source mutation occurs
     //    at the exact same moment before bump_erasure_epoch runs) classifies as erased_invalidated.
@@ -1459,11 +1475,13 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
         outcome_mid_encode["active_job"]["error_code"],
         "export_invalidated_by_erasure"
     );
+    let epoch_during_2 = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
     assert_eq!(
-        solstone_core_trash::read_erasure_epoch(&journal).unwrap(),
-        epoch_before_2,
-        "barrier must still be held (epoch unbumped) when mid-encode classification finished"
+        epoch_during_2.epoch,
+        epoch_before_2.epoch + 1,
+        "epoch must already advance before Kind::erasing completes"
     );
+    assert!(epoch_during_2.erasing);
 
     release2_tx.send(()).unwrap();
     erase2_handle_slot
@@ -1474,13 +1492,12 @@ async fn permanent_erasure_barrier_before_epoch_bump_classifies_as_erased_invali
         .join()
         .unwrap()
         .unwrap();
-    assert_eq!(
-        solstone_core_trash::read_erasure_epoch(&journal)
-            .unwrap()
-            .epoch,
-        epoch_before_2.epoch + 1
-    );
+    let epoch_settled_2 = solstone_core_trash::read_erasure_epoch(&journal).unwrap();
+    assert_eq!(epoch_settled_2.epoch, epoch_before_2.epoch + 1);
+    assert_eq!(epoch_settled_2.token, epoch_during_2.token);
+    assert!(!epoch_settled_2.erasing);
 
+    // 4. Subsequent prepare with 100 State::Trashed items still in .trash/ succeeds cleanly.
     service
         .start_job(RequesterScope::Local, ExportMode::Full, false)
         .unwrap();
@@ -1497,20 +1514,26 @@ async fn ordinary_non_erasure_source_changed_remains_failed_source_changed_even_
     let staging = work.path().join("staging");
     seed_journal(&journal);
 
-    // Keep a State::Trashed item present (not permanently erasing) to ensure Trash
-    // presence alone never misclassifies an ordinary non-erasure SourceChanged.
-    let trashed_src = journal.join("entities/kept-in-trash/entity.json");
-    fs::create_dir_all(trashed_src.parent().unwrap()).unwrap();
-    fs::write(&trashed_src, br#"{"id":"kept-in-trash"}"#).unwrap();
-    let _trashed = detach(
-        &journal,
-        &FakeTrashKind,
-        Unit::Entity,
-        Action::EntityDelete,
-        web_surface(),
-        vec!["entities/kept-in-trash".into()],
-    )
-    .unwrap();
+    // Keep 100 State::Trashed items present (not permanently erasing) to ensure populated
+    // Trash never misclassifies an ordinary non-erasure SourceChanged or triggers .trash scans.
+    for idx in 0..100 {
+        let trashed_src = journal.join(format!("entities/kept-in-trash-{idx:03}/entity.json"));
+        fs::create_dir_all(trashed_src.parent().unwrap()).unwrap();
+        fs::write(
+            &trashed_src,
+            format!(r#"{{"id":"kept-in-trash-{idx:03}"}}"#),
+        )
+        .unwrap();
+        let _trashed = detach(
+            &journal,
+            &FakeTrashKind,
+            Unit::Entity,
+            Action::EntityDelete,
+            web_surface(),
+            vec![format!("entities/kept-in-trash-{idx:03}")],
+        )
+        .unwrap();
+    }
 
     let victim = journal.join("notes/zzz-victim.bin");
     fs::write(&victim, vec![0x5Au8; 64 * 1024]).unwrap();

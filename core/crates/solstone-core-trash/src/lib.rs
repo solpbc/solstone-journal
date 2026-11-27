@@ -762,6 +762,12 @@ fn erase_as_choosing(
     let mut item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     match item.state {
         State::Trashed => {
+            // Advance the permanent-erasure epoch and set erasing=true BEFORE
+            // publishing State::Erasing, running hooks, or unlinking files so
+            // any concurrent export or watcher sees the invalidation in O(1)
+            // without scanning .trash, and an epoch write failure fails closed
+            // before mutating Trash state or removing any files.
+            erasure_epoch::begin_erasure(journal)?;
             item.state = State::Erasing;
             item.pending = Some(Pending {
                 action,
@@ -772,7 +778,9 @@ fn erase_as_choosing(
             });
             publish(journal, &item)?;
         }
-        State::Erasing => {}
+        State::Erasing => {
+            erasure_epoch::begin_erasure(journal)?;
+        }
         State::Detaching | State::Attaching => return Err(TrashError::InFlight),
     }
     // What needs it is marked erasing under the same act and the same lock, so a
@@ -782,21 +790,25 @@ fn erase_as_choosing(
     // Once it is marked erasing nothing else takes it, so the unlink, which
     // can take a while for a long recording, runs without the trash's lock.
     drop(lock);
-    finish_erase(journal, kinds, &item)?;
-    erase_linked_within(journal, kinds, &item);
-    for other in needing {
-        match finish_erase(journal, kinds, &other) {
-            // What was released from it goes with it too, as when it is
-            // erased on its own.
-            Ok(()) => erase_linked_within(journal, kinds, &other),
-            Err(error) => log::warn!(
-                "trash item {}: not erased with {}: {error}",
-                other.id,
-                item.id
-            ),
+    let result = (|| -> Result<(), TrashError> {
+        finish_erase(journal, kinds, &item)?;
+        erase_linked_within(journal, kinds, &item);
+        for other in needing {
+            match finish_erase(journal, kinds, &other) {
+                // What was released from it goes with it too, as when it is
+                // erased on its own.
+                Ok(()) => erase_linked_within(journal, kinds, &other),
+                Err(error) => log::warn!(
+                    "trash item {}: not erased with {}: {error}",
+                    other.id,
+                    item.id
+                ),
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })();
+    maybe_settle_erasure(journal);
+    result
 }
 
 /// Whether `held`, a path an item holds, is `needed` or above it.
@@ -1067,6 +1079,7 @@ pub fn erase_stretch_with(
         {
             return Err(TrashError::InFlight);
         }
+        erasure_epoch::begin_erasure(journal)?;
         let pending = Pending {
             action,
             surface,
@@ -1098,6 +1111,7 @@ pub fn erase_stretch_with(
             ),
         }
     }
+    maybe_settle_erasure(journal);
     Ok(members)
 }
 
@@ -1174,49 +1188,29 @@ pub fn moving(journal: &Path) -> Result<Vec<Item>, TrashError> {
         .collect())
 }
 
-/// Whether any Trash item is currently committed to permanent erasure (`State::Erasing`),
-/// synchronized with the short Trash metadata lock when `.trash` exists so an `erase()`
-/// that just acquired the lock finishes publishing `State::Erasing` before inspection.
-///
-/// Never creates `.trash` on a clean journal and fails closed (`Err`) on unreadable state.
-pub fn has_erasing_items(journal: &Path) -> Result<bool, TrashError> {
-    let root = trash_root(journal);
-    match std::fs::symlink_metadata(&root) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(TrashError::Io(error.to_string())),
-        Ok(meta) if !meta.is_dir() => {
-            return Err(TrashError::Io(
-                "trash root is not a plain directory".to_owned(),
-            ));
-        }
-        Ok(_) => {}
+/// Clear the `erasing` flag in `health/trash-erasure-epoch.json` under the
+/// Trash lock once no `State::Erasing` items remain. Never runs on the export
+/// hot path; exports inspect only `read_erasure_epoch` in O(1).
+fn maybe_settle_erasure(journal: &Path) {
+    let Ok(epoch) = erasure_epoch::read_erasure_epoch(journal) else {
+        return;
+    };
+    if !epoch.erasing {
+        return;
     }
-    let _lock = hold_lock(root.join(LOCK_STEM), LockOptions::default())
-        .map_err(|_| TrashError::Held("your trash is busy; try again".to_owned()))?;
-    Ok(every_item(journal, true)?
-        .into_iter()
-        .any(|item| item.state == State::Erasing))
-}
-
-/// Lock-free check for whether any Trash item is currently in `State::Erasing`.
-///
-/// Suitable for hot-path progress/download checks without touching `.trash/.lock`;
-/// fails closed (`Err`) on unreadable state and never creates `.trash`.
-pub fn has_erasing_items_unlocked(journal: &Path) -> Result<bool, TrashError> {
     let root = trash_root(journal);
-    match std::fs::symlink_metadata(&root) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(TrashError::Io(error.to_string())),
-        Ok(meta) if !meta.is_dir() => {
-            return Err(TrashError::Io(
-                "trash root is not a plain directory".to_owned(),
-            ));
-        }
-        Ok(_) => {}
+    if !root.is_dir() {
+        let _ = erasure_epoch::settle_erasure(journal);
+        return;
     }
-    Ok(every_item(journal, true)?
-        .into_iter()
-        .any(|item| item.state == State::Erasing))
+    let Ok(_lock) = hold_lock(root.join(LOCK_STEM), LockOptions::default()) else {
+        return;
+    };
+    if every_item(journal, true)
+        .is_ok_and(|items| !items.into_iter().any(|item| item.state == State::Erasing))
+    {
+        let _ = erasure_epoch::settle_erasure(journal);
+    }
 }
 
 /// Exclusive, nonblocking access for a domain clearing derived data from all
@@ -2235,6 +2229,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: Timestamp) -> Swept {
     // the trash now and can be erased if the owner asked.
     sweep_sets(journal, kinds, &mut swept);
     linked::tidy_run_locks(journal);
+    maybe_settle_erasure(journal);
     swept
 }
 
@@ -2443,10 +2438,12 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
     if pending.backups && backup_erase::backups_on_checked(journal)? {
         backup_erase::write(journal, item)?;
     }
-    // Advance the permanent-erasure epoch BEFORE unlinking any files so a crash
-    // or full-disk epoch-write failure can never delete data while leaving a
-    // pre-erasure prepared export copy alive.
-    erasure_epoch::bump_erasure_epoch(journal)?;
+    // Permanent-erasure epoch was already advanced under the Trash lock before
+    // State::Erasing was published; verify it is still readable and nonzero
+    // before unlinking any files so a damaged or missing epoch file fails closed.
+    if erasure_epoch::read_erasure_epoch(journal)?.epoch == 0 {
+        erasure_epoch::begin_erasure(journal)?;
+    }
     let files = trash_root(journal).join(&item.id).join(FILES_DIR);
     removal(
         journal,
@@ -4827,37 +4824,93 @@ mod tests {
         );
         assert_eq!(
             read_item(&root, &item.id).unwrap().unwrap().state,
-            State::Erasing
+            State::Trashed,
+            "failed epoch advance must fail closed before publishing State::Erasing"
         );
-        assert!(has_erasing_items(&root).unwrap());
-        assert!(has_erasing_items_unlocked(&root).unwrap());
+        assert!(read_erasure_epoch(&root).is_err());
 
-        // Once health/ is restored as a directory, sweep succeeds and bumps the epoch.
+        // Once health/ is restored as a directory, retrying erase succeeds and settles cleanly.
+        std::fs::remove_file(&health).unwrap();
+        erase(&root, &[&kind], &item.id, Action::Erase, web()).unwrap();
+        assert!(read_item(&root, &item.id).unwrap().is_none());
+        let after_first = read_erasure_epoch(&root).unwrap();
+        assert_eq!(after_first.epoch, 1);
+        assert!(!after_first.erasing);
+
+        // A pre-existing State::Erasing item recovered by sweep also fails closed when
+        // health/ is blocked, and succeeds once health/ is restored.
+        let item2 = trashed_person(&root, &kind);
+        let files_dir2 = trash_root(&root).join(&item2.id).join(FILES_DIR);
+        let mut marked = read_item(&root, &item2.id).unwrap().unwrap();
+        marked.state = State::Erasing;
+        publish(&root, &marked).unwrap();
+        std::fs::remove_dir_all(&health).unwrap();
+        std::fs::write(&health, b"not-a-directory").unwrap();
+        let swept_blocked = sweep(&root, &[&kind], Timestamp::now());
+        assert!(!swept_blocked.failed.is_empty());
+        assert!(files_dir2.exists());
+
         std::fs::remove_file(&health).unwrap();
         sweep(&root, &[&kind], Timestamp::now());
-        assert!(read_item(&root, &item.id).unwrap().is_none());
-        assert_eq!(read_erasure_epoch(&root).unwrap().epoch, 1);
-        assert!(!has_erasing_items(&root).unwrap());
-        assert!(!has_erasing_items_unlocked(&root).unwrap());
+        assert!(read_item(&root, &item2.id).unwrap().is_none());
+        let after_second = read_erasure_epoch(&root).unwrap();
+        assert_eq!(after_second.epoch, 1);
+        assert_ne!(after_second.token, after_first.token);
+        assert!(!after_second.erasing);
     }
 
     #[test]
-    fn has_erasing_items_does_not_create_trash_and_distinguishes_trashed_from_erasing() {
+    fn permanent_erase_advances_epoch_and_marks_erasing_before_kind_hook_runs() {
+        use std::cell::Cell;
+        struct InspectEpochKind {
+            hold: Cell<u32>,
+            observed_epoch: Cell<Option<ErasureEpoch>>,
+        }
+        impl Kind for InspectEpochKind {
+            fn handles(&self, unit: &Unit) -> bool {
+                matches!(unit, Unit::Entity)
+            }
+            fn hold<'a>(&'a self, _: &Path, _: &Item) -> Result<Box<dyn Hold + 'a>, String> {
+                Ok(Box::new(Free(&self.hold)))
+            }
+            fn present(&self, journal: &Path, path: &str) -> bool {
+                journal.join(path).exists()
+            }
+            fn references(
+                &self,
+                _: &Path,
+                _: &Item,
+                _: Change,
+                _: &[String],
+            ) -> Result<(), String> {
+                Ok(())
+            }
+            fn erasing(&self, journal: &Path, _item: &Item) -> Result<(), String> {
+                self.observed_epoch
+                    .set(Some(read_erasure_epoch(journal).unwrap()));
+                Ok(())
+            }
+        }
         let (_dir, root) = journal();
-        assert!(!trash_root(&root).exists());
-        assert!(!has_erasing_items(&root).unwrap());
-        assert!(!has_erasing_items_unlocked(&root).unwrap());
+        let seed_kind = Erasing::default();
+        let item = trashed_person(&root, &seed_kind);
+        let inspect = InspectEpochKind {
+            hold: Cell::new(0),
+            observed_epoch: Cell::new(None),
+        };
+        erase(&root, &[&inspect], &item.id, Action::Erase, web()).unwrap();
+        let during_hook = inspect
+            .observed_epoch
+            .take()
+            .expect("Kind::erasing must run");
+        assert_eq!(during_hook.epoch, 1);
         assert!(
-            !trash_root(&root).exists(),
-            "read-only erasing query must never create .trash"
+            during_hook.erasing,
+            "erasing flag must already be true before Kind::erasing runs"
         );
-
-        let kind = Erasing::default();
-        let _trashed = trashed_person(&root, &kind);
-        assert!(
-            !has_erasing_items(&root).unwrap(),
-            "ordinary State::Trashed item must not report permanent erasure in progress"
-        );
-        assert!(!has_erasing_items_unlocked(&root).unwrap());
+        let settled = read_erasure_epoch(&root).unwrap();
+        assert_eq!(settled.epoch, 1);
+        assert_eq!(settled.token, during_hook.token);
+        assert!(!settled.erasing);
     }
 }

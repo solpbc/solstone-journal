@@ -17,17 +17,25 @@ use crate::TrashError;
 
 const EPOCH_SCHEMA: u32 = 1;
 
-/// Durable witness of how many permanent Trash erasures have completed.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// Durable witness of permanent Trash erasures for export invalidation.
 ///
-/// Missing epoch files read as `epoch == 0` with an empty token. Every
-/// permanent erasure bumps `epoch` monotonically and writes a fresh random
-/// `token`, so even recovery from a damaged epoch file produces a value that
-/// cannot equal any prior staged copy's snapshot.
+/// Missing epoch files read as `epoch == 0` with an empty token and
+/// `erasing == false`. Every permanent erasure calls [`begin_erasure`] before
+/// publishing `State::Erasing` or running hooks/unlinks, advancing `epoch`
+/// monotonically, rotating `token`, and setting `erasing = true` until no
+/// `State::Erasing` items remain. Callers check invalidation in O(1) via
+/// [`read_erasure_epoch`] without scanning `.trash/`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ErasureEpoch {
     pub schema: u32,
     pub epoch: u64,
     pub token: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub erasing: bool,
 }
 
 impl ErasureEpoch {
@@ -37,6 +45,7 @@ impl ErasureEpoch {
             schema: EPOCH_SCHEMA,
             epoch: 0,
             token: String::new(),
+            erasing: false,
         }
     }
 }
@@ -87,15 +96,60 @@ pub fn read_erasure_epoch(journal: &Path) -> Result<ErasureEpoch, TrashError> {
     Ok(parsed)
 }
 
-/// Atomically advance the journal's permanent-erasure epoch before unlinking
-/// files during permanent erasure.
-pub(crate) fn bump_erasure_epoch(journal: &Path) -> Result<ErasureEpoch, TrashError> {
+/// Atomically advance the journal's permanent-erasure epoch and mark an
+/// erasure in progress BEFORE publishing `State::Erasing`, running kind/backup
+/// hooks, or unlinking files.
+pub(crate) fn begin_erasure(journal: &Path) -> Result<ErasureEpoch, TrashError> {
+    write_epoch_update(journal, true)
+}
+
+/// Clear the `erasing` flag once no `State::Erasing` items remain, preserving
+/// the monotonic `epoch` and `token` written by [`begin_erasure`].
+pub(crate) fn settle_erasure(journal: &Path) -> Result<ErasureEpoch, TrashError> {
     let health = journal.join("health");
     fs::create_dir_all(&health).map_err(|error| TrashError::Io(error.to_string()))?;
     let path = journal.join(TRASH_ERASURE_EPOCH_FILE);
     let _lock = hold_lock(&path, LockOptions::default())
         .map_err(|error| TrashError::Io(error.to_string()))?;
 
+    let current = match read_erasure_epoch(journal) {
+        Ok(current) if current.epoch > 0 => current,
+        _ => return write_epoch_under_lock(journal, &path, false),
+    };
+    if !current.erasing {
+        return Ok(current);
+    }
+    let settled = ErasureEpoch {
+        erasing: false,
+        ..current
+    };
+    let mut bytes =
+        serde_json::to_vec_pretty(&settled).map_err(|error| TrashError::Io(error.to_string()))?;
+    bytes.push(b'\n');
+    atomic_replace(&path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
+        .map_err(|error| TrashError::Io(error.to_string()))?;
+    Ok(settled)
+}
+
+#[cfg(test)]
+pub(crate) fn bump_erasure_epoch(journal: &Path) -> Result<ErasureEpoch, TrashError> {
+    write_epoch_update(journal, false)
+}
+
+fn write_epoch_update(journal: &Path, erasing: bool) -> Result<ErasureEpoch, TrashError> {
+    let health = journal.join("health");
+    fs::create_dir_all(&health).map_err(|error| TrashError::Io(error.to_string()))?;
+    let path = journal.join(TRASH_ERASURE_EPOCH_FILE);
+    let _lock = hold_lock(&path, LockOptions::default())
+        .map_err(|error| TrashError::Io(error.to_string()))?;
+    write_epoch_under_lock(journal, &path, erasing)
+}
+
+fn write_epoch_under_lock(
+    journal: &Path,
+    path: &Path,
+    erasing: bool,
+) -> Result<ErasureEpoch, TrashError> {
     let next_epoch = match read_erasure_epoch(journal) {
         Ok(current) => current.epoch.saturating_add(1),
         Err(_) => 1,
@@ -111,11 +165,12 @@ pub(crate) fn bump_erasure_epoch(journal: &Path) -> Result<ErasureEpoch, TrashEr
         schema: EPOCH_SCHEMA,
         epoch: next_epoch,
         token,
+        erasing,
     };
     let mut bytes =
         serde_json::to_vec_pretty(&next).map_err(|error| TrashError::Io(error.to_string()))?;
     bytes.push(b'\n');
-    atomic_replace(&path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
+    atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(|error| TrashError::Io(error.to_string()))?;
     Ok(next)
 }
