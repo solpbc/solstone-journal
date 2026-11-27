@@ -37,14 +37,23 @@ pub(crate) fn record_completion(
     ended_at: f64,
     exit_status: &str,
     reference: &str,
+    last_period: Option<&str>,
 ) -> Result<(), ScheduleError> {
     std::fs::create_dir_all(path.parent().expect("scheduler state has a parent"))
         .map_err(io_error)?;
-    record_completion_checked(lock, path, name, ended_at, exit_status, reference, &|| {
-        Ok(())
-    })
+    record_completion_checked(
+        lock,
+        path,
+        name,
+        ended_at,
+        exit_status,
+        reference,
+        last_period,
+        &|| Ok(()),
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn record_completion_checked(
     lock: &Mutex<()>,
     path: &Path,
@@ -52,6 +61,7 @@ pub(crate) fn record_completion_checked(
     ended_at: f64,
     exit_status: &str,
     reference: &str,
+    last_period: Option<&str>,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), ScheduleError> {
     let parent = solstone_core_journal_io::JournalRoot::open(
@@ -82,6 +92,10 @@ pub(crate) fn record_completion_checked(
     current.insert("last_run".to_owned(), json!(ended_at));
     current.insert("last_status".to_owned(), json!(exit_status));
     current.insert("last_ref".to_owned(), json!(reference));
+    match last_period {
+        Some(period) => current.insert("last_period".to_owned(), json!(period)),
+        None => current.remove("last_period"),
+    };
     state.insert(name.to_owned(), Value::Object(current));
     let bytes = serde_json::to_vec_pretty(&Value::Object(state))
         .map_err(|error| ScheduleError::Io(error.to_string()))?;
@@ -166,6 +180,7 @@ mod tests {
                 10.0,
                 "success",
                 "late-stage-ref",
+                None,
                 &checkpoint,
             );
             assert!(
@@ -223,6 +238,7 @@ mod tests {
             10.0,
             "success",
             "ref-positive",
+            None,
             &|| Ok(()),
         )
         .unwrap();
@@ -251,6 +267,7 @@ mod tests {
                 10.0,
                 "success",
                 "ref",
+                None,
                 &|| {
                     started_flag.store(true, Ordering::Release);
                     if fail_flag.load(Ordering::Acquire) {
@@ -299,6 +316,7 @@ mod tests {
                 10.0,
                 "success",
                 "ref",
+                None,
                 &|| {
                     started_flag.store(true, Ordering::Release);
                     bound
@@ -366,6 +384,7 @@ mod tests {
                 10.0,
                 "success",
                 "ref",
+                None,
                 &|| {
                     if control.is_cancelled() {
                         Err("deadline".to_owned())

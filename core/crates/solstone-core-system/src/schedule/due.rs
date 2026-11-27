@@ -116,6 +116,63 @@ fn period_mark(entry: &ScheduleEntry, config: &ScheduleConfig, now: DateTime) ->
     }
 }
 
+pub(crate) fn period_key(
+    entry: &ScheduleEntry,
+    config: &ScheduleConfig,
+    local: DateTime,
+) -> Option<String> {
+    match entry.every.as_str() {
+        "daily" => Some(
+            daily_mark(local, config.daily_time.as_deref())
+                .date()
+                .to_string(),
+        ),
+        "weekly" => {
+            let day = config
+                .weekly_day
+                .as_deref()
+                .and_then(parse_weekly_day)
+                .unwrap_or(6);
+            let week = weekly_mark(local, day, config.weekly_time.as_deref())
+                .date()
+                .iso_week_date();
+            Some(format!("{:04}-W{:02}", week.year(), week.week()))
+        }
+        _ => None,
+    }
+}
+
+fn daily_period_satisfied(state_entry: Option<&Value>, mark_date: jiff::civil::Date) -> bool {
+    state_entry
+        .and_then(Value::as_object)
+        .and_then(|entry| entry.get("last_period"))
+        .and_then(Value::as_str)
+        .and_then(|raw| raw.parse::<jiff::civil::Date>().ok())
+        .is_some_and(|recorded| recorded >= mark_date)
+}
+
+fn weekly_period_satisfied(
+    state_entry: Option<&Value>,
+    mark_week: jiff::civil::ISOWeekDate,
+) -> bool {
+    state_entry
+        .and_then(Value::as_object)
+        .and_then(|entry| entry.get("last_period"))
+        .and_then(Value::as_str)
+        .and_then(parse_iso_week_key)
+        .is_some_and(|recorded| recorded >= (mark_week.year(), mark_week.week()))
+}
+
+fn parse_iso_week_key(raw: &str) -> Option<(i16, i8)> {
+    let (year, week) = raw.split_once("-W")?;
+    let year: i16 = year.parse().ok()?;
+    let week: i8 = week.parse().ok()?;
+    if !(1..=53).contains(&week) {
+        return None;
+    }
+    Some((year, week))
+}
+
 fn is_mark_due(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
@@ -134,14 +191,18 @@ fn is_mark_due(
     };
     match entry.every.as_str() {
         "hourly" => last < hour_mark(now.local),
-        "daily" => last < daily_mark(now.local, config.daily_time.as_deref()),
+        "daily" => {
+            let mark = daily_mark(now.local, config.daily_time.as_deref());
+            last < mark && !daily_period_satisfied(state_entry, mark.date())
+        }
         "weekly" => {
             let day = config
                 .weekly_day
                 .as_deref()
                 .and_then(parse_weekly_day)
                 .unwrap_or(6);
-            last < weekly_mark(now.local, day, config.weekly_time.as_deref())
+            let mark = weekly_mark(now.local, day, config.weekly_time.as_deref());
+            last < mark && !weekly_period_satisfied(state_entry, mark.date().iso_week_date())
         }
         every => minute_interval(every).is_some_and(|minutes| {
             now.local
@@ -176,7 +237,12 @@ pub(crate) fn compute_next_run(
             if due {
                 mark
             } else {
-                mark + SignedDuration::from_hours(24)
+                let next = mark + SignedDuration::from_hours(24);
+                if daily_period_satisfied(state_entry, next.date()) {
+                    next + SignedDuration::from_hours(24)
+                } else {
+                    next
+                }
             }
         }
         "weekly" => {
@@ -189,7 +255,12 @@ pub(crate) fn compute_next_run(
             if due {
                 mark
             } else {
-                mark + SignedDuration::from_hours(24 * 7)
+                let next = mark + SignedDuration::from_hours(24 * 7);
+                if weekly_period_satisfied(state_entry, next.date().iso_week_date()) {
+                    next + SignedDuration::from_hours(24 * 7)
+                } else {
+                    next
+                }
             }
         }
         every => match minute_interval(every) {
@@ -208,6 +279,28 @@ pub(crate) fn compute_next_run(
         },
     };
     local_to_epoch_millis(next, &now.zone).unwrap_or(now.unix_millis)
+}
+
+pub(crate) fn effective_daily_spec(config: &ScheduleConfig) -> (i8, i8) {
+    config
+        .daily_time
+        .as_deref()
+        .and_then(parse_daily_time)
+        .unwrap_or((0, 0))
+}
+
+pub(crate) fn effective_weekly_spec(config: &ScheduleConfig) -> (u32, (i8, i8)) {
+    let day = config
+        .weekly_day
+        .as_deref()
+        .and_then(parse_weekly_day)
+        .unwrap_or(6);
+    let time = config
+        .weekly_time
+        .as_deref()
+        .and_then(parse_daily_time)
+        .unwrap_or((3, 0));
+    (day, time)
 }
 
 pub(crate) fn current_marks(

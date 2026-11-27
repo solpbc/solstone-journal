@@ -905,3 +905,268 @@ fn a_failed_daily_run_shows_its_retry_as_the_next_run() {
     let status = engine.collect_status(now(2026, 3, 22, 1, 20));
     assert!(status[0].due);
 }
+
+#[test]
+fn changing_daily_time_does_not_burst_daily_entries_live_or_on_restart() {
+    let bed = Bed::new("daily-time-shift");
+    bed.write_config(json!({
+        "daily_time": "00:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
+        "brain": {"cmd": ["journal", "brain", "refresh"], "every": "daily"}
+    }));
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 0, 1)).expect("init");
+    for name in ["heartbeat", "brain"] {
+        engine
+            .record_completion(name, local_epoch(&now(2026, 3, 22, 0, 1)), "ok", "midnight")
+            .expect("midnight completion");
+    }
+
+    // Mid-afternoon shift from 00:00 -> 02:00 must not fire any daily entry on
+    // the live tick, even though the old 00:00 run is earlier than 02:00.
+    bed.write_config(json!({
+        "daily_time": "02:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
+        "brain": {"cmd": ["journal", "brain", "refresh"], "every": "daily"}
+    }));
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let report = engine
+        .check(now(2026, 3, 22, 15, 21), &sink)
+        .expect("check after daily_time change");
+    assert!(
+        report.submitted.is_empty() && sink.names().is_empty(),
+        "daily_time change must not fire dailies immediately: {:?}",
+        sink.names()
+    );
+
+    // Restarting later the same day must not burst them via catch_up either,
+    // and status must schedule the next run for tomorrow at the new 02:00 mark.
+    let (mut restarted, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 15, 25)).expect("init");
+    let caught = restarted.catch_up(now(2026, 3, 22, 15, 25), &sink, &BTreeSet::new());
+    assert!(
+        caught.submitted.is_empty(),
+        "restart after daily_time change must not burst dailies: {:?}",
+        caught.submitted
+    );
+    let status = restarted.collect_status(now(2026, 3, 22, 15, 25));
+    assert!(status.iter().all(|item| !item.due));
+    assert!(
+        status
+            .iter()
+            .all(|item| item.next_run == now(2026, 3, 23, 2, 0).unix_millis),
+        "next run must target tomorrow at 02:00: {status:?}"
+    );
+
+    // At the next day's 02:00 window, both entries fire on schedule.
+    let next_day = restarted
+        .check(now(2026, 3, 23, 2, 0), &sink)
+        .expect("next daily mark");
+    assert_eq!(next_day.submitted, vec!["brain", "heartbeat"]);
+}
+
+#[test]
+fn changing_daily_time_without_recorded_period_still_does_not_burst_live() {
+    // Legacy state files written before `last_period` existed still must not
+    // burst on a live `daily_time` change.
+    let bed = Bed::new("daily-time-shift-legacy-state");
+    bed.write_config(json!({
+        "daily_time": "00:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
+    }));
+    fs::write(
+        bed.state(),
+        serde_json::to_vec(&json!({
+            "heartbeat": state(local_epoch(&now(2026, 3, 22, 0, 1)))
+        }))
+        .expect("state"),
+    )
+    .expect("write state");
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 15, 20)).expect("init");
+    bed.write_config(json!({
+        "daily_time": "02:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
+    }));
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let report = engine
+        .check(now(2026, 3, 22, 15, 21), &sink)
+        .expect("check");
+    assert!(report.submitted.is_empty());
+    assert!(sink.names().is_empty());
+
+    // Moving daily_time later in the same day (02:00 -> 22:00) also waits.
+    bed.write_config(json!({
+        "daily_time": "22:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
+    }));
+    let report = engine
+        .check(now(2026, 3, 22, 15, 22), &sink)
+        .expect("check backward");
+    assert!(report.submitted.is_empty());
+    assert!(sink.names().is_empty());
+}
+
+#[test]
+fn changing_weekly_window_does_not_burst_weekly_entries() {
+    let bed = Bed::new("weekly-time-shift");
+    bed.write_config(json!({
+        "weekly_day": "sunday",
+        "weekly_time": "03:00",
+        "weekly-agents": {"cmd": ["journal", "think", "--weekly"], "every": "weekly"}
+    }));
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 3, 5)).expect("init");
+    engine
+        .record_completion(
+            "weekly-agents",
+            local_epoch(&now(2026, 3, 22, 3, 5)),
+            "ok",
+            "sunday",
+        )
+        .expect("record");
+
+    bed.write_config(json!({
+        "weekly_day": "sunday",
+        "weekly_time": "05:00",
+        "weekly-agents": {"cmd": ["journal", "think", "--weekly"], "every": "weekly"}
+    }));
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let report = engine.check(now(2026, 3, 22, 15, 0), &sink).expect("check");
+    assert!(report.submitted.is_empty());
+
+    let (mut restarted, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 15, 5)).expect("init");
+    assert!(
+        restarted
+            .catch_up(now(2026, 3, 22, 15, 5), &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    let next_week = restarted
+        .check(now(2026, 3, 29, 5, 0), &sink)
+        .expect("next week");
+    assert_eq!(next_week.submitted, vec!["weekly-agents"]);
+}
+
+#[test]
+fn missed_yesterday_catchup_before_today_mark_still_runs_today() {
+    // Control: catching up yesterday's missed 03:00 run at today 01:00 records
+    // yesterday's period, so today's 03:00 mark is still due.
+    let bed = Bed::new("missed-catchup-control");
+    bed.write_config(json!({
+        "daily_time": "03:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
+    }));
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 1, 0)).expect("init");
+    engine
+        .record_completion(
+            "heartbeat",
+            local_epoch(&now(2026, 3, 22, 1, 0)),
+            "ok",
+            "catchup",
+        )
+        .expect("catchup completion");
+
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let report = engine
+        .check(now(2026, 3, 22, 3, 0), &sink)
+        .expect("today's mark");
+    assert_eq!(report.submitted, vec!["heartbeat"]);
+}
+
+#[test]
+fn daily_schedule_shifting_daily_time_mid_batch_does_not_double_run_at_new_time() {
+    // At 00:00, daily_time is 00:00 and the daily batch launches. At 00:01,
+    // daily_schedule shifts daily_time to 02:00 while sibling daily tasks are
+    // still running. Those tasks must still record today's period when they
+    // finish at 00:02, so 02:00 on the same day does not run them a second time.
+    let bed = Bed::new("daily-time-shift-mid-batch");
+    bed.write_config(json!({
+        "daily_time": "00:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
+        "think-daily": {"cmd": ["journal", "think", "--daily"], "every": "daily"}
+    }));
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 21, 23, 59)).expect("init");
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let midnight = engine
+        .check(now(2026, 3, 22, 0, 0), &sink)
+        .expect("midnight batch");
+    assert_eq!(midnight.submitted, vec!["heartbeat", "think-daily"]);
+    let submitted_refs: Vec<(String, String)> = sink
+        .requests
+        .lock()
+        .expect("sink")
+        .iter()
+        .map(|req| {
+            (
+                req.scheduler_name.clone().expect("scheduler name"),
+                req.reference.clone(),
+            )
+        })
+        .collect();
+    sink.requests.lock().expect("sink").clear();
+
+    // daily_schedule updates daily_time from 00:00 to 02:00 while the batch runs.
+    bed.write_config(json!({
+        "daily_time": "02:00",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"},
+        "think-daily": {"cmd": ["journal", "think", "--daily"], "every": "daily"}
+    }));
+    let on_edit = engine
+        .check(now(2026, 3, 22, 0, 1), &sink)
+        .expect("reload after edit");
+    assert!(on_edit.submitted.is_empty());
+
+    // Now the in-flight midnight tasks finish at 00:02 (before the new 02:00 mark).
+    for (name, reference) in &submitted_refs {
+        engine
+            .record_completion(name, local_epoch(&now(2026, 3, 22, 0, 2)), "ok", reference)
+            .expect("record mid-batch completion");
+    }
+
+    // Status at 00:05 must target tomorrow's 02:00, not today's 02:00.
+    let (reloaded, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 0, 5)).expect("reload");
+    let status = reloaded.collect_status(now(2026, 3, 22, 0, 5));
+    assert!(status.iter().all(|item| !item.due));
+    assert!(
+        status
+            .iter()
+            .all(|item| item.next_run == now(2026, 3, 23, 2, 0).unix_millis),
+        "next run must skip today's 02:00 window after midnight batch ran: {status:?}"
+    );
+
+    // Reaching today's 02:00 mark must NOT run the batch a second time.
+    let at_two = engine
+        .check(now(2026, 3, 22, 2, 0), &sink)
+        .expect("02:00 same day");
+    assert!(
+        at_two.submitted.is_empty(),
+        "02:00 on the same day must not double-run dailies: {:?}",
+        at_two.submitted
+    );
+
+    // Tomorrow at 02:00 runs on the new schedule.
+    let tomorrow = engine
+        .check(now(2026, 3, 23, 2, 0), &sink)
+        .expect("tomorrow 02:00");
+    assert_eq!(tomorrow.submitted, vec!["heartbeat", "think-daily"]);
+}

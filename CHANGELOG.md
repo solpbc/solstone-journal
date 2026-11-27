@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when the daily maintenance time changes, your journal no longer runs every daily task at once; the new time takes effect at the next scheduled window.
 - media offload and offloaded-media restores that stop because of another active backup or restore operation or unfinished backup work now report that cause instead of saying your journal could not be confirmed.
 - when you type requests to an agent in a tmux session you've listed in `output_sessions` while you stay attached to it, your journal now keeps those requests as yours and usually describes the work that follows as the agent's, once your solstone app for mac or linux is updated too. before, such a session read as your own. thanks @dvanduzer for the retest (#424).
 - your connected agent can get the first results faster when it searches a large journal for a common word. your agent can also look up a week faster when your journal has a lot of people in it.
