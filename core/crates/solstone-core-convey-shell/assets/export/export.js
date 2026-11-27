@@ -514,7 +514,7 @@
         label: t('journal.window.export.err.expired.action'),
         onClick: () => actions.clearError(),
       });
-    } else if (code === 'checksum_mismatch') {
+    } else if (code === 'checksum_mismatch' || code === 'export_verification_failed') {
       tone = 'is-err';
       title = t('journal.window.export.err.checksum.title');
       body = t('journal.window.export.err.checksum.body');
@@ -528,7 +528,7 @@
       tone = 'is-err';
       title = t('journal.window.export.err.revoked.title');
       body = t('journal.window.export.err.revoked.body');
-    } else if (code === 'dest_write_failed') {
+    } else if (code === 'dest_write_failed' || code === 'write_failed' || code === 'destination_write_failed') {
       tone = 'is-err';
       title = t('journal.window.export.err.dest.write.title');
       body = t('journal.window.export.err.dest.write.body');
@@ -538,7 +538,7 @@
         label: t('journal.window.export.space.choose.another'),
         onClick: () => actions.retryNativeSave(),
       });
-    } else if (code === 'insufficient_device_space') {
+    } else if (code === 'insufficient_device_space' || code === 'insufficient_space') {
       const mobile = isMobilePlatform(errInfo.platform);
       const lightBytes = estimate && estimate.breakdown && estimate.breakdown.light_bytes;
       const isLight = errInfo.mode === 'without_processed_media' || typeof lightBytes !== 'number' || lightBytes <= 0;
@@ -611,21 +611,51 @@
 
     if (phase === 'handed_off') {
       const nodes = [];
+      const isAppleFiles = platform === 'ios' || platform === 'ipados' || platform === 'ios_host';
+      const matchingReady =
+        ready && nativeState.export_id && ready.export_id === nativeState.export_id ? ready : null;
       const head = el(doc, 'header', 'export-head');
-      head.appendChild(el(doc, 'h1', null, t('journal.window.export.transfer.handed.title')));
+      head.appendChild(
+        el(
+          doc,
+          'h1',
+          null,
+          t(
+            isAppleFiles
+              ? 'journal.window.export.transfer.handed.title'
+              : 'journal.window.export.transfer.handed.provider.title'
+          )
+        )
+      );
       nodes.push(head);
       const band = el(doc, 'div', 'export-band is-calm');
       band.setAttribute('role', 'status');
       band.setAttribute('data-export-native-state', 'handed_off');
-      band.appendChild(el(doc, 'p', null, t('journal.window.export.transfer.handed.body')));
-      if (ready) {
+      band.appendChild(
+        el(
+          doc,
+          'p',
+          null,
+          t(
+            isAppleFiles
+              ? 'journal.window.export.transfer.handed.body'
+              : 'journal.window.export.transfer.handed.provider.body'
+          )
+        )
+      );
+      if (nativeState.destination_display) {
+        band.appendChild(el(doc, 'p', null, nativeState.destination_display));
+      }
+      if (matchingReady) {
+        const targetId = matchingReady.export_id;
+        const targetSize = matchingReady.size_bytes;
         const act = el(doc, 'div', 'export-band-actions');
         act.appendChild(
           createButton(doc, {
             focusKey: 'handed-discard',
             variant: 'is-danger-outline is-small',
             label: t('journal.window.export.ready.discard'),
-            onClick: () => actions.confirmDiscardNow(),
+            onClick: () => actions.confirmDiscardNow(targetId, targetSize),
           })
         );
         band.appendChild(act);
@@ -637,6 +667,8 @@
 
     if (phase === 'saved') {
       const nodes = [];
+      const matchingReady =
+        ready && nativeState.export_id && ready.export_id === nativeState.export_id ? ready : null;
       const head = el(doc, 'header', 'export-head');
       head.appendChild(el(doc, 'h1', null, t('journal.window.export.transfer.saved.title')));
       nodes.push(head);
@@ -674,7 +706,9 @@
         nodes.push(row);
       }
 
-      if (ready && !actions.isSavedCleanupDismissed()) {
+      if (matchingReady && !actions.isSavedCleanupDismissed()) {
+        const targetId = matchingReady.export_id;
+        const targetSize = matchingReady.size_bytes;
         const cleanup = el(doc, 'div', 'export-band is-calm');
         cleanup.setAttribute('data-export-cleanup-prompt', '1');
         cleanup.appendChild(
@@ -683,7 +717,7 @@
             'span',
             'export-band-title',
             t('journal.window.export.transfer.cleanup.title', [
-              ['size', formatBytes(ready.size_bytes)],
+              ['size', formatBytes(targetSize)],
               ['drive', stagingDriveName(estimate)],
             ])
           )
@@ -695,7 +729,7 @@
             focusKey: 'cleanup-discard',
             variant: 'is-small',
             label: t('journal.window.export.transfer.cleanup.discard'),
-            onClick: () => actions.confirmDiscardNow(),
+            onClick: () => actions.confirmDiscardNow(targetId, targetSize),
           })
         );
         act.appendChild(
@@ -862,11 +896,16 @@
     const nativeState = ui.nativeState;
     const ready = state && state.ready;
 
-    // 1. Active or terminal native transfer takes precedence while matching ready copy or freshly saved.
+    // 1. Active or terminal native transfer takes precedence only when no newer ready copy exists.
+    const nativeMatchesReady =
+      !ready ||
+      (nativeState && nativeState.export_id
+        ? nativeState.export_id === ready.export_id
+        : !['saved', 'handed_off'].includes(nativeState && nativeState.phase));
     if (
       nativeState &&
       ['transferring', 'paused', 'verifying', 'saved', 'handed_off'].includes(nativeState.phase) &&
-      (!ready || !nativeState.export_id || nativeState.export_id === ready.export_id || nativeState.phase === 'saved' || nativeState.phase === 'handed_off')
+      nativeMatchesReady
     ) {
       for (const node of renderNativeTransfer(doc, nativeState, ready, estimate, ui.openFolds, actions)) {
         root.appendChild(node);
@@ -957,7 +996,7 @@
       );
 
       // Native error (e.g. checksum mismatch, dest write failed, insufficient device space).
-      if (nativeState && nativeState.phase === 'error') {
+      if (nativeState && (nativeState.phase === 'error' || nativeState.phase === 'failed')) {
         root.appendChild(
           renderErrorCard(
             doc,
@@ -1113,13 +1152,15 @@
         );
         const cRow = el(doc, 'div', 'export-actions');
         cRow.style.marginTop = '8px';
+        const targetId = ready.export_id;
+        const targetSize = ready.size_bytes;
         cRow.appendChild(
           createButton(doc, {
             id: 'exportDiscardConfirmBtn',
             focusKey: 'discard-confirm',
             variant: 'is-danger is-small',
             label: t('journal.window.export.ready.discard'),
-            onClick: () => actions.confirmDiscardNow(),
+            onClick: () => actions.confirmDiscardNow(targetId, targetSize),
           })
         );
         cRow.appendChild(
@@ -1189,11 +1230,21 @@
       root.appendChild(cancelled);
     } else if (
       state &&
-      (state.status === 'failed' || state.status === 'expired' || state.status === 'erased_invalidated') &&
+      (state.status === 'failed' ||
+        state.status === 'expired' ||
+        state.status === 'erased_invalidated' ||
+        state.status === 'unavailable') &&
       !ui.dismissedTerminal
     ) {
       const code = (state.active_job && state.active_job.error_code) ||
-        (state.status === 'expired' ? 'export_expired' : state.status === 'erased_invalidated' ? 'export_invalidated_by_erasure' : 'prepare_failed');
+        state.error_code ||
+        (state.status === 'expired'
+          ? 'export_expired'
+          : state.status === 'erased_invalidated'
+            ? 'export_invalidated_by_erasure'
+            : state.status === 'unavailable'
+              ? 'export_staging_unavailable'
+              : 'prepare_failed');
       const errMode = (state.active_job && state.active_job.mode) || ui.mode;
       root.appendChild(renderErrorCard(doc, { code, mode: errMode }, estimate, actions));
     } else if (ui.startError) {
@@ -1397,7 +1448,8 @@
     }
 
     const chosenFits = ui.mode === 'full' ? fullFits : lightFits;
-    const canPrepare = !isMeasuring && !isMeasureError && chosenFits && !(state && state.other_requester_busy) && !ui.startingJob;
+    const stagingUnavailable = (state && state.status === 'unavailable') || (estimate && estimate.staging_available === false);
+    const canPrepare = !isMeasuring && !isMeasureError && !stagingUnavailable && chosenFits && !(state && state.other_requester_busy) && !ui.startingJob;
     const actRow = el(doc, 'div', 'export-actions');
     actRow.appendChild(
       createButton(doc, {
@@ -1495,8 +1547,13 @@
       if (ctx.disposed || !replyIsObject(reply)) return;
       const contract = getExportContract();
       if (contract && reply.type === contract.unsupported) return;
-      if (contract && type === contract.deviceSpace && typeof reply.free_bytes === 'number') {
-        ui.deviceSpace = reply;
+      if (
+        contract &&
+        type === contract.deviceSpace &&
+        (typeof reply.free_bytes === 'number' || typeof reply.available_bytes === 'number')
+      ) {
+        const freeBytes = typeof reply.free_bytes === 'number' ? reply.free_bytes : reply.available_bytes;
+        ui.deviceSpace = Object.assign({}, reply, { free_bytes: freeBytes });
         draw();
         return;
       }
@@ -1559,14 +1616,17 @@
         .then((data) => {
           if (data && !ctx.disposed) {
             const prevStatus = ui.state && ui.state.status;
+            const prevReadyId = ui.state && ui.state.ready && ui.state.ready.export_id;
+            const nextReadyId = data.ready && data.ready.export_id;
             ui.state = data;
             if (data.status !== 'preparing') ui.cancellingPrep = false;
-            if (prevStatus !== data.status) {
+            if (prevStatus !== data.status || prevReadyId !== nextReadyId) {
               ui.dismissedTerminal = false;
-              if (data.status !== 'ready') {
-                ui.confirmDiscard = false;
+              ui.confirmDiscard = false;
+              ui.discardConflict = false;
+              ui.dismissedSavedCleanup = false;
+              if (data.status !== 'ready' || prevReadyId !== nextReadyId) {
                 ui.browserStarted = false;
-                ui.discardConflict = false;
               }
             }
           }
@@ -1654,11 +1714,13 @@
         ui.confirmDiscard = false;
         draw();
       },
-      confirmDiscardNow() {
+      confirmDiscardNow(expectedExportId, expectedSizeBytes) {
         const ready = ui.state && ui.state.ready;
         if (!ready) return;
-        const sizeBytes = ready.size_bytes;
-        fetchFn(`/app/export/api/ready/${encodeURIComponent(ready.export_id)}`, { method: 'DELETE' })
+        const targetId = expectedExportId || ready.export_id;
+        if (ready.export_id !== targetId) return;
+        const sizeBytes = typeof expectedSizeBytes === 'number' ? expectedSizeBytes : ready.size_bytes;
+        fetchFn(`/app/export/api/ready/${encodeURIComponent(targetId)}`, { method: 'DELETE' })
           .then((res) => {
             if (ctx.disposed) return;
             if (res.status === 409) {
@@ -1666,6 +1728,12 @@
               ui.confirmDiscard = false;
               draw();
               return;
+            }
+            if (!res.ok) {
+              ui.confirmDiscard = false;
+              return loadState().then(() => {
+                if (!ctx.disposed) draw();
+              });
             }
             ui.confirmDiscard = false;
             ui.discardConflict = false;

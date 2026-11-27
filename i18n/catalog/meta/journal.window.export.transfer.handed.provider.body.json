@@ -1,0 +1,16 @@
+{
+  "description": "Honest boundary body after a non-Apple native host hands copy to a write-only storage provider.",
+  "context": "journal-window. Honest boundary body after Android or other write-only storage provider hands copy off without read-back verification.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e76d8f0f8f561191b01c6d3693580f8877d2d69b12046192c8be5eca4d38196d",
+  "max_length": 220,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

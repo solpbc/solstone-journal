@@ -6,7 +6,7 @@ use serde::Serialize;
 #[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::{io, path::Path};
 
 #[cfg(windows)]
@@ -149,6 +149,87 @@ pub struct StoragePrivacy {
     pub message: String,
 }
 
+/// Ensure `path` is a plain (non-symlink, non-reparse) directory owned by the
+/// current OS account and restricted to private owner-only access (`0o700` on
+/// Unix, protected owner-only DACL on Windows).
+///
+/// Fails closed if `path` is a symlink/reparse point/regular file, owned by a
+/// different account, or lies on a volume that cannot enforce private access.
+#[cfg(unix)]
+pub fn ensure_private_owner_dir(path: &Path) -> io::Result<()> {
+    let euid = nix::unistd::geteuid().as_raw();
+    match fs::symlink_metadata(path) {
+        Ok(meta) => {
+            if !meta.file_type().is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory path is not a plain directory",
+                ));
+            }
+            if meta.uid() != euid {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory is not owned by the current user",
+                ));
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            match builder.create(path) {
+                Ok(()) => {}
+                Err(create_err) if create_err.kind() == io::ErrorKind::AlreadyExists => {
+                    let meta = fs::symlink_metadata(path)?;
+                    if !meta.file_type().is_dir() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "private directory path is not a plain directory",
+                        ));
+                    }
+                    if meta.uid() != euid {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "private directory is not owned by the current user",
+                        ));
+                    }
+                }
+                Err(create_err) => return Err(create_err),
+            }
+        }
+        Err(error) => return Err(error),
+    }
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    let verified = fs::symlink_metadata(path)?;
+    if !verified.file_type().is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "private directory path is no longer a plain directory",
+        ));
+    }
+    if verified.uid() != euid {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "private directory is not owned by the current user",
+        ));
+    }
+    let (_, ignores_ownership) = volume(path)?;
+    if !mode_is_private(verified.permissions().mode(), ignores_ownership) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "private directory permissions are not owner-only",
+        ));
+    }
+    Ok(())
+}
+
+/// Ensure `path` is a plain (non-reparse) directory owned by the current OS
+/// account with a protected owner-only DACL.
+#[cfg(windows)]
+pub fn ensure_private_owner_dir(path: &Path) -> io::Result<()> {
+    windows::ensure_private_owner_dir(path)
+}
+
 /// Read-only: health and doctor must not repair modes or record consent.
 pub fn inspect(root: &Path) -> io::Result<StoragePrivacy> {
     inspect_in(root, ENGLISH)
@@ -244,6 +325,35 @@ mod tests {
         }
         assert!(!mode_is_private(0o700, true));
     }
+    #[cfg(unix)]
+    #[test]
+    fn ensure_private_owner_dir_enforces_mode_and_rejects_symlinks_and_files() {
+        let work = tempfile::tempdir().unwrap();
+        let fresh = work.path().join("fresh");
+        ensure_private_owner_dir(&fresh).unwrap();
+        assert_eq!(
+            fs::symlink_metadata(&fresh).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let broad = work.path().join("broad");
+        fs::create_dir(&broad).unwrap();
+        fs::set_permissions(&broad, fs::Permissions::from_mode(0o755)).unwrap();
+        ensure_private_owner_dir(&broad).unwrap();
+        assert_eq!(
+            fs::symlink_metadata(&broad).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let regular = work.path().join("file");
+        fs::write(&regular, b"x").unwrap();
+        assert!(ensure_private_owner_dir(&regular).is_err());
+
+        let link = work.path().join("link");
+        std::os::unix::fs::symlink(&fresh, &link).unwrap();
+        assert!(ensure_private_owner_dir(&link).is_err());
+    }
+
     #[test]
     fn consent_is_explicit_and_bound_to_the_storage_choice() {
         let consent = serde_json::json!({"accepted_at":"2026-01-01T00:00:00Z", "filesystem_type":"fat", "root":"/journal"});

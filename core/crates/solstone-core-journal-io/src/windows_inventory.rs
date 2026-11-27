@@ -752,6 +752,11 @@ impl WindowsLiveFileReader<'_> {
         self.before.size
     }
 
+    /// Return the byte length that should be copied from this live reader.
+    pub fn expected_size(&self) -> u64 {
+        self.expected_size
+    }
+
     /// Complete the live-journal verified read.
     pub fn finish(self) -> Result<(), WindowsInventoryError> {
         let after = file_metadata_raw(self.file.as_raw_handle(), &self.relative_path)?;
@@ -771,10 +776,16 @@ impl WindowsLiveFileReader<'_> {
 
 /// Open one observed regular entry for live-journal streaming without a
 /// whole-root recursive namespace watch.
+///
+/// When `allow_atomic_replace` is true, routine atomic rename replacements of
+/// derived state files open the current regular file through verified ancestor
+/// directories and bind `expected_size` and `finish()` to that single whole
+/// version instead of the stale `t=0` identity.
 pub fn open_windows_inventory_file_reader_live<'root>(
     root: &'root JournalRoot,
     entry: &WindowsInventoryEntry,
     allow_append_only: bool,
+    allow_atomic_replace: bool,
 ) -> Result<WindowsLiveFileReader<'root>, WindowsInventoryError> {
     if entry.kind != JournalEntryKind::RegularFile {
         return Err(WindowsInventoryError::NotRegular {
@@ -782,8 +793,23 @@ pub fn open_windows_inventory_file_reader_live<'root>(
         });
     }
     root.revalidate().map_err(WindowsInventoryError::Root)?;
-    let handle = reopen_verified_route(root, entry, FILE_READ_DATA | FILE_READ_ATTRIBUTES)?;
+    let handle = reopen_verified_route_inner(
+        root,
+        entry,
+        FILE_READ_DATA | FILE_READ_ATTRIBUTES,
+        allow_atomic_replace,
+    )?;
     let before = file_metadata(&handle, &entry.relative_path)?;
+    if allow_atomic_replace {
+        return Ok(WindowsLiveFileReader {
+            file: std::fs::File::from(handle),
+            expected_size: before.size,
+            before,
+            allow_append_only: false,
+            relative_path: entry.relative_path.clone(),
+            root,
+        });
+    }
     let intact = if allow_append_only {
         before.identity == entry.identity && before.size >= entry.size
     } else {
@@ -811,6 +837,7 @@ pub fn revalidate_windows_live_entry(
     root: &JournalRoot,
     entry: &WindowsInventoryEntry,
     allow_append_only: bool,
+    allow_atomic_replace: bool,
 ) -> Result<(), WindowsInventoryError> {
     match entry.kind {
         JournalEntryKind::Directory => {
@@ -818,7 +845,15 @@ pub fn revalidate_windows_live_entry(
             Ok(())
         }
         JournalEntryKind::RegularFile => {
-            let handle = reopen_verified_route(root, entry, FILE_READ_ATTRIBUTES)?;
+            let handle = reopen_verified_route_inner(
+                root,
+                entry,
+                FILE_READ_ATTRIBUTES,
+                allow_atomic_replace,
+            )?;
+            if allow_atomic_replace {
+                return Ok(());
+            }
             let after = file_metadata(&handle, &entry.relative_path)?;
             let intact = if allow_append_only {
                 after.identity == entry.identity && after.size >= entry.size
@@ -846,15 +881,17 @@ pub fn read_windows_inventory_live_snapshot(
     entry: &WindowsInventoryEntry,
     max_bytes: u64,
 ) -> Result<Vec<u8>, WindowsInventoryError> {
-    if entry.size > max_bytes {
+    let mut reader = open_windows_inventory_file_reader_live(root, entry, false, true)?;
+    let current_size = reader.expected_size();
+    if current_size > max_bytes {
         return Err(WindowsInventoryError::BudgetExceeded {
             limit: InventoryBudgetLimit::CheckedReadBytes,
         });
     }
-    let mut reader = open_windows_inventory_file_reader_live(root, entry, false)?;
-    let size = usize::try_from(entry.size).map_err(|_| WindowsInventoryError::BudgetExceeded {
-        limit: InventoryBudgetLimit::CheckedReadBytes,
-    })?;
+    let size =
+        usize::try_from(current_size).map_err(|_| WindowsInventoryError::BudgetExceeded {
+            limit: InventoryBudgetLimit::CheckedReadBytes,
+        })?;
     let mut bytes = vec![0u8; size];
     read_exact(&mut reader, &mut bytes).map_err(|source| WindowsInventoryError::Io {
         operation: "read live metadata snapshot",
@@ -1617,6 +1654,15 @@ fn reopen_verified_route(
     entry: &WindowsInventoryEntry,
     leaf_access: u32,
 ) -> Result<OwnedHandle, WindowsInventoryError> {
+    reopen_verified_route_inner(root, entry, leaf_access, false)
+}
+
+fn reopen_verified_route_inner(
+    root: &JournalRoot,
+    entry: &WindowsInventoryEntry,
+    leaf_access: u32,
+    allow_leaf_replace: bool,
+) -> Result<OwnedHandle, WindowsInventoryError> {
     let retained_root = borrow_admitted_root(
         root,
         WindowsInventoryPrimitive::BorrowAdmittedRootForRelativeOpen,
@@ -1636,7 +1682,7 @@ fn reopen_verified_route(
         require_no_reparse(attributes, &entry.relative_path)?;
         let identity = file_id(&handle, &entry.relative_path)?;
         test_hook_witness_progress("after-route-component-identity");
-        if identity != component.identity {
+        if (!leaf || !allow_leaf_replace) && identity != component.identity {
             test_hook_witness_progress("route-component-identity-mismatch");
             return Err(WindowsInventoryError::IdentityChanged {
                 path: entry.relative_path.clone(),

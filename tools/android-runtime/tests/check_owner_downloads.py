@@ -85,7 +85,25 @@ public class OwnerDownloadsTest {
   d.receive("https://journal.invalid/app/export/api/ready/exp_1/download","","application/zip");a.jobs.drain();a.ui.drain();
   output=new ByteArrayOutputStream();a.output=output;result(d);a.jobs.drain();a.ui.drain();
   check(android.provider.DocumentsContract.deletes==prevDeletes+1);check(a.notices.size()==1 && !a.notices.get(0).contains("copy saved"));
-  check(cache.list().length==0);System.out.println("native downloads: byte fidelity, incomplete source, picker ownership, close failure, zero-cache SAF export and cancellation pass");
+  // Direct SAF stream close failure deletes document and never reports copy saved.
+  a.notices.clear();prevDeletes=android.provider.DocumentsContract.deletes;
+  a.transport.sha256="054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8";
+  d.receive("https://journal.invalid/app/export/api/ready/exp_1/download","","application/zip");a.jobs.drain();a.ui.drain();
+  a.output=new ByteArrayOutputStream(){public void close()throws IOException{throw new IOException("saf close failed");}};
+  result(d);a.jobs.drain();a.ui.drain();
+  check(android.provider.DocumentsContract.deletes==prevDeletes+1);check(a.notices.size()==1 && !a.notices.get(0).contains("copy saved"));
+  // Picker cancellation (RESULT_CANCELED=0) cleans active state cleanly with no notice.
+  a.notices.clear();a.transport.methods.clear();
+  d.receive("https://journal.invalid/app/export/api/ready/exp_1/download","","application/zip");a.jobs.drain();a.ui.drain();
+  d.selected(0,null);a.jobs.drain();a.ui.drain();
+  check(d.active==null);check(a.notices.isEmpty());check(a.transport.methods.equals(List.of("HEAD")));
+  // Stale journal-export-*.tmp left by prior process exit is swept on next startup.
+  File stale=new File(cache,"journal-export-stale-exit.tmp");
+  try(FileOutputStream fos=new FileOutputStream(stale)){fos.write(new byte[]{1,2,3});}
+  check(stale.exists());
+  new OwnerDownloads(a);
+  check(!stale.exists());
+  check(cache.list().length==0);System.out.println("native downloads: byte fidelity, incomplete source, picker ownership, close failure, zero-cache SAF export, cancel and process-exit cleanup pass");
  }}'''
 }
 

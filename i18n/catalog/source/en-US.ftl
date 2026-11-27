@@ -25345,6 +25345,10 @@ journal.window.export.transfer.handed.title = copy handed to Files
 
 journal.window.export.transfer.handed.body = check the Files app to confirm it finished saving, then discard the prepared copy here to free space.
 
+journal.window.export.transfer.handed.provider.title = copy handed to the location you chose
+
+journal.window.export.transfer.handed.provider.body = check that location to confirm it finished saving, then discard the prepared copy here to free space.
+
 journal.window.export.transfer.reveal.finder = show in Finder
 
 journal.window.export.transfer.reveal.explorer = show in File Explorer

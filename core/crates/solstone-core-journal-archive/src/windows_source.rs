@@ -18,7 +18,7 @@ use crate::deny::{DenyAction, deny_member, deny_top_level};
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof, ProofIdentity};
 use crate::live::{
     LIVE_METADATA_MAX_FILE_BYTES, LIVE_METADATA_TOTAL_BUDGET_BYTES, SnapshotMode,
-    is_live_append_only_jsonl, is_live_snapshottable_metadata,
+    is_live_append_only_jsonl, is_live_atomic_rewritable, is_live_snapshottable_metadata,
 };
 use crate::{
     ArchiveError, ArchiveMemberName, IncludedRootName, Inventory, InventoryEntry,
@@ -144,17 +144,19 @@ impl ArchiveSource {
                 Ok(OpenedInventoryFile::new(reader, &self.root, entry.size()))
             }
             SnapshotMode::LiveJournal => {
-                let allow_append_only = is_live_append_only_jsonl(entry.member_name().as_str());
+                let allow_atomic_replace = is_live_atomic_rewritable(entry.member_name().as_str());
+                let allow_append_only = !allow_atomic_replace
+                    && is_live_append_only_jsonl(entry.member_name().as_str());
                 let reader = open_windows_inventory_file_reader_live(
                     &self.root,
                     &entry.proof().file.observed,
                     allow_append_only,
+                    allow_atomic_replace,
                 )
                 .map_err(|error| map_windows_error(&self.root, error, true))?;
                 Ok(OpenedInventoryFile::new_windows_live(
                     reader,
                     &self.root,
-                    entry.size(),
                     allow_append_only,
                 ))
             }
@@ -184,7 +186,7 @@ impl ArchiveSource {
                     .map_err(crate::error::map_root_error)?;
                 for observed in &self.observed {
                     if observed.kind() == JournalEntryKind::Directory {
-                        revalidate_windows_live_entry(&self.root, observed, false)
+                        revalidate_windows_live_entry(&self.root, observed, false, false)
                             .map_err(|error| map_windows_error(&self.root, error, true))?;
                     }
                 }
@@ -195,11 +197,15 @@ impl ArchiveSource {
                     {
                         continue;
                     }
-                    let allow_append_only = is_live_append_only_jsonl(entry.member_name().as_str());
+                    let allow_atomic_replace =
+                        is_live_atomic_rewritable(entry.member_name().as_str());
+                    let allow_append_only = !allow_atomic_replace
+                        && is_live_append_only_jsonl(entry.member_name().as_str());
                     revalidate_windows_live_entry(
                         &self.root,
                         &entry.proof().file.observed,
                         allow_append_only,
+                        allow_atomic_replace,
                     )
                     .map_err(|error| map_windows_error(&self.root, error, true))?;
                 }

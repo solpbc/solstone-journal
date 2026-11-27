@@ -28,7 +28,7 @@ use windows_sys::Win32::Security::Authorization::{
 };
 use windows_sys::Win32::Security::{
     ACE_HEADER, ACL, ACL_REVISION, DACL_SECURITY_INFORMATION, GetAce, GetSecurityDescriptorDacl,
-    InitializeAcl, PROTECTED_DACL_SECURITY_INFORMATION, PSID,
+    InitializeAcl, OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID,
     UNPROTECTED_DACL_SECURITY_INFORMATION,
 };
 use windows_sys::Win32::Storage::FileSystem::{
@@ -148,6 +148,97 @@ fn scan_dacl(dacl: *const ACL, owner: &str) -> io::Result<bool> {
 pub(super) fn root_is_private(root: &Path) -> io::Result<bool> {
     let owner = solstone_core_local_endpoint::owner_sid()?;
     Ok(!reaches_others(root, &owner)?)
+}
+
+/// Read the security owner SID of `path`.
+fn owner_sid_of(path: &Path) -> io::Result<String> {
+    let name = wide(path);
+    let mut owner_sid: PSID = null_mut();
+    let mut descriptor = null_mut();
+    // SAFETY: name is NUL-terminated; owner_sid and descriptor point to writable storage.
+    let result = unsafe {
+        GetNamedSecurityInfoW(
+            name.as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner_sid,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if result != ERROR_SUCCESS {
+        return Err(io::Error::from_raw_os_error(result as i32));
+    }
+    let sid = if owner_sid.is_null() {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "directory has no owner SID",
+        ))
+    } else {
+        sid_text(owner_sid)
+    };
+    // SAFETY: GetNamedSecurityInfoW allocated descriptor with LocalAlloc; owner_sid points into it.
+    unsafe {
+        LocalFree(descriptor);
+    }
+    sid
+}
+
+/// Ensure `path` is an existing non-reparse directory owned by the current
+/// account (or Administrators when running elevated) with a private protected DACL.
+pub(super) fn ensure_private_owner_dir(path: &Path) -> io::Result<()> {
+    let current_owner = solstone_core_local_endpoint::owner_sid()?;
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => {
+            if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !meta.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory path is not a plain directory",
+                ));
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match std::fs::create_dir(path) {
+            Ok(()) => {}
+            Err(create_err) if create_err.kind() == io::ErrorKind::AlreadyExists => {
+                let meta = std::fs::symlink_metadata(path)?;
+                if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !meta.is_dir() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "private directory path is not a plain directory",
+                    ));
+                }
+            }
+            Err(create_err) => return Err(create_err),
+        },
+        Err(error) => return Err(error),
+    }
+
+    let dir_owner = owner_sid_of(path)?;
+    if dir_owner != current_owner && dir_owner != ADMINISTRATORS {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "private directory is not owned by the current account",
+        ));
+    }
+    if reaches_others(path, &current_owner)? {
+        set_private_root(path, &current_owner)?;
+    }
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !meta.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "private directory path changed into a non-directory",
+        ));
+    }
+    if reaches_others(path, &current_owner)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "private directory remains readable by other accounts",
+        ));
+    }
+    Ok(())
 }
 
 /// Drop what `path` was granted of its own, so it holds only what it inherits.
@@ -391,6 +482,25 @@ mod tests {
         assert!(grants_read(GENERIC_ALL));
         // Traverse alone reads nothing.
         assert!(!grants_read(0x0000_0020));
+    }
+
+    #[test]
+    fn ensure_private_owner_dir_tightens_broad_dir_and_rejects_files() {
+        let work = tempfile::tempdir().unwrap();
+        let fresh = work.path().join("fresh");
+        ensure_private_owner_dir(&fresh).unwrap();
+        assert!(root_is_private(&fresh).unwrap());
+
+        let broad = work.path().join("broad");
+        std::fs::create_dir(&broad).unwrap();
+        make_broad(&broad);
+        assert!(!root_is_private(&broad).unwrap());
+        ensure_private_owner_dir(&broad).unwrap();
+        assert!(root_is_private(&broad).unwrap());
+
+        let file = work.path().join("regular");
+        std::fs::write(&file, b"x").unwrap();
+        assert!(ensure_private_owner_dir(&file).is_err());
     }
 
     #[test]

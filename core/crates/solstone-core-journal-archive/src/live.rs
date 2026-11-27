@@ -58,6 +58,8 @@ pub(crate) fn is_live_snapshottable_metadata(member: &str) -> bool {
         "link/authorized_clients.json"
             | "link/client-descriptions.json"
             | "awareness/current.json"
+            | "awareness/speaker_candidates.json"
+            | "awareness/speaker_candidates_backfill.json"
             | "config/journal.json"
             | "config/schedules.json"
             | "config/convey.json"
@@ -87,6 +89,44 @@ pub(crate) fn is_live_snapshottable_metadata(member: &str) -> bool {
         {
             true
         }
+        _ => false,
+    }
+}
+
+/// Journal-managed derived and operational state files routinely replaced
+/// atomically (temp-file + rename) by live processing (speaker resolution,
+/// thinking, indexing, health markers, entity/facet updates, stream/config
+/// updates, import metadata, and per-day derived JSONs).
+///
+/// In `SnapshotMode::LiveJournal`, opening one of these files binds to a single
+/// complete current regular-file version verified through its `t=0` ancestor
+/// directories, and final revalidation requires only that the verified route
+/// still resolves to a regular file (never a symlink or deleted file).
+pub(crate) fn is_live_atomic_rewritable(member: &str) -> bool {
+    if is_live_append_only_jsonl(member) {
+        return false;
+    }
+    if is_live_snapshottable_metadata(member) {
+        return true;
+    }
+    let member = normalized_member(member);
+    let m = member.as_ref();
+    let parts: Vec<&str> = m.split('/').collect();
+    match parts.as_slice() {
+        [
+            "awareness" | "health" | "streams" | "config" | "link" | "backup" | "solstone"
+            | "entities" | "facets" | "speakers",
+            ..,
+        ] => true,
+        ["imports", .., leaf] if leaf.ends_with(".json") => true,
+        ["chronicle", day, "health", ..] if is_eight_digit_day(day) => true,
+        ["chronicle", day, .., leaf]
+            if is_eight_digit_day(day)
+                && (leaf.ends_with(".json") || leaf.ends_with(".updated")) =>
+        {
+            true
+        }
+        ["chronicle", day, _, _, "talents", ..] if is_eight_digit_day(day) => true,
         _ => false,
     }
 }
@@ -381,5 +421,109 @@ mod tests {
         )
         .expect_err("aborted");
         assert!(matches!(err4, EncodeArchiveError::Aborted(ref msg) if msg == "trash_erased"));
+    }
+
+    #[test]
+    fn live_journal_tolerates_atomic_rewrite_of_derived_files_like_speaker_candidates() {
+        let work = TempDir::new("derived-atomic");
+        let root = work.path().join("journal");
+        fs::create_dir_all(&root).unwrap();
+
+        let write = |rel: &str, bytes: &[u8]| {
+            let full = root.join(rel);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(full, bytes).unwrap();
+        };
+
+        // 1. Small speaker_candidates.json (covered by snapshot) AND a >4 MiB
+        //    derived file under awareness/ + entities/alice/entity.json (covered
+        //    by current-whole-version atomic replacement without snapshot).
+        write(
+            "awareness/speaker_candidates.json",
+            br#"{"version":1,"candidates":["a"]}"#,
+        );
+        let large_v1 = vec![b'1'; 5 * 1024 * 1024];
+        write("awareness/speaker_candidates_large.json", &large_v1);
+        write(
+            "entities/alice/entity.json",
+            br#"{"id":"alice","revision":1}"#,
+        );
+
+        let source = ArchiveSource::open_live(&root).expect("open live source");
+
+        // Atomically replace all three via temp-file + rename after t=0.
+        let atomic_swap = |rel: &str, bytes: &[u8]| {
+            let target = root.join(rel);
+            let tmp = root.join(format!("{rel}.tmp"));
+            fs::write(&tmp, bytes).unwrap();
+            fs::rename(&tmp, &target).unwrap();
+        };
+        atomic_swap(
+            "awareness/speaker_candidates.json",
+            br#"{"version":2,"candidates":["a","b"]}"#,
+        );
+        let large_v2 = vec![b'2'; 5 * 1024 * 1024 + 123];
+        atomic_swap("awareness/speaker_candidates_large.json", &large_v2);
+        atomic_swap(
+            "entities/alice/entity.json",
+            br#"{"id":"alice","revision":2,"extra":true}"#,
+        );
+
+        let out_path = work.path().join("derived.zip");
+        let mut out_file = OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&out_path)
+            .unwrap();
+        let req = EncodeArchiveRequest {
+            source: &source,
+            solstone_version: "2.0.93",
+            exported_at: "2026-11-26T12:00:00Z",
+            day_window: None,
+        };
+        encode_archive_with_options(&req, &mut out_file, EncodeOptions::default())
+            .expect("live journal encode tolerates atomic derived rewrites");
+
+        // Another atomic replace after encode must still revalidate cleanly.
+        atomic_swap(
+            "entities/alice/entity.json",
+            br#"{"id":"alice","revision":3}"#,
+        );
+        source
+            .revalidate()
+            .expect("revalidate tolerates subsequent atomic derived rewrite");
+
+        let mut archive = ZipArchive::new(fs::File::open(&out_path).unwrap()).unwrap();
+        let mut sc = String::new();
+        archive
+            .by_name("awareness/speaker_candidates.json")
+            .unwrap()
+            .read_to_string(&mut sc)
+            .unwrap();
+        assert_eq!(sc, r#"{"version":1,"candidates":["a"]}"#);
+
+        let mut large_out = Vec::new();
+        archive
+            .by_name("awareness/speaker_candidates_large.json")
+            .unwrap()
+            .read_to_end(&mut large_out)
+            .unwrap();
+        assert_eq!(large_out, large_v2);
+
+        let mut entity_out = String::new();
+        archive
+            .by_name("entities/alice/entity.json")
+            .unwrap()
+            .read_to_string(&mut entity_out)
+            .unwrap();
+        assert_eq!(entity_out, r#"{"id":"alice","revision":2,"extra":true}"#);
+
+        // Deleting a derived file still fails cleanly with SourceChanged.
+        fs::remove_file(root.join("entities/alice/entity.json")).unwrap();
+        assert!(matches!(
+            source.revalidate(),
+            Err(ArchiveError::SourceChanged { .. })
+        ));
     }
 }

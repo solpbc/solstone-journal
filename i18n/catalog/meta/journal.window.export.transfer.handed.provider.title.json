@@ -1,0 +1,16 @@
+{
+  "description": "Heading after a non-Apple native host hands copy to a write-only storage provider.",
+  "context": "journal-window. Heading after Android or other write-only storage provider hands copy off without read-back verification.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1a349f5da288628b4b3cc6a13308a708e26a66a95eab3a7afeefac48316be2de",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

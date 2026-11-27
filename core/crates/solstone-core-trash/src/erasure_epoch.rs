@@ -87,7 +87,8 @@ pub fn read_erasure_epoch(journal: &Path) -> Result<ErasureEpoch, TrashError> {
     Ok(parsed)
 }
 
-/// Atomically advance the journal's permanent-erasure epoch after `Event::Erased`.
+/// Atomically advance the journal's permanent-erasure epoch before unlinking
+/// files during permanent erasure.
 pub(crate) fn bump_erasure_epoch(journal: &Path) -> Result<ErasureEpoch, TrashError> {
     let health = journal.join("health");
     fs::create_dir_all(&health).map_err(|error| TrashError::Io(error.to_string()))?;

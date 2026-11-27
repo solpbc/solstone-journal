@@ -17,21 +17,33 @@ use serde::{Deserialize, Serialize};
 use solstone_core_journal_archive::ExportMode;
 use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::atomic::atomic_replace;
-use solstone_core_journal_io::disk_space::{JournalDiskSpace, read_journal_disk_space};
+use solstone_core_journal_io::disk_space::{
+    JournalDiskSpace, journal_disk_floor_bytes, read_journal_disk_space,
+};
+use solstone_core_system::storage_privacy::ensure_private_owner_dir;
 use solstone_core_trash::ErasureEpoch;
 
-/// Minimum safety headroom above the estimated output bytes (1 GiB).
-pub(crate) const MIN_HEADROOM_BYTES: u64 = 1024 * 1024 * 1024;
+/// Fallback safety floor (1 GiB) only when volume total size is unknown (`0`).
+pub(crate) const FALLBACK_FLOOR_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Filename of persisted metadata inside the private staging directory.
 pub(crate) const READY_META_FILE: &str = "ready.json";
 
-/// Compute required free bytes on the staging volume:
-/// `estimated_bytes + max(1 GiB, estimated_bytes / 20)`.
-pub(crate) fn required_staging_bytes(estimated_bytes: u64) -> u64 {
-    let pct_five = estimated_bytes / 20;
-    let headroom = MIN_HEADROOM_BYTES.max(pct_five);
-    estimated_bytes.saturating_add(headroom)
+/// Effective free-space floor that staging must preserve on its volume:
+/// matches the journal's shared low-space floor (`min(20 GB, total / 4)`),
+/// falling back to 1 GiB only when total volume size is reported as zero.
+pub(crate) fn staging_disk_floor_bytes(total_bytes: u64) -> u64 {
+    if total_bytes == 0 {
+        FALLBACK_FLOOR_BYTES
+    } else {
+        journal_disk_floor_bytes(total_bytes)
+    }
+}
+
+/// Compute required free bytes on the staging volume so packing preserves the
+/// journal's low-space floor: `estimated_bytes + staging_disk_floor_bytes(total_bytes)`.
+pub(crate) fn required_staging_bytes(estimated_bytes: u64, total_bytes: u64) -> u64 {
+    estimated_bytes.saturating_add(staging_disk_floor_bytes(total_bytes))
 }
 
 /// Authorized requester owning a prepared copy or in-flight job.
@@ -142,38 +154,50 @@ pub(crate) struct StagingArea {
 }
 
 impl StagingArea {
-    /// Resolve and create (`0o700`) the private staging directory outside `journal_root`.
+    /// Resolve and create an owner-private staging directory strictly outside `journal_root`.
     ///
     /// Prefers `<journal_parent>/.<journal_name>.export-staging` so staging
-    /// stays on the journal's own volume; falls back to an isolated per-journal
-    /// directory inside `std::env::temp_dir()` when the journal parent is
-    /// unwritable. Never places staging inside `journal_root`.
+    /// stays on the journal's own volume; falls back to an isolated per-journal,
+    /// per-account directory inside `std::env::temp_dir()` when the journal
+    /// parent is unwritable. Validates non-symlink/non-reparse plain directory,
+    /// current-account ownership, and private permissions/DACL. Fails closed
+    /// (`Err`) rather than falling back to any shared directory.
     pub(crate) fn resolve(journal_root: &Path) -> io::Result<Self> {
-        let canonical = fs::canonicalize(journal_root).unwrap_or_else(|_| journal_root.to_owned());
+        let canonical = fs::canonicalize(journal_root)?;
         if let (Some(parent), Some(name)) = (canonical.parent(), canonical.file_name()) {
             let mut dir_name = std::ffi::OsString::from(".");
             dir_name.push(name);
             dir_name.push(".export-staging");
             let candidate = parent.join(dir_name);
-            if ensure_private_dir(&candidate).is_ok() {
+            if ensure_private_dir(&candidate).is_ok()
+                && fs::canonicalize(&candidate).is_ok_and(|c| !c.starts_with(&canonical))
+            {
                 return Ok(Self {
                     dir: candidate,
                     same_volume_as_journal: true,
                 });
             }
         }
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(canonical.to_string_lossy().as_bytes());
-        let hash_hex = format!("{:x}", hasher.finalize());
-        let fallback =
-            std::env::temp_dir().join(format!("solstone-export-staging-{}", &hash_hex[..16]));
+        let fallback = temp_fallback_path_for_canonical(&canonical)?;
         ensure_private_dir(&fallback)?;
+        let canonical_fallback = fs::canonicalize(&fallback)?;
+        if canonical_fallback.starts_with(&canonical) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "export staging path resolves inside the journal root",
+            ));
+        }
         let same_vol = same_filesystem(&canonical, &fallback);
         Ok(Self {
             dir: fallback,
             same_volume_as_journal: same_vol,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn temp_fallback_path(journal_root: &Path) -> io::Result<PathBuf> {
+        let canonical = fs::canonicalize(journal_root)?;
+        temp_fallback_path_for_canonical(&canonical)
     }
 
     /// Construct a staging area at an explicit directory (used in tests).
@@ -255,26 +279,30 @@ impl StagingArea {
     }
 }
 
-fn ensure_private_dir(path: &Path) -> io::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_dir() => {}
-        Ok(_) => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "export staging path is not a plain directory",
-            ));
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(path)?;
-        }
-        Err(error) => return Err(error),
-    }
+fn current_account_tag() -> io::Result<String> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+        Ok(format!("uid:{}", nix::unistd::geteuid().as_raw()))
     }
-    Ok(())
+    #[cfg(windows)]
+    {
+        solstone_core_local_endpoint::owner_sid().map(|sid| format!("sid:{sid}"))
+    }
+}
+
+fn temp_fallback_path_for_canonical(canonical: &Path) -> io::Result<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let account = current_account_tag()?;
+    let mut hasher = Sha256::new();
+    hasher.update(account.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(canonical.to_string_lossy().as_bytes());
+    let hash_hex = format!("{:x}", hasher.finalize());
+    Ok(std::env::temp_dir().join(format!("solstone-export-staging-{}", &hash_hex[..32])))
+}
+
+fn ensure_private_dir(path: &Path) -> io::Result<()> {
+    ensure_private_owner_dir(path)
 }
 
 fn same_filesystem(a: &Path, b: &Path) -> bool {

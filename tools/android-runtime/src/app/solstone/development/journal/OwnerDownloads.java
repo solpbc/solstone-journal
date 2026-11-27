@@ -42,7 +42,23 @@ final class OwnerDownloads {
             }
         }
     }
-    OwnerDownloads(OwnerActivity activity) { this.activity=activity; }
+    OwnerDownloads(OwnerActivity activity) {
+        this.activity=activity;
+        sweepStaleTemporaryFiles(activity.getCacheDir());
+    }
+    static void sweepStaleTemporaryFiles(File cacheDir) {
+        if (cacheDir == null || !cacheDir.isDirectory()) return;
+        File[] files = cacheDir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            String n = f.getName();
+            if (n.startsWith("journal-export-") && n.endsWith(".tmp")) {
+                if (!f.delete() && f.exists()) {
+                    android.util.Log.w("JournalExport", "stale export temp cleanup failed");
+                }
+            }
+        }
+    }
     static boolean isPreparedExportUrl(String url) {
         if (url == null) return false;
         int q=url.indexOf('?');

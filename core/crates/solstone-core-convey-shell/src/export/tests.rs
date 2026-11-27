@@ -767,3 +767,339 @@ async fn serves_real_byte_ranges_beyond_4_gib_offset_over_sparse_staged_file() {
     let legacy_body = to_bytes(legacy_resp.into_body(), usize::MAX).await.unwrap();
     assert_eq!(&legacy_body[..], payload);
 }
+
+#[tokio::test]
+async fn staging_failure_fails_closed_without_shared_fallback_or_touching_other_journals() {
+    let work = TempDir::new().unwrap();
+    let journal_a = work.path().join("journal-a");
+    let journal_b = work.path().join("journal-b");
+    seed_journal(&journal_a);
+    seed_journal(&journal_b);
+
+    // Journal A prepares a real ready export in its own isolated staging directory.
+    let service_a = ExportService::new(journal_a.clone());
+    service_a
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready_a = wait_until_not_preparing(&service_a, &RequesterScope::Local).await;
+    assert_eq!(ready_a["status"], "ready");
+    let export_id_a = ready_a["ready"]["export_id"].as_str().unwrap().to_owned();
+
+    // Block BOTH Journal B's sibling staging path and its per-journal hashed temp fallback path.
+    let sibling_b = work.path().join(".journal-b.export-staging");
+    fs::write(&sibling_b, b"blocking-file").unwrap();
+    let temp_b = StagingArea::temp_fallback_path(&journal_b).unwrap();
+    let _ = fs::remove_dir_all(&temp_b);
+    let _ = fs::remove_file(&temp_b);
+    fs::write(&temp_b, b"blocking-temp-file").unwrap();
+
+    // Remove any stale legacy shared fallback path if present so we prove we never create/use it.
+    let forbidden_shared = std::env::temp_dir().join("solstone-export-staging-fallback");
+    let shared_existed_before = forbidden_shared.exists();
+
+    let service_b = ExportService::new(journal_b.clone());
+    let _ = fs::remove_file(&temp_b);
+
+    if !shared_existed_before {
+        assert!(
+            !forbidden_shared.exists(),
+            "ExportService::new must never create or use a shared temp fallback directory"
+        );
+    }
+
+    // Journal B fails closed on all export endpoints while staying constructed/usable.
+    let state_b = service_b.state_payload(&RequesterScope::Local);
+    assert_eq!(state_b["status"], "unavailable");
+    assert_eq!(state_b["staging_available"], false);
+    assert_eq!(state_b["error_code"], "export_staging_unavailable");
+
+    let start_err = service_b
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .expect_err("start_job must fail closed when staging is unavailable");
+    assert_eq!(start_err.0, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(start_err.1["code"], "export_staging_unavailable");
+
+    let dl_resp = service_b
+        .serve_download(
+            &RequesterScope::Local,
+            "any",
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(dl_resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let discard_err = service_b
+        .discard_ready(&RequesterScope::Local, "any", false)
+        .expect_err("discard must fail closed when staging is unavailable");
+    assert_eq!(discard_err.0, StatusCode::SERVICE_UNAVAILABLE);
+
+    // Journal A's isolated ready copy is completely unaffected.
+    let state_a_after = service_a.state_payload(&RequesterScope::Local);
+    assert_eq!(state_a_after["status"], "ready");
+    let dl_a = service_a
+        .serve_download(
+            &RequesterScope::Local,
+            &export_id_a,
+            &Method::HEAD,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(dl_a.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn in_flight_download_aborts_when_permanent_trash_erasure_occurs() {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    let staging = work.path().join("staging");
+    seed_journal(&journal);
+    // Add incompressible high-entropy payload > 512 KiB so download spans multiple 64 KiB chunks.
+    let mut blob = vec![0u8; 600 * 1024];
+    let mut prng: u64 = 0x1234_5678_9abc_def0;
+    for byte in &mut blob {
+        prng = prng.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = prng;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        *byte = ((z ^ (z >> 31)) & 0xff) as u8;
+    }
+    fs::write(journal.join("notes/large.bin"), &blob).unwrap();
+
+    let clock = Arc::new(MockClock::new(1_764_150_000));
+    let disk = Arc::new(MockDiskSpace::new(
+        50 * 1024 * 1024 * 1024,
+        100 * 1024 * 1024 * 1024,
+    ));
+    let service = make_service(&journal, &staging, Arc::clone(&clock), Arc::clone(&disk));
+
+    // Case 1: On-disk erasure detected on 30s throttled check without any other API call.
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    let export_id = ready["ready"]["export_id"].as_str().unwrap().to_owned();
+
+    let resp = service
+        .serve_download(
+            &RequesterScope::Local,
+            &export_id,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let mut stream = resp.into_body().into_data_stream();
+    let first = stream.next().await.unwrap().unwrap();
+    assert!(!first.is_empty());
+
+    trigger_permanent_trash_erase(&journal);
+    clock.advance(super::range::POLICY_RECHECK_INTERVAL_SECS);
+    let mut saw_error = false;
+    while let Some(item) = stream.next().await {
+        if item.is_err() {
+            saw_error = true;
+            break;
+        }
+    }
+    assert!(
+        saw_error,
+        "in-flight download must abort once permanent Trash erasure is detected"
+    );
+    drop(stream);
+    assert!(
+        !staging.join(format!("{export_id}.zip")).exists(),
+        "erased staged copy must unlink immediately after aborted stream drops"
+    );
+
+    // Case 2: Immediate zero-delay abort when reconcile_ready_state runs while streaming.
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready2 = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    let id2 = ready2["ready"]["export_id"].as_str().unwrap().to_owned();
+    let resp2 = service
+        .serve_download(
+            &RequesterScope::Local,
+            &id2,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    let mut stream2 = resp2.into_body().into_data_stream();
+    let _ = stream2.next().await.unwrap().unwrap();
+
+    trigger_permanent_trash_erase(&journal);
+    service.reconcile_ready_state();
+    // Do NOT advance clock: fast atomic signal stops the next chunk immediately.
+    let next_item = stream2.next().await.expect("stream produces error");
+    assert!(
+        next_item.is_err(),
+        "reconcile must abort in-flight stream immediately"
+    );
+    drop(stream2);
+    assert!(!staging.join(format!("{id2}.zip")).exists());
+}
+
+#[tokio::test]
+async fn disk_space_enforces_journal_20gb_floor_at_preflight_and_during_packing() {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    let staging = work.path().join("staging");
+    seed_journal(&journal);
+    for i in 0..32 {
+        fs::write(
+            journal.join(format!("notes/chunk-{i:02}.bin")),
+            vec![(i as u8).wrapping_mul(37); 128 * 1024],
+        )
+        .unwrap();
+    }
+
+    let clock = Arc::new(MockClock::new(1_764_150_000));
+    let total = 100_000_000_000u64; // 100 GB -> 20 GB floor
+
+    // 1. Preflight with 19.5 GB free (< 20 GB floor) must fail cleanly.
+    let disk = Arc::new(MockDiskSpace::new(19_500_000_000, total));
+    let service = make_service(&journal, &staging, Arc::clone(&clock), Arc::clone(&disk));
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let failed = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    assert_eq!(failed["status"], "failed");
+    assert_eq!(
+        failed["active_job"]["error_code"],
+        "insufficient_journal_space"
+    );
+
+    // 2. Mid-packing drop below the 20 GB floor must stop packing and delete `.part`.
+    struct DroppingDiskProbe {
+        calls: AtomicU64,
+        total: u64,
+    }
+    impl DiskSpaceProbe for DroppingDiskProbe {
+        fn read(&self, _staging: &StagingArea) -> std::io::Result<JournalDiskSpace> {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            // First 2 reads (start_job + worker preflight) pass; packing check drops below 20 GB.
+            let free_bytes = if n < 2 {
+                25_000_000_000
+            } else {
+                19_000_000_000
+            };
+            Ok(JournalDiskSpace {
+                free_bytes,
+                total_bytes: self.total,
+            })
+        }
+    }
+    let dropping = Arc::new(DroppingDiskProbe {
+        calls: AtomicU64::new(0),
+        total,
+    });
+    let staging_area = StagingArea::at_dir(staging.clone(), true).unwrap();
+    let service2 = ExportService::with_deps(
+        journal.clone(),
+        staging_area,
+        Arc::clone(&clock) as Arc<dyn ExportClock>,
+        dropping,
+    );
+    service2
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let aborted = wait_until_not_preparing(&service2, &RequesterScope::Local).await;
+    assert_eq!(aborted["status"], "failed");
+    assert_eq!(
+        aborted["active_job"]["error_code"],
+        "insufficient_journal_space"
+    );
+    assert!(
+        fs::read_dir(&staging)
+            .unwrap()
+            .flatten()
+            .all(|e| !e.file_name().to_string_lossy().ends_with(".part")),
+        "mid-packing space abort must remove partial staged archive"
+    );
+}
+
+#[tokio::test]
+async fn burst_download_throttles_ready_json_writes_to_thirty_second_interval() {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    let staging = work.path().join("staging");
+    seed_journal(&journal);
+    // ~3 MiB incompressible payload so archive > 3 MiB (used to trigger 3+ per-MiB rewrites).
+    let mut payload = vec![0u8; 3 * 1024 * 1024];
+    let mut prng: u64 = 0xfedc_ba98_7654_3210;
+    for byte in &mut payload {
+        prng = prng.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = prng;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        *byte = ((z ^ (z >> 31)) & 0xff) as u8;
+    }
+    fs::write(journal.join("notes/incompressible.bin"), &payload).unwrap();
+
+    let clock = Arc::new(MockClock::new(1_764_150_000));
+    let disk = Arc::new(MockDiskSpace::new(
+        50 * 1024 * 1024 * 1024,
+        100 * 1024 * 1024 * 1024,
+    ));
+    let service = make_service(&journal, &staging, Arc::clone(&clock), Arc::clone(&disk));
+
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    let export_id = ready["ready"]["export_id"].as_str().unwrap().to_owned();
+    let ready_json = staging.join(super::staging::READY_META_FILE);
+    let before_bytes = fs::read(&ready_json).unwrap();
+    #[cfg(unix)]
+    let before_ino = {
+        use std::os::unix::fs::MetadataExt;
+        fs::metadata(&ready_json).unwrap().ino()
+    };
+
+    // Full download within 10 seconds -> zero extra ready.json rewrites!
+    clock.advance(10);
+    let resp = service
+        .serve_download(
+            &RequesterScope::Local,
+            &export_id,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(bytes.len() > 2 * 1024 * 1024);
+    assert_eq!(fs::read(&ready_json).unwrap(), before_bytes);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(
+            fs::metadata(&ready_json).unwrap().ino(),
+            before_ino,
+            "burst download within 30s must not rewrite ready.json"
+        );
+    }
+
+    // Advancing >= 30s mid-stream DOES persist refreshed last_activity_epoch_secs.
+    let resp2 = service
+        .serve_download(
+            &RequesterScope::Local,
+            &export_id,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    let mut stream2 = resp2.into_body().into_data_stream();
+    let _ = stream2.next().await.unwrap().unwrap();
+    clock.advance(super::range::ACTIVITY_TOUCH_INTERVAL_SECS + 5);
+    while let Some(chunk) = stream2.next().await {
+        chunk.unwrap();
+    }
+    let after_bytes = fs::read(&ready_json).unwrap();
+    assert_ne!(
+        after_bytes, before_bytes,
+        "download crossing 30s interval must persist refreshed activity timestamp"
+    );
+}

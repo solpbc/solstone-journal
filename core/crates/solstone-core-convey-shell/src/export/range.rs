@@ -17,9 +17,16 @@ use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
 /// Chunk size read per poll from the staged export file.
 const STREAM_CHUNK_BYTES: usize = 64 * 1024;
 
-/// Touch rolling activity timestamp every 1 MiB delivered on a long stream so
-/// a single continuous response lasting > 24 hours stays alive throughout.
-const ACTIVITY_TOUCH_INTERVAL_BYTES: u64 = 1024 * 1024;
+/// Minimum interval (seconds) between rolling-activity `ready.json` writes
+/// during an active continuous transfer.
+pub(crate) const ACTIVITY_TOUCH_INTERVAL_SECS: i64 = 30;
+
+/// Minimum interval (seconds) between on-disk revocation and Trash erasure
+/// epoch re-reads during an active continuous transfer. Kept short (2 s) so
+/// pairing revocation and permanent Trash erasure interrupt in-flight transfers
+/// promptly while avoiding per-chunk (64 KiB) disk reads; in-process signals
+/// (set by `reconcile_ready_state`) still stop streams immediately at zero I/O.
+pub(crate) const POLICY_RECHECK_INTERVAL_SECS: i64 = 2;
 
 /// Result of evaluating `Range` + `If-Range` against a fixed `total_len`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,13 +127,25 @@ pub(crate) fn parse_single_byte_range(spec: &str, total_len: u64) -> RangeDecisi
     }
 }
 
+/// Reason an active HTTP download stream must stop delivering further bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransferAbortReason {
+    Revoked,
+    Erased,
+}
+
 /// Callback interface connecting an active HTTP download stream to `ExportService`.
 pub(crate) trait ActiveTransferHooks: Send + Sync + 'static {
-    /// Refresh rolling inactivity clock during a long continuous transfer.
+    /// Current clock timestamp in epoch seconds (matches `ExportClock`).
+    fn now_epoch_secs(&self) -> i64;
+    /// Refresh rolling inactivity clock during a long continuous transfer
+    /// (throttled to `ACTIVITY_TOUCH_INTERVAL_SECS`).
     fn touch_activity(&self);
-    /// Return true when the requester's authorization was revoked mid-transfer
-    /// and the stream must stop delivering further bytes.
-    fn is_revoked(&self) -> bool;
+    /// Zero-I/O in-memory check for revocation or Trash permanent erasure.
+    fn check_abort_fast(&self) -> Option<TransferAbortReason>;
+    /// On-disk re-check for revocation and Trash permanent erasure (throttled
+    /// to `POLICY_RECHECK_INTERVAL_SECS`).
+    fn check_abort_disk(&self) -> Option<TransferAbortReason>;
     /// Decrement `active_downloads`; if the copy was retired by Trash erasure
     /// or revocation and just became idle (`active_downloads == 0`), delete its
     /// staged files immediately.
@@ -155,7 +174,8 @@ impl Drop for ActiveDownloadGuard {
 pub(crate) struct TrackedRangeStream {
     file: tokio::fs::File,
     remaining: u64,
-    since_touch: u64,
+    last_activity_touch_secs: i64,
+    last_policy_check_secs: i64,
     buffer: Vec<u8>,
     guard: Option<ActiveDownloadGuard>,
 }
@@ -170,10 +190,12 @@ impl TrackedRangeStream {
         if start > 0 {
             file.seek(SeekFrom::Start(start)).await?;
         }
+        let now = guard.hooks.now_epoch_secs();
         Ok(Self {
             file,
             remaining: length,
-            since_touch: 0,
+            last_activity_touch_secs: now,
+            last_policy_check_secs: now,
             buffer: vec![0u8; STREAM_CHUNK_BYTES],
             guard: Some(guard),
         })
@@ -189,12 +211,26 @@ impl Stream for TrackedRangeStream {
             this.guard.take();
             return Poll::Ready(None);
         }
-        if this.guard.as_ref().is_some_and(|g| g.hooks.is_revoked()) {
-            this.guard.take();
-            return Poll::Ready(Some(Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "export requester authorization revoked",
-            ))));
+        if let Some(guard) = this.guard.as_ref() {
+            let mut abort = guard.hooks.check_abort_fast();
+            let now = guard.hooks.now_epoch_secs();
+            if abort.is_none()
+                && now.saturating_sub(this.last_policy_check_secs) >= POLICY_RECHECK_INTERVAL_SECS
+            {
+                this.last_policy_check_secs = now;
+                abort = guard.hooks.check_abort_disk();
+            }
+            if let Some(reason) = abort {
+                this.guard.take();
+                let msg = match reason {
+                    TransferAbortReason::Revoked => "export requester authorization revoked",
+                    TransferAbortReason::Erased => "export invalidated by permanent trash erasure",
+                };
+                return Poll::Ready(Some(Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    msg,
+                ))));
+            }
         }
 
         let to_read = (this.remaining.min(STREAM_CHUNK_BYTES as u64)) as usize;
@@ -216,10 +252,12 @@ impl Stream for TrackedRangeStream {
                 }
                 let n = filled.len() as u64;
                 this.remaining = this.remaining.saturating_sub(n);
-                this.since_touch = this.since_touch.saturating_add(n);
-                if this.since_touch >= ACTIVITY_TOUCH_INTERVAL_BYTES {
-                    this.since_touch = 0;
-                    if let Some(guard) = this.guard.as_ref() {
+                if let Some(guard) = this.guard.as_ref() {
+                    let now = guard.hooks.now_epoch_secs();
+                    if now.saturating_sub(this.last_activity_touch_secs)
+                        >= ACTIVITY_TOUCH_INTERVAL_SECS
+                    {
+                        this.last_activity_touch_secs = now;
                         guard.hooks.touch_activity();
                     }
                 }

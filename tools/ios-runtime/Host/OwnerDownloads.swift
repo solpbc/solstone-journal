@@ -26,6 +26,24 @@ import UIKit
     self.presenter = presenter
     self.failed = failed
     self.handedOff = handedOff
+    super.init()
+    Self.sweepStaleTemporaryDirectories()
+  }
+
+  /// Removes orphaned `journal-export-*` directories (including hard-links to
+  /// prepared exports) left behind if the host process exited while a document
+  /// picker or share sheet was open.
+  nonisolated static func sweepStaleTemporaryDirectories(
+    in tempRoot: URL = FileManager.default.temporaryDirectory
+  ) {
+    guard let entries = try? FileManager.default.contentsOfDirectory(
+      at: tempRoot,
+      includingPropertiesForKeys: nil,
+      options: []
+    ) else { return }
+    for entry in entries where entry.lastPathComponent.hasPrefix("journal-export-") {
+      try? FileManager.default.removeItem(at: entry)
+    }
   }
 
   private var available: Bool {

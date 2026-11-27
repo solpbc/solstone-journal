@@ -80152,6 +80152,20 @@
       "locales": []
     },
     {
+      "id": "journal.window.export.transfer.handed.provider.body",
+      "source": "e76d8f0f8f561191b01c6d3693580f8877d2d69b12046192c8be5eca4d38196d",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.window.export.transfer.handed.provider.title",
+      "source": "1a349f5da288628b4b3cc6a13308a708e26a66a95eab3a7afeefac48316be2de",
+      "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.window.export.transfer.handed.title",
       "source": "0d6a621c44f5f05451990a661a208509a1faf74429dfc7fc715b2f693da032cb",
       "contract": "8a5ccf516e1ddd1e6845a51578bf3090e7732eef71f84117434e952b20202586",

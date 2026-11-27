@@ -251,10 +251,10 @@ impl<'a> OpenedInventoryFile<'a> {
     pub(crate) fn new_windows_live(
         reader: solstone_core_journal_io::WindowsLiveFileReader<'a>,
         root: &'a solstone_core_journal_io::JournalRoot,
-        inventoried_size: u64,
         allow_append_only: bool,
     ) -> Self {
         let observed_size_at_open = reader.observed_size();
+        let inventoried_size = reader.expected_size();
         Self {
             backing: OpenedBacking::WindowsLive { reader, root },
             inventoried_size,
