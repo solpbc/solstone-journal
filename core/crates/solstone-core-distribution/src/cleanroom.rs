@@ -306,7 +306,7 @@ fn generation_completion(
     {
         return Ok((
             "sense",
-            r#"{"density":"active","content_type":"work","activity_summary":"Held a synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Cleanroom interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
+            r#"{"density":"active","content_type":"productivity","activity_summary":"Held a synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Cleanroom interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
         ));
     }
     if prompt.contains("Maintenance Window Analysis")
