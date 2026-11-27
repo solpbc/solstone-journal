@@ -24,7 +24,9 @@ use solstone_core_journal_io::media::{
     StageRetirementReceipt, exclusive_local_activity,
 };
 use solstone_core_journal_io::paths::{DEFAULT_STREAM, SegmentLayout};
-use solstone_core_retention::archive_catalog::{JournalCatalog, read_complete_catalog};
+use solstone_core_retention::archive_catalog::{
+    DayCatalog, JournalCatalog, SegmentCatalog, read_complete_catalog,
+};
 use solstone_core_retention::content::{
     ClosedHandlerSet, ContentName, JournalMedia, MediaClassifier,
 };
@@ -106,6 +108,70 @@ struct OriginalConfirmation {
     raw: FileConfirmation,
 }
 
+/// What a context revision pins of the archive catalog: every field, under a
+/// name fixed here. The patterns are exhaustive, so a field added to a catalog
+/// type has to be placed here before this compiles, and renaming or reordering
+/// one in the type changes nothing. Days and segments keep the catalog's own
+/// order, which is sorted.
+fn catalog_revision_facts(catalog: &JournalCatalog) -> Value {
+    let JournalCatalog {
+        days,
+        skipped_records,
+        unreadable_ledgers,
+    } = catalog;
+    let days = days
+        .iter()
+        .map(|day| {
+            let DayCatalog {
+                day,
+                segments,
+                skipped_records,
+                unreadable_ledgers,
+            } = day;
+            let segments = segments
+                .iter()
+                .map(|segment| {
+                    let SegmentCatalog {
+                        day,
+                        stream,
+                        segment,
+                        history,
+                        restores,
+                        restore_bindings,
+                        legacy_restores,
+                        active,
+                        skipped_records,
+                        unreadable_ledgers,
+                    } = segment;
+                    json!({
+                        "day": day,
+                        "stream": stream,
+                        "segment": segment,
+                        "history": history,
+                        "restores": restores,
+                        "restore_bindings": restore_bindings,
+                        "legacy_restores": legacy_restores,
+                        "active": active,
+                        "skipped_records": skipped_records,
+                        "unreadable_ledgers": unreadable_ledgers,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "day": day,
+                "segments": segments,
+                "skipped_records": skipped_records,
+                "unreadable_ledgers": unreadable_ledgers,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "days": days,
+        "skipped_records": skipped_records,
+        "unreadable_ledgers": unreadable_ledgers,
+    })
+}
+
 fn refuse() -> io::Error {
     io::Error::other("creator recovery evidence is incomplete or changed")
 }
@@ -132,7 +198,7 @@ impl Context {
             "config_directory":self.config_directory.identity(),
             "config_bytes":self.config.0.sha256,
             "config_entry":self.config.1.as_ref().map(MediaEntry::observation_revision).transpose()?,
-            "register":self.register,"catalog":format!("{:?}",self.catalog),"inventory":inventory
+            "register":self.register,"catalog":catalog_revision_facts(&self.catalog),"inventory":inventory
         })).map_err(io::Error::other)?;
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
@@ -1019,3 +1085,99 @@ fn receipt_facts(receipt: &StageRetirementReceipt) -> Value {
 #[cfg(all(test, feature = "full-tests"))]
 #[cfg(target_os = "linux")]
 mod tests;
+
+/// In the routine gate on every platform, apart from the Linux-only fixture
+/// suite above.
+#[cfg(test)]
+mod revision_tests {
+    use super::*;
+
+    /// A confirmation saved by one build is compared by a later one, so what the
+    /// context revision says of the catalog is written out here in full. If this
+    /// fails, a confirmation an owner is holding stops matching: change it on
+    /// purpose or not at all.
+    #[test]
+    fn golden_catalog_revision_facts() {
+        use solstone_core_retention::archive_catalog::{
+            ArchiveManifest, ArchiveWitness, OffloadFile,
+        };
+        let witness = ArchiveWitness {
+            manifest_id: "m1".into(),
+            witness_id: "w1".into(),
+            snapshot_id: "s1".into(),
+            repository_id: None,
+            archive_path: None,
+            journal_id: None,
+            layout: None,
+            segment_dir: None,
+            processing: None,
+            file: OffloadFile {
+                name: "audio.flac".into(),
+                bytes: 7,
+                sha256: "ab".into(),
+            },
+        };
+        let catalog = JournalCatalog {
+            days: vec![DayCatalog {
+                day: "20261009".into(),
+                segments: vec![SegmentCatalog {
+                    day: "20261009".into(),
+                    stream: "import.audio".into(),
+                    segment: "120000_60".into(),
+                    history: vec![ArchiveManifest {
+                        manifest_id: "m1".into(),
+                        files: vec![witness.clone()],
+                    }],
+                    restores: Vec::new(),
+                    restore_bindings: Vec::new(),
+                    legacy_restores: Vec::new(),
+                    active: vec![witness],
+                    skipped_records: 1,
+                    unreadable_ledgers: vec!["a.jsonl".into()],
+                }],
+                skipped_records: 2,
+                unreadable_ledgers: Vec::new(),
+            }],
+            skipped_records: 3,
+            unreadable_ledgers: vec!["b.jsonl".into()],
+        };
+        let witness_json = r#"{"manifest_id":"m1","witness_id":"w1","snapshot_id":"s1","repository_id":null,"archive_path":null,"journal_id":null,"layout":null,"segment_dir":null,"processing":null,"file":{"name":"audio.flac","bytes":7,"sha256":"ab"}}"#;
+        let expected = format!(
+            r#"{{"days":[{{"day":"20261009","segments":[{{"day":"20261009","stream":"import.audio","segment":"120000_60","history":[{{"manifest_id":"m1","files":[{witness_json}]}}],"restores":[],"restore_bindings":[],"legacy_restores":[],"active":[{witness_json}],"skipped_records":1,"unreadable_ledgers":["a.jsonl"]}}],"skipped_records":2,"unreadable_ledgers":[]}}],"skipped_records":3,"unreadable_ledgers":["b.jsonl"]}}"#
+        );
+        assert_eq!(catalog_revision_facts(&catalog).to_string(), expected);
+    }
+
+    /// A count or an unreadable ledger at any level moves the revision.
+    #[test]
+    fn catalog_revision_facts_tell_every_count_and_ledger_apart() {
+        let base = JournalCatalog {
+            days: vec![DayCatalog {
+                day: "20261009".into(),
+                segments: vec![SegmentCatalog {
+                    day: "20261009".into(),
+                    stream: "import.audio".into(),
+                    segment: "120000_60".into(),
+                    ..SegmentCatalog::default()
+                }],
+                ..DayCatalog::default()
+            }],
+            ..JournalCatalog::default()
+        };
+        let mut variants = [base.clone(), base.clone(), base.clone(), base];
+        variants[1].skipped_records = 1;
+        variants[2].days[0]
+            .unreadable_ledgers
+            .push("a.jsonl".into());
+        variants[3].days[0].segments[0].skipped_records = 1;
+        let facts: Vec<String> = variants
+            .iter()
+            .map(|catalog| catalog_revision_facts(catalog).to_string())
+            .collect();
+        for (index, one) in facts.iter().enumerate() {
+            for other in &facts[index + 1..] {
+                assert_ne!(one, other);
+            }
+        }
+    }
+}
