@@ -115,7 +115,7 @@ pub fn list_scoped_facet_entities_with_identities(
     facet_dir: &str,
     include_detached: bool,
     include_blocked: bool,
-    resolved_identities: &HashMap<String, (String, Value)>,
+    resolved_identities: &solstone_core_entity::ResolvedEntityIdentities,
 ) -> Result<Vec<ScopedFacetEntity>, FacetEntityWriteError> {
     let mut entities = Vec::new();
     for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {

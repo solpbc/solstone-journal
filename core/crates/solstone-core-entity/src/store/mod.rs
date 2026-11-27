@@ -61,9 +61,9 @@ pub use identity::{
     observe_entity_identity, read_entity_identity,
 };
 pub use journal_entities::{
-    JournalEntity, every_journal_entity, every_journal_entity_with_resolved_identities,
-    is_admissible_person, is_placeholder_name, live_journal_entities, load_all_journal_entities,
-    load_all_journal_entities_in,
+    JournalEntity, ResolvedEntityIdentities, every_journal_entity,
+    every_journal_entity_with_resolved_identities, is_admissible_person, is_placeholder_name,
+    live_journal_entities, load_all_journal_entities, load_all_journal_entities_in,
 };
 pub use lifecycle::{
     EntityLifecycleError, adopt_configured_principal, delete_entity_directory, entity_is_hidden,

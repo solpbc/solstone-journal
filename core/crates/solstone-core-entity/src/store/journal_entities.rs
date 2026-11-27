@@ -136,6 +136,10 @@ fn live_journal_entities_in(
 /// and, within an id, the entity the identity map resolves it to first: for a
 /// caller that must account for each folder, such as an import reading
 /// another journal. A lookup by id wants `load_all_journal_entities`.
+/// Resolved `entity_id -> (winner_entity_dir, identity_json)` lookup built from
+/// a single scan of `entities/*/identity.json`.
+pub type ResolvedEntityIdentities = std::collections::HashMap<String, (String, Value)>;
+
 pub fn every_journal_entity(journal_root: &Path) -> Result<Vec<JournalEntity>, EntityStoreError> {
     let (entities, _) = every_journal_entity_with_resolved_identities(journal_root)?;
     Ok(entities)
@@ -146,13 +150,7 @@ pub fn every_journal_entity(journal_root: &Path) -> Result<Vec<JournalEntity>, E
 /// avoid re-scanning `entities/*/identity.json` per facet.
 pub fn every_journal_entity_with_resolved_identities(
     journal_root: &Path,
-) -> Result<
-    (
-        Vec<JournalEntity>,
-        std::collections::HashMap<String, (String, Value)>,
-    ),
-    EntityStoreError,
-> {
+) -> Result<(Vec<JournalEntity>, ResolvedEntityIdentities), EntityStoreError> {
     let (groups, _) = super::map::identity_groups(journal_root)?;
     let mut resolved = std::collections::HashMap::with_capacity(groups.len());
     let mut entities = Vec::with_capacity(groups.len());
