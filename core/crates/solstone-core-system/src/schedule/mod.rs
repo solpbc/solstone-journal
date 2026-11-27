@@ -22,6 +22,7 @@ use thiserror::Error;
 
 pub use bound::mutate_schedule_entries_at_root_checked;
 pub use caps::baseline_cap_contributions;
+pub use completion::record_manual_completion;
 pub use config::{
     ConfigDiagnostic, PreparedDailyTime, ScheduleConfig, ScheduleEntry, ScheduleMutation,
     add_missing_schedule_entries, configured_weekly_day_name, enabled_schedule_entry,

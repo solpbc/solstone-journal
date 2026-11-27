@@ -6,11 +6,29 @@
 use super::{Face, Result, Source, panel};
 use panel::CrossEntity;
 use serde::{Deserialize, Serialize};
-use solstone_core_journal_io::{JournalRoot, contained_path};
+use solstone_core_journal_io::{JournalRoot, LockError, contained_path};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
+
+/// Why cross-person face reconciliation could not publish on this pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReconcileError {
+    /// Transient contention (busy entity-trust lock or concurrent evidence update).
+    /// No data was lost; the next pass replays cleanly.
+    Deferred(String),
+    /// An actual read/write or data error stopped reconciliation.
+    Failed(String),
+}
+
+impl ReconcileError {
+    pub fn into_detail(self) -> String {
+        match self {
+            Self::Deferred(detail) | Self::Failed(detail) => detail,
+        }
+    }
+}
 
 pub const FILE: &str = "faces_derived.json";
 pub const MERGE_BASIS: &str = "meeting-face";
@@ -225,16 +243,34 @@ fn publish(journal: &Path, value: &Derived) -> Result<()> {
     }
     super::storage::publish(dir, &binding, FILE, &bytes)
 }
+fn map_trust_lock_error(error: crate::EntityTrustLockError) -> ReconcileError {
+    match error {
+        crate::EntityTrustLockError::Lock(LockError::Timeout(_)) => {
+            ReconcileError::Deferred(error.to_string())
+        }
+        other => ReconcileError::Failed(other.to_string()),
+    }
+}
+
 /// Preserve rules written by a concurrent maintenance pass and never repopulate
 /// a file after the owner turned recognition off and cleared it.
 pub fn update_backfill(journal: &Path, backfill: Backfill) -> Result<()> {
-    let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
-    if !super::enabled(journal)? {
+    update_backfill_classified(journal, backfill).map_err(ReconcileError::into_detail)
+}
+
+/// Same backfill state save as [`update_backfill`], distinguishing an
+/// `entity-trust` lock timeout from genuine errors.
+pub fn update_backfill_classified(
+    journal: &Path,
+    backfill: Backfill,
+) -> std::result::Result<(), ReconcileError> {
+    let _trust = crate::hold_entity_trust_lock(journal).map_err(map_trust_lock_error)?;
+    if !super::enabled(journal).map_err(ReconcileError::Failed)? {
         return Ok(());
     }
-    let mut value = load(journal)?;
+    let mut value = load(journal).map_err(ReconcileError::Failed)?;
     value.backfill = backfill;
-    publish(journal, &value)
+    publish(journal, &value).map_err(ReconcileError::Failed)
 }
 
 fn names(entity: &crate::JournalEntity) -> Vec<String> {
@@ -297,23 +333,26 @@ struct Snapshot {
     pools: BTreeMap<String, (crate::JournalEntity, Vec<Face>, super::FacesState)>,
 }
 
-fn snapshot(journal: &Path, yielding: bool) -> Result<Snapshot> {
+fn snapshot(journal: &Path, yielding: bool) -> std::result::Result<Snapshot, ReconcileError> {
     let roster = {
-        let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
-        crate::live_journal_entities(journal).map_err(|e| e.to_string())?
+        let _trust = crate::hold_entity_trust_lock(journal).map_err(map_trust_lock_error)?;
+        crate::live_journal_entities(journal).map_err(|e| ReconcileError::Failed(e.to_string()))?
     };
     let mut pools = BTreeMap::new();
     let mut encoder = None;
     let mut turn = super::ReconcileYield::default();
     for (folder, entity) in &roster {
         if crate::is_admissible_person(entity) {
-            let (archive, state) = super::load_in_dir(journal, folder)?;
+            let (archive, state) =
+                super::load_in_dir(journal, folder).map_err(ReconcileError::Failed)?;
             if let Some(archive) = archive {
                 if encoder
                     .as_ref()
                     .is_some_and(|e| e != &archive.envelope.encoder)
                 {
-                    return Err("face encoder mismatch across people".into());
+                    return Err(ReconcileError::Failed(
+                        "face encoder mismatch across people".into(),
+                    ));
                 }
                 encoder = Some(archive.envelope.encoder);
                 pools.insert(entity.id.clone(), (entity.clone(), archive.faces, state));
@@ -329,7 +368,13 @@ fn snapshot(journal: &Path, yielding: bool) -> Result<Snapshot> {
 /// Calculate panels without entity trust. Publication verifies that every input
 /// still agrees under one hold; changed evidence is retried by maintenance.
 pub fn reconcile(journal: &Path) -> Result<Rules> {
-    if !super::enabled(journal)? {
+    reconcile_classified(journal).map_err(ReconcileError::into_detail)
+}
+
+/// Same reconciliation as [`reconcile`], distinguishing transient lock or
+/// concurrent-update deferrals from genuine errors.
+pub fn reconcile_classified(journal: &Path) -> std::result::Result<Rules, ReconcileError> {
+    if !super::enabled(journal).map_err(ReconcileError::Failed)? {
         return Ok(Rules::default());
     }
     let inputs = snapshot(journal, true)?;
@@ -365,23 +410,26 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
             shared_facet(&kept[a], &kept[b]).map(|(facet, day)| (a, b, facet, day))
         })
         .collect();
-    let _trust = crate::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
-    if !super::enabled(journal)? {
+    let _trust = crate::hold_entity_trust_lock(journal).map_err(map_trust_lock_error)?;
+    if !super::enabled(journal).map_err(ReconcileError::Failed)? {
         return Ok(Rules::default());
     }
     if snapshot(journal, false)? != inputs {
-        return Err("face evidence changed; cross-person reconciliation deferred".into());
+        return Err(ReconcileError::Deferred(
+            "face evidence changed; cross-person reconciliation deferred".into(),
+        ));
     }
     // Replaying unchanged evidence must not rewrite review timestamps or undo a
     // dismissal. Only a genuinely new face proposal is recorded.
-    let existing = crate::load_merge_candidates(journal, None, None).map_err(|e| e.to_string())?;
+    let existing = crate::load_merge_candidates(journal, None, None)
+        .map_err(|e| ReconcileError::Failed(e.to_string()))?;
     let withdrawn = existing.iter().any(|r| is_stale_proposal(r, &proposals));
     if withdrawn {
         super::super::review_candidates::mutate_candidates(journal, |rows| {
             rows.retain(|r| !is_stale_proposal(r, &proposals));
             Ok(())
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ReconcileError::Failed(e.to_string()))?;
     }
     for (a, b, facet, day) in proposals {
         if existing.iter().any(|r| {
@@ -408,11 +456,11 @@ pub fn reconcile(journal: &Path) -> Result<Rules> {
             name(b),
             b,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ReconcileError::Failed(e.to_string()))?;
     }
-    let mut derived = load(journal)?;
+    let mut derived = load(journal).map_err(ReconcileError::Failed)?;
     derived.rules = result.clone();
-    publish(journal, &derived)?;
+    publish(journal, &derived).map_err(ReconcileError::Failed)?;
     Ok(result)
 }
 

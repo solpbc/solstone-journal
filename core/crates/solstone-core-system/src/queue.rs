@@ -51,6 +51,11 @@ const HISTORY_LIMIT: usize = 100;
 const STOPPED_TICKS_THRESHOLD: u8 = 2;
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
 
+/// Set in the environment of child processes launched for a scheduled task so
+/// the child knows the supervisor owns recording its completion in
+/// `health/scheduler.json`.
+pub const SCHEDULED_TASK_ENV: &str = "SOLSTONE_SCHEDULED_TASK";
+
 /// A platform process-state observation used for stopped-task enforcement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessState {
@@ -5107,6 +5112,9 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
                         WORK_PRIORITY_ENV.into(),
                         dispatch.priority.to_string().into(),
                     );
+                }
+                if let Some(scheduler_name) = &dispatch.submission.scheduler_name {
+                    environment.insert(SCHEDULED_TASK_ENV.into(), scheduler_name.into());
                 }
                 environment
             },

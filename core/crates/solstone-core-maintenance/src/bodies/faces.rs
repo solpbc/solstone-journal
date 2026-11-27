@@ -40,6 +40,8 @@ pub struct Stats {
     pub skipped_unsupported: usize,
     pub already_skipped: usize,
     pub failed: usize,
+    #[serde(skip)]
+    pub helper_errors: usize,
     pub valid: usize,
     pub pending: usize,
     pub yielded: bool,
@@ -47,6 +49,18 @@ pub struct Stats {
     pub contested_pairs: usize,
     pub merge_pairs: usize,
     pub recovery_failed: bool,
+    pub recovery_deferred: bool,
+}
+
+impl Stats {
+    /// Whether this pass failed at the run level rather than deferring on a
+    /// busy lock or rotating past isolated per-item failures.
+    pub fn run_failed(&self) -> bool {
+        self.recovery_failed
+            || (self.processed == 0
+                && self.skipped_unsupported == 0
+                && (self.failed > 1 || self.helper_errors > 0))
+    }
 }
 #[derive(Clone)]
 struct Candidate {
@@ -414,7 +428,24 @@ fn run(
     let mut backfill = cross::load(journal)?.backfill;
     let candidates = discover(journal, &mut backfill, &mut stats)?;
     let mut changed = vec![];
-    cross::update_backfill(journal, backfill.clone())?;
+    if let Err(error) = cross::update_backfill_classified(journal, backfill.clone()) {
+        match error {
+            cross::ReconcileError::Deferred(detail) => {
+                log::warn!(
+                    "{}",
+                    solstone_core_cli_copy::display_for(
+                        solstone_core_cli_copy::manual_log_locale(),
+                        "journal.cli.maintenance.face.log.deferred",
+                        [("detail", &detail)]
+                    )
+                );
+                stats.yielded = true;
+                stats.recovery_deferred = true;
+                return Ok(stats);
+            }
+            cross::ReconcileError::Failed(detail) => return Err(detail),
+        }
+    }
     for candidate in candidates.iter().take(BATCH_SIZE) {
         if start.elapsed() >= budget || !faceprints::enabled(journal)? || live_work(journal)? {
             stats.yielded = true;
@@ -475,6 +506,9 @@ fn run(
                 break;
             }
             other => {
+                if other.is_err() {
+                    stats.helper_errors += 1;
+                }
                 log::warn!(
                     "{}",
                     solstone_core_cli_copy::display_for(
@@ -489,7 +523,24 @@ fn run(
         // Failed inputs rotate too, so one damaged recording cannot block the
         // rest of the history. A crash before this write is harmless replay.
         backfill.cursor = Some(candidate.key.clone());
-        cross::update_backfill(journal, backfill.clone())?;
+        if let Err(error) = cross::update_backfill_classified(journal, backfill.clone()) {
+            match error {
+                cross::ReconcileError::Deferred(detail) => {
+                    log::warn!(
+                        "{}",
+                        solstone_core_cli_copy::display_for(
+                            solstone_core_cli_copy::manual_log_locale(),
+                            "journal.cli.maintenance.face.log.deferred",
+                            [("detail", &detail)]
+                        )
+                    );
+                    stats.yielded = true;
+                    stats.recovery_deferred = true;
+                    return Ok(stats);
+                }
+                cross::ReconcileError::Failed(detail) => return Err(detail),
+            }
+        }
     }
     recover(journal, full_recovery, &changed, stats)
 }
@@ -504,13 +555,25 @@ fn recover(
     // Reconciliation handles every published activity affected by this batch,
     // and also recovers interruptions from earlier passes.
     let recovery = if full_recovery {
-        solstone_core_facets::reconcile_faceprints(journal)
+        solstone_core_facets::reconcile_faceprints_classified(journal)
     } else {
         reconcile_changed(journal, changed)
     };
     stats.added = match recovery {
         Ok(added) => added,
-        Err(error) => {
+        Err(solstone_core_facets::FaceReconcileError::Deferred(error)) => {
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::manual_log_locale(),
+                    "journal.cli.maintenance.face.log.deferred",
+                    [("detail", &error)]
+                )
+            );
+            stats.recovery_deferred = true;
+            return Ok(stats);
+        }
+        Err(solstone_core_facets::FaceReconcileError::Failed(error)) => {
             log::warn!(
                 "{}",
                 solstone_core_cli_copy::display_for(
@@ -523,7 +586,22 @@ fn recover(
             return Ok(stats);
         }
     };
-    let rules = cross::reconcile(journal)?;
+    let rules = match cross::reconcile_classified(journal) {
+        Ok(rules) => rules,
+        Err(cross::ReconcileError::Deferred(error)) => {
+            log::warn!(
+                "{}",
+                solstone_core_cli_copy::display_for(
+                    solstone_core_cli_copy::manual_log_locale(),
+                    "journal.cli.maintenance.face.log.deferred",
+                    [("detail", &error)]
+                )
+            );
+            stats.recovery_deferred = true;
+            return Ok(stats);
+        }
+        Err(cross::ReconcileError::Failed(error)) => return Err(error),
+    };
     stats.contested_pairs = rules.contested_pairs.len();
     stats.merge_pairs = rules.merge_pairs.len();
     Ok(stats)
@@ -603,12 +681,15 @@ fn extract(
     }
 }
 
-fn reconcile_changed(journal: &Path, changed: &[&Candidate]) -> Result<usize> {
+fn reconcile_changed(
+    journal: &Path,
+    changed: &[&Candidate],
+) -> std::result::Result<usize, solstone_core_facets::FaceReconcileError> {
     let coordinates: Vec<_> = changed
         .iter()
         .map(|c| (c.day.clone(), c.stream.clone(), c.segment.clone()))
         .collect();
-    solstone_core_facets::reconcile_faceprints_for_segments(journal, &coordinates)
+    solstone_core_facets::reconcile_faceprints_for_segments_classified(journal, &coordinates)
 }
 
 #[cfg(all(test, feature = "full-tests"))]

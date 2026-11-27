@@ -99,16 +99,81 @@ pub fn run_cli_in(locale: Option<&str>, args: &[String], journal: &Path) -> CliO
 
 fn run_cli_output(copy: Output<'_>, args: &[String], journal: &Path) -> CliOutcome {
     if let Some(dry_run) = owned_offload_options(args) {
-        return CliOutcome::Offload(Box::new(
-            solstone_core_offload::cli_run::run_cli_offload_in(
-                journal,
-                std::sync::Arc::new(ProductionClock),
-                dry_run,
-                copy.locale(),
-            ),
-        ));
+        let run = solstone_core_offload::cli_run::run_cli_offload_in(
+            journal,
+            std::sync::Arc::new(ProductionClock),
+            dry_run,
+            copy.locale(),
+        );
+        if !dry_run {
+            maybe_record_manual_completion(args, journal, run.output().2);
+        }
+        return CliOutcome::Offload(Box::new(run));
     }
-    CliOutcome::Rendered(run_rendered_cli(copy, args, journal))
+    let run = run_rendered_cli(copy, args, journal);
+    maybe_record_manual_completion(args, journal, run.exit_code);
+    CliOutcome::Rendered(run)
+}
+
+fn manual_run_routine_id(args: &[String]) -> Option<&'static str> {
+    let args = strip_maintenance_global_flags(args);
+    if maintenance_has_help(&args) {
+        return None;
+    }
+    let [run, id, rest @ ..] = args.as_slice() else {
+        return None;
+    };
+    if run != "run" || rest.iter().any(|arg| arg == "--dry-run") {
+        return None;
+    }
+    routines()
+        .iter()
+        .find(|descriptor| descriptor.id == id.as_str())
+        .map(|descriptor| descriptor.id)
+}
+
+fn maybe_record_manual_completion(args: &[String], journal: &Path, exit_code: i32) {
+    let is_scheduled = std::env::var_os(solstone_core_system::queue::SCHEDULED_TASK_ENV).is_some();
+    maybe_record_manual_completion_with_flag(args, journal, exit_code, is_scheduled);
+}
+
+fn maybe_record_manual_completion_with_flag(
+    args: &[String],
+    journal: &Path,
+    exit_code: i32,
+    is_scheduled: bool,
+) {
+    if is_scheduled {
+        return;
+    }
+    let status = solstone_core_system::process::exit_status_for_code(exit_code);
+    if !matches!(status, "ok" | "empty") {
+        return;
+    }
+    let Some(id) = manual_run_routine_id(args) else {
+        return;
+    };
+    let state_path = journal.join("health/scheduler.json");
+    if !state_path.is_file() {
+        return;
+    }
+    let name = schedule_sync::schedule_name(id);
+    let ended_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |duration| duration.as_secs_f64());
+    let reference = format!("manual:{name}");
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    if let Err(error) = solstone_core_system::schedule::record_manual_completion(
+        &schedule_sync::schedules_path(journal),
+        &state_path,
+        &name,
+        ended_at,
+        status,
+        &reference,
+        &zone,
+    ) {
+        log::warn!("maintenance: failed to record manual completion for {name}: {error}");
+    }
 }
 
 fn owned_offload_options(args: &[String]) -> Option<bool> {
@@ -206,6 +271,78 @@ mod owned_offload_tests {
             Some(false)
         );
     }
+
+    #[test]
+    fn clean_manual_run_clears_earlier_scheduler_error_and_respects_scheduled_env() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::create_dir_all(journal.join("health")).unwrap();
+        std::fs::write(
+            journal.join("config/schedules.json"),
+            serde_json::json!({
+                "daily_time": "02:00",
+                "maintenance:faces:reconcile": {
+                    "cmd": ["solstone", "journal", "maintenance", "run", "faces:reconcile"],
+                    "every": "daily",
+                    "enabled": true
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let state_path = journal.join("health/scheduler.json");
+        std::fs::write(
+            &state_path,
+            serde_json::json!({
+                "maintenance:faces:reconcile": {
+                    "last_run": 100.0,
+                    "last_status": "error",
+                    "last_ref": "sched:maintenance:faces:reconcile:100000"
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let args = vec!["run".into(), "faces:reconcile".into()];
+        // Scheduled runs leave completion recording to the supervisor.
+        maybe_record_manual_completion_with_flag(&args, journal, 0, true);
+        let state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        assert_eq!(state["maintenance:faces:reconcile"]["last_status"], "error");
+
+        // A failed manual run does not overwrite scheduler state.
+        maybe_record_manual_completion_with_flag(&args, journal, 1, false);
+        let state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        assert_eq!(state["maintenance:faces:reconcile"]["last_status"], "error");
+
+        // A clean manual run clears the earlier error and records its period.
+        maybe_record_manual_completion_with_flag(&args, journal, 0, false);
+        let state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        assert_eq!(state["maintenance:faces:reconcile"]["last_status"], "ok");
+        assert_eq!(
+            state["maintenance:faces:reconcile"]["last_ref"],
+            "manual:maintenance:faces:reconcile"
+        );
+        assert!(
+            state["maintenance:faces:reconcile"]["last_period"].is_string(),
+            "manual completion must record daily period: {state}"
+        );
+
+        // An unscheduled routine not present in config or state does not add a
+        // phantom entry to scheduler.json.
+        let unscheduled = vec!["run".into(), "faces:backfill".into()];
+        maybe_record_manual_completion_with_flag(&unscheduled, journal, 0, false);
+        let state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        assert!(
+            state.get("maintenance:faces:backfill").is_none(),
+            "unscheduled routine must not create a phantom scheduler entry: {state}"
+        );
+    }
 }
 
 fn run_rendered_cli(copy: Output<'_>, args: &[String], journal: &Path) -> CliRun {
@@ -267,14 +404,16 @@ pub fn run_cli_with_discovery_generation(
         routines: routines(),
         discovery_generation: Some(generation),
     };
-    parser::run(
+    let run = parser::run(
         Output::terminal(solstone_core_cli_copy::terminal_locale()),
         args,
         journal,
         &services,
         None,
         None,
-    )
+    );
+    maybe_record_manual_completion(args, journal, run.exit_code);
+    run
 }
 
 /// The maintenance requests emitted by the embedded backup owner routes.

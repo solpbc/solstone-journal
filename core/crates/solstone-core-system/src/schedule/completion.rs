@@ -1,14 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Mutex;
 
+use jiff::tz::TimeZone;
 use serde_json::{Map, Value, json};
 #[cfg(not(unix))]
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace_checked};
+#[cfg(any(unix, windows))]
+use solstone_core_journal_io::{
+    DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, acquire_existing_parent_lock_bound_checked,
+};
 
 use super::ScheduleError;
+use super::config::load_runtime;
+use super::due::{local_from_epoch, period_key};
+
+static MANUAL_COMPLETION_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) fn load_runtime_state(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
     use solstone_core_journal_io::durability::{
@@ -28,6 +38,43 @@ pub(crate) fn load_runtime_state(path: &Path) -> Result<Map<String, Value>, Sche
         }
         Err(error) => Err(ScheduleError::Io(error.to_string())),
     }
+}
+
+/// Persist a manual completion of a scheduled task into `health/scheduler.json`
+/// under the same cross-process file lock used by the supervisor. Unscheduled
+/// routines that are neither configured nor already recorded in scheduler state
+/// are skipped so manual runs do not add phantom entries.
+pub fn record_manual_completion(
+    config_path: &Path,
+    state_path: &Path,
+    name: &str,
+    ended_at: f64,
+    exit_status: &str,
+    reference: &str,
+    zone: &TimeZone,
+) -> Result<(), ScheduleError> {
+    let loaded = load_runtime(config_path).ok();
+    let configured = loaded
+        .as_ref()
+        .is_some_and(|runtime| runtime.config.entries.contains_key(name));
+    let last_period = loaded.as_ref().and_then(|runtime| {
+        let entry = runtime.config.entries.get(name)?;
+        let local = local_from_epoch(ended_at, zone)?;
+        period_key(entry, &runtime.config, local)
+    });
+    std::fs::create_dir_all(state_path.parent().expect("scheduler state has a parent"))
+        .map_err(io_error)?;
+    record_completion_inner(
+        &MANUAL_COMPLETION_LOCK,
+        state_path,
+        name,
+        ended_at,
+        exit_status,
+        reference,
+        last_period.as_deref(),
+        !configured,
+        &|| Ok(()),
+    )
 }
 
 pub(crate) fn record_completion(
@@ -64,6 +111,31 @@ pub(crate) fn record_completion_checked(
     last_period: Option<&str>,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), ScheduleError> {
+    record_completion_inner(
+        lock,
+        path,
+        name,
+        ended_at,
+        exit_status,
+        reference,
+        last_period,
+        false,
+        checkpoint,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_completion_inner(
+    lock: &Mutex<()>,
+    path: &Path,
+    name: &str,
+    ended_at: f64,
+    exit_status: &str,
+    reference: &str,
+    last_period: Option<&str>,
+    only_if_existing: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), ScheduleError> {
     let parent = solstone_core_journal_io::JournalRoot::open(
         path.parent().expect("scheduler state has a parent"),
     )
@@ -76,7 +148,24 @@ pub(crate) fn record_completion_checked(
     };
     let _guard = lock.lock().expect("schedule completion lock poisoned");
     admitted_checkpoint().map_err(ScheduleError::Io)?;
+    #[cfg(any(unix, windows))]
+    let _file_lock = {
+        let mut lock_name = OsString::from(path.file_name().expect("scheduler state has a name"));
+        lock_name.push(".lock");
+        acquire_existing_parent_lock_bound_checked(
+            &parent,
+            lock_name.as_os_str(),
+            DEFAULT_LOCK_TIMEOUT,
+            DEFAULT_LOCK_POLL_INTERVAL,
+            &admitted_checkpoint,
+        )
+        .map_err(io_error)?
+    };
+    admitted_checkpoint().map_err(ScheduleError::Io)?;
     let mut state = load_runtime_state(path)?;
+    if only_if_existing && !state.contains_key(name) {
+        return Ok(());
+    }
     let current = state
         .get(name)
         .and_then(Value::as_object)

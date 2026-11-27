@@ -324,3 +324,113 @@ fn a_removed_sidecar_or_recording_leaves_the_scan_cache() {
     backfill(root).unwrap();
     assert!(!root.join(SCAN_CACHE).exists());
 }
+
+#[test]
+fn run_failed_distinguishes_isolated_failures_and_deferrals_from_real_errors() {
+    // Working pass with isolated per-item failures: not a run failure.
+    let partial = Stats {
+        processed: 63,
+        failed: 1,
+        ..Stats::default()
+    };
+    assert!(!partial.run_failed());
+
+    // Single damaged recording at the tail of history: not a run failure.
+    let single = Stats {
+        failed: 1,
+        ..Stats::default()
+    };
+    assert!(!single.run_failed());
+
+    // Lock deferral: not a run failure.
+    let deferred = Stats {
+        recovery_deferred: true,
+        ..Stats::default()
+    };
+    assert!(!deferred.run_failed());
+
+    // Genuine recovery error: run failure.
+    let recovery_err = Stats {
+        processed: 10,
+        recovery_failed: true,
+        ..Stats::default()
+    };
+    assert!(recovery_err.run_failed());
+
+    // Multiple consecutive items all failing with zero progress: run failure.
+    let all_failed = Stats {
+        failed: 2,
+        ..Stats::default()
+    };
+    assert!(all_failed.run_failed());
+
+    // Helper failed to spawn on the only attempted item: run failure.
+    let spawn_err = Stats {
+        failed: 1,
+        helper_errors: 1,
+        ..Stats::default()
+    };
+    assert!(spawn_err.run_failed());
+}
+
+#[test]
+fn entity_trust_lock_timeout_defers_reconcile_without_marking_recovery_failed() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    // Hold the underlying OS sidecar lock directly, simulating another process
+    // holding entity-trust past the 10 s wait window.
+    let _external_lock = hold_lock(
+        root.join("health/locks/entity-trust"),
+        LockOptions::default(),
+    )
+    .unwrap();
+
+    let stats = reconcile(root).unwrap();
+
+    assert!(
+        stats.recovery_deferred,
+        "expected recovery_deferred: {stats:?}"
+    );
+    assert!(
+        !stats.recovery_failed,
+        "deferral must not set recovery_failed: {stats:?}"
+    );
+    assert!(!stats.run_failed(), "deferral must not exit 1: {stats:?}");
+
+    // Also prove the direct recover() path when the history lock is busy.
+    let derived = cross::path(root).unwrap();
+    let _history_lock = hold_lock(derived.with_extension("backfill"), options()).unwrap();
+    let direct_stats = reconcile(root).unwrap();
+    assert!(
+        direct_stats.recovery_deferred,
+        "expected recovery_deferred on direct recover path: {direct_stats:?}"
+    );
+    assert!(!direct_stats.recovery_failed);
+    assert!(!direct_stats.run_failed());
+}
+
+#[test]
+fn unreadable_activity_rows_still_mark_recovery_failed() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let facet = root.join("facets/personal");
+    std::fs::create_dir_all(facet.join("activities")).unwrap();
+    std::fs::write(
+        facet.join("facet.json"),
+        json!({"name": "personal", "id": "personal"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        facet.join("activities/20260101.jsonl"),
+        b"{not valid json\n",
+    )
+    .unwrap();
+
+    let stats = reconcile(root).unwrap();
+    assert!(
+        stats.recovery_failed,
+        "corrupt activity rows must fail recovery: {stats:?}"
+    );
+    assert!(!stats.recovery_deferred);
+    assert!(stats.run_failed());
+}

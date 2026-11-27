@@ -181,7 +181,7 @@ fn run_routine(
                         serde_json::to_string(&stats).expect("face statistics serialize")
                     ),
                     stderr: String::new(),
-                    exit_code: i32::from(stats.failed > 0 || stats.recovery_failed),
+                    exit_code: i32::from(stats.run_failed()),
                 },
                 Err(error) => CliRun {
                     stdout: String::new(),

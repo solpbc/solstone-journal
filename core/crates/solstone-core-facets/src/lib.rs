@@ -144,6 +144,11 @@ pub use store::{
 };
 pub use store::{DetectedNameDays, detected_name_days};
 pub use store::{
+    FaceReconcileError, reconcile_faceprints, reconcile_faceprints_classified,
+    reconcile_faceprints_for_activity, reconcile_faceprints_for_segments,
+    reconcile_faceprints_for_segments_classified,
+};
+pub use store::{
     HiddenNameWrite, HiddenNamesError, check_hidden_names_readable, hide_detected_name,
     hide_detected_name_at, merge_hidden_names_locked, queue_every_facet_detections,
     queue_facet_detections, queue_linked_facet_detections, unhide_detected_name,
@@ -162,9 +167,6 @@ pub use store::{
     block_journal_entity_with_hook, create_facet_entity_if_absent_with_hook,
     delete_created_entity_if_unreferenced_with_hook, delete_journal_entity_with_hook,
     reset_undone_operation_for_test, test_hooks, unblock_journal_entity_with_hook,
-};
-pub use store::{
-    reconcile_faceprints, reconcile_faceprints_for_activity, reconcile_faceprints_for_segments,
 };
 pub use store::{strava_lines_may_be_folded, superseded_record_ids};
 pub use trust_lock::{

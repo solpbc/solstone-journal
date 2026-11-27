@@ -370,6 +370,24 @@ fn write_rows(
     Ok(())
 }
 
+/// Why face participation reconciliation could not complete on this pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FaceReconcileError {
+    /// A cooperating journal lock (entity trust or day activity records) was
+    /// busy past its wait window. No data was lost; the next pass replays.
+    Deferred(String),
+    /// An actual read/write or unreadable-data error stopped reconciliation.
+    Failed(String),
+}
+
+impl FaceReconcileError {
+    pub fn into_detail(self) -> String {
+        match self {
+            Self::Deferred(detail) | Self::Failed(detail) => detail,
+        }
+    }
+}
+
 /// Reconcile one current activity after backfill or a participation change.
 /// It is safe to queue this coordinate: no stale record snapshot is accepted.
 pub fn reconcile_faceprints_for_activity(
@@ -379,6 +397,7 @@ pub fn reconcile_faceprints_for_activity(
     record_id: &str,
 ) -> Result<usize, String> {
     reconcile_faceprints_activity_selected(root, facet, day, record_id, None, false, None)
+        .map_err(FaceReconcileError::into_detail)
 }
 
 fn matches_face_segments(
@@ -417,6 +436,24 @@ impl FaceIdentities {
     }
 }
 
+fn map_trust_lock_error(error: solstone_core_entity::EntityTrustLockError) -> FaceReconcileError {
+    match error {
+        solstone_core_entity::EntityTrustLockError::Lock(
+            solstone_core_journal_io::LockError::Timeout(_),
+        ) => FaceReconcileError::Deferred(error.to_string()),
+        other => FaceReconcileError::Failed(other.to_string()),
+    }
+}
+
+fn map_day_lock_error(error: solstone_core_journal_io::LockError) -> FaceReconcileError {
+    match error {
+        solstone_core_journal_io::LockError::Timeout(_) => {
+            FaceReconcileError::Deferred(error.to_string())
+        }
+        other => FaceReconcileError::Failed(other.to_string()),
+    }
+}
+
 fn reconcile_faceprints_activity_selected(
     root: &Path,
     facet: &str,
@@ -425,36 +462,43 @@ fn reconcile_faceprints_activity_selected(
     selected: Option<&[(String, String, String)]>,
     orphan_only: bool,
     identities: Option<&mut FaceIdentities>,
-) -> Result<usize, String> {
-    if !solstone_core_entity::faceprints::enabled(root)? {
+) -> Result<usize, FaceReconcileError> {
+    if !solstone_core_entity::faceprints::enabled(root).map_err(FaceReconcileError::Failed)? {
         return Ok(0);
     }
-    let _trust = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let _trust =
+        solstone_core_entity::hold_entity_trust_lock(root).map_err(map_trust_lock_error)?;
     #[cfg(all(test, feature = "full-tests"))]
     face_reconcile_tests::hook("held");
     use super::declaration::DestinationObservation;
     let declared = match super::declaration::observe_facet_destination(root, facet)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| FaceReconcileError::Failed(e.to_string()))?
     {
         DestinationObservation::Ready { .. } | DestinationObservation::LegacyWithoutId { .. } => {
             true
         }
         DestinationObservation::Absent => false,
-        _ => return Err("unreadable facet declaration; face reconciliation deferred".into()),
+        _ => {
+            return Err(FaceReconcileError::Failed(
+                "unreadable facet declaration; face reconciliation deferred".into(),
+            ));
+        }
     };
-    let path = day_path(root, facet, day).map_err(|e| e.to_string())?;
+    let path = day_path(root, facet, day).map_err(|e| FaceReconcileError::Failed(e.to_string()))?;
     let _lock = if declared {
-        Some(hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?)
+        Some(hold_lock(&path, LockOptions::default()).map_err(map_day_lock_error)?)
     } else {
         None
     };
     let records = if declared {
-        read_day_lines(&path).map_err(|e| e.to_string())?
+        read_day_lines(&path).map_err(|e| FaceReconcileError::Failed(e.to_string()))?
     } else {
         DayLines::default()
     };
     if !records.kept.is_empty() {
-        return Err("unreadable activity rows; face reconciliation deferred".into());
+        return Err(FaceReconcileError::Failed(
+            "unreadable activity rows; face reconciliation deferred".into(),
+        ));
     }
     let current = records.rows.iter().find(|r| id(r) == record_id);
     if orphan_only && current.is_some() {
@@ -474,13 +518,15 @@ fn reconcile_faceprints_activity_selected(
         let added =
             solstone_core_entity::faceprints::accumulation::reconcile_activity_with_entities(
                 root, facet, day, record, &relevant,
-            )?;
+            )
+            .map_err(FaceReconcileError::Failed)?;
         identities
             .holders
             .extend(relevant.into_iter().map(|(folder, _)| folder));
         Ok(added)
     } else {
         solstone_core_entity::faceprints::accumulation::reconcile_activity(root, facet, day, record)
+            .map_err(FaceReconcileError::Failed)
     }
 }
 
@@ -488,6 +534,12 @@ fn reconcile_faceprints_activity_selected(
 /// Each activity is read and published under entity trust, with polling gaps
 /// between bounded slices. No assignment snapshot crosses a gap.
 pub fn reconcile_faceprints(root: &Path) -> Result<usize, String> {
+    reconcile_faceprints_classified(root).map_err(FaceReconcileError::into_detail)
+}
+
+/// Same replay as [`reconcile_faceprints`], distinguishing transient lock
+/// deferrals from genuine errors.
+pub fn reconcile_faceprints_classified(root: &Path) -> Result<usize, FaceReconcileError> {
     reconcile_faceprints_selected(root, None)
 }
 
@@ -497,6 +549,16 @@ pub fn reconcile_faceprints_for_segments(
     root: &Path,
     segments: &[(String, String, String)],
 ) -> Result<usize, String> {
+    reconcile_faceprints_for_segments_classified(root, segments)
+        .map_err(FaceReconcileError::into_detail)
+}
+
+/// Same replay as [`reconcile_faceprints_for_segments`], distinguishing
+/// transient lock deferrals from genuine errors.
+pub fn reconcile_faceprints_for_segments_classified(
+    root: &Path,
+    segments: &[(String, String, String)],
+) -> Result<usize, FaceReconcileError> {
     if segments.is_empty() {
         return Ok(0);
     }
@@ -541,35 +603,46 @@ fn segments_with_face_manifests(
 fn reconcile_faceprints_selected(
     root: &Path,
     selected: Option<&[(String, String, String)]>,
-) -> Result<usize, String> {
-    if !solstone_core_entity::faceprints::enabled(root)? {
+) -> Result<usize, FaceReconcileError> {
+    if !solstone_core_entity::faceprints::enabled(root).map_err(FaceReconcileError::Failed)? {
         return Ok(0);
     }
     // An archive reference may still need removing even if its row is no
     // longer a meeting or its source has disappeared.
     let mut archived: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
     if selected.is_none() {
-        for coordinate in solstone_core_entity::faceprints::activity_coordinates(root)? {
-            let [facet, day, record_id]: [String; 3] =
-                serde_json::from_str(&coordinate).map_err(|e| e.to_string())?;
+        for coordinate in solstone_core_entity::faceprints::activity_coordinates(root)
+            .map_err(FaceReconcileError::Failed)?
+        {
+            let [facet, day, record_id]: [String; 3] = serde_json::from_str(&coordinate)
+                .map_err(|e| FaceReconcileError::Failed(e.to_string()))?;
             archived.entry((facet, day)).or_default().insert(record_id);
         }
     }
     let mut candidates = Vec::new();
-    for name in super::map::list_declared_facet_names(root).map_err(|e| e.to_string())? {
-        for day in list_activity_day_stems(root, &name).map_err(|e| e.to_string())? {
+    for name in super::map::list_declared_facet_names(root)
+        .map_err(|e| FaceReconcileError::Failed(e.to_string()))?
+    {
+        for day in list_activity_day_stems(root, &name)
+            .map_err(|e| FaceReconcileError::Failed(e.to_string()))?
+        {
             if selected.is_some_and(|ss| !ss.iter().any(|(d, _, _)| d == &day)) {
                 continue;
             }
             // Discovery supplies coordinates only. Every use rereads current
             // membership, participation and identities under its own hold.
-            let path = day_path(root, &name, &day).map_err(|e| e.to_string())?;
-            let hints = read_day_lines(&path).map_err(|e| e.to_string())?;
+            let path = day_path(root, &name, &day)
+                .map_err(|e| FaceReconcileError::Failed(e.to_string()))?;
+            let hints =
+                read_day_lines(&path).map_err(|e| FaceReconcileError::Failed(e.to_string()))?;
             if !hints.kept.is_empty() {
-                return Err("unreadable activity rows; face reconciliation deferred".into());
+                return Err(FaceReconcileError::Failed(
+                    "unreadable activity rows; face reconciliation deferred".into(),
+                ));
             }
             let with_faces = if selected.is_none() {
-                segments_with_face_manifests(root, &day, &hints.rows)?
+                segments_with_face_manifests(root, &day, &hints.rows)
+                    .map_err(FaceReconcileError::Failed)?
             } else {
                 BTreeSet::new()
             };
@@ -594,8 +667,8 @@ fn reconcile_faceprints_selected(
         {
             let started = std::time::Instant::now();
             let _trust =
-                solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-            let mut identities = FaceIdentities::read(root)?;
+                solstone_core_entity::hold_entity_trust_lock(root).map_err(map_trust_lock_error)?;
+            let mut identities = FaceIdentities::read(root).map_err(FaceReconcileError::Failed)?;
             for (facet, day, record_id) in candidates.by_ref() {
                 added += reconcile_faceprints_activity_selected(
                     root,
