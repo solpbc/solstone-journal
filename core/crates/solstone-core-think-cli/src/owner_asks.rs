@@ -17,7 +17,7 @@ use jiff::Span;
 use jiff::civil::Date;
 use solstone_core_journal_config::work_priority::{WorkBand, WorkPriority};
 use solstone_core_system::daily_coverage::{self, CoverageState};
-use solstone_core_system::owner_ask::{self, OwnerAsk, WEEK_BUILT};
+use solstone_core_system::owner_ask::{self, AskedExperience, OwnerAsk, WEEK_BUILT};
 use solstone_core_system::partition::canonical_journal_command;
 use solstone_core_system::queue::DiscoveredTask;
 use solstone_core_system::request::{BusTaskRequest, TaskArgv};
@@ -367,25 +367,14 @@ impl AskPass {
             }
             let mut completed_exps = Vec::new();
             for exp_ask in &ask.experiences {
-                let done = match solstone_core_facets::get_experience(
-                    journal,
-                    &exp_ask.facet,
-                    &exp_ask.anchor_day,
-                    &exp_ask.experience_id,
-                ) {
-                    Ok(None) => true,
-                    Ok(Some(rec)) => {
-                        rec.hidden
-                            || rec.activities.is_empty()
-                            || rec
-                                .composed_at
-                                .as_deref()
-                                .and_then(|s| s.parse::<jiff::Timestamp>().ok())
-                                .is_some_and(|ts| ts.as_millisecond() >= ask.created_at_ms)
+                let owed = match experience_owed(journal, exp_ask, ask.created_at_ms) {
+                    Ok(owed) => owed,
+                    Err(error) => {
+                        self.errors.push(error);
+                        continue;
                     }
-                    Err(_) => false,
                 };
-                if done {
+                if !owed {
                     completed_exps.push(exp_ask.clone());
                 } else if policy.permits(WorkBand::Waiting) {
                     let mut priority = solstone_core_system::priority::classify(
@@ -406,6 +395,9 @@ impl AskPass {
             }
             if !completed_exps.is_empty() {
                 self.apply(journal, id, |current| {
+                    if current.created_at_ms != ask.created_at_ms {
+                        return None;
+                    }
                     let mut next = current.clone();
                     let mut changed = false;
                     for done in &completed_exps {
@@ -743,10 +735,31 @@ pub(crate) fn asked_days(journal: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn experience_task(
-    exp: &solstone_core_system::owner_ask::AskedExperience,
-    priority: WorkPriority,
-) -> DiscoveredTask {
+fn experience_owed(journal: &Path, exp: &AskedExperience, asked_at: i64) -> Result<bool, String> {
+    solstone_core_facets::experience_needs_composition(
+        journal,
+        &exp.facet,
+        &exp.anchor_day,
+        &exp.experience_id,
+        asked_at,
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub(crate) fn experience_still_owed(journal: &Path, exp: &AskedExperience) -> Result<bool, String> {
+    let intents = solstone_core_system::work_intent::read(journal)?;
+    let newest = read_asks(journal)?
+        .values()
+        .filter(|ask| ask.experiences.contains(exp) && intent_hold(intents.get(&ask.day)).is_none())
+        .map(|ask| ask.created_at_ms)
+        .max();
+    match newest {
+        Some(asked_at) => experience_owed(journal, exp, asked_at),
+        None => Ok(false),
+    }
+}
+
+fn experience_task(exp: &AskedExperience, priority: WorkPriority) -> DiscoveredTask {
     DiscoveredTask {
         request: BusTaskRequest {
             cmd: TaskArgv::from_wire(canonical_journal_command([

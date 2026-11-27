@@ -1660,6 +1660,16 @@ fn still_owed(
             jiff::Timestamp::now().as_millisecond(),
         );
     }
+    if let Some(id) = argument("--experience") {
+        return crate::owner_asks::experience_still_owed(
+            journal,
+            &solstone_core_system::owner_ask::AskedExperience {
+                anchor_day: day.into(),
+                facet: argument("--facet").ok_or("experience has no facet")?.into(),
+                experience_id: id.into(),
+            },
+        );
+    }
     if argv.iter().any(|arg| arg == "--weekly") {
         return crate::owner_asks::week_still_owed(journal, day);
     }
@@ -1708,6 +1718,9 @@ fn still_owed(
             &progress.value,
         )
         .map(|ready| !ready);
+    }
+    if !argv.iter().any(|arg| arg == "--daily-only") {
+        return Err("unknown discovered work command".into());
     }
     if solstone_core_import::audio_archive::archive_day_has_pending(journal, day)
         .map_err(|error| error.to_string())?

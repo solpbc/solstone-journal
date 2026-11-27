@@ -34,6 +34,7 @@ use super::publication;
 pub enum ExperienceStoreError {
     InvalidDay(String),
     InvalidExperienceId(String),
+    UnreadableExperienceDay(PathBuf),
     EmptyActivities,
     MissingExperience {
         facet: String,
@@ -63,6 +64,9 @@ impl std::fmt::Display for ExperienceStoreError {
         match self {
             Self::InvalidDay(day) => write!(f, "invalid experience day key: {day}"),
             Self::InvalidExperienceId(id) => write!(f, "invalid experience id: {id}"),
+            Self::UnreadableExperienceDay(path) => {
+                write!(f, "unreadable experience records in {}", path.display())
+            }
             Self::EmptyActivities => {
                 write!(
                     f,
@@ -473,6 +477,34 @@ pub fn get_experience(
     validate_exp_id(exp_id)?;
     let rows = load_experiences(root, facet, anchor_day, true)?;
     Ok(rows.into_iter().find(|row| row.id == exp_id))
+}
+
+/// Whether an owner ask still needs this experience composed. A damaged
+/// row could be the requested experience, so absence must be conclusive.
+pub fn experience_needs_composition(
+    root: &Path,
+    facet: &str,
+    anchor_day: &str,
+    id: &str,
+    asked_at_ms: i64,
+) -> Result<bool, ExperienceStoreError> {
+    validate_exp_id(id)?;
+    let path = experience_day_path(root, facet, anchor_day)?;
+    let day = read_day_lines_tolerant(&path)?;
+    let Some(record) = day.rows.into_iter().find(|r| r.id == id) else {
+        return if day.kept.is_empty() {
+            Ok(false)
+        } else {
+            Err(ExperienceStoreError::UnreadableExperienceDay(path))
+        };
+    };
+    Ok(!record.hidden
+        && !record.activities.is_empty()
+        && record
+            .composed_at
+            .as_deref()
+            .and_then(|s| s.parse::<jiff::Timestamp>().ok())
+            .is_none_or(|ts| ts.as_millisecond() < asked_at_ms))
 }
 
 /// Adopt `destination_id` and `primary_facet` on Experience rows moved into `facet` by a facet merge.

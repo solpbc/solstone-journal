@@ -4241,7 +4241,11 @@ fn preflight_then_start(
         if owed && !withdrawn {
             start_dispatch(worker_inner, dispatch);
         } else {
-            log::debug!("task queue: discovered work no longer owed: {reference}");
+            if withdrawn {
+                log::debug!("task queue: discovered dispatch withdrawn: {reference}");
+            } else {
+                log::debug!("task queue: discovered work no longer owed: {reference}");
+            }
             for next in retire_reservation(&worker_inner, &partition, &reference) {
                 start_dispatch(Arc::clone(&worker_inner), next);
             }
