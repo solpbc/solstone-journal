@@ -3189,15 +3189,23 @@ module.exports = async function settingsContractCases(crateDir) {
     };
     let p = await page();
     assert.strictEqual(p.byId('maintenanceTime').value, '02:00');
+    // Chromium fires change for each valid intermediate value as minutes are typed.
+    edit(p, '04:03');
+    await settle();
+    assert.ok(!p.byId('maintenanceTime').readOnly);
     edit(p, '04:35');
+    assert.strictEqual(p.writes().length, 0);
+    p.press(p.byId('applyMaintenanceTime'));
     await settle();
     assert.strictEqual(time, '04:35');
+    assert.strictEqual(p.writes().length, 1);
     p.leave();
     p = await page();
     reverting(p);
     assert.strictEqual(p.byId('maintenanceTime').value, '04:35');
     const held = holdGranola(p, 'PUT', write);
     const field = edit(p, '19:10');
+    p.doc.dispatch(field, { type: 'keydown', key: 'Enter' });
     await settle();
     assert.ok(field.readOnly);
     held.release({ error: 'refused' }, 503);
@@ -3205,6 +3213,7 @@ module.exports = async function settingsContractCases(crateDir) {
     assert.strictEqual(field.value, '04:35');
     assert.ok(!field.readOnly);
     edit(p, '');
+    p.press(p.byId('applyMaintenanceTime'));
     await settle();
     assert.strictEqual(field.value, '04:35');
     assert.strictEqual(p.writes().length, 1);
@@ -3213,6 +3222,7 @@ module.exports = async function settingsContractCases(crateDir) {
     p = await page();
     assert.strictEqual(p.byId('maintenanceTime').value, '');
     assert.ok(p.byId('maintenanceTime').disabled);
+    assert.ok(p.byId('applyMaintenanceTime').disabled);
     assert.ok(!p.byId('storageSettingsForm').hidden);
   });
 

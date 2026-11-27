@@ -248,6 +248,16 @@
   box-sizing: border-box;
 }
 
+.maintenance-time-controls {
+  display: flex;
+  gap: 0.5em;
+}
+
+.maintenance-time-controls input[type="time"] {
+  width: auto;
+  min-height: 44px;
+}
+
 .settings-field input:focus,
 .settings-field textarea:focus,
 .settings-field select:focus {
@@ -3342,7 +3352,10 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-field">
         <label for="maintenanceTime">{{journal.window.settings.maintenance.time.label}}</label>
-        <input type="time" id="maintenanceTime" required aria-describedby="maintenanceTimeHelp">
+        <div class="maintenance-time-controls">
+          <input type="time" id="maintenanceTime" required aria-describedby="maintenanceTimeHelp">
+          <button type="button" class="btn-secondary" id="applyMaintenanceTime">{{journal.window.settings.button.label.apply}}</button>
+        </div>
         <small id="maintenanceTimeHelp" role="status">{{journal.window.settings.maintenance.time.zone}}</small>
       </div>
 
@@ -6397,6 +6410,7 @@ function setStorageControlsDisabled(disabled) {
   storageControlsDisabled = disabled;
   const time = document.getElementById('maintenanceTime');
   time.disabled = disabled || !time.defaultValue;
+  document.getElementById('applyMaintenanceTime').disabled = time.disabled;
   document.querySelectorAll('#retentionDaysField .settings-preset-btn').forEach((el) => {
     el.disabled = disabled;
   });
@@ -9508,7 +9522,8 @@ async function loadStorage() {
     setLoadState('storageLoadState');
     storageLoadedOnce = true;
     const time = document.getElementById('maintenanceTime');
-    if (!time.readOnly && timeRevision === maintenanceTimeRevision) {
+    if (!time.readOnly && timeRevision === maintenanceTimeRevision
+        && (time.value === time.defaultValue || !storageData.maintenance_time)) {
       time.value = storageData.maintenance_time || '';
       time.setAttribute('value', time.value);
       const help = document.getElementById('maintenanceTimeHelp');
@@ -9902,9 +9917,10 @@ async function saveRetentionConfig(data) {
   }
 }
 
-async function saveMaintenanceTime(event) {
-  const field = event.currentTarget;
-  if (field.readOnly || storageControlsDisabled) return;
+async function saveMaintenanceTime() {
+  const field = document.getElementById('maintenanceTime');
+  const button = document.getElementById('applyMaintenanceTime');
+  if (field.readOnly || field.disabled) return;
   if (!field.value) {
     field.value = field.defaultValue;
     showFieldStatus(field, 'error', window.JournalI18n.render('journal.window.settings.maintenance.time.invalid'));
@@ -9915,7 +9931,7 @@ async function saveMaintenanceTime(event) {
   maintenanceTimeRevision++;
   const time = field.value;
   field.readOnly = true;
-  window.SolFocus.setBusy(field, true);
+  window.SolFocus.setBusy(button, true);
   try {
     await window.saveControl({
       el: field,
@@ -9937,12 +9953,18 @@ async function saveMaintenanceTime(event) {
   } finally {
     maintenanceTimeRevision++;
     field.readOnly = false;
-    window.SolFocus.setBusy(field, false);
+    window.SolFocus.setBusy(button, false);
   }
 }
 
 function setupStorageListeners() {
-  document.getElementById('maintenanceTime').addEventListener('change', saveMaintenanceTime);
+  document.getElementById('applyMaintenanceTime').addEventListener('click', saveMaintenanceTime);
+  document.getElementById('maintenanceTime').addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveMaintenanceTime();
+    }
+  });
   document.querySelectorAll('#retentionDaysField .settings-preset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.getElementById('retentionDaysInput').value = btn.dataset.days;
