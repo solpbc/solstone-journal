@@ -7,6 +7,7 @@ use std::os::unix::ffi::OsStrExt;
 
 use crate::deny::{DenyAction, deny_member, deny_top_level};
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof};
+use crate::live::SnapshotMode;
 use crate::source::{
     classify, list_directory, member_name, open_initial_directory, open_initial_file,
     stat_entry_for_count,
@@ -16,14 +17,25 @@ use crate::{
     SkippedRootName,
 };
 
-pub(crate) fn build(root: &impl AsFd) -> Result<Inventory, ArchiveError> {
+pub(crate) fn build(
+    root: &impl AsFd,
+    snapshot_mode: SnapshotMode,
+) -> Result<Inventory, ArchiveError> {
     let mut inventory = Inventory::default();
     let mut entries = Vec::new();
 
     for name in list_directory(root, None)? {
         let name_str = utf8_name(&name, None)?;
         let member = ArchiveMemberName::new(name_str.clone());
-        let stat = stat_entry_for_count(root, &name, &member)?;
+        let stat = match stat_entry_for_count(root, &name, &member) {
+            Ok(stat) => stat,
+            Err(ArchiveError::SourceChanged { .. })
+                if snapshot_mode == SnapshotMode::LiveJournal && deny_member(&name_str, false) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let kind = classify(&stat);
         if kind == JournalEntryKind::Directory && deny_top_level(&name_str) == DenyAction::TreePrune
         {
@@ -49,6 +61,7 @@ pub(crate) fn build(root: &impl AsFd) -> Result<Inventory, ArchiveError> {
                     &directory,
                     vec![name],
                     vec![root_proof],
+                    snapshot_mode,
                     &mut entries,
                     &mut inventory,
                 )?;
@@ -91,6 +104,7 @@ fn walk_directory(
     directory: &OwnedFd,
     components: Vec<OsString>,
     directory_proofs: Vec<DirectoryProof>,
+    snapshot_mode: SnapshotMode,
     entries: &mut Vec<InventoryEntry>,
     inventory: &mut Inventory,
 ) -> Result<(), ArchiveError> {
@@ -98,7 +112,16 @@ fn walk_directory(
         let mut child_components = components.clone();
         child_components.push(name.clone());
         let member = member_name(&child_components)?;
-        let stat = stat_entry_for_count(directory, &name, &member)?;
+        let stat = match stat_entry_for_count(directory, &name, &member) {
+            Ok(stat) => stat,
+            Err(ArchiveError::SourceChanged { .. })
+                if snapshot_mode == SnapshotMode::LiveJournal
+                    && deny_member(member.as_str(), false) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let kind = classify(&stat);
         if deny_member(member.as_str(), kind == JournalEntryKind::RegularFile) {
             continue;
@@ -113,7 +136,14 @@ fn walk_directory(
                     components: child_components.clone().into_boxed_slice(),
                     directories: child_proofs.clone().into_boxed_slice(),
                 });
-                walk_directory(&child, child_components, child_proofs, entries, inventory)?;
+                walk_directory(
+                    &child,
+                    child_components,
+                    child_proofs,
+                    snapshot_mode,
+                    entries,
+                    inventory,
+                )?;
             }
             JournalEntryKind::RegularFile => {
                 count_file(&components, &name, inventory);

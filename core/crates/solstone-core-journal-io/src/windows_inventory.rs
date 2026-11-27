@@ -495,12 +495,63 @@ where
             budget,
             &mut usage,
             &mut entries,
-            witness,
+            Some(witness),
             &mut prune_directory,
+            None,
         )?;
         entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         Ok(WindowsInventory { entries })
     })
+}
+
+/// Build one recursive Windows inventory for live-journal preparation without
+/// arming a whole-root recursive namespace watch.
+///
+/// Still revalidates the retained root, opens every descendant relative to its
+/// verified parent directory, refuses reparse points and non-regular files, and
+/// enforces `budget`. Entries matched by `prune_directory` are validated and
+/// emitted without descending into them.
+///
+/// When `skip_transient_member(member, known_regular)` returns `true`, an entry
+/// that vanishes between directory listing and relative open (`known_regular ==
+/// false`) or an already-verified regular file whose file ID rotated due to
+/// atomic replacement (`known_regular == true`) is skipped instead of failing
+/// with `IdentityChanged`. Reparse points, non-regular files, directories, and
+/// non-matching members are never skipped.
+pub fn enumerate_windows_inventory_live_pruned<F, G>(
+    root: &JournalRoot,
+    budget: InventoryBudget,
+    mut prune_directory: F,
+    mut skip_transient_member: G,
+) -> Result<WindowsInventory, WindowsInventoryError>
+where
+    F: FnMut(&str) -> bool,
+    G: FnMut(&str, bool) -> bool,
+{
+    root.revalidate().map_err(WindowsInventoryError::Root)?;
+    let mut usage = InventoryUsage::new();
+    let mut entries = Vec::new();
+    let listed_root = borrow_admitted_root(
+        root,
+        WindowsInventoryPrimitive::BorrowAdmittedRootForListing,
+    )?;
+    walk_directory(
+        root,
+        listed_root.as_raw_handle(),
+        PathBuf::new(),
+        String::new(),
+        Vec::new(),
+        0,
+        budget,
+        &mut usage,
+        &mut entries,
+        None,
+        &mut prune_directory,
+        Some(&mut skip_transient_member),
+    )?;
+    root.revalidate().map_err(WindowsInventoryError::Root)?;
+    entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(WindowsInventory { entries })
 }
 
 fn borrow_admitted_root<'root>(
@@ -1156,8 +1207,10 @@ impl Drop for NamespaceWitness<'_> {
     }
 }
 
+type TransientSkipPredicate<'pred> = dyn FnMut(&str, bool) -> bool + 'pred;
+
 #[allow(clippy::too_many_arguments)] // recursive walk threads its budget, usage, witness, and prune state
-fn walk_directory(
+fn walk_directory<'pred>(
     root: &JournalRoot,
     directory: std::os::windows::io::RawHandle,
     relative: PathBuf,
@@ -1167,8 +1220,9 @@ fn walk_directory(
     budget: InventoryBudget,
     usage: &mut InventoryUsage,
     entries: &mut Vec<WindowsInventoryEntry>,
-    witness: &mut NamespaceWitness,
+    mut witness: Option<&mut NamespaceWitness<'_>>,
     prune_directory: &mut impl FnMut(&str) -> bool,
+    mut skip_transient_member: Option<&mut TransientSkipPredicate<'pred>>,
 ) -> Result<(), WindowsInventoryError> {
     InventoryUsage::check_depth(budget, depth)
         .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
@@ -1187,11 +1241,30 @@ fn walk_directory(
             })?;
         InventoryUsage::check_depth(budget, next_depth)
             .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
-        let child = open_relative(directory, &name, FILE_READ_ATTRIBUTES, false, &child_path)?;
+        let child = match open_relative(directory, &name, FILE_READ_ATTRIBUTES, false, &child_path)
+        {
+            Ok(handle) => handle,
+            Err(WindowsInventoryError::IdentityChanged { .. })
+                if skip_transient_member
+                    .as_deref_mut()
+                    .is_some_and(|pred| pred(&child_member, false)) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         let attributes = attribute_tag(&child, &child_path)?;
         require_no_reparse(attributes, &child_path)?;
         let identity = file_id(&child, &child_path)?;
         if !identity.matches_windows_file_id(listed.file_id) {
+            if !is_directory(attributes)
+                && skip_transient_member
+                    .as_deref_mut()
+                    .is_some_and(|pred| pred(&child_member, true))
+            {
+                require_regular(&child, &child_path)?;
+                continue;
+            }
             return Err(WindowsInventoryError::IdentityChanged { path: child_path });
         }
         let kind = if is_directory(attributes) {
@@ -1230,11 +1303,14 @@ fn walk_directory(
                 budget,
                 usage,
                 entries,
-                witness,
+                witness.as_deref_mut(),
                 prune_directory,
+                skip_transient_member.as_deref_mut(),
             )?;
         }
-        witness.check()?;
+        if let Some(witness) = witness.as_deref_mut() {
+            witness.check()?;
+        }
         root.revalidate().map_err(WindowsInventoryError::Root)?;
     }
     Ok(())
@@ -2459,5 +2535,119 @@ mod tests {
                 PathBuf::from("indexer"),
             ]
         );
+    }
+
+    #[test]
+    fn live_pruned_inventory_omits_watch_and_skips_transient_excluded_entries_only() {
+        let temporary = TempDir::new();
+        let root_path = temporary.path().join("journal");
+        fs::create_dir_all(&root_path).unwrap();
+        fs::write(root_path.join(".tmp_candidate.tmp"), b"staging").unwrap();
+        fs::write(root_path.join("excluded.json"), b"v1").unwrap();
+        fs::write(root_path.join("owner.txt"), b"keep").unwrap();
+        let root = JournalRoot::open(&root_path).unwrap();
+
+        let root_for_barrier = root_path.clone();
+        let (result, trace) = trace_inventory_scenario(
+            Some((
+                WindowsInventoryPrimitive::BeforeDescendantOpen,
+                Box::new(move || {
+                    // Concurrent sibling creation (would fail Strict NamespaceWitness).
+                    fs::write(root_for_barrier.join("concurrent-sibling.txt"), b"new").unwrap();
+                    // Transient excluded candidate removed before open_relative.
+                    fs::remove_file(root_for_barrier.join(".tmp_candidate.tmp")).unwrap();
+                    // Excluded state file atomically replaced with a distinct file ID.
+                    let replacement = root_for_barrier.join("excluded-new.tmp");
+                    fs::write(&replacement, b"v2").unwrap();
+                    fs::remove_file(root_for_barrier.join("excluded.json")).unwrap();
+                    fs::rename(&replacement, root_for_barrier.join("excluded.json")).unwrap();
+                }),
+            )),
+            None,
+            || {
+                enumerate_windows_inventory_live_pruned(
+                    &root,
+                    budget(),
+                    |_| false,
+                    |member, known_regular| {
+                        member == ".tmp_candidate.tmp"
+                            || (known_regular && member == "excluded.json")
+                    },
+                )
+            },
+        );
+        assert!(trace.barrier_fired);
+        assert!(
+            !trace
+                .attempted
+                .contains(&WindowsInventoryPrimitive::WatchArm),
+            "live inventory must not arm a whole-root recursive namespace watch"
+        );
+        assert!(
+            !trace
+                .attempted
+                .contains(&WindowsInventoryPrimitive::WitnessCheck)
+        );
+        let inventory = result.expect("live inventory tolerates sibling and excluded churn");
+        let paths = inventory
+            .entries()
+            .iter()
+            .map(|entry| entry.relative_path().to_path_buf())
+            .collect::<Vec<_>>();
+        assert_eq!(paths, vec![PathBuf::from("owner.txt")]);
+
+        // Removing a file that is excluded only when proven regular (`known_regular == true`)
+        // still fails with IdentityChanged when it vanishes before open_relative.
+        let root_for_regular_only = root_path.clone();
+        let (regular_only_result, regular_only_trace) = trace_inventory_scenario(
+            Some((
+                WindowsInventoryPrimitive::BeforeDescendantOpen,
+                Box::new(move || {
+                    fs::remove_file(root_for_regular_only.join("excluded.json")).unwrap();
+                }),
+            )),
+            None,
+            || {
+                enumerate_windows_inventory_live_pruned(
+                    &root,
+                    budget(),
+                    |_| false,
+                    |member, known_regular| known_regular && member == "excluded.json",
+                )
+            },
+        );
+        assert!(regular_only_trace.barrier_fired);
+        assert!(matches!(
+            regular_only_result,
+            Err(WindowsInventoryError::IdentityChanged { .. })
+        ));
+
+        // Removing an included owner file mid-walk still fails with IdentityChanged.
+        let root_for_fail = root_path.clone();
+        let (fail_result, fail_trace) = trace_inventory_scenario(
+            Some((
+                WindowsInventoryPrimitive::BeforeDescendantOpen,
+                Box::new(move || {
+                    fs::remove_file(root_for_fail.join("owner.txt")).unwrap();
+                }),
+            )),
+            None,
+            || {
+                enumerate_windows_inventory_live_pruned(
+                    &root,
+                    budget(),
+                    |_| false,
+                    |member, known_regular| {
+                        member == ".tmp_candidate.tmp"
+                            || (known_regular && member == "excluded.json")
+                    },
+                )
+            },
+        );
+        assert!(fail_trace.barrier_fired);
+        assert!(matches!(
+            fail_result,
+            Err(WindowsInventoryError::IdentityChanged { .. })
+        ));
     }
 }

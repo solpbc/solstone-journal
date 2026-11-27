@@ -327,7 +327,7 @@ impl ArchiveSource {
     /// Acquire `root` once and immediately freeze its portable archive inventory.
     pub fn open(root: &Path) -> Result<Self, ArchiveError> {
         let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
-        let inventory = crate::inventory::build(&retained_root)?;
+        let inventory = crate::inventory::build(&retained_root, SnapshotMode::Strict)?;
         Ok(Self {
             root: retained_root,
             inventory,
@@ -341,7 +341,7 @@ impl ArchiveSource {
     /// growth and newly created sibling segments.
     pub fn open_live(root: &Path) -> Result<Self, ArchiveError> {
         let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
-        let mut inventory = crate::inventory::build(&retained_root)?;
+        let mut inventory = crate::inventory::build(&retained_root, SnapshotMode::LiveJournal)?;
         let mut live_snapshots = BTreeMap::new();
         let mut snapshotted_total = 0u64;
 
@@ -1293,5 +1293,103 @@ mod tests {
             ),
             "relative open must not succeed as an empty inventory"
         );
+    }
+
+    #[test]
+    fn open_live_skips_vanished_excluded_temp_while_strict_and_included_refuse() {
+        let temporary = TempDir::new("live-vanished-temp");
+        let root = temporary.path.join("journal");
+        fs::create_dir_all(root.join("health")).expect("create health dir");
+        fs::create_dir_all(root.join("notes")).expect("create notes dir");
+        fs::write(root.join("health/a-first.json"), b"{}").expect("write health anchor");
+        fs::write(root.join("health/z-candidate.tmp"), b"staging").expect("write excluded temp");
+        fs::write(root.join("notes/a-first.txt"), b"anchor").expect("write notes anchor");
+        fs::write(root.join("notes/z-owner.txt"), b"keep").expect("write owner");
+
+        let temp_path = root.join("health/z-candidate.tmp");
+        let (live_result, live_trace) = trace_descendants(
+            None,
+            Some(DescendantBarrier {
+                primitive: DescendantPrimitive::Metadata,
+                member: Some("health/a-first.json".to_owned()),
+                ordinal: 1,
+                callback: Box::new(move || {
+                    fs::remove_file(&temp_path).expect("remove excluded temp");
+                }),
+            }),
+            || ArchiveSource::open_live(&root),
+        );
+        assert!(live_trace.barrier_fired);
+        let live_source = live_result.expect("open_live skips vanished excluded temp");
+        assert!(
+            live_source
+                .inventory()
+                .entries()
+                .iter()
+                .any(|entry| entry.member_name().as_str() == "notes/z-owner.txt")
+        );
+
+        fs::write(root.join("health/z-candidate.tmp"), b"staging").expect("recreate excluded temp");
+        let temp_path = root.join("health/z-candidate.tmp");
+        let (strict_result, strict_trace) = trace_descendants(
+            None,
+            Some(DescendantBarrier {
+                primitive: DescendantPrimitive::Metadata,
+                member: Some("health/a-first.json".to_owned()),
+                ordinal: 1,
+                callback: Box::new(move || {
+                    fs::remove_file(&temp_path).expect("remove excluded temp");
+                }),
+            }),
+            || ArchiveSource::open(&root),
+        );
+        assert!(strict_trace.barrier_fired);
+        assert!(matches!(
+            strict_result,
+            Err(ArchiveError::SourceChanged { .. })
+        ));
+
+        let owner_path = root.join("notes/z-owner.txt");
+        let (included_result, included_trace) = trace_descendants(
+            None,
+            Some(DescendantBarrier {
+                primitive: DescendantPrimitive::Metadata,
+                member: Some("notes/a-first.txt".to_owned()),
+                ordinal: 1,
+                callback: Box::new(move || {
+                    fs::remove_file(&owner_path).expect("remove included file");
+                }),
+            }),
+            || ArchiveSource::open_live(&root),
+        );
+        assert!(included_trace.barrier_fired);
+        assert!(matches!(
+            included_result,
+            Err(ArchiveError::SourceChanged { .. })
+        ));
+
+        // Regular-file-only exclusions (like `imports/health-dedupe.sqlite`, where a
+        // directory of the same name is owner content) must NOT be skipped when vanished.
+        fs::write(root.join("notes/z-owner.txt"), b"keep").expect("restore owner");
+        fs::create_dir_all(root.join("imports/health-dedupe.sqlite")).expect("create owner dir");
+        fs::write(root.join("imports/a-first.txt"), b"anchor").expect("write imports anchor");
+        let owner_dir = root.join("imports/health-dedupe.sqlite");
+        let (dir_result, dir_trace) = trace_descendants(
+            None,
+            Some(DescendantBarrier {
+                primitive: DescendantPrimitive::Metadata,
+                member: Some("imports/a-first.txt".to_owned()),
+                ordinal: 1,
+                callback: Box::new(move || {
+                    fs::remove_dir(&owner_dir).expect("remove owner-named dir");
+                }),
+            }),
+            || ArchiveSource::open_live(&root),
+        );
+        assert!(dir_trace.barrier_fired);
+        assert!(matches!(
+            dir_result,
+            Err(ArchiveError::SourceChanged { .. })
+        ));
     }
 }

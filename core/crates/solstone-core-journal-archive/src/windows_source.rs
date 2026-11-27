@@ -9,9 +9,9 @@ use std::path::{Component, Path, PathBuf};
 
 use solstone_core_journal_io::{
     InventoryBudget, JournalEntryKind, JournalRoot, WindowsInventoryEntry, WindowsInventoryError,
-    enumerate_windows_inventory_pruned, open_windows_inventory_file_reader,
-    open_windows_inventory_file_reader_live, read_windows_inventory_live_snapshot,
-    revalidate_windows_live_entry,
+    enumerate_windows_inventory_live_pruned, enumerate_windows_inventory_pruned,
+    open_windows_inventory_file_reader, open_windows_inventory_file_reader_live,
+    read_windows_inventory_live_snapshot, revalidate_windows_live_entry,
 };
 
 use crate::deny::{DenyAction, deny_member, deny_top_level};
@@ -70,10 +70,19 @@ impl ArchiveSource {
         snapshot_mode: SnapshotMode,
     ) -> Result<Self, ArchiveError> {
         let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
-        let observed =
-            enumerate_windows_inventory_pruned(&retained_root, budget, should_prune_directory)
-                .map_err(|error| map_windows_error(&retained_root, error, false))?
-                .into_entries();
+        let observed = match snapshot_mode {
+            SnapshotMode::Strict => {
+                enumerate_windows_inventory_pruned(&retained_root, budget, should_prune_directory)
+            }
+            SnapshotMode::LiveJournal => enumerate_windows_inventory_live_pruned(
+                &retained_root,
+                budget,
+                should_prune_directory,
+                should_skip_live_transient_member,
+            ),
+        }
+        .map_err(|error| map_windows_error(&retained_root, error, false))?
+        .into_entries();
         let (mut inventory, observed) = build_inventory(&observed)?;
         let mut live_snapshots = BTreeMap::new();
         if snapshot_mode == SnapshotMode::LiveJournal {
@@ -218,6 +227,10 @@ impl ArchiveSource {
 fn should_prune_directory(member: &str) -> bool {
     let top_level = !member.contains('/');
     (top_level && deny_top_level(member) == DenyAction::TreePrune) || deny_member(member, false)
+}
+
+fn should_skip_live_transient_member(member: &str, known_regular: bool) -> bool {
+    deny_member(member, known_regular)
 }
 
 fn build_inventory(
@@ -922,6 +935,32 @@ mod tests {
             result,
             Err(ArchiveError::UnsupportedJournal { .. })
         ));
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn open_live_does_not_arm_namespace_witness() {
+        use solstone_core_journal_io::{
+            WindowsInventoryPrimitive, run_with_windows_inventory_fault,
+        };
+
+        let (_temporary, root) = fixture("live-no-witness");
+        let (result, consumed) =
+            run_with_windows_inventory_fault(WindowsInventoryPrimitive::WatchArm, 1, 1, || {
+                ArchiveSource::open_live(&root)
+            });
+        assert!(
+            !consumed,
+            "open_live must not arm the strict whole-root recursive namespace witness"
+        );
+        let source = result.expect("open_live succeeds without WatchArm");
+        assert!(
+            source
+                .inventory()
+                .entries()
+                .iter()
+                .any(|entry| entry.member_name().as_str() == "chronicle/20260101/segment.jsonl")
+        );
     }
 
     #[cfg(feature = "test-hooks")]
