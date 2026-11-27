@@ -40,6 +40,32 @@ fn skip_historical_entity_daily(
         )
 }
 
+fn skip_historical_experience_daily(
+    context: &ThinkContext,
+    talent_key: &str,
+    facet: Option<&str>,
+    from_scratch: bool,
+) -> bool {
+    solstone_core_system::daily_coverage::HISTORICAL_EXPERIENCE_DAILY_TALENTS.contains(&talent_key)
+        && !from_scratch
+        && !context.retry.as_ref().is_some_and(|(unit, _)| {
+            matches!(
+                unit,
+                solstone_core_system::work_retry::Unit::Daily {
+                    talent,
+                    facet: unit_facet,
+                    ..
+                } if talent == talent_key && unit_facet.as_deref() == facet
+            )
+        })
+        && !solstone_core_system::daily_coverage::historical_backfill_daily_applies(
+            &context.journal,
+            &context.day,
+            talent_key,
+            facet,
+        )
+}
+
 /// Whether this run leaves the day's morning briefing alone: the day is one
 /// that is owed none, and nothing asked for it by name.
 fn briefing_not_owed(context: &ThinkContext, from_scratch: bool) -> bool {
@@ -149,6 +175,14 @@ pub(crate) fn run(
                         if skip_historical_entity_daily(context, &config.key, facet, from_scratch) {
                             continue;
                         }
+                        if skip_historical_experience_daily(
+                            context,
+                            &config.key,
+                            Some(facet),
+                            from_scratch,
+                        ) {
+                            continue;
+                        }
                         rebuild_targets.push(solstone_core_journal_io::DailyUnitIdentity::new(
                             &context.day,
                             &config.key,
@@ -161,6 +195,9 @@ pub(crate) fn run(
                     continue;
                 }
                 if config.key == "experiences_detect" && active_facets.is_empty() {
+                    continue;
+                }
+                if skip_historical_experience_daily(context, &config.key, None, from_scratch) {
                     continue;
                 }
                 rebuild_targets.push(solstone_core_journal_io::DailyUnitIdentity::new(
@@ -237,6 +274,21 @@ pub(crate) fn run(
                         );
                         continue;
                     }
+                    if skip_historical_experience_daily(
+                        context,
+                        &config.key,
+                        Some(facet),
+                        from_scratch,
+                    ) {
+                        log_skip(
+                            log,
+                            context,
+                            &config.key,
+                            "historical_backfill",
+                            Some(facet),
+                        );
+                        continue;
+                    }
                     let queued = queue_daily(
                         context,
                         log,
@@ -273,6 +325,10 @@ pub(crate) fn run(
                 }
                 if config.key == "experiences_detect" && active_facets.is_empty() {
                     log_skip(log, context, &config.key, "no_active_facets", None);
+                    continue;
+                }
+                if skip_historical_experience_daily(context, &config.key, None, from_scratch) {
+                    log_skip(log, context, &config.key, "historical_backfill", None);
                     continue;
                 }
                 let queued = queue_daily(
@@ -481,6 +537,9 @@ fn queue_daily(
                     Some(solstone_core_system::daily_coverage::AcceptedReuse::EarlierContract) => {
                         "earlier_contract"
                     }
+                    Some(
+                        solstone_core_system::daily_coverage::AcceptedReuse::HistoricalBackfill,
+                    ) => "historical_backfill",
                 };
                 log_skip(log, context, &config.key, reason, facet);
                 return Ok(());

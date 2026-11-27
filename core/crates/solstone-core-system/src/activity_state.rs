@@ -137,13 +137,26 @@ pub(crate) fn active_facets_checked_in(
     day: &str,
     locale: &str,
 ) -> Result<BTreeSet<String>, String> {
+    active_facets_with_non_historical_checked_in(journal, day, locale).map(|(all, _)| all)
+}
+
+/// Returns `(all_active_facets, non_historical_active_facets)` for `day`.
+/// A facet in `all_active_facets` but not `non_historical_active_facets` was
+/// activated on `day` exclusively by segments that arrived as historical
+/// backfill.
+pub(crate) fn active_facets_with_non_historical_checked_in(
+    journal: &Path,
+    day: &str,
+    locale: &str,
+) -> Result<(BTreeSet<String>, BTreeSet<String>), String> {
     use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
     let segments = solstone_core_journal_io::iter_segments(
         journal,
         solstone_core_journal_io::PathOrDay::Day(day),
     )
     .map_err(|e| e.to_string())?;
-    let mut facets = BTreeSet::new();
+    let mut all_facets = BTreeSet::new();
+    let mut non_historical_facets = BTreeSet::new();
     for segment in segments {
         // An import's chosen facet files body records, and a folder's chosen
         // facet scopes activity-only folder segments; neither owes a facet's
@@ -153,6 +166,13 @@ pub(crate) fn active_facets_checked_in(
         {
             continue;
         }
+        let is_historical = segment
+            .stream()
+            .directory()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stream| {
+                solstone_core_segment::stream_arrived_as_history_on_day(journal, stream, day)
+            });
         let path = segment.path().join("talents/facets.json");
         let rows: Vec<Value> =
             match read_json_durable::<Vec<Value>>(ArtifactId::SegmentFacets, &path) {
@@ -175,10 +195,34 @@ pub(crate) fn active_facets_checked_in(
                         [("path", &path.display())],
                     )
                 })?;
-            facets.insert(facet.to_owned());
+            all_facets.insert(facet.to_owned());
+            if !is_historical {
+                non_historical_facets.insert(facet.to_owned());
+            }
         }
     }
-    Ok(with_live_facets(journal, facets))
+    Ok((
+        with_live_facets(journal, all_facets),
+        with_live_facets(journal, non_historical_facets),
+    ))
+}
+
+/// Whether `facet` (or all active facets when `None`) on `day` came solely
+/// from segments that arrived as historical backfill.
+pub(crate) fn facet_is_historical_backfill_only(
+    journal: &Path,
+    day: &str,
+    facet: Option<&str>,
+) -> bool {
+    let Ok((all, non_historical)) =
+        active_facets_with_non_historical_checked_in(journal, day, solstone_core_cli_copy::ENGLISH)
+    else {
+        return false;
+    };
+    match facet {
+        Some(f) => all.contains(f) && !non_historical.contains(f),
+        None => !all.is_empty() && non_historical.is_empty(),
+    }
 }
 
 fn collect_segment_facets(segment: &Path, active: &mut BTreeSet<String>) {

@@ -232,6 +232,11 @@ pub enum AcceptedReuse {
     /// The same evidence under an older contract, on a closed day older than
     /// [`CONTRACT_REOWE_CLOSED_DAYS`].
     EarlierContract,
+    /// Historical backfill arrived on a closed day older than
+    /// [`CONTRACT_REOWE_CLOSED_DAYS`] (or in its lookback window) that already
+    /// held an accepted output; historical span consolidation handles entities
+    /// without re-running daily models over already-closed history.
+    HistoricalBackfill,
 }
 
 /// Whether `record` answers for this unit at `now`, the owner's wall-clock
@@ -316,6 +321,19 @@ pub fn accepted_reuse(
         && evidence.revision_under(&accepted.contract_digest) == accepted.evidence_revision
     {
         return Some(Some(AcceptedReuse::EarlierContract));
+    }
+    if day < today - jiff::Span::new().days(CONTRACT_REOWE_CLOSED_DAYS)
+        && is_historical_backfill_skipped_daily(&record.identity.name)
+        && !crate::owner_ask::thawed(journal, &record.identity.day)
+        && solstone_core_indexer::daily_evidence::evidence_day_offsets(&record.identity.name)
+            .into_iter()
+            .filter_map(|offset| day.checked_add(jiff::Span::new().days(offset)).ok())
+            .any(|d| {
+                let d_key = solstone_core_time::day_key(d);
+                solstone_core_segment::day_holds_historical_backfill(journal, &d_key)
+            })
+    {
+        return Some(Some(AcceptedReuse::HistoricalBackfill));
     }
     None
 }
@@ -464,7 +482,8 @@ fn read_daily_coverage_unlocked(
     cache: &mut DayProjectionCache,
     locale: &str,
 ) -> Result<DailyCoverage, String> {
-    let active = crate::activity_state::active_facets_checked_in(journal, day, locale)?;
+    let (active, non_historical_active) =
+        crate::activity_state::active_facets_with_non_historical_checked_in(journal, day, locale)?;
     let today = local_day(journal, Timestamp::now());
     let mut backfill_only: Option<bool> = None;
     let mut is_backfill_only = || -> bool {
@@ -481,6 +500,8 @@ fn read_daily_coverage_unlocked(
                 {
                     continue;
                 }
+                let facet_historical_only =
+                    active.contains(facet) && !non_historical_active.contains(facet);
                 units.push(read_unit_coverage_cached_with_backfill(
                     journal,
                     day,
@@ -489,6 +510,7 @@ fn read_daily_coverage_unlocked(
                     Some(facet),
                     cache,
                     &mut is_backfill_only,
+                    &mut || facet_historical_only,
                 )?);
             }
         } else {
@@ -505,6 +527,8 @@ fn read_daily_coverage_unlocked(
             if config.key == "experiences_detect" && active.is_empty() {
                 continue;
             }
+            let day_facets_historical_only =
+                !active.is_empty() && non_historical_active.is_empty();
             units.push(read_unit_coverage_cached_with_backfill(
                 journal,
                 day,
@@ -513,6 +537,7 @@ fn read_daily_coverage_unlocked(
                 None,
                 cache,
                 &mut is_backfill_only,
+                &mut || day_facets_historical_only,
             )?);
         }
     }
@@ -615,6 +640,17 @@ pub const HISTORICAL_ENTITY_DAILY_TALENTS: [&str; 3] = [
     "entities:entity_observer",
 ];
 
+pub const HISTORICAL_EXPERIENCE_DAILY_TALENTS: [&str; 2] = [
+    "experiences_detect_facet",
+    "experiences_detect",
+];
+
+#[must_use]
+pub fn is_historical_backfill_skipped_daily(talent: &str) -> bool {
+    HISTORICAL_ENTITY_DAILY_TALENTS.contains(&talent)
+        || HISTORICAL_EXPERIENCE_DAILY_TALENTS.contains(&talent)
+}
+
 #[must_use]
 pub fn historical_entity_daily_applies(
     journal: &Path,
@@ -622,7 +658,7 @@ pub fn historical_entity_daily_applies(
     talent: &str,
     facet: Option<&str>,
 ) -> bool {
-    historical_entity_daily_applies_at(journal, day, talent, facet, Timestamp::now())
+    historical_backfill_daily_applies_at(journal, day, talent, facet, Timestamp::now())
 }
 
 #[must_use]
@@ -633,26 +669,49 @@ pub fn historical_entity_daily_applies_at(
     facet: Option<&str>,
     now: Timestamp,
 ) -> bool {
+    historical_backfill_daily_applies_at(journal, day, talent, facet, now)
+}
+
+#[must_use]
+pub fn historical_backfill_daily_applies(
+    journal: &Path,
+    day: &str,
+    talent: &str,
+    facet: Option<&str>,
+) -> bool {
+    historical_backfill_daily_applies_at(journal, day, talent, facet, Timestamp::now())
+}
+
+#[must_use]
+pub fn historical_backfill_daily_applies_at(
+    journal: &Path,
+    day: &str,
+    talent: &str,
+    facet: Option<&str>,
+    now: Timestamp,
+) -> bool {
     let today_str = local_day(journal, now);
-    historical_entity_daily_applies_with_backfill(
+    historical_backfill_daily_applies_with_context(
         journal,
         day,
         &today_str,
         talent,
         facet,
         &mut || solstone_core_segment::day_holds_only_backfill_streams(journal, day),
+        &mut || crate::activity_state::facet_is_historical_backfill_only(journal, day, facet),
     )
 }
 
-fn historical_entity_daily_applies_with_backfill(
+fn historical_backfill_daily_applies_with_context(
     journal: &Path,
     day: &str,
     today_str: &str,
     talent: &str,
     facet: Option<&str>,
     is_backfill_only: &mut dyn FnMut() -> bool,
+    is_facet_historical_only: &mut dyn FnMut() -> bool,
 ) -> bool {
-    if !HISTORICAL_ENTITY_DAILY_TALENTS.contains(&talent) {
+    if !is_historical_backfill_skipped_daily(talent) {
         return true;
     }
     let Some(day_date) = solstone_core_time::parse_day(day) else {
@@ -662,7 +721,12 @@ fn historical_entity_daily_applies_with_backfill(
         return true;
     };
     let age = today_date.duration_since(day_date).as_hours() / 24;
-    if age <= 7 || !is_backfill_only() {
+    if age <= CONTRACT_REOWE_CLOSED_DAYS {
+        return true;
+    }
+    let backfill_only_day = is_backfill_only();
+    let facet_historical_only = !backfill_only_day && is_facet_historical_only();
+    if !backfill_only_day && !facet_historical_only {
         return true;
     }
     if crate::owner_ask::thawed(journal, day) {
@@ -674,6 +738,7 @@ fn historical_entity_daily_applies_with_backfill(
         Ok(Some(record))
             if record.status == DailyUnitStatus::Conflicting
                 || record.has_uncommitted_started_receipt()
+                || (facet_historical_only && record.accepted.is_some())
     )
 }
 
@@ -692,9 +757,11 @@ pub fn read_unit_coverage(
         facet,
         &mut DayProjectionCache::new(journal, day),
         &mut || solstone_core_segment::day_holds_only_backfill_streams(journal, day),
+        &mut || crate::activity_state::facet_is_historical_backfill_only(journal, day, facet),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_unit_coverage_cached_with_backfill(
     journal: &Path,
     day: &str,
@@ -703,6 +770,7 @@ fn read_unit_coverage_cached_with_backfill(
     facet: Option<&str>,
     cache: &mut DayProjectionCache,
     is_backfill_only: &mut dyn FnMut() -> bool,
+    is_facet_historical_only: &mut dyn FnMut() -> bool,
 ) -> Result<UnitCoverage, String> {
     let identity = DailyUnitIdentity::new(day, &config.key, facet.map(str::to_owned));
     if config.key == "morning_briefing"
@@ -718,14 +786,15 @@ fn read_unit_coverage_cached_with_backfill(
             owed_by: None,
         });
     }
-    if HISTORICAL_ENTITY_DAILY_TALENTS.contains(&config.key.as_str())
-        && !historical_entity_daily_applies_with_backfill(
+    if is_historical_backfill_skipped_daily(&config.key)
+        && !historical_backfill_daily_applies_with_context(
             journal,
             day,
             today,
             &config.key,
             facet,
             is_backfill_only,
+            is_facet_historical_only,
         )
     {
         return Ok(UnitCoverage {
@@ -2398,5 +2467,201 @@ mod tests {
         assert!(!morning_briefing_applies_at(
             journal, "20260530", "20260602"
         ));
+    }
+
+    #[test]
+    fn historical_backfill_skips_experience_and_entity_dailies_on_backfill_only_and_closed_mixed_days()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (talent, apps) = package_roots().unwrap();
+        utc_journal(root, serde_json::json!({}));
+        for facet in ["work", "personal"] {
+            fs::create_dir_all(root.join(format!("facets/{facet}"))).unwrap();
+            fs::write(
+                root.join(format!("facets/{facet}/facet.json")),
+                serde_json::json!({"name": facet}).to_string(),
+            )
+            .unwrap();
+        }
+        let days = closed_days(root, 14);
+        let old_backfill_day = &days[0];
+        let old_mixed_day = &days[1];
+        let old_review_follower = &days[3]; // 2 days after old_mixed_day, still age > 7
+        let recent_backfill_day = &days[days.len() - 2];
+
+        // 1. Gap 4a: backfill-only day older than 7 days skips ALL daily talents
+        // (entities:* + experiences_detect* + morning_briefing), while recent <=7d owes them.
+        for day in [old_backfill_day, recent_backfill_day] {
+            let seg = root.join(format!("chronicle/{day}/import.email/100000_300"));
+            fs::create_dir_all(seg.join("talents")).unwrap();
+            fs::write(
+                seg.join("conversation_transcript.jsonl"),
+                "{\"source\":\"email\"}\n{\"start\":\"00:00:00\",\"text\":\"Hello\"}\n",
+            )
+            .unwrap();
+            fs::write(seg.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+        }
+        let old_cov = read_daily_coverage_with_roots(root, old_backfill_day, &talent, &apps).unwrap();
+        assert_eq!(
+            old_cov.state,
+            CoverageState::Current,
+            "age>7 backfill-only day must owe zero daily units: {:?}",
+            old_cov.units
+        );
+        for name in [
+            "experiences_detect_facet",
+            "experiences_detect",
+            "entities:entity_suggest",
+            "entities:entity_observer",
+            "entities:entities_review",
+        ] {
+            let unit = old_cov
+                .units
+                .iter()
+                .find(|u| u.identity.name == name)
+                .unwrap_or_else(|| panic!("expected unit {name}"));
+            assert_eq!(unit.state, CoverageState::Current, "{name}");
+            assert_eq!(unit.evidence_revision, "historical_backfill", "{name}");
+        }
+        let recent_cov =
+            read_daily_coverage_with_roots(root, recent_backfill_day, &talent, &apps).unwrap();
+        assert_eq!(
+            recent_cov.state,
+            CoverageState::Outstanding,
+            "age<=7 recent day still owes daily work"
+        );
+
+        // 2. Gap 4b: already-closed live days (>7d) keep their accepted daily units when
+        // historical import.email arrives on the day or in entities_review's 7-day lookback,
+        // and a brand-new facet brought only by historical email does not become newly owed.
+        let accept_all_units = |day: &str| {
+            let cov = read_daily_coverage_with_roots(root, day, &talent, &apps).unwrap();
+            for unit in cov.units {
+                let mut record = DailyUnitRecord::new(
+                    unit.identity,
+                    &unit.evidence_revision,
+                    &unit.contract_digest,
+                );
+                record.status = DailyUnitStatus::CommittedNoOutput;
+                record.accepted = Some(AcceptedDailyResult {
+                    evidence_revision: unit.evidence_revision,
+                    contract_digest: unit.contract_digest,
+                    status: DailyUnitStatus::CommittedNoOutput,
+                    packet_digest: Some("a".repeat(64)),
+                    generated_result: Some(serde_json::json!({"response":"[]","output":"[]"})),
+                    receipts: Vec::new(),
+                    committed_at_ms: 1,
+                });
+                save_daily_unit_record(root, &record).unwrap();
+            }
+        };
+        for day in [old_mixed_day, old_review_follower] {
+            let live = root.join(format!("chronicle/{day}/default/090000_300"));
+            fs::create_dir_all(live.join("talents")).unwrap();
+            fs::write(
+                live.join("audio.jsonl"),
+                "{\"start\":\"00:00:00\",\"text\":\"Live standup discussion.\"}\n",
+            )
+            .unwrap();
+            fs::write(live.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+            accept_all_units(day);
+        }
+
+        // Now historical import.email lands on old_mixed_day, changing chronicle, work activities,
+        // work entity detections (which old_review_follower's -7..-1 review hashes!), and
+        // activating a brand-new facet ("personal") strictly via historical email.
+        let email_seg = root.join(format!("chronicle/{old_mixed_day}/import.email/140000_300"));
+        fs::create_dir_all(email_seg.join("talents")).unwrap();
+        fs::write(
+            email_seg.join("conversation_transcript.jsonl"),
+            "{\"source\":\"email\"}\n{\"start\":\"00:00:00\",\"text\":\"Historical email.\"}\n",
+        )
+        .unwrap();
+        fs::write(
+            email_seg.join("talents/facets.json"),
+            r#"[{"facet":"work"},{"facet":"personal"}]"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+        fs::write(
+            root.join(format!("facets/work/activities/{old_mixed_day}.jsonl")),
+            "{\"id\":\"e1\",\"stream\":\"import.email\",\"title\":\"Email\"}\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("facets/work/entities")).unwrap();
+        fs::write(
+            root.join(format!("facets/work/entities/{old_mixed_day}.jsonl")),
+            "{\"name\":\"Casey\",\"type\":\"Person\",\"segments\":[\"import.email/140000_300\"]}\n",
+        )
+        .unwrap();
+
+        let mixed_after =
+            read_daily_coverage_with_roots(root, old_mixed_day, &talent, &apps).unwrap();
+        assert_eq!(
+            mixed_after.state,
+            CoverageState::Current,
+            "mixed closed day >7d must stay Current after historical email lands: {:?}",
+            mixed_after.units
+        );
+        for name in [
+            "experiences_detect",
+            "experiences_detect_facet",
+            "entities:entity_suggest",
+            "entities:entity_observer",
+        ] {
+            let work_unit = mixed_after
+                .units
+                .iter()
+                .find(|u| {
+                    u.identity.name == name
+                        && (u.identity.facet.is_none() || u.identity.facet.as_deref() == Some("work"))
+                })
+                .unwrap_or_else(|| panic!("expected work unit {name}"));
+            assert_eq!(work_unit.state, CoverageState::Current, "{name}");
+            assert_eq!(
+                work_unit.earlier_version,
+                Some(AcceptedReuse::HistoricalBackfill),
+                "{name}"
+            );
+        }
+        let personal_suggest = mixed_after
+            .units
+            .iter()
+            .find(|u| {
+                u.identity.name == "entities:entity_suggest"
+                    && u.identity.facet.as_deref() == Some("personal")
+            })
+            .expect("personal unit");
+        assert_eq!(personal_suggest.state, CoverageState::Current);
+        assert_eq!(personal_suggest.evidence_revision, "historical_backfill");
+
+        // Follower day whose entities_review reads -7..=-1 also stays Current.
+        let follower_after =
+            read_daily_coverage_with_roots(root, old_review_follower, &talent, &apps).unwrap();
+        assert_eq!(
+            follower_after.state,
+            CoverageState::Current,
+            "follower day entities_review must stay Current after email lands in -7..-1: {:?}",
+            follower_after.units
+        );
+        let follower_review = follower_after
+            .units
+            .iter()
+            .find(|u| u.identity.name == "entities:entities_review")
+            .expect("follower review unit");
+        assert_eq!(
+            follower_review.earlier_version,
+            Some(AcceptedReuse::HistoricalBackfill)
+        );
+
+        // Explicit owner thaw (e.g. Trash delete or correction) still re-opens the day.
+        crate::owner_ask::record(root, old_mixed_day, &[], true, 1).unwrap();
+        let thawed = read_daily_coverage_with_roots(root, old_mixed_day, &talent, &apps).unwrap();
+        assert_eq!(
+            thawed.state,
+            CoverageState::Outstanding,
+            "owner thaw must still re-open a mixed closed day"
+        );
     }
 }

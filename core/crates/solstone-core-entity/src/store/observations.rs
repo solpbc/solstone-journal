@@ -1210,12 +1210,23 @@ pub fn resolve_observation_entity_dir(
     facet: &str,
     entity_query: &str,
 ) -> Result<ObservationEntityResolution, ObservationLookupError> {
-    let dirs = LinkDirs::for_facet(journal_root, facet);
     let map = read_identity_map(journal_root)?;
+    resolve_observation_entity_dir_with_resolved_ids(journal_root, facet, entity_query, &map.resolved)
+}
+
+/// [`resolve_observation_entity_dir`] reusing an already-loaded identity map
+/// so batch callers avoid rescanning `entities/*/identity.json` per lookup.
+pub fn resolve_observation_entity_dir_with_resolved_ids(
+    journal_root: &Path,
+    facet: &str,
+    entity_query: &str,
+    resolved_ids: &std::collections::HashMap<String, String>,
+) -> Result<ObservationEntityResolution, ObservationLookupError> {
+    let dirs = LinkDirs::for_facet(journal_root, facet);
     let (links, _) = dirs.scan().map_err(lookup_error)?;
     let mut scoped = Vec::new();
     for link in links.into_iter().filter(|link| link.id_written) {
-        let entity_dir = map.resolved.get(&link.entity_id).cloned();
+        let entity_dir = resolved_ids.get(&link.entity_id).cloned();
         let name = entity_dir.as_ref().and_then(|edir| {
             read_entity_identity(journal_root, edir)
                 .ok()

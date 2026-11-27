@@ -158,6 +158,7 @@ pub use observations::{
     observation_day_counts, observation_summary, parse_observation_file, prepare_observation_batch,
     publish_observation_batch, publish_observation_batch_checked, read_facet_entity_observations,
     read_live_observations, record_observation_ops_strict, resolve_observation_entity_dir,
+    resolve_observation_entity_dir_with_resolved_ids,
     serialize_observation_rows, validate_observation_operations, write_facet_entity_observations,
 };
 pub use recent_names::{

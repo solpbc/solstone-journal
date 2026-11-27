@@ -62,11 +62,11 @@ pub use body_only::{
     is_transactions_dir, is_transactions_segment,
 };
 pub use calendar::{
-    PHOTOS_SOURCE, SYNCING_SOURCES, day_holds_only_backfill_streams, day_is_backfill_only,
-    is_activity_only_folder_dir, is_activity_only_folder_segment, is_backfill_stream,
-    is_calendar_segment, is_calendar_stream, is_email_stream, is_folder_stream, is_obsidian_stream,
-    is_photos_stream, is_screenshots_stream, is_syncing_source_name, is_syncing_source_stream,
-    setup_completed_at_ms,
+    PHOTOS_SOURCE, SYNCING_SOURCES, day_holds_historical_backfill, day_holds_only_backfill_streams,
+    day_is_backfill_only, is_activity_only_folder_dir, is_activity_only_folder_segment,
+    is_backfill_stream, is_calendar_segment, is_calendar_stream, is_email_stream, is_folder_stream,
+    is_obsidian_stream, is_photos_stream, is_screenshots_stream, is_syncing_source_name,
+    is_syncing_source_stream, setup_completed_at_ms, stream_arrived_as_history_on_day,
 };
 pub use chronicle_migration::{
     ChronicleMigrationError, ChronicleMigrationReport, migrate_root_days_to_chronicle,

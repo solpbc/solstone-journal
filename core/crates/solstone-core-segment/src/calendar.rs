@@ -39,14 +39,17 @@ pub fn is_syncing_source_name(source: &str) -> bool {
     SYNCING_SOURCES.contains(&source) || is_folder_source_name(source)
 }
 
-/// Whether `stream` belongs to a syncing source (bound via `streams/<stream>.json`
-/// or a Granola source stream `import.granola.<id>`).
+/// Whether `stream` belongs to a syncing source (bound via `streams/<stream>.json`,
+/// `photos`, `import.email`, or a Granola source stream `import.granola.<id>`).
 #[must_use]
 pub fn is_syncing_source_stream(journal: &Path, stream: &str) -> bool {
     if !is_safe_stream_component(stream) {
         return false;
     }
-    if stream.starts_with("import.granola.") || stream == PHOTOS_SOURCE {
+    if stream.starts_with("import.granola.")
+        || stream == PHOTOS_SOURCE
+        || stream == EMAIL_SYNC_STREAM
+    {
         return true;
     }
     matches!(
@@ -74,6 +77,63 @@ pub fn day_holds_only_backfill_streams(journal: &Path, day: &str) -> bool {
     backfill_only_streams(journal, day).is_some()
 }
 
+/// Whether `stream` on `day` arrived as historical backfill rather than live
+/// capture as the day happened.
+///
+/// File imports (`import.*` excluding syncing sources and `import.archive`) are
+/// always history. Syncing sources (including `photos`, `import.email`,
+/// `import.granola.*`, and bound syncing streams) are history on days before
+/// their stream record's creation day, and live capture on or after it.
+#[must_use]
+pub fn stream_arrived_as_history_on_day(journal: &Path, stream: &str, day: &str) -> bool {
+    if !is_backfill_stream(journal, stream) {
+        return false;
+    }
+    if !is_syncing_source_stream(journal, stream) {
+        return true;
+    }
+    match read_typed_stream_record(&stream_record_path(journal, stream)) {
+        Ok(Some(record)) if record.created_at > 0 => {
+            i64::try_from(record.created_at.saturating_mul(1_000))
+                .ok()
+                .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                .is_none_or(|began| {
+                    day < solstone_core_journal_config::owner_day(journal, began).as_str()
+                })
+        }
+        _ => true,
+    }
+}
+
+/// Whether `day` holds at least one live (non-tombstoned, non-body-only)
+/// segment that arrived as historical backfill, even if the day also holds
+/// live capture.
+#[must_use]
+pub fn day_holds_historical_backfill(journal: &Path, day: &str) -> bool {
+    let Ok(segments) = iter_segments(journal, PathOrDay::Day(day)) else {
+        return false;
+    };
+    let mut checked = std::collections::BTreeSet::new();
+    for segment in segments.iter().filter(|segment| {
+        !segment.path().join("tombstone.json").is_file()
+            && !crate::is_body_only_segment(segment)
+            && !crate::is_transactions_segment(segment)
+            && !is_activity_only_folder_segment(segment)
+            && !is_calendar_segment(journal, segment)
+    }) {
+        let Some(name) = segment.stream().directory().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !checked.insert(name.to_owned()) {
+            continue;
+        }
+        if stream_arrived_as_history_on_day(journal, name, day) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Whether everything `day` holds arrived as history: every segment sits in a
 /// backfill stream, and none of them was captured as the day happened.
 ///
@@ -90,22 +150,9 @@ pub fn day_is_backfill_only(journal: &Path, day: &str) -> bool {
     let Some(streams) = backfill_only_streams(journal, day) else {
         return false;
     };
-    streams.iter().all(|stream| {
-        if !(is_syncing_source_stream(journal, stream) || stream == EMAIL_SYNC_STREAM) {
-            return true;
-        }
-        match read_typed_stream_record(&stream_record_path(journal, stream)) {
-            Ok(Some(record)) if record.created_at > 0 => {
-                i64::try_from(record.created_at.saturating_mul(1_000))
-                    .ok()
-                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
-                    .is_none_or(|began| {
-                        day < solstone_core_journal_config::owner_day(journal, began).as_str()
-                    })
-            }
-            _ => true,
-        }
-    })
+    streams
+        .iter()
+        .all(|stream| stream_arrived_as_history_on_day(journal, stream, day))
 }
 
 /// The stream the email source syncs into. It is named like a file import
@@ -413,5 +460,21 @@ mod tests {
             .replace(r#""created_at":0"#, r#""created_at":1780315200"#);
         fs::write(&record, began).unwrap();
         assert!(!day_is_backfill_only(root, "20260702"));
+        // import.email is itself a syncing source stream (Band 4 / backfill pause).
+        assert!(is_syncing_source_stream(root, "import.email"));
+        // Mixed live + historical email day reports day_holds_historical_backfill == true,
+        // while pure live or live + live-captured synced day reports false.
+        let live_day = root.join("chronicle/20260530/desk/090000_300");
+        fs::create_dir_all(&live_day).unwrap();
+        fs::write(live_day.join("audio.jsonl"), "{}").unwrap();
+        assert!(!day_holds_historical_backfill(root, "20260530"));
+        shot("20260530", "import.email");
+        assert!(day_holds_historical_backfill(root, "20260530"));
+        assert!(!day_holds_only_backfill_streams(root, "20260530"));
+        // On/after import.email's created_at (2026-06-01), import.email arrived live, not as history.
+        let recent_live = root.join("chronicle/20260702/desk/090000_300");
+        fs::create_dir_all(&recent_live).unwrap();
+        fs::write(recent_live.join("audio.jsonl"), "{}").unwrap();
+        assert!(!day_holds_historical_backfill(root, "20260702"));
     }
 }

@@ -6737,4 +6737,68 @@ mod tests {
         assert!(names.contains("personal"), "{merged}");
         assert!(names.contains("work"), "owner facet preserved: {merged}");
     }
+
+    #[test]
+    fn historical_import_email_schedules_in_band_four_and_honors_backfill_pause() {
+        let root = fixture("local");
+        let journal = root.path();
+        let old_day = "20200615";
+        let seg_dir = journal.join(format!("chronicle/{old_day}/import.email/101600_300"));
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        std::fs::write(
+            seg_dir.join("conversation_transcript.jsonl"),
+            concat!(
+                "{\"source\":\"email\",\"provider\":\"gmail\",\"run_id\":\"email-1\",\"email\":{\"account\":\"maya@example.com\"}}\n",
+                "{\"start\":\"00:00:00\",\"sent_at\":\"2020-06-15T16:16:00Z\",\"speaker\":\"You\",\"is_owner\":true,\"to\":[\"Casey\"],\"subject\":\"Project kickoff\",\"text\":\"Let us kick off the project next Monday morning with the full design packet.\"}\n"
+            ),
+        )
+        .unwrap();
+
+        // 1. Without backfill_paused: segment enters Band 4 (WorkBand::Import), counts in
+        // bands[3], and is queued for segment repair; no daily task is queued.
+        let q = queue(journal);
+        reconcile(journal, &q, &AtomicBool::new(false)).unwrap();
+        let inv = solstone_core_system::work_inventory::read(journal)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            inv.bands[3].segments_owed, 1,
+            "import.email at age>0 must populate Band 4 (imports and older history)"
+        );
+        assert_eq!(
+            inv.bands[4].segments_owed, 0,
+            "import.email at age>0 must not spill into Band 5 (completing history)"
+        );
+        assert!(
+            q.contains_reference(&format!("supervisor-work-{old_day}-import.email-101600_300")),
+            "historical email segment must queue when backfill is unpaused"
+        );
+        q.shutdown();
+
+        // 2. With processing.backfill_paused = true: Band 4 holds the email segment and does not queue it.
+        solstone_core_journal_config_write::mutate_journal_config(
+            journal,
+            solstone_core_journal_io::LockOptions::default(),
+            |cfg| {
+                cfg.insert(
+                    "processing".to_owned(),
+                    serde_json::json!({"backfill_paused": true}),
+                );
+                solstone_core_journal_config_write::JournalConfigMutation {
+                    changed: true,
+                    value: (),
+                }
+            },
+        )
+        .unwrap();
+        let q_paused = queue(journal);
+        reconcile(journal, &q_paused, &AtomicBool::new(false)).unwrap();
+        assert!(
+            !q_paused.contains_reference(&format!(
+                "supervisor-work-{old_day}-import.email-101600_300"
+            )),
+            "backfill_paused must pause historical import.email segments"
+        );
+        q_paused.shutdown();
+    }
 }

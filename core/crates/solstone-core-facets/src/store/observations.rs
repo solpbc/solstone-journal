@@ -14,7 +14,8 @@ pub use solstone_core_entity::{
     apply_ops_to_parsed, count_observations, facet_entity_observations_path, hold_facet_trust_lock,
     load_observations_for_query, normalize_observation_content, observation_day_counts,
     observation_summary, parse_observation_file, read_live_observations,
-    record_observation_ops_strict, resolve_observation_entity_dir, serialize_observation_rows,
+    record_observation_ops_strict, resolve_observation_entity_dir,
+    resolve_observation_entity_dir_with_resolved_ids, serialize_observation_rows,
 };
 
 use super::error::{FacetStoreError, FacetWriteError};
