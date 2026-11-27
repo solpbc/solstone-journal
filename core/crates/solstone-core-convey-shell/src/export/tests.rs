@@ -1103,3 +1103,89 @@ async fn burst_download_throttles_ready_json_writes_to_thirty_second_interval() 
         "download crossing 30s interval must persist refreshed activity timestamp"
     );
 }
+
+#[tokio::test]
+async fn estimate_reports_staging_volume_identity_for_same_and_distinct_sibling_mounts() {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    seed_journal(&journal);
+    let expected_sibling = fs::canonicalize(work.path())
+        .unwrap()
+        .join(".journal.export-staging");
+
+    // 1. Sibling staging directory on the SAME volume as the journal.
+    let same_staging = StagingArea::resolve_with_volume_check(&journal, |j, s| {
+        assert_eq!(s, expected_sibling.as_path());
+        assert_ne!(j, s);
+        true
+    })
+    .unwrap();
+    assert_eq!(same_staging.dir, expected_sibling);
+    assert!(same_staging.same_volume_as_journal);
+
+    let clock: Arc<dyn ExportClock> = Arc::new(MockClock::new(1_764_150_000));
+    let same_disk: Arc<dyn DiskSpaceProbe> =
+        Arc::new(MockDiskSpace::new(99_586_048, 96 * 1024 * 1024));
+    let same_service =
+        ExportService::with_deps(journal.clone(), same_staging, Arc::clone(&clock), same_disk);
+    same_service.trigger_estimate_if_needed(true);
+    let mut same_est = Value::Null;
+    for _ in 0..100 {
+        same_est = same_service.estimate_payload();
+        if same_est["status"] == "ready" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(same_est["status"], "ready");
+    assert_eq!(same_est["staging_volume_same_as_journal"], true);
+    assert_eq!(same_est["journal_disk_free_bytes"], 99_586_048u64);
+    let same_full_bytes = same_est["breakdown"]["full_bytes"].as_u64().unwrap();
+    assert_eq!(
+        same_est["full_required_bytes"],
+        same_full_bytes + super::staging::staging_disk_floor_bytes(96 * 1024 * 1024)
+    );
+
+    // 2. Sibling staging directory on a DISTINCT parent volume (e.g. 96 MiB mounted
+    //    journal beneath a 256 MiB writable parent holding `.journal.export-staging`).
+    let distinct_staging = StagingArea::resolve_with_volume_check(&journal, |j, s| {
+        assert_eq!(s, expected_sibling.as_path());
+        assert_ne!(j, s);
+        false
+    })
+    .unwrap();
+    assert_eq!(distinct_staging.dir, expected_sibling);
+    assert!(
+        !distinct_staging.same_volume_as_journal,
+        "sibling staging on a distinct parent volume must report same_volume_as_journal = false"
+    );
+
+    let parent_total = 256 * 1024 * 1024u64;
+    let parent_free = 268_431_360u64;
+    let distinct_disk: Arc<dyn DiskSpaceProbe> =
+        Arc::new(MockDiskSpace::new(parent_free, parent_total));
+    let distinct_service =
+        ExportService::with_deps(journal.clone(), distinct_staging, clock, distinct_disk);
+    distinct_service.trigger_estimate_if_needed(true);
+    let mut distinct_est = Value::Null;
+    for _ in 0..100 {
+        distinct_est = distinct_service.estimate_payload();
+        if distinct_est["status"] == "ready" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(distinct_est["status"], "ready");
+    assert_eq!(
+        distinct_est["staging_volume_same_as_journal"], false,
+        "distinct-mount sibling must not label parent volume space as journal drive"
+    );
+    assert_eq!(distinct_est["journal_disk_free_bytes"], parent_free);
+    assert_eq!(distinct_est["journal_disk_total_bytes"], parent_total);
+    let distinct_full_bytes = distinct_est["breakdown"]["full_bytes"].as_u64().unwrap();
+    assert_eq!(
+        distinct_est["full_required_bytes"],
+        distinct_full_bytes + super::staging::staging_disk_floor_bytes(parent_total),
+        "reserve must apply to the actual volume holding the staged ZIP"
+    );
+}

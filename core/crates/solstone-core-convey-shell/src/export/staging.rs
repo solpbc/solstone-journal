@@ -18,7 +18,7 @@ use solstone_core_journal_archive::ExportMode;
 use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::disk_space::{
-    JournalDiskSpace, journal_disk_floor_bytes, read_journal_disk_space,
+    JournalDiskSpace, journal_disk_floor_bytes, read_journal_disk_space, same_filesystem_volume,
 };
 use solstone_core_system::storage_privacy::ensure_private_owner_dir;
 use solstone_core_trash::ErasureEpoch;
@@ -163,6 +163,16 @@ impl StagingArea {
     /// current-account ownership, and private permissions/DACL. Fails closed
     /// (`Err`) rather than falling back to any shared directory.
     pub(crate) fn resolve(journal_root: &Path) -> io::Result<Self> {
+        Self::resolve_with_volume_check(journal_root, same_filesystem)
+    }
+
+    pub(crate) fn resolve_with_volume_check<F>(
+        journal_root: &Path,
+        same_volume: F,
+    ) -> io::Result<Self>
+    where
+        F: Fn(&Path, &Path) -> bool,
+    {
         let canonical = fs::canonicalize(journal_root)?;
         if let (Some(parent), Some(name)) = (canonical.parent(), canonical.file_name()) {
             let mut dir_name = std::ffi::OsString::from(".");
@@ -172,9 +182,10 @@ impl StagingArea {
             if ensure_private_dir(&candidate).is_ok()
                 && fs::canonicalize(&candidate).is_ok_and(|c| !c.starts_with(&canonical))
             {
+                let same_vol = same_volume(&canonical, &candidate);
                 return Ok(Self {
                     dir: candidate,
-                    same_volume_as_journal: true,
+                    same_volume_as_journal: same_vol,
                 });
             }
         }
@@ -187,7 +198,7 @@ impl StagingArea {
                 "export staging path resolves inside the journal root",
             ));
         }
-        let same_vol = same_filesystem(&canonical, &fallback);
+        let same_vol = same_volume(&canonical, &fallback);
         Ok(Self {
             dir: fallback,
             same_volume_as_journal: same_vol,
@@ -306,17 +317,5 @@ fn ensure_private_dir(path: &Path) -> io::Result<()> {
 }
 
 fn same_filesystem(a: &Path, b: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        match (fs::metadata(a), fs::metadata(b)) {
-            (Ok(ma), Ok(mb)) => ma.dev() == mb.dev(),
-            _ => false,
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (a, b);
-        false
-    }
+    same_filesystem_volume(a, b).unwrap_or(false)
 }

@@ -86,6 +86,25 @@ pub fn read_journal_disk_space(path: &Path) -> io::Result<JournalDiskSpace> {
     })
 }
 
+/// Returns whether two existing paths reside on the same filesystem volume.
+///
+/// Follows mount boundaries accurately: a mounted directory beneath a parent
+/// volume has a distinct device ID (Unix) or volume serial (Windows) from its
+/// parent and sibling directories on the parent volume.
+#[cfg(unix)]
+pub fn same_filesystem_volume(a: &Path, b: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    let ma = std::fs::metadata(a)?;
+    let mb = std::fs::metadata(b)?;
+    Ok(ma.dev() == mb.dev())
+}
+
+/// Returns whether two existing paths reside on the same filesystem volume.
+#[cfg(windows)]
+pub fn same_filesystem_volume(a: &Path, b: &Path) -> io::Result<bool> {
+    Ok(crate::windows_volume_serial(a)? == crate::windows_volume_serial(b)?)
+}
+
 /// Effective low-space floor for a volume of `total_bytes`:
 /// `min(JOURNAL_DISK_MIN_FLOOR_BYTES, total_bytes / 4)`.
 #[must_use]
@@ -138,8 +157,33 @@ mod tests {
     use super::{
         JOURNAL_DISK_MIN_FLOOR_BYTES, JournalDiskLevel, JournalDiskSpace, available_disk_bytes,
         journal_disk_floor_bytes, journal_disk_is_low, journal_disk_level,
-        journal_disk_percent_used, read_journal_disk_space, total_disk_bytes,
+        journal_disk_percent_used, read_journal_disk_space, same_filesystem_volume,
+        total_disk_bytes,
     };
+
+    #[test]
+    fn reports_same_volume_for_sibling_dirs_and_distinct_for_different_mounts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        std::fs::create_dir(&a).expect("dir a");
+        std::fs::create_dir(&b).expect("dir b");
+        assert!(same_filesystem_volume(&a, &b).expect("same volume check"));
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let shm = std::path::Path::new("/dev/shm");
+            if let (Ok(ma), Ok(ms)) = (std::fs::metadata(&a), std::fs::metadata(shm))
+                && ma.dev() != ms.dev()
+            {
+                assert!(
+                    !same_filesystem_volume(&a, shm).expect("distinct mount check"),
+                    "distinct Linux mounts must report same_filesystem_volume == false"
+                );
+            }
+        }
+    }
 
     #[test]
     fn reports_available_and_total_bytes_for_an_existing_directory() {

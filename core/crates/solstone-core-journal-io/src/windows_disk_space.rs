@@ -48,6 +48,23 @@ pub fn windows_disk_space(path: &Path) -> io::Result<WindowsDiskSpace> {
     })
 }
 
+/// Returns the NTFS/ReFS volume serial number for the volume containing an existing
+/// file or directory path (including mounted volume mount-points).
+pub fn windows_volume_serial(path: &Path) -> io::Result<u64> {
+    use std::fs::OpenOptions;
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+
+    let handle = OpenOptions::new()
+        .access_mode(0)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    Ok(crate::windows_identity::windows_file_identity(&handle)?.volume_serial())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +77,10 @@ mod tests {
         assert!(space.available_bytes <= space.total_bytes);
         let available = windows_available_disk_bytes(temporary.path()).expect("available capacity");
         assert!(available <= space.total_bytes);
+        let serial_a = windows_volume_serial(temporary.path()).expect("volume serial");
+        let nested = temporary.path().join("child");
+        std::fs::create_dir(&nested).expect("nested dir");
+        let serial_b = windows_volume_serial(&nested).expect("nested volume serial");
+        assert_eq!(serial_a, serial_b);
     }
 }

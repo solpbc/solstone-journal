@@ -187,7 +187,7 @@ pub use deconflict::{
 pub use disk_space::{
     JOURNAL_DISK_MIN_FLOOR_BYTES, JournalDiskLevel, JournalDiskSpace, available_disk_bytes,
     journal_disk_floor_bytes, journal_disk_is_low, journal_disk_level, journal_disk_percent_used,
-    read_journal_disk_space, total_disk_bytes,
+    read_journal_disk_space, same_filesystem_volume, total_disk_bytes,
 };
 #[cfg(unix)]
 pub use entry::sync_root;
@@ -301,7 +301,9 @@ pub use strict_segment::{
     resolve_stream_exact,
 };
 #[cfg(windows)]
-pub use windows_disk_space::{WindowsDiskSpace, windows_available_disk_bytes, windows_disk_space};
+pub use windows_disk_space::{
+    WindowsDiskSpace, windows_available_disk_bytes, windows_disk_space, windows_volume_serial,
+};
 #[cfg(windows)]
 pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
 #[cfg(windows)]

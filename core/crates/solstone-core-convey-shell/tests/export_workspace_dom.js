@@ -612,6 +612,44 @@ async function run(name, fn) {
     }
   });
 
+  // 9. Distinct staging volume labels free space as temporary space, not journal drive
+  await run('staging volume label reflects staging_volume_same_as_journal', async () => {
+    const idle = { status: 'idle', other_requester_busy: false, active_job: null, ready: null };
+    const distinctEst = sampleEstimate({
+      staging_volume_same_as_journal: false,
+      journal_disk_free_bytes: 268431360,
+      journal_disk_total_bytes: 268435456,
+    });
+    const hDistinct = createHarness({
+      fetch: (url) => url.includes('/estimate') ? jsonResp(200, distinctEst) : jsonResp(200, idle),
+    });
+    await flush();
+    assert.ok(
+      hDistinct.root.textContent.includes("journal's temporary drive:"),
+      `expected temporary drive label when distinct volume; got: ${hDistinct.root.textContent}`
+    );
+    assert.ok(
+      !hDistinct.root.textContent.includes('journal drive:'),
+      'must not claim distinct staging volume free space is on journal drive'
+    );
+    hDistinct.dispose();
+
+    const sameEst = sampleEstimate({ staging_volume_same_as_journal: true });
+    const hSame = createHarness({
+      fetch: (url) => url.includes('/estimate') ? jsonResp(200, sameEst) : jsonResp(200, idle),
+    });
+    await flush();
+    assert.ok(
+      hSame.root.textContent.includes('journal drive:'),
+      `expected journal drive label when same volume; got: ${hSame.root.textContent}`
+    );
+    assert.ok(
+      !hSame.root.textContent.includes("journal's temporary drive:"),
+      'same-volume staging must label journal drive, not temporary drive'
+    );
+    hSame.dispose();
+  });
+
   console.log(`DOM CASES: ${passed} passed`);
 })().catch((err) => {
   console.error(err);
