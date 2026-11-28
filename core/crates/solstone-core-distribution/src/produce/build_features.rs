@@ -17,14 +17,14 @@ pub(super) fn requires_linked_ort(bin: &str) -> bool {
     )
 }
 
-/// Describe opens the OCR runtime explicitly; speech links a different runtime.
-/// Keep their Cargo feature closures separate on both GNU and Apple lanes.
+/// The speech helpers link their runtime. Describe and its import callers load
+/// a runtime dynamically, so they must resolve in a separate Cargo invocation.
 pub(super) fn batches(bins: &[(String, String)]) -> Vec<Vec<(String, String)>> {
-    let (describe, other): (Vec<_>, Vec<_>) = bins
+    let (speech, other): (Vec<_>, Vec<_>) = bins
         .iter()
         .cloned()
-        .partition(|(package, _)| package == "solstone-core-describe");
-    [other, describe]
+        .partition(|(_, bin)| requires_linked_ort(bin));
+    [speech, other]
         .into_iter()
         .filter(|bins| !bins.is_empty())
         .collect()
@@ -162,8 +162,9 @@ mod tests {
     }
 
     #[test]
-    fn separates_dynamic_describe_from_both_linked_helpers() {
+    fn isolates_linked_speech_from_describe_and_its_import_callers() {
         let bins: Vec<_> = [
+            "solstone-core",
             "solstone-core-describe",
             "solstone-core-speakers-analyze",
             "solstone-core-vad-analyze",
@@ -174,11 +175,7 @@ mod tests {
         assert_eq!(planned.iter().map(Vec::len).sum::<usize>(), bins.len());
         for batch in planned {
             if batch.iter().any(|(_, bin)| requires_linked_ort(bin)) {
-                assert!(
-                    !batch
-                        .iter()
-                        .any(|(package, _)| package == "solstone-core-describe")
-                );
+                assert!(batch.iter().all(|(_, bin)| requires_linked_ort(bin)));
             }
         }
         assert!(batches(&[]).is_empty());
