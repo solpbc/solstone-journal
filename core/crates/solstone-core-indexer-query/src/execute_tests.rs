@@ -5430,3 +5430,419 @@ fn speech_line_admission_runs_before_segment_collapse_and_supports_uncollapsed_p
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn withheld_body_fast_matches_row_fallback_across_common_words_scopes_dates_and_relaxation() {
+    use std::sync::Arc;
+
+    let (root, connection) = seeded_root("withheld-body-fast");
+    let day_a = "20251001";
+    let day_b = "20251002";
+    let day_c = "20251003";
+    let day_d = "20251004";
+    let day_empty = "20251005";
+
+    // Seed > 256 ordinary transcript rows matching "commonword" so
+    // `withheld_body_fast` takes the large-match inversion path (Step 2)
+    // instead of the <= 256 small-match shortcut (Step 1).
+    for idx in 0..270_i64 {
+        let path = format!("{day_a}/audio/{idx:06}_60/talents/transcript.md");
+        let text = if idx == 0 {
+            "commonword ordinaryonly"
+        } else {
+            "commonword general transcript note"
+        };
+        insert(
+            &connection,
+            text,
+            &path,
+            day_a,
+            "",
+            "transcribe",
+            "audio",
+            0,
+        );
+        seed_classification(&connection, &path, "transcripts", "journal_wide", &[]);
+    }
+
+    // Ordinary activity file whose JSON contains `"story":{"body":...}` — must
+    // NOT be treated as a body-record source or trigger false withheld_body.
+    let ordinary_act_path = format!("facets/work/activities/{day_a}.jsonl");
+    let ordinary_act_disk = root.join(&ordinary_act_path);
+    fs::create_dir_all(ordinary_act_disk.parent().unwrap()).unwrap();
+    fs::write(
+        &ordinary_act_disk,
+        concat!(
+            "{\"id\":\"a1\",\"source\":\"observed\",\"activity\":\"meeting\",",
+            "\"story\":{\"body\":\"commonword story body text\"}}\n"
+        ),
+    )
+    .unwrap();
+    insert(
+        &connection,
+        "commonword story body text",
+        &ordinary_act_path,
+        day_a,
+        "work",
+        "activity",
+        "",
+        0,
+    );
+    seed_classification(
+        &connection,
+        &ordinary_act_path,
+        "facets",
+        "facet_owned",
+        &["facet-work"],
+    );
+
+    // Non-body import summary (`granola`) — must NOT count as body material.
+    let granola_dir = root.join("imports/imp-granola");
+    fs::create_dir_all(&granola_dir).unwrap();
+    fs::write(
+        granola_dir.join("manifest.json"),
+        r#"{"source_type":"granola"}"#,
+    )
+    .unwrap();
+    fs::write(
+        granola_dir.join("summary.md"),
+        "commonword granola summary\n",
+    )
+    .unwrap();
+    let granola_summary = "imports/imp-granola/summary.md";
+    insert(
+        &connection,
+        "commonword granola summary",
+        granola_summary,
+        day_a,
+        "",
+        "import",
+        "",
+        0,
+    );
+    seed_classification(
+        &connection,
+        granola_summary,
+        "transcripts",
+        "journal_wide",
+        &[],
+    );
+
+    finish_classification(&connection);
+    drop(connection);
+
+    let set_keys_ready = |ready: i64| {
+        Connection::open(db_path(&root))
+            .expect("open writer")
+            .execute("UPDATE chunk_source_keys SET ready = ?1", [ready])
+            .expect("set keys readiness");
+    };
+    let check_both = |boundary: &ConnectionBoundary,
+                      req: &ConnectionSearchRequest,
+                      admit: crate::BodyEntryAdmission|
+     -> bool {
+        set_keys_ready(1);
+        let fast = crate::connection_search_withheld_body(
+            &root,
+            boundary,
+            req,
+            reference_date(),
+            Arc::clone(&admit),
+        )
+        .expect("fast withheld body");
+        set_keys_ready(0);
+        let fallback =
+            crate::connection_search_withheld_body(&root, boundary, req, reference_date(), admit)
+                .expect("fallback withheld body");
+        set_keys_ready(1);
+        assert_eq!(
+            fast,
+            fallback,
+            "fast path disagreed with fallback for query={:?} day={:?} scope={:?}",
+            req.query,
+            req.day,
+            boundary.scope()
+        );
+        fast
+    };
+
+    let whole_with_body = connection_boundary(
+        &["Transcripts", "Facets", "Entities", "Body"],
+        ConnectionScope::WholeJournal,
+    );
+    let admit_all: crate::BodyEntryAdmission = Arc::new(|_, _| true);
+    let deny_all: crate::BodyEntryAdmission = Arc::new(|_, _| false);
+
+    // 1. Zero body data (despite `"story":{"body":...}` in activity JSON and granola summary).
+    let common_req = ConnectionSearchRequest {
+        query: "commonword".to_owned(),
+        limit: 1,
+        relax: true,
+        ..ConnectionSearchRequest::default()
+    };
+    assert!(!check_both(
+        &whole_with_body,
+        &common_req,
+        Arc::clone(&admit_all)
+    ));
+
+    // 2. Add > 64 direct body chunks (to exercise the streaming HashSet intersection
+    //    path in `any_rowid_matches_plan`) on day_a, assigned to `facet-health`.
+    let conn = Connection::open(db_path(&root)).expect("open writer");
+    let body_doc_path = format!("{day_a}/body.md");
+    for idx in 0..70_i64 {
+        let text = if idx == 69 {
+            "commonword sleep recovery applehealthneedle"
+        } else {
+            "resting heart rate sixty bpm"
+        };
+        insert(&conn, text, &body_doc_path, day_a, "", "body", "", idx);
+    }
+    seed_classification(
+        &conn,
+        &body_doc_path,
+        "transcripts",
+        "segment_assigned",
+        &["facet-health"],
+    );
+
+    // Also add a body import summary (`oura`) on day_b.
+    let oura_dir = root.join("imports/imp-oura");
+    fs::create_dir_all(&oura_dir).unwrap();
+    fs::write(oura_dir.join("manifest.json"), r#"{"source_type":"oura"}"#).unwrap();
+    fs::write(oura_dir.join("summary.md"), "commonword ourasummarytoken\n").unwrap();
+    let oura_summary = "imports/imp-oura/summary.md";
+    insert(
+        &conn,
+        "commonword ourasummarytoken",
+        oura_summary,
+        day_b,
+        "",
+        "import",
+        "",
+        0,
+    );
+    seed_classification(&conn, oura_summary, "transcripts", "journal_wide", &[]);
+
+    // Activity file with a real `"source" : "body"` entry (spaced JSON) on day_c.
+    let body_act_path = format!("facets/health/activities/{day_c}.jsonl");
+    let body_act_disk = root.join(&body_act_path);
+    fs::create_dir_all(body_act_disk.parent().unwrap()).unwrap();
+    fs::write(
+        &body_act_disk,
+        "{\"id\":\"b1\",\"source\" : \"body\",\"title\":\"Morning Run\"}\n",
+    )
+    .unwrap();
+    insert(
+        &conn,
+        "Morning Run\n- Kind: Workout\ncommonword bodyrecordtoken",
+        &body_act_path,
+        day_c,
+        "health",
+        "activity",
+        "",
+        0,
+    );
+    seed_classification(
+        &conn,
+        &body_act_path,
+        "facets",
+        "facet_owned",
+        &["facet-health"],
+    );
+
+    // Activity file with an unconverted `import.strava` line on day_d.
+    let strava_act_path = format!("facets/fitness/activities/{day_d}.jsonl");
+    let strava_act_disk = root.join(&strava_act_path);
+    fs::create_dir_all(strava_act_disk.parent().unwrap()).unwrap();
+    let strava_record = serde_json::json!({
+        "id": "strava_1",
+        "stream": "import.strava",
+        "activity": "exercise",
+        "title": "Trail Ride commonword stravalinetoken"
+    });
+    fs::write(&strava_act_disk, format!("{strava_record}\n")).unwrap();
+    let strava_entry = solstone_core_format::content::ordinary_entries(
+        &strava_act_path,
+        &[strava_record.as_object().unwrap().clone()],
+    )
+    .into_iter()
+    .next()
+    .expect("strava entry");
+    assert!(
+        strava_entry.contains("stravalinetoken"),
+        "rendered strava entry missing token: {strava_entry}"
+    );
+    insert(
+        &conn,
+        &strava_entry,
+        &strava_act_path,
+        day_d,
+        "fitness",
+        "activity",
+        "",
+        0,
+    );
+    seed_classification(
+        &conn,
+        &strava_act_path,
+        "facets",
+        "facet_owned",
+        &["facet-fitness"],
+    );
+    drop(conn);
+
+    // 3. Common word (> 256 FTS matches, > 64 body rowids): hits `body.md` on day_a.
+    assert!(check_both(
+        &whole_with_body,
+        &common_req,
+        Arc::clone(&admit_all)
+    ));
+
+    // Common word present in all 270 transcripts (`general`) but absent from all 70+ body rows.
+    let miss_common_req = ConnectionSearchRequest {
+        query: "general".to_owned(),
+        limit: 1,
+        relax: true,
+        ..ConnectionSearchRequest::default()
+    };
+    assert!(!check_both(
+        &whole_with_body,
+        &miss_common_req,
+        Arc::clone(&admit_all),
+    ));
+
+    // 4. Date bounds + Step 2 (> 256 FTS matches) across every body source type:
+    //    day_a (`body.md`), day_b (`oura` summary), day_c (`"source" : "body"`),
+    //    day_d (`import.strava`), and day_empty (no body match).
+    let common_on = |day: &str| ConnectionSearchRequest {
+        query: "commonword".to_owned(),
+        day: Some(day.to_owned()),
+        limit: 1,
+        relax: true,
+        ..ConnectionSearchRequest::default()
+    };
+    assert!(check_both(
+        &whole_with_body,
+        &common_on(day_a),
+        Arc::clone(&admit_all),
+    ));
+    assert!(check_both(
+        &whole_with_body,
+        &common_on(day_b),
+        Arc::clone(&admit_all),
+    ));
+    assert!(check_both(
+        &whole_with_body,
+        &common_on(day_c),
+        Arc::clone(&admit_all),
+    ));
+    assert!(!check_both(
+        &whole_with_body,
+        &common_on(day_c),
+        Arc::clone(&deny_all),
+    ));
+    assert!(check_both(
+        &whole_with_body,
+        &common_on(day_d),
+        Arc::clone(&deny_all),
+    ));
+    assert!(!check_both(
+        &whole_with_body,
+        &common_on(day_empty),
+        Arc::clone(&admit_all),
+    ));
+
+    // 5. ChosenFacets scope: `facet-health` sees `body.md`; `facet-work` does not.
+    let health_scope = connection_boundary(
+        &["Transcripts", "Facets", "Body"],
+        ConnectionScope::ChosenFacets {
+            ids: BTreeSet::from(["facet-health".to_owned()]),
+        },
+    );
+    let work_scope = connection_boundary(
+        &["Transcripts", "Facets", "Body"],
+        ConnectionScope::ChosenFacets {
+            ids: BTreeSet::from(["facet-work".to_owned()]),
+        },
+    );
+    assert!(check_both(
+        &health_scope,
+        &common_req,
+        Arc::clone(&admit_all)
+    ));
+    assert!(!check_both(
+        &work_scope,
+        &common_req,
+        Arc::clone(&admit_all)
+    ));
+
+    // 6. Body import summary (`oura`).
+    let oura_req = ConnectionSearchRequest {
+        query: "ourasummarytoken".to_owned(),
+        limit: 1,
+        relax: true,
+        ..ConnectionSearchRequest::default()
+    };
+    assert!(check_both(
+        &whole_with_body,
+        &oura_req,
+        Arc::clone(&admit_all)
+    ));
+
+    // 7. Activity body record (`"source" : "body"`) respects BodyEntryAdmission.
+    let body_record_req = ConnectionSearchRequest {
+        query: "bodyrecordtoken".to_owned(),
+        limit: 1,
+        relax: true,
+        ..ConnectionSearchRequest::default()
+    };
+    assert!(check_both(
+        &whole_with_body,
+        &body_record_req,
+        Arc::clone(&admit_all),
+    ));
+    assert!(!check_both(
+        &whole_with_body,
+        &body_record_req,
+        Arc::clone(&deny_all),
+    ));
+
+    // 8. Unconverted Strava activity line.
+    let strava_req = ConnectionSearchRequest {
+        query: "stravalinetoken".to_owned(),
+        limit: 1,
+        relax: true,
+        ..ConnectionSearchRequest::default()
+    };
+    assert!(check_both(
+        &whole_with_body,
+        &strava_req,
+        Arc::clone(&deny_all)
+    ));
+
+    // 9. Relaxation: strict misses all rows -> relaxes to `commonword` and hits body;
+    //    strict hits an ordinary transcript (`commonword ordinaryonly`) -> does NOT relax to body.
+    assert!(check_both(
+        &whole_with_body,
+        &ConnectionSearchRequest {
+            query: "commonword nonexistenttoken".to_owned(),
+            limit: 1,
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        Arc::clone(&admit_all),
+    ));
+    assert!(!check_both(
+        &whole_with_body,
+        &ConnectionSearchRequest {
+            query: "commonword ordinaryonly".to_owned(),
+            limit: 1,
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        Arc::clone(&admit_all),
+    ));
+
+    fs::remove_dir_all(root).unwrap();
+}

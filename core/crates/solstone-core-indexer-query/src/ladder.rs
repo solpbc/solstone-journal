@@ -20,50 +20,45 @@ const RELAX_STOPWORDS: &[&str] = &[
     "could", "should", "shall", "may", "might", "must", "get", "got", "gets",
 ];
 
-/// Try Python-compatible recall relaxation without bypassing query compilation.
-pub(super) fn relaxed_plan(
-    connection: &mut QueryConnection,
+/// Build the ordered recall-relaxation candidate plans for `compilation`
+/// without executing any of them.
+pub(super) fn relaxed_candidate_plans(
     compilation: &QueryCompilation,
     request: &SearchRequest,
     reference_date: Date,
     boundary: Option<&ConnectionBoundary>,
     speech_lines_only: bool,
-) -> Result<Option<SqlPlan>, IndexAccessError> {
+) -> Vec<SqlPlan> {
     let Some(words) = relaxation_terms(&compilation.temporal.remaining_text) else {
-        return Ok(None);
+        return Vec::new();
     };
     let content: Vec<String> = words
         .iter()
         .filter(|word| !RELAX_STOPWORDS.contains(&word.to_lowercase().as_str()))
         .cloned()
         .collect();
+    let mut plans = Vec::new();
 
     if !content.is_empty() && content != words {
-        let plan = candidate_plan(
+        plans.push(candidate_plan(
             &content.join(" "),
             compilation,
             request,
             reference_date,
             boundary,
             speech_lines_only,
-        );
-        if connection.has_rows(&plan)? {
-            return Ok(Some(plan));
-        }
+        ));
     }
 
     if content.len() > 1 {
-        let plan = candidate_plan(
+        plans.push(candidate_plan(
             &content.join(" OR "),
             compilation,
             request,
             reference_date,
             boundary,
             speech_lines_only,
-        );
-        if connection.has_rows(&plan)? {
-            return Ok(Some(plan));
-        }
+        ));
     }
 
     // Last word-level rung: let each content word match as a prefix, so
@@ -75,33 +70,50 @@ pub(super) fn relaxed_plan(
         .map(|word| format!("{word}*"))
         .collect();
     if !prefixes.is_empty() {
-        let plan = candidate_plan(
+        plans.push(candidate_plan(
             &prefixes.join(" OR "),
             compilation,
             request,
             reference_date,
             boundary,
             speech_lines_only,
-        );
-        if connection.has_rows(&plan)? {
-            return Ok(Some(plan));
-        }
+        ));
     }
 
     if content.is_empty() && plan_has_date_constraint(compilation, request) {
         let candidate = compile_query("", reference_date);
-        let plan = plan_from_outcome_with_boundary(
+        plans.push(plan_from_outcome_with_boundary(
             candidate.outcome,
             &compilation.temporal,
             request,
             boundary,
             speech_lines_only,
-        );
+        ));
+    }
+
+    plans
+}
+
+/// Try Python-compatible recall relaxation without bypassing query compilation.
+pub(super) fn relaxed_plan(
+    connection: &mut QueryConnection,
+    compilation: &QueryCompilation,
+    request: &SearchRequest,
+    reference_date: Date,
+    boundary: Option<&ConnectionBoundary>,
+    speech_lines_only: bool,
+) -> Result<Option<SqlPlan>, IndexAccessError> {
+    for plan in relaxed_candidate_plans(
+        compilation,
+        request,
+        reference_date,
+        boundary,
+        speech_lines_only,
+    ) {
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
         }
     }
-
     Ok(None)
 }
 

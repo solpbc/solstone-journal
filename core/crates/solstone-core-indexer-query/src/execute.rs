@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -16,7 +17,7 @@ use rusqlite::{
 use solstone_core_indexer_store::db::AUTHORED_CHAT_PATH_PREDICATE;
 
 use crate::compile::{CompileOutcome, QueryCompilation, compile_query};
-use crate::ladder::relaxed_plan;
+use crate::ladder::{relaxed_candidate_plans, relaxed_plan};
 use crate::predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 use crate::temporal::TemporalExtraction;
 use crate::types::{
@@ -141,6 +142,8 @@ pub fn search_connection_with_admissions(
 /// the connection's own with body added, and `body_entries` admits body
 /// records' entries as they would then read. Only body material is asked for,
 /// and one row settles it.
+const WITHHELD_BODY_PATH_CLAUSE: &str = "CASE WHEN typeof(chunks.path)='text' THEN (chunks.path LIKE 'facets/%/activities/%.jsonl' OR solstone_indexed_permission(chunks.path,'transcripts')='body') ELSE 0 END";
+
 pub fn connection_search_withheld_body(
     journal: &Path,
     boundary: &ConnectionBoundary,
@@ -162,6 +165,17 @@ pub fn connection_search_withheld_body(
     };
     connection.set_body_entries(BodyEntries::OnlyBody(body_entries));
     let owner_request = owner_request_for_connection(request);
+
+    if let Some(found) = connection.withheld_body_fast(
+        journal,
+        boundary,
+        &owner_request,
+        reference_date,
+        &compilation,
+    )? {
+        return Ok(found);
+    }
+
     let (mut plan, _) = resolve_plan_with_boundary(
         &mut connection,
         &owner_request,
@@ -172,13 +186,15 @@ pub fn connection_search_withheld_body(
     )?;
     // An activity file's rows are judged by the admission: body entries and
     // Strava lines only.
-    const BODY_PATH: &str = "CASE WHEN typeof(chunks.path)='text' THEN (chunks.path LIKE 'facets/%/activities/%.jsonl' OR solstone_indexed_permission(chunks.path,'transcripts')='body') ELSE 0 END";
     plan.where_clause.push_str(" AND ");
-    plan.where_clause.push_str(BODY_PATH);
+    plan.where_clause.push_str(WITHHELD_BODY_PATH_CLAUSE);
     if let Some(key) = &mut plan.key {
         // Reject other kinds before testing the grant and date for each match.
         // The full row predicate still judges every nominated entry.
-        key.clause = format!("CASE WHEN {BODY_PATH} THEN ({}) ELSE 0 END", key.clause);
+        key.clause = format!(
+            "CASE WHEN {WITHHELD_BODY_PATH_CLAUSE} THEN ({}) ELSE 0 END",
+            key.clause
+        );
     }
     connection.any_row(&plan)
 }
@@ -1453,20 +1469,32 @@ pub type BodyEntryAdmission = std::sync::Arc<dyn Fn(&str, i64) -> bool + Send + 
 #[derive(Default)]
 pub(crate) struct BodyEntryState {
     entries: BodyEntries,
-    files: BTreeMap<String, Option<DayFileView>>,
+    files: BTreeMap<String, DayFileView>,
     /// Whether a Strava conversion could have left a folded line, asked once.
     may_fold: Option<bool>,
 }
 
 /// What a query needs from one activity day file.
+///
+/// The Strava/superseded sets are loaded first without JSON-parsing files that
+/// carry no `"import.strava"` stream marker; the full ordinary-entry rendering
+/// and moved-body positions are loaded lazily only when a row actually carries
+/// `BODY_ENTRY_LINE`.
 struct DayFileView {
-    /// What the file's other records say in the index, by position.
-    ordinary: Vec<String>,
+    readable: bool,
+    strava_loaded: bool,
     /// What a record another now stands for says in the index.
     superseded: BTreeSet<String>,
     /// What an unconverted Strava line says in the index: body data, shown
     /// only to a connection with the body permission.
     strava: BTreeSet<String>,
+    /// Loaded on demand when a chunk contains `BODY_ENTRY_LINE`.
+    full: Option<FullDayFileView>,
+}
+
+struct FullDayFileView {
+    /// What the file's other records say in the index, by position.
+    ordinary: Vec<String>,
     /// The entry positions of body records that show from another file.
     moved: BTreeSet<usize>,
 }
@@ -1490,13 +1518,90 @@ pub(crate) enum BodyEntries {
     OnlyBody(BodyEntryAdmission),
 }
 
-/// `None` when the file can't be read: it can vouch for nothing.
-fn day_file_view(journal: &Path, path: &str) -> Option<DayFileView> {
-    use solstone_core_format::content::{body_record_at, is_body_record, is_retired_plan};
+fn unreadable_day_file_view() -> DayFileView {
+    DayFileView {
+        readable: false,
+        strava_loaded: true,
+        superseded: BTreeSet::new(),
+        strava: BTreeSet::new(),
+        full: None,
+    }
+}
+
+/// Load only the Strava/superseded view for one activity day file.
+///
+/// `folded_strava_lines` and `strava` only ever contain non-body, non-retired
+/// records whose `stream` is `"import.strava"`, so files without that marker
+/// need neither JSON parsing nor markdown rendering.
+fn load_day_file_strava_view(journal: &Path, path: &str, may_fold: bool) -> DayFileView {
+    use solstone_core_format::content::{is_body_record, is_retired_plan, is_strava_reading};
+    let Some((facet, day)) = activity_day_of(path) else {
+        return unreadable_day_file_view();
+    };
+    let Ok(text) = std::fs::read_to_string(journal.join(path)) else {
+        return unreadable_day_file_view();
+    };
+    if !text.contains(solstone_core_format::content::strava_body::STRAVA_STREAM) {
+        return DayFileView {
+            readable: true,
+            strava_loaded: true,
+            superseded: BTreeSet::new(),
+            strava: BTreeSet::new(),
+            full: None,
+        };
+    }
+    let records = solstone_core_format::content::parse_jsonl_objects(&text);
+    let strava_records: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            !is_retired_plan(record) && !is_body_record(record) && is_strava_reading(record)
+        })
+        .cloned()
+        .collect();
+    if strava_records.is_empty() {
+        return DayFileView {
+            readable: true,
+            strava_loaded: true,
+            superseded: BTreeSet::new(),
+            strava: BTreeSet::new(),
+            full: None,
+        };
+    }
+    let rendered = solstone_core_format::content::ordinary_entries(path, &strava_records);
+    let gone = if may_fold {
+        solstone_core_facets::superseded_record_ids(journal, facet, day, &records)
+    } else {
+        BTreeSet::new()
+    };
+    let mut superseded = BTreeSet::new();
+    let mut strava = BTreeSet::new();
+    for (record, entry) in strava_records.iter().zip(rendered) {
+        if record
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| gone.contains(id))
+        {
+            superseded.insert(entry.clone());
+        }
+        strava.insert(entry);
+    }
+    DayFileView {
+        readable: true,
+        strava_loaded: true,
+        superseded,
+        strava,
+        full: None,
+    }
+}
+
+/// Load the full ordinary-entry and moved-body-position view for one activity
+/// day file when a row carries `BODY_ENTRY_LINE`.
+fn load_day_file_full_view(journal: &Path, path: &str) -> Option<FullDayFileView> {
+    use solstone_core_format::content::body_record_at;
+    let (facet, day) = activity_day_of(path)?;
     let text = std::fs::read_to_string(journal.join(path)).ok()?;
     let records = solstone_core_format::content::parse_jsonl_objects(&text);
     let ordinary = solstone_core_format::content::ordinary_entries(path, &records);
-    let (facet, day) = activity_day_of(path)?;
     let gone = solstone_core_facets::superseded_record_ids(journal, facet, day, &records);
     let is_gone = |record: &serde_json::Map<String, serde_json::Value>| {
         record
@@ -1504,29 +1609,10 @@ fn day_file_view(journal: &Path, path: &str) -> Option<DayFileView> {
             .and_then(serde_json::Value::as_str)
             .is_some_and(|id| gone.contains(id))
     };
-    let listed = || {
-        records
-            .iter()
-            .filter(|record| !is_retired_plan(record) && !is_body_record(record))
-            .zip(&ordinary)
-    };
-    let superseded = listed()
-        .filter(|(record, _)| is_gone(record))
-        .map(|(_, entry)| entry.clone())
-        .collect();
-    let strava = listed()
-        .filter(|(record, _)| solstone_core_format::content::is_strava_reading(record))
-        .map(|(_, entry)| entry.clone())
-        .collect();
     let moved = (0..records.len() + ordinary.len())
         .filter(|position| body_record_at(&records, *position).is_some_and(&is_gone))
         .collect();
-    Some(DayFileView {
-        ordinary,
-        superseded,
-        strava,
-        moved,
-    })
+    Some(FullDayFileView { ordinary, moved })
 }
 
 /// The facet and day of `facets/<facet>/activities/<day>.jsonl`.
@@ -1577,19 +1663,24 @@ fn register_body_entry_admission(
                 if !may_fold && !withhold_strava && !only_body {
                     return Ok(true);
                 }
-                let shown = match state
+                let view = state
                     .files
                     .entry(path.to_owned())
-                    .or_insert_with(|| day_file_view(journal, path))
-                    .as_ref()
-                {
-                    None => !withhold_strava && !only_body,
-                    Some(view) => {
-                        let entry = content.trim();
-                        !(may_fold && view.superseded.contains(entry))
-                            && !(withhold_strava && view.strava.contains(entry))
-                            && (!only_body || view.strava.contains(entry))
-                    }
+                    .or_insert_with(|| load_day_file_strava_view(journal, path, may_fold));
+                if !view.strava_loaded {
+                    let loaded = load_day_file_strava_view(journal, path, may_fold);
+                    view.readable = loaded.readable;
+                    view.strava_loaded = true;
+                    view.superseded = loaded.superseded;
+                    view.strava = loaded.strava;
+                }
+                let shown = if !view.readable {
+                    !withhold_strava && !only_body
+                } else {
+                    let entry = content.trim();
+                    !(may_fold && view.superseded.contains(entry))
+                        && !(withhold_strava && view.strava.contains(entry))
+                        && (!only_body || view.strava.contains(entry))
                 };
                 return Ok(shown);
             }
@@ -1611,22 +1702,36 @@ fn register_body_entry_admission(
             // this. The index can lag the file, so anything else goes through
             // the gate, an ordinary record included until it's reindexed.
             if let Some(journal) = journal.as_deref() {
-                let view = state
-                    .files
-                    .entry(path.to_owned())
-                    .or_insert_with(|| day_file_view(journal, path))
-                    .as_ref();
+                let view = state.files.entry(path.to_owned()).or_insert_with(|| {
+                    match load_day_file_full_view(journal, path) {
+                        Some(full) => DayFileView {
+                            readable: true,
+                            strava_loaded: false,
+                            superseded: BTreeSet::new(),
+                            strava: BTreeSet::new(),
+                            full: Some(full),
+                        },
+                        None => unreadable_day_file_view(),
+                    }
+                });
+                if view.readable && view.full.is_none() {
+                    match load_day_file_full_view(journal, path) {
+                        Some(full) => view.full = Some(full),
+                        None => view.readable = false,
+                    }
+                }
+                let full = view.full.as_ref();
                 let position = usize::try_from(idx).ok();
                 // An open move shows from one side only.
-                if view
+                if full
                     .zip(position)
-                    .is_some_and(|(view, position)| view.moved.contains(&position))
+                    .is_some_and(|(full, position)| full.moved.contains(&position))
                 {
                     return Ok(false);
                 }
-                let vouched = view
+                let vouched = full
                     .zip(position)
-                    .and_then(|(view, position)| view.ordinary.get(position))
+                    .and_then(|(full, position)| full.ordinary.get(position))
                     .is_some_and(|entry| entry == content.trim());
                 if vouched {
                     return Ok(!matches!(state.entries, BodyEntries::OnlyBody(_)));
@@ -2358,7 +2463,7 @@ impl QueryConnection {
         let unclassified_chunk = if solstone_core_indexer_store::chunk_sources::path_lookup_ready(
             &self.connection,
         ) {
-            "EXISTS(SELECT 1 FROM (SELECT DISTINCT path FROM chunk_sources) s WHERE NOT EXISTS(SELECT 1 FROM chunk_classification cc WHERE cc.path=s.path))"
+            "(EXISTS(SELECT 1 FROM chunk_sources WHERE path IS NULL) OR EXISTS(SELECT path FROM chunk_sources WHERE path IS NOT NULL EXCEPT SELECT path FROM chunk_classification WHERE path IS NOT NULL))"
         } else {
             "EXISTS(SELECT 1 FROM chunks c LEFT JOIN chunk_classification cc ON cc.path=c.path WHERE cc.path IS NULL)"
         };
@@ -2425,7 +2530,7 @@ impl QueryConnection {
         }
     }
 
-    pub(crate) fn has_rows(&mut self, plan: &SqlPlan) -> Result<bool, IndexAccessError> {
+    pub(crate) fn has_rows(&self, plan: &SqlPlan) -> Result<bool, IndexAccessError> {
         let sql = format!("SELECT 1 FROM chunks WHERE {} LIMIT 1", plan.where_clause);
         let found: Option<i64> = self
             .connection
@@ -2901,10 +3006,470 @@ impl QueryConnection {
         }
     }
 
+    /// Fast withheld-body probe that avoids scanning millions of FTS5 matches
+    /// for common words across non-body rows.
+    ///
+    /// Returns `Ok(Some(found))` when settled cleanly, or `Ok(None)` to fall
+    /// back to the general keyed/row scan (e.g. legacy indexes without ready
+    /// `chunk_sources` keys, or journals with very large body candidate sets).
+    fn withheld_body_fast(
+        &self,
+        journal: &Path,
+        boundary: &ConnectionBoundary,
+        owner_request: &SearchRequest,
+        reference_date: Date,
+        compilation: &QueryCompilation,
+    ) -> Result<Option<bool>, IndexAccessError> {
+        const RARE_MATCH_CAP: usize = 256;
+        const CANDIDATE_ROWID_CAP: usize = 500_000;
+
+        if boundary.categories().is_empty()
+            || matches!(boundary.scope(), ConnectionScope::ChosenFacets { ids } if ids.is_empty())
+        {
+            return Ok(Some(false));
+        }
+        let admits_body = boundary.categories().contains(&AdmittedCategory::Body)
+            && boundary.selects_kind(AdmittedCategory::Body);
+        let admits_facets = boundary.categories().contains(&AdmittedCategory::Facets)
+            && boundary.selects_kind(AdmittedCategory::Facets);
+        if !admits_body && !admits_facets {
+            return Ok(Some(false));
+        }
+
+        let initial_plan = plan_from_outcome_with_boundary(
+            compilation.outcome.clone(),
+            &compilation.temporal,
+            owner_request,
+            Some(boundary),
+            false,
+        );
+
+        // 1. Small FTS5 match set (rare/normal queries): evaluate the exact
+        // matched rowids inside one snapshot without scanning `chunk_classification`
+        // or reading activity files on disk.
+        if let Some(rest) = initial_plan.where_clause.strip_prefix(MATCH_CLAUSE)
+            && let Some(expression) = initial_plan.params.first()
+        {
+            let tx = self
+                .connection
+                .unchecked_transaction()
+                .map_err(|error| self.classify(error))?;
+            let matched: Vec<i64> = {
+                let mut stmt = tx
+                    .prepare("SELECT rowid FROM chunks WHERE chunks MATCH ? LIMIT ?")
+                    .map_err(|error| self.classify(error))?;
+                stmt.query_map(
+                    params![expression.as_str(), (RARE_MATCH_CAP + 1) as i64],
+                    |row| row.get(0),
+                )
+                .map_err(|error| self.classify(error))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| self.classify(error))?
+            };
+            if matched.len() <= RARE_MATCH_CAP {
+                let row_params = &initial_plan.params[1..];
+                if !matched.is_empty() {
+                    let body_row_clause = format!("1=1{rest} AND {WITHHELD_BODY_PATH_CLAUSE}");
+                    if self.any_rowid_admitted_on(&tx, &matched, &body_row_clause, row_params)? {
+                        return Ok(Some(true));
+                    }
+                }
+                if !owner_request.relax {
+                    return Ok(Some(false));
+                }
+                let relaxed_plans = relaxed_candidate_plans(
+                    compilation,
+                    owner_request,
+                    reference_date,
+                    Some(boundary),
+                    false,
+                );
+                if relaxed_plans.is_empty() {
+                    return Ok(Some(false));
+                }
+                if !matched.is_empty() {
+                    let row_clause = format!("1=1{rest}");
+                    if self.any_rowid_admitted_on(&tx, &matched, &row_clause, row_params)? {
+                        // A non-body row matched the strict plan, so relaxation will not run.
+                        return Ok(Some(false));
+                    }
+                }
+                // Zero rows matched the strict plan and relaxation candidates exist:
+                // drop this snapshot and let candidate-path inversion handle relaxation.
+            }
+        }
+
+        // 2. Large FTS5 match set (common words like "the"), date-only browse,
+        // or relaxed query: invert via `chunk_classification` + `chunk_sources`
+        // inside one read snapshot so only actual body-bearing paths are probed.
+        let _snapshot = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|error| self.classify(error))?;
+        if !solstone_core_indexer_store::chunk_sources::chunk_keys_ready(&self.connection) {
+            return Ok(None);
+        }
+        let predicate = QueryPredicate::new(
+            compilation.outcome.clone(),
+            &compilation.temporal,
+            predicate_input(owner_request),
+        );
+        let candidate_paths = self.collect_withheld_body_candidate_paths(
+            journal,
+            boundary,
+            admits_body,
+            admits_facets,
+            &predicate.effective_date,
+        )?;
+        if candidate_paths.is_empty() {
+            return Ok(Some(false));
+        }
+        let Some(candidate_rowids) = self.withheld_body_rowids_for_paths(
+            &candidate_paths,
+            &predicate.effective_date,
+            CANDIDATE_ROWID_CAP,
+        )?
+        else {
+            return Ok(None);
+        };
+        if candidate_rowids.is_empty() {
+            return Ok(Some(false));
+        }
+
+        let initial_body_plan = SqlPlan {
+            where_clause: format!(
+                "{} AND {WITHHELD_BODY_PATH_CLAUSE}",
+                initial_plan.where_clause
+            ),
+            params: initial_plan.params.clone(),
+            has_live_match_expression: initial_plan.has_live_match_expression,
+            key: None,
+        };
+        if self.any_rowid_matches_plan(&candidate_rowids, &initial_body_plan)? {
+            return Ok(Some(true));
+        }
+        if !owner_request.relax {
+            return Ok(Some(false));
+        }
+        let relaxed_plans = relaxed_candidate_plans(
+            compilation,
+            owner_request,
+            reference_date,
+            Some(boundary),
+            false,
+        );
+        if relaxed_plans.is_empty() {
+            return Ok(Some(false));
+        }
+        if self.any_row(&initial_plan)? {
+            return Ok(Some(false));
+        }
+        for rung in relaxed_plans {
+            let rung_body = SqlPlan {
+                where_clause: format!("{} AND {WITHHELD_BODY_PATH_CLAUSE}", rung.where_clause),
+                params: rung.params.clone(),
+                has_live_match_expression: rung.has_live_match_expression,
+                key: None,
+            };
+            if self.any_rowid_matches_plan(&candidate_rowids, &rung_body)? {
+                return Ok(Some(true));
+            }
+            if self.any_row(&rung)? {
+                return Ok(Some(false));
+            }
+        }
+        Ok(Some(false))
+    }
+
+    fn collect_withheld_body_candidate_paths(
+        &self,
+        journal: &Path,
+        boundary: &ConnectionBoundary,
+        admits_body: bool,
+        admits_facets: bool,
+        effective_date: &EffectiveDateConstraint,
+    ) -> Result<Vec<String>, IndexAccessError> {
+        let mut scope_clause = String::new();
+        let mut scope_params: Vec<String> = Vec::new();
+        if let ConnectionScope::ChosenFacets { ids } = boundary.scope() {
+            let placeholders = category_placeholders(ids.len());
+            scope_clause.push_str(" AND ((cc.basis='facet_owned' AND EXISTS (SELECT 1 FROM chunk_classification_facets cf WHERE cf.path=cc.path AND cf.facet_id IN (");
+            scope_clause.push_str(&placeholders);
+            scope_clause.push_str("))) OR (cc.basis='segment_assigned' AND EXISTS (SELECT 1 FROM chunk_classification_facets cf WHERE cf.path=cc.path) AND NOT EXISTS (SELECT 1 FROM chunk_classification_facets cf WHERE cf.path=cc.path AND cf.facet_id NOT IN (");
+            scope_clause.push_str(&placeholders);
+            scope_clause.push_str("))))");
+            for _ in 0..2 {
+                scope_params.extend(ids.iter().cloned());
+            }
+        }
+
+        let query_paths = |where_extra: &str| -> Result<Vec<String>, IndexAccessError> {
+            let sql = format!(
+                "SELECT cc.path FROM chunk_classification cc \
+                 WHERE cc.eligible=1 AND cc.unclassified=0 AND ({where_extra}){scope_clause}"
+            );
+            let mut stmt = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| self.classify(error))?;
+            let rows = stmt
+                .query_map(params_from_iter(scope_params.iter()), |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|error| self.classify(error))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| self.classify(error))?;
+            Ok(rows)
+        };
+
+        let mut candidates = BTreeSet::new();
+        if admits_body {
+            let mut direct_globs: Vec<String> =
+                solstone_core_format::content::body_material::BODY_IMPORT_STREAMS
+                    .iter()
+                    .map(|stream| format!("cc.path GLOB '*/{stream}/*'"))
+                    .collect();
+            direct_globs.push("cc.path GLOB '*/body.md'".to_owned());
+            let direct = query_paths(&direct_globs.join(" OR "))?;
+            for path in direct {
+                if solstone_core_format::content::kinds::agent_indexed_permission(
+                    Some(journal),
+                    &path,
+                ) == Some(AdmittedCategory::Body)
+                {
+                    candidates.insert(path);
+                }
+            }
+            let summaries = query_paths(
+                "cc.path >= 'imports/' AND cc.path < 'imports0' \
+                 AND cc.path GLOB 'imports/*/summary.md'",
+            )?;
+            for path in summaries {
+                if solstone_core_format::content::kinds::agent_indexed_permission(
+                    Some(journal),
+                    &path,
+                ) == Some(AdmittedCategory::Body)
+                {
+                    candidates.insert(path);
+                }
+            }
+        }
+
+        if admits_facets {
+            let mut activity_paths = query_paths(
+                "cc.path >= 'facets/' AND cc.path < 'facets0' \
+                 AND cc.path LIKE 'facets/%/activities/%.jsonl'",
+            )?;
+            if !activity_paths.is_empty()
+                && !matches!(effective_date, EffectiveDateConstraint::None)
+            {
+                activity_paths =
+                    self.filter_paths_by_effective_date(&activity_paths, effective_date)?;
+            }
+            let body_open = body_data_open(Some(journal));
+            let mut raw = Vec::new();
+            for path in activity_paths {
+                let full_path = journal.join(&path);
+                raw.clear();
+                match std::fs::File::open(&full_path)
+                    .and_then(|mut file| file.read_to_end(&mut raw))
+                {
+                    Ok(_) => {
+                        let has_strava = bytes_contain(
+                            &raw,
+                            solstone_core_format::content::strava_body::STRAVA_STREAM.as_bytes(),
+                        );
+                        let has_body = body_open && raw_has_body_record_source(&raw);
+                        if has_strava || has_body {
+                            candidates.insert(path);
+                        }
+                    }
+                    Err(_) => {
+                        // An unreadable activity file cannot vouch for Strava lines
+                        // (`OnlyBody` returns false), but a stale `BODY_ENTRY_LINE`
+                        // chunk still reaches the caller's admission when body data
+                        // is open.
+                        if body_open {
+                            candidates.insert(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(candidates.into_iter().collect())
+    }
+
+    fn filter_paths_by_effective_date(
+        &self,
+        paths: &[String],
+        effective_date: &EffectiveDateConstraint,
+    ) -> Result<Vec<String>, IndexAccessError> {
+        let (date_clause, date_params) = effective_date_sql_clause(effective_date);
+        let mut kept = Vec::new();
+        for batch in paths.chunks(500) {
+            let sql = format!(
+                "SELECT DISTINCT path FROM chunk_sources WHERE path IN ({}){date_clause}",
+                category_placeholders(batch.len()),
+            );
+            let mut values: Vec<Value> = batch.iter().cloned().map(Value::Text).collect();
+            values.extend(date_params.iter().cloned().map(Value::Text));
+            let mut stmt = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| self.classify(error))?;
+            let rows = stmt
+                .query_map(params_from_iter(values.iter()), |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|error| self.classify(error))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| self.classify(error))?;
+            kept.extend(rows);
+        }
+        Ok(kept)
+    }
+
+    fn withheld_body_rowids_for_paths(
+        &self,
+        paths: &[String],
+        effective_date: &EffectiveDateConstraint,
+        cap: usize,
+    ) -> Result<Option<Vec<i64>>, IndexAccessError> {
+        let (date_clause, date_params) = effective_date_sql_clause(effective_date);
+        let mut rowids = Vec::new();
+        for batch in paths.chunks(500) {
+            let remaining = (cap + 1).saturating_sub(rowids.len());
+            let sql = format!(
+                "SELECT rowid FROM chunk_sources WHERE path IN ({}){date_clause} LIMIT ?",
+                category_placeholders(batch.len()),
+            );
+            let mut values: Vec<Value> = batch.iter().cloned().map(Value::Text).collect();
+            values.extend(date_params.iter().cloned().map(Value::Text));
+            values.push(Value::Integer(remaining as i64));
+            let mut stmt = self
+                .connection
+                .prepare(&sql)
+                .map_err(|error| self.classify(error))?;
+            let rows = stmt
+                .query_map(params_from_iter(values.iter()), |row| row.get::<_, i64>(0))
+                .map_err(|error| self.classify(error))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| self.classify(error))?;
+            rowids.extend(rows);
+            if rowids.len() > cap {
+                return Ok(None);
+            }
+        }
+        Ok(Some(rowids))
+    }
+
+    fn any_rowid_matches_plan(
+        &self,
+        rowids: &[i64],
+        plan: &SqlPlan,
+    ) -> Result<bool, IndexAccessError> {
+        // SQLite FTS5 evaluates `chunks MATCH ? AND chunks.rowid IN (...)` by
+        // seeking each rowid separately through the posting list. That is fast
+        // for a handful of candidates, while larger body corpora are faster
+        // when streaming the posting list once and intersecting in memory.
+        const DIRECT_PROBE_LIMIT: usize = 64;
+        if rowids.len() > DIRECT_PROBE_LIMIT
+            && let Some(rest) = plan.where_clause.strip_prefix(MATCH_CLAUSE)
+            && let Some(expression) = plan.params.first()
+        {
+            let candidates: std::collections::HashSet<i64> = rowids.iter().copied().collect();
+            let row_clause = format!("1=1{rest}");
+            let row_params = &plan.params[1..];
+            let mut stmt = self
+                .connection
+                .prepare("SELECT rowid FROM chunks WHERE chunks MATCH ?")
+                .map_err(|error| self.classify(error))?;
+            let mut rows = stmt
+                .query([expression.as_str()])
+                .map_err(|error| self.classify(error))?;
+            let mut matched_batch = Vec::with_capacity(64);
+            while let Some(row) = rows.next().map_err(|error| self.classify(error))? {
+                let rid: i64 = row.get(0).map_err(|error| self.classify(error))?;
+                if candidates.contains(&rid) {
+                    matched_batch.push(rid);
+                    if matched_batch.len() >= 64 {
+                        if self.any_rowid_admitted_on(
+                            &self.connection,
+                            &matched_batch,
+                            &row_clause,
+                            row_params,
+                        )? {
+                            return Ok(true);
+                        }
+                        matched_batch.clear();
+                    }
+                }
+            }
+            if !matched_batch.is_empty()
+                && self.any_rowid_admitted_on(
+                    &self.connection,
+                    &matched_batch,
+                    &row_clause,
+                    row_params,
+                )?
+            {
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+
+        for batch in rowids.chunks(500) {
+            // Keep `plan.where_clause` at the front of WHERE so SQLite FTS5
+            // uses its `MATCH` + `rowid IN (...)` point-lookup plan.
+            let sql = format!(
+                "SELECT 1 FROM chunks WHERE {} AND chunks.rowid IN ({}) LIMIT 1",
+                plan.where_clause,
+                category_placeholders(batch.len()),
+            );
+            let mut values: Vec<Value> = plan.params.iter().cloned().map(Value::Text).collect();
+            values.extend(batch.iter().copied().map(Value::Integer));
+            let found: Option<i64> = self
+                .connection
+                .query_row(&sql, params_from_iter(values.iter()), |row| row.get(0))
+                .optional()
+                .map_err(|error| self.classify(error))?;
+            if found.is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn any_rowid_admitted_on(
+        &self,
+        conn: &Connection,
+        rids: &[i64],
+        row_clause: &str,
+        row_params: &[String],
+    ) -> Result<bool, IndexAccessError> {
+        for chunk in rids.chunks(500) {
+            let sql = format!(
+                "SELECT 1 FROM chunks WHERE chunks.rowid IN ({}) AND {row_clause} LIMIT 1",
+                category_placeholders(chunk.len())
+            );
+            let mut values: Vec<Value> = chunk.iter().copied().map(Value::Integer).collect();
+            values.extend(row_params.iter().cloned().map(Value::Text));
+            let found: Option<i64> = conn
+                .query_row(&sql, params_from_iter(values.iter()), |row| row.get(0))
+                .optional()
+                .map_err(|error| self.classify(error))?;
+            if found.is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Whether `plan` admits any row, with the keys picking the candidates
     /// when they can, so a common word that admits none doesn't read every
     /// match's row to say so.
-    pub(crate) fn any_row(&mut self, plan: &SqlPlan) -> Result<bool, IndexAccessError> {
+    pub(crate) fn any_row(&self, plan: &SqlPlan) -> Result<bool, IndexAccessError> {
         if let Some(key) = &plan.key
             && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(&self.connection)
             && let Some(found) = self.any_row_by_keys(plan, key)?
@@ -2916,7 +3481,7 @@ impl QueryConnection {
 
     /// `None` when a matched row has no keys, or the plan has no match.
     fn any_row_by_keys(
-        &mut self,
+        &self,
         plan: &SqlPlan,
         key: &KeyPlan,
     ) -> Result<Option<bool>, IndexAccessError> {
@@ -3383,6 +3948,90 @@ fn increment_nonempty(values: &mut BTreeMap<String, u64>, value: Option<String>)
     }
 }
 
+fn effective_date_sql_clause(effective_date: &EffectiveDateConstraint) -> (String, Vec<String>) {
+    let mut clause = String::new();
+    let mut params = Vec::new();
+    match effective_date {
+        EffectiveDateConstraint::None => {}
+        EffectiveDateConstraint::Exact(day) => {
+            clause.push_str(" AND day=?");
+            params.push(day.clone());
+        }
+        EffectiveDateConstraint::Range { day_from, day_to } => {
+            if let Some(day_from) = day_from {
+                clause.push_str(" AND day>=?");
+                params.push(day_from.clone());
+            }
+            if let Some(day_to) = day_to {
+                clause.push_str(" AND day<=?");
+                params.push(day_to.clone());
+            }
+        }
+    }
+    (clause, params)
+}
+
+fn bytes_contain(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if let (Ok(h), Ok(n)) = (std::str::from_utf8(haystack), std::str::from_utf8(needle)) {
+        return h.contains(n);
+    }
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+/// Whether raw JSONL bytes contain a `"source": "body"` property (allowing any
+/// JSON whitespace around `:`), without false-matching unrelated `"body"` keys
+/// such as `"story":{"body":...}`.
+fn raw_has_body_record_source(haystack: &[u8]) -> bool {
+    const KEY: &[u8] = b"\"source\"";
+    const VAL: &[u8] = b"\"body\"";
+    if let Ok(text) = std::str::from_utf8(haystack) {
+        let bytes = text.as_bytes();
+        let mut offset = 0;
+        while let Some(rel) = text[offset..].find("\"source\"") {
+            let mut idx = offset + rel + KEY.len();
+            while idx < bytes.len() && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            if idx < bytes.len() && bytes[idx] == b':' {
+                idx += 1;
+                while idx < bytes.len() && bytes[idx].is_ascii_whitespace() {
+                    idx += 1;
+                }
+                if bytes[idx..].starts_with(VAL) {
+                    return true;
+                }
+            }
+            offset += rel + KEY.len();
+        }
+        return false;
+    }
+    haystack
+        .windows(KEY.len())
+        .enumerate()
+        .any(|(pos, window)| {
+            if window != KEY {
+                return false;
+            }
+            let mut idx = pos + KEY.len();
+            while idx < haystack.len() && haystack[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            if idx >= haystack.len() || haystack[idx] != b':' {
+                return false;
+            }
+            idx += 1;
+            while idx < haystack.len() && haystack[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            haystack[idx..].starts_with(VAL)
+        })
+}
+
 fn usize_to_sql(value: usize) -> String {
     i64::try_from(value).unwrap_or(i64::MAX).to_string()
 }
@@ -3525,5 +4174,21 @@ mod first_page_tests {
         assert_eq!(page[0].metadata.path, "notes/best.md");
         assert_eq!(page[1].metadata.idx, 300);
         assert_eq!(page[2].metadata.idx, 299);
+    }
+
+    #[test]
+    fn raw_body_record_source_matcher_ignores_story_body_fields() {
+        assert!(raw_has_body_record_source(
+            br#"{"id":"1","source":"body","title":"Sleep"}"#
+        ));
+        assert!(raw_has_body_record_source(
+            br#"{"id":"1","source" : "body" , "title":"Run"}"#
+        ));
+        assert!(!raw_has_body_record_source(
+            br#"{"id":"1","source":"observed","story":{"body":"Met about the project"}}"#
+        ));
+        assert!(!raw_has_body_record_source(
+            br#"{"id":"1","source":"body_other"}"#
+        ));
     }
 }
