@@ -20,7 +20,7 @@ use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::disk_space::{
     JournalDiskSpace, journal_disk_floor_bytes, read_journal_disk_space, same_filesystem_volume,
 };
-use solstone_core_system::storage_privacy::ensure_private_owner_dir;
+use solstone_core_system::storage_privacy::{ensure_private_owner_dir, probe_private_owner_dir};
 use solstone_core_trash::ErasureEpoch;
 
 /// Fallback safety floor (1 GiB) only when volume total size is unknown (`0`).
@@ -178,20 +178,15 @@ impl StagingArea {
         F: Fn(&Path, &Path) -> bool,
     {
         let canonical = fs::canonicalize(journal_root)?;
-        if let (Some(parent), Some(name)) = (canonical.parent(), canonical.file_name()) {
-            let mut dir_name = std::ffi::OsString::from(".");
-            dir_name.push(name);
-            dir_name.push(".export-staging");
-            let candidate = parent.join(dir_name);
-            if ensure_private_dir(&candidate).is_ok()
-                && fs::canonicalize(&candidate).is_ok_and(|c| !c.starts_with(&canonical))
-            {
-                let same_vol = same_volume(&canonical, &candidate);
-                return Ok(Self {
-                    dir: candidate,
-                    same_volume_as_journal: same_vol,
-                });
-            }
+        if let Some(candidate) = sibling_path_for_canonical(&canonical)
+            && ensure_private_dir(&candidate).is_ok()
+            && fs::canonicalize(&candidate).is_ok_and(|c| !c.starts_with(&canonical))
+        {
+            let same_vol = same_volume(&canonical, &candidate);
+            return Ok(Self {
+                dir: candidate,
+                same_volume_as_journal: same_vol,
+            });
         }
         let fallback = temp_fallback_path_for_canonical(&canonical)?;
         ensure_private_dir(&fallback)?;
@@ -207,6 +202,80 @@ impl StagingArea {
             dir: fallback,
             same_volume_as_journal: same_vol,
         })
+    }
+
+    /// Resolve where private staging will live WITHOUT creating any directory.
+    ///
+    /// Uses the same candidate order and privacy/containment checks as
+    /// [`Self::resolve`]: prefers `<journal_parent>/.<journal_name>.export-staging`,
+    /// falls back to the per-journal, per-account temp directory when the sibling
+    /// path is blocked or its parent cannot host a private directory, and fails
+    /// closed (`Err`) if neither is usable.
+    pub(crate) fn probe(journal_root: &Path) -> io::Result<Self> {
+        Self::probe_with_volume_check(journal_root, same_filesystem)
+    }
+
+    pub(crate) fn probe_with_volume_check<F>(
+        journal_root: &Path,
+        same_volume: F,
+    ) -> io::Result<Self>
+    where
+        F: Fn(&Path, &Path) -> bool,
+    {
+        let canonical = fs::canonicalize(journal_root)?;
+        if let Some(candidate) = sibling_path_for_canonical(&canonical)
+            && let Ok(area) = probe_candidate(&canonical, candidate, &same_volume)
+        {
+            return Ok(area);
+        }
+        let fallback = temp_fallback_path_for_canonical(&canonical)?;
+        probe_candidate(&canonical, fallback, &same_volume)
+    }
+
+    /// Discover already-existing valid private staging directories for
+    /// `journal_root` (sibling first, then per-journal temp fallback) without
+    /// creating any new directory.
+    pub(crate) fn discover_existing(journal_root: &Path) -> Vec<Self> {
+        let Ok(canonical) = fs::canonicalize(journal_root) else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        if let Some(candidate) = sibling_path_for_canonical(&canonical)
+            && let Some(area) = open_existing_private(&canonical, candidate)
+        {
+            found.push(area);
+        }
+        if let Ok(fallback) = temp_fallback_path_for_canonical(&canonical)
+            && let Some(area) = open_existing_private(&canonical, fallback)
+        {
+            found.push(area);
+        }
+        found
+    }
+
+    /// Read-only discovery of already-existing staging directories for
+    /// `journal_root` without creating or modifying anything on disk.
+    pub(crate) fn find_existing_readonly(journal_root: &Path) -> Vec<Self> {
+        let Ok(canonical) = fs::canonicalize(journal_root) else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        if let Some(candidate) = sibling_path_for_canonical(&canonical)
+            && let Some(area) = inspect_existing_readonly(&canonical, candidate)
+        {
+            found.push(area);
+        }
+        if let Ok(fallback) = temp_fallback_path_for_canonical(&canonical)
+            && let Some(area) = inspect_existing_readonly(&canonical, fallback)
+        {
+            found.push(area);
+        }
+        found
+    }
+
+    /// Ensure this staging directory exists on disk with owner-private access.
+    pub(crate) fn ensure_dir(&self) -> io::Result<()> {
+        ensure_private_dir(&self.dir)
     }
 
     #[cfg(test)]
@@ -226,7 +295,14 @@ impl StagingArea {
     }
 
     pub(crate) fn disk_space(&self) -> io::Result<JournalDiskSpace> {
-        read_journal_disk_space(&self.dir)
+        match read_journal_disk_space(&self.dir) {
+            Ok(space) => Ok(space),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let parent = self.dir.parent().ok_or(error)?;
+                read_journal_disk_space(parent)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Remove any orphaned `.part` files left by an interrupted process, and
@@ -285,13 +361,121 @@ impl StagingArea {
         Some(record)
     }
 
-    pub(crate) fn clear_ready_files(&self, record: Option<&ReadyRecord>) {
+    pub(crate) fn clear_ready_files_only(&self, record: Option<&ReadyRecord>) {
         let _ = fs::remove_file(self.dir.join(READY_META_FILE));
         if let Some(rec) = record {
             let _ = fs::remove_file(rec.zip_path(&self.dir));
         }
         self.sweep_orphans(None);
     }
+
+    pub(crate) fn clear_ready_files(&self, record: Option<&ReadyRecord>) {
+        self.clear_ready_files_only(record);
+        self.remove_dir_if_empty();
+    }
+
+    /// Remove the staging directory if and only if it is completely empty.
+    ///
+    /// Uses non-recursive `fs::remove_dir`, so any unexpected entry, active
+    /// staging artifact, or mountpoint prevents removal safely.
+    pub(crate) fn remove_dir_if_empty(&self) {
+        let _ = fs::remove_dir(&self.dir);
+    }
+}
+
+fn sibling_path_for_canonical(canonical: &Path) -> Option<PathBuf> {
+    let parent = canonical.parent()?;
+    let name = canonical.file_name()?;
+    let mut dir_name = std::ffi::OsString::from(".");
+    dir_name.push(name);
+    dir_name.push(".export-staging");
+    Some(parent.join(dir_name))
+}
+
+fn probe_candidate<F>(
+    canonical_journal: &Path,
+    candidate: PathBuf,
+    same_volume: &F,
+) -> io::Result<StagingArea>
+where
+    F: Fn(&Path, &Path) -> bool,
+{
+    let exists = probe_private_owner_dir(&candidate)?;
+    if exists {
+        let canonical_candidate = fs::canonicalize(&candidate)?;
+        if canonical_candidate.starts_with(canonical_journal) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "export staging path resolves inside the journal root",
+            ));
+        }
+        let same_vol = same_volume(canonical_journal, &candidate);
+        return Ok(StagingArea {
+            dir: candidate,
+            same_volume_as_journal: same_vol,
+        });
+    }
+    let parent = candidate.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "export staging path has no parent directory",
+        )
+    })?;
+    let name = candidate.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "export staging path has no directory name",
+        )
+    })?;
+    let canonical_parent = fs::canonicalize(parent)?;
+    if canonical_parent.join(name).starts_with(canonical_journal) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "export staging path resolves inside the journal root",
+        ));
+    }
+    // `candidate` does not exist yet; a new plain directory created inside
+    // `parent` lives on `parent`'s filesystem volume.
+    let same_vol = same_volume(canonical_journal, &canonical_parent);
+    Ok(StagingArea {
+        dir: candidate,
+        same_volume_as_journal: same_vol,
+    })
+}
+
+fn open_existing_private(canonical_journal: &Path, candidate: PathBuf) -> Option<StagingArea> {
+    if !probe_private_owner_dir(&candidate).ok()? {
+        return None;
+    }
+    ensure_private_dir(&candidate).ok()?;
+    if fs::canonicalize(&candidate)
+        .ok()?
+        .starts_with(canonical_journal)
+    {
+        return None;
+    }
+    let same_volume_as_journal = same_filesystem(canonical_journal, &candidate);
+    Some(StagingArea {
+        dir: candidate,
+        same_volume_as_journal,
+    })
+}
+
+fn inspect_existing_readonly(canonical_journal: &Path, candidate: PathBuf) -> Option<StagingArea> {
+    if !probe_private_owner_dir(&candidate).ok()? {
+        return None;
+    }
+    if fs::canonicalize(&candidate)
+        .ok()?
+        .starts_with(canonical_journal)
+    {
+        return None;
+    }
+    let same_volume_as_journal = same_filesystem(canonical_journal, &candidate);
+    Some(StagingArea {
+        dir: candidate,
+        same_volume_as_journal,
+    })
 }
 
 fn current_account_tag() -> io::Result<String> {
