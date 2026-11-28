@@ -1,0 +1,16 @@
+{
+  "description": "Primary button when widening adds files but no messages.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fd03c1fd7dee2f113f3518cdd7549a0b8b1783bf9399913db1847a5094252977",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

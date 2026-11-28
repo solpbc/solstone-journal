@@ -1,0 +1,16 @@
+{
+  "description": "Button beside a too-large or in-message file to bring it into the journal.",
+  "context": "Journal window, transcripts reader: the short state shown beside an attached file's name under an email (\"attached report.pdf\" followed by this).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f96a0b6761291fd4e742c500d02cda3558d2ffe8035866cd1a161a722992cc38",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

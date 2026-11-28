@@ -1,0 +1,25 @@
+{
+  "description": "Fact value. done and total are formatted counts.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "done",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "d551c384d1ee0d137de4ff6bd7fe10916bc7229ff3129d1111eca30d7e0bc311",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

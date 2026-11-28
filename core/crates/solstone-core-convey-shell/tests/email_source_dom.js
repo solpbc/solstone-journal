@@ -574,5 +574,212 @@ module.exports = async function emailSourceDomCases(manifestDir) {
     imap.handle.dispose();
   });
 
+  // ---- attached files: selection, migration, retention, widening with zero new messages ----
+
+  const copy = journalContext({}).JournalI18n;
+  const k = (key, args) => copy.render(key, args || []);
+  const FILES = {
+    sent: { files: 12, encoded_bytes: 9400000, unsupported: 2, too_large: 1, uncertain: 1, images: 5, pdfs: 3, already_synced: 0 },
+    answered: { files: 7, encoded_bytes: 5100000, unsupported: 1, too_large: 0, uncertain: 0, images: 4, pdfs: 2, already_synced: 0 },
+    automatic_limit: 8388608,
+    hard_limit: 33554432,
+  };
+  const SYNCED_FILES = {
+    sent: Object.assign({}, FILES.sent, { already_synced: 12 }),
+    answered: Object.assign({}, FILES.answered, { already_synced: 7 }),
+    automatic_limit: FILES.automatic_limit,
+    hard_limit: FILES.hard_limit,
+  };
+  const SCAN = { complete: true, paused: false, checked: 10000, total: 10000, sent_found: 200, eligible_sent: 184, earliest_month: 'march 2011', bodies_read: 0 };
+  const ACC = { sent_total: 200, in_journal: 0, removed_by_owner: 0, outside_choice: 184, left_out: { total: 0 } };
+  function choicePreview(files, deltaMessages) {
+    return {
+      range: '30d', types: ['replies', 'new_messages', 'forwards'],
+      ranges: { '30d': 184, '6m': 184, '1y': 184, all: 184, none: 0 },
+      range_deltas: { '30d': deltaMessages, '6m': deltaMessages, '1y': deltaMessages, all: deltaMessages, none: 0 },
+      types_in_selected_range: { replies: 100, new_messages: 50, forwards: 34 },
+      selected_messages: 184, delta_messages: deltaMessages,
+      estimate: { segments: 160, days: 24, thoughts: 176 },
+      delta_estimate: deltaMessages ? { segments: 160, days: 24, thoughts: 176 } : { segments: 0, days: 0, thoughts: 0 },
+      left_out: { total: 0 }, earliest_month: 'march 2011', covered_ranges: ['30d'],
+      files,
+    };
+  }
+  const filesRow = (h, scope) => h.root.querySelector(`[data-files="${scope}"]`);
+  const filesChecked = (h) => ['names', 'sent', 'both'].filter((scope) => filesRow(h, scope).querySelector('input').checked);
+  const confirmText = (h) => h.root.querySelector('[data-email-action="confirm-choice"]').textContent;
+
+  await test('new choice preselects files on sent mail, keeps originals off, scopes counts by side, and saves both fields', async () => {
+    let posted = null;
+    const h = harness(manifestDir, async ({ url, method, body }) => {
+      if (url === '/app/sources/api/email' && method === 'GET') {
+        return { status: 200, body: { source: 'email', state: 'setting_up', phase: 'awaiting_choice', provider: 'gmail', account: 'maya.chen@gmail.com', connected: true, syncing: false, scan: SCAN, sync: { active: false, done: 0, total: 0 }, accounting: ACC, runs: [] } };
+      }
+      if (url.startsWith('/app/sources/api/email/choice-preview') && method === 'GET') {
+        return { status: 200, body: choicePreview(FILES, 184) };
+      }
+      if (url === '/app/sources/api/email/choice' && method === 'POST') {
+        posted = body;
+        return { status: 200, body: { success: true, status: { source: 'email', state: 'on', phase: 'fetching', provider: 'gmail', account: 'maya.chen@gmail.com', connected: true, syncing: true, scan: SCAN, choice: { range: '30d', types: body.types, attachments: body.attachments, keep_originals: body.keep_originals, covered_ranges: ['30d'], updated_at: iso(NOW) }, sync: { active: true, done: 0, total: 184 }, accounting: ACC, runs: [] } } };
+      }
+      throw new Error('unexpected ' + method + ' ' + url);
+    });
+    await settle();
+
+    assert.deepStrictEqual(filesChecked(h), ['sent'], 'files on sent mail preselected on a new choice');
+    assert.strictEqual(h.root.querySelector('[data-keep-originals]').querySelector('input').checked, false, 'originals off initially');
+    assert.ok(filesRow(h, 'sent').textContent.includes(k('journal.window.sources.email.files.option.count', [['quantity', 12], ['count', '12']])), 'sent count is the sent side only');
+    assert.ok(filesRow(h, 'both').textContent.includes(k('journal.window.sources.email.files.option.count', [['quantity', 19], ['count', '19']])), 'both sides adds the answered side');
+    assert.strictEqual(filesRow(h, 'names').querySelector('.ss-choice-row-r'), null, 'names only carries no file count');
+    const band = h.root.querySelector('[data-files-estimate]');
+    assert.notStrictEqual(band, null, 'file work shown in its own band');
+    assert.ok(band.textContent.includes(k('journal.window.sources.email.files.estimate.thoughts', [['quantity', 5], ['count', '5']])), 'image thoughts for the sent side');
+    assert.notStrictEqual(h.root.querySelector('[data-files-breakdown]'), null, 'candidate breakdown fold');
+
+    filesRow(h, 'both').querySelector('input').change();
+    await settle();
+    assert.ok(h.root.querySelector('[data-files-estimate]').textContent.includes(k('journal.window.sources.email.files.estimate.thoughts', [['quantity', 9], ['count', '9']])), 'both sides adds answered images');
+
+    filesRow(h, 'names').querySelector('input').change();
+    await settle();
+    assert.strictEqual(h.root.querySelector('[data-files-estimate]'), null, 'names only adds no file work');
+    assert.strictEqual(h.root.querySelector('[data-keep-originals]'), null, 'no originals choice with names only');
+
+    filesRow(h, 'sent').querySelector('input').change();
+    await settle();
+    h.root.querySelector('[data-keep-originals]').querySelector('input').change();
+    await settle();
+    assert.strictEqual(confirmText(h), k('journal.window.sources.email.choose.confirm', [['quantity', 184], ['count', '184']]), 'message confirm unchanged by the file choice');
+    h.root.querySelector('[data-email-action="confirm-choice"]').click();
+    await settle();
+    assert.deepStrictEqual(posted, { range: '30d', types: ['replies', 'new_messages', 'forwards'], attachments: 'sent', keep_originals: true });
+    h.handle.dispose();
+  });
+
+  async function widenCase(savedChoice, filesPreview, deltaMessages, onPost) {
+    const h = harness(manifestDir, async ({ url, method, body }) => {
+      if (url === '/app/sources/api/email' && method === 'GET') {
+        return { status: 200, body: { source: 'email', state: 'on', phase: 'steady', provider: 'gmail', account: 'maya.chen@gmail.com', connected: true, syncing: false, scan: SCAN, choice: savedChoice, sync: { active: false, done: 184, total: 184, last_added_at: iso(NOW - 14 * MIN) }, accounting: Object.assign({}, ACC, { in_journal: 184, outside_choice: 0 }), runs: [] } };
+      }
+      if (url.startsWith('/app/sources/api/email/choice-preview') && method === 'GET') {
+        return { status: 200, body: choicePreview(filesPreview, deltaMessages) };
+      }
+      if (url === '/app/sources/api/email/choice' && method === 'POST') {
+        onPost(body);
+        return { status: 200, body: { success: true, status: { source: 'email', state: 'on', phase: 'steady', provider: 'gmail', account: 'maya.chen@gmail.com', connected: true, syncing: true, scan: SCAN, choice: Object.assign({}, savedChoice, { attachments: body.attachments, keep_originals: body.keep_originals }), sync: { active: true, done: 184, total: 184 }, accounting: ACC, runs: [] } } };
+      }
+      throw new Error('unexpected ' + method + ' ' + url);
+    });
+    await settle();
+    h.root.querySelector('[data-email-action="open-widen"]').click();
+    await settle();
+    return h;
+  }
+
+  await test('an existing choice saved before files existed restores names only, and widening files with zero new messages still brings them in', async () => {
+    let posted = null;
+    const legacy = { range: '30d', types: ['replies', 'new_messages', 'forwards'], covered_ranges: ['30d'], updated_at: iso(NOW - 60 * MIN) };
+    const h = await widenCase(legacy, SYNCED_FILES, 0, (body) => { posted = body; });
+
+    assert.deepStrictEqual(filesChecked(h), ['names'], 'a choice with no file field restores names only');
+    assert.strictEqual(h.root.querySelector('[data-files-estimate]'), null, 'no file work until the owner widens files');
+    assert.strictEqual(confirmText(h), k('journal.window.sources.selective.action.save.choice'));
+
+    filesRow(h, 'sent').querySelector('input').change();
+    await settle();
+    const band = h.root.querySelector('[data-files-estimate]');
+    assert.notStrictEqual(band, null, 'file work shown although no messages are newly selected');
+    assert.ok(band.textContent.includes(k('journal.window.sources.email.files.estimate.files', [['quantity', 8], ['count', '8']])), 'every readable sent file on already-synced mail is new work');
+    assert.ok(h.root.querySelector('[data-files-breakdown]').textContent.includes(k('journal.window.sources.email.files.already.synced')), 'files on mail already in the journal are told apart');
+    assert.strictEqual(confirmText(h), k('journal.window.sources.email.files.confirm'), 'confirm brings in files when no messages are added');
+    assert.strictEqual(h.root.querySelector('[data-email-action="confirm-choice"]').disabled, false);
+
+    h.root.querySelector('[data-email-action="confirm-choice"]').click();
+    await settle();
+    assert.deepStrictEqual(posted, { range: '30d', types: ['replies', 'new_messages', 'forwards'], attachments: 'sent', keep_originals: false });
+    h.handle.dispose();
+  });
+
+  await test('widening restores the saved file choice and originals, counts only new files on covered sides, and notes a narrowing', async () => {
+    let posted = null;
+    const saved = { range: '30d', types: ['replies', 'new_messages', 'forwards'], attachments: 'sent', keep_originals: true, covered_ranges: ['30d'], updated_at: iso(NOW - 60 * MIN) };
+    const h = await widenCase(saved, SYNCED_FILES, 0, (body) => { posted = body; });
+
+    assert.deepStrictEqual(filesChecked(h), ['sent'], 'saved file choice restored');
+    assert.strictEqual(h.root.querySelector('[data-keep-originals]').querySelector('input').checked, true, 'saved originals choice restored');
+    assert.ok(h.root.querySelector('[data-files-estimate]').textContent.includes(k('journal.window.sources.email.files.estimate.zero')), 'sent files on synced mail are not counted again');
+    assert.strictEqual(confirmText(h), k('journal.window.sources.selective.action.save.choice'));
+
+    filesRow(h, 'both').querySelector('input').change();
+    await settle();
+    assert.strictEqual(confirmText(h), k('journal.window.sources.email.files.confirm'), 'the answered side is new work');
+    assert.ok(h.root.querySelector('[data-files-estimate]').textContent.includes(k('journal.window.sources.email.files.estimate.files', [['quantity', 6], ['count', '6']])), 'only the answered side counts');
+
+    filesRow(h, 'names').querySelector('input').change();
+    await settle();
+    assert.notStrictEqual(h.root.querySelector('[data-files-note="narrow"]'), null, 'narrowing says files already in the journal stay');
+    h.root.querySelector('[data-email-action="confirm-choice"]').click();
+    await settle();
+    assert.deepStrictEqual(posted, { range: '30d', types: ['replies', 'new_messages', 'forwards'], attachments: 'names', keep_originals: true }, 'originals choice retained through names only');
+    h.handle.dispose();
+  });
+
+  await test('remaining counts from the preview drive the file estimate, and PDFs wait when this journal has no PDF reader', async () => {
+    const remaining = {
+      sent: Object.assign({}, SYNCED_FILES.sent, { remaining_files: 3, remaining_images: 2 }),
+      answered: Object.assign({}, SYNCED_FILES.answered, { remaining_files: 4, remaining_images: 4 }),
+      automatic_limit: FILES.automatic_limit,
+      hard_limit: FILES.hard_limit,
+      pdf_reader_available: false,
+    };
+    const saved = { range: '30d', types: ['replies', 'new_messages', 'forwards'], attachments: 'sent', keep_originals: false, covered_ranges: ['30d'], updated_at: iso(NOW - 60 * MIN) };
+    const h = await widenCase(saved, remaining, 0, () => {});
+    let band = h.root.querySelector('[data-files-estimate]');
+    assert.ok(band.textContent.includes(k('journal.window.sources.email.files.estimate.files', [['quantity', 3], ['count', '3']])), 'remaining sent files, not a proration');
+    assert.ok(band.textContent.includes(k('journal.window.sources.email.files.estimate.thoughts', [['quantity', 2], ['count', '2']])), 'remaining sent images');
+    assert.strictEqual(confirmText(h), k('journal.window.sources.email.files.confirm'));
+    assert.ok(h.root.querySelector('[data-files-breakdown]').textContent.includes(k('journal.window.sources.email.files.pdfs.deferred')), 'PDFs shown as waiting for a reader');
+
+    filesRow(h, 'both').querySelector('input').change();
+    await settle();
+    band = h.root.querySelector('[data-files-estimate]');
+    assert.ok(band.textContent.includes(k('journal.window.sources.email.files.estimate.thoughts', [['quantity', 6], ['count', '6']])), 'both sides add their remaining images');
+    h.handle.dispose();
+  });
+
+  await test('steady state shows the file choice, history progress, and estimate against actual thoughts', async () => {
+    let progress = { estimated_thoughts: 9, actual_thoughts: 4, exchanges_done: 120, exchanges_total: 400 };
+    const choice = { range: '30d', types: ['replies', 'new_messages', 'forwards'], attachments: 'both', keep_originals: false, covered_ranges: ['30d'], updated_at: iso(NOW - 60 * MIN) };
+    const mk = () => harness(manifestDir, async ({ url, method }) => {
+      if (url === '/app/sources/api/email' && method === 'GET') {
+        return { status: 200, body: { source: 'email', state: 'on', phase: 'steady', provider: 'gmail', account: 'maya.chen@gmail.com', connected: true, syncing: false, scan: SCAN, choice, file_progress: progress, sync: { active: false, done: 184, total: 184, last_added_at: iso(NOW - 14 * MIN) }, accounting: Object.assign({}, ACC, { in_journal: 184, outside_choice: 0 }), runs: [] } };
+      }
+      throw new Error('unexpected ' + method + ' ' + url);
+    });
+    let h = mk();
+    await settle();
+    const files = h.root.querySelector('[data-fact="files"]');
+    assert.ok(files.textContent.includes(k('journal.window.sources.email.files.option.both')));
+    assert.ok(files.textContent.includes(k('journal.window.sources.email.steady.fact.files.originals.not.kept')));
+    assert.ok(h.root.querySelector('[data-fact="files_history"]').textContent.includes(k('journal.window.sources.email.steady.fact.files.history.value', [['done', '120'], ['total', '400']])));
+    const thoughts = h.root.querySelector('[data-fact="files_thoughts"]');
+    assert.ok(thoughts.textContent.includes(k('journal.window.sources.email.steady.fact.files.thoughts.value', [['actual', '4'], ['estimated', '9']])));
+    assert.strictEqual(thoughts.querySelector('.ss-fact-sub'), null, 'no difference reported while history is still running');
+    h.handle.dispose();
+
+    progress = { estimated_thoughts: 9, actual_thoughts: 6, exchanges_done: 400, exchanges_total: 400 };
+    h = mk();
+    await settle();
+    assert.strictEqual(h.root.querySelector('[data-fact="files_thoughts"]').querySelector('.ss-fact-sub').textContent, k('journal.window.sources.email.steady.fact.files.thoughts.fewer', [['quantity', 3], ['count', '3']]), 'difference reported once done');
+    h.handle.dispose();
+
+    choice.attachments = 'names';
+    h = mk();
+    await settle();
+    assert.strictEqual(h.root.querySelector('[data-fact="files_history"]'), null, 'no file progress for names only');
+    assert.strictEqual(h.root.querySelector('[data-fact="files"]').querySelector('.ss-fact-sub'), null, 'no originals line for names only');
+    h.handle.dispose();
+  });
+
   return cases;
 };

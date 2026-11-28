@@ -1,0 +1,30 @@
+{
+  "description": "Estimate unit.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "07d5d0ab424b6755874a6fb43f33b7995e8e08753d94a809a30db1a2cc3e89de",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

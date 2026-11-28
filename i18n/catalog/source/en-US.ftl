@@ -24560,6 +24560,126 @@ journal.window.sources.email.widen.confirm = { $quantity ->
        *[other] bring in { $count } more messages
     }
 
+journal.window.sources.email.files.heading = attached files
+
+journal.window.sources.email.files.option.names = names only
+
+journal.window.sources.email.files.option.names.desc = each file's name stays on its message. nothing inside it is read.
+
+journal.window.sources.email.files.option.sent = files on mail you sent
+
+journal.window.sources.email.files.option.sent.desc = PDFs, text files and images you attached.
+
+journal.window.sources.email.files.option.both = files on both sides
+
+journal.window.sources.email.files.option.both.desc = also the files on each message you answered.
+
+journal.window.sources.email.files.option.count = { $quantity ->
+        [one] 1 file
+       *[other] { $count } files
+    }
+
+journal.window.sources.email.files.found = { $quantity ->
+        [one] 1 attached file, up to { $size }
+       *[other] { $count } attached files, up to { $size }
+    }
+
+journal.window.sources.email.files.names.too.large = name only: too large to bring in automatically
+
+journal.window.sources.email.files.names.uncertain = files in the message itself, some may be decoration
+
+journal.window.sources.email.files.names.unsupported = name only: kinds of file your journal doesn't read
+
+journal.window.sources.email.files.pdfs.deferred = name only: PDFs, until your journal can read them
+
+journal.window.sources.email.files.already.synced = of all these files, on mail already in your journal
+
+journal.window.sources.email.files.found.note = a file in the message itself, or one too large to bring in automatically, can be brought in from its message. a file too large for your journal to read stays a name. counted from message headers before anything is read, so what comes in may differ.
+
+journal.window.sources.email.files.originals.label = keep the original files too
+
+journal.window.sources.email.files.originals.desc = your journal always keeps what it read from each file. this also keeps the file itself.
+
+journal.window.sources.email.files.originals.later = files already in your journal keep only what was read from them.
+
+journal.window.sources.email.files.narrow.note = files already in your journal stay. files not read yet follow your new choice.
+
+journal.window.sources.email.files.estimate.heading = what the files will add
+
+journal.window.sources.email.files.estimate.files = { $quantity ->
+        [one] ~1 file
+       *[other] ~{ $count } files
+    }
+
+journal.window.sources.email.files.estimate.thoughts = { $quantity ->
+        [one] up to 1 thought
+       *[other] up to { $count } thoughts
+    }
+
+journal.window.sources.email.files.estimate.zero = no new files to read
+
+journal.window.sources.email.files.estimate.gloss = images can take one thought each. screenshots and scanned PDF pages are read by your journal itself, without thoughts. once they're in, this page shows what it actually took.
+
+journal.window.sources.email.files.confirm = bring in the files
+
+journal.window.sources.email.steady.fact.files = attached files
+
+journal.window.sources.email.steady.fact.files.originals.kept = original files kept
+
+journal.window.sources.email.steady.fact.files.originals.not.kept = original files not kept
+
+journal.window.sources.email.steady.fact.files.history = files on older mail
+
+journal.window.sources.email.steady.fact.files.history.value = { $done } of { $total } messages checked
+
+journal.window.sources.email.steady.fact.files.history.sub = newest first, behind today's activity
+
+journal.window.sources.email.steady.fact.files.thoughts = thoughts for files
+
+journal.window.sources.email.steady.fact.files.thoughts.value = { $actual } used · { $estimated } estimated
+
+journal.window.sources.email.steady.fact.files.thoughts.more = { $quantity ->
+        [one] 1 more than estimated
+       *[other] { $count } more than estimated
+    }
+
+journal.window.sources.email.steady.fact.files.thoughts.fewer = { $quantity ->
+        [one] 1 fewer than estimated
+       *[other] { $count } fewer than estimated
+    }
+
+journal.window.sources.email.steady.fact.files.thoughts.same = as estimated
+
+journal.window.sources.email.file.state.ambiguous = in the message itself, kept as a name
+
+journal.window.sources.email.file.state.too.large = too large to bring in automatically
+
+journal.window.sources.email.file.state.over.limit = too large for your journal to read
+
+journal.window.sources.email.file.state.unsupported = a kind of file your journal doesn't read
+
+journal.window.sources.email.file.state.unavailable = no longer in your mailbox
+
+journal.window.sources.email.file.state.pending = waiting to be read
+
+journal.window.sources.email.file.state.failed = your journal couldn't read this file
+
+journal.window.sources.email.file.state.removed = removed from your journal
+
+journal.window.sources.email.file.state.decorative = part of a signature or earlier mail, kept as a name
+
+journal.window.sources.email.file.state.names.only = name only
+
+journal.window.sources.email.file.state.partial = only part of this file could be read
+
+journal.window.sources.email.file.state.encrypted = encrypted, so it can't be read
+
+journal.window.sources.email.file.state.reader.unavailable = kept as a name until your journal can read PDFs
+
+journal.window.sources.email.file.action.bring.in = bring it in
+
+journal.window.sources.email.file.action.download = download original
+
 journal.window.sources.email.fetch.heading = bringing in your chosen messages
 
 journal.window.sources.email.fetch.progress = { $done } of { $total } messages in your journal

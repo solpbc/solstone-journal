@@ -1,0 +1,16 @@
+{
+  "description": "Estimate band line when the choice adds no file work.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "b9b79054e4e7914307aa84ca0bf067c3436ca14873900bfad40d48525b6d8ac6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

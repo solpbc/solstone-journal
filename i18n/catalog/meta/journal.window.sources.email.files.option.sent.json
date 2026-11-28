@@ -1,0 +1,16 @@
+{
+  "description": "Radio option: bring in the files on messages the owner sent.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "97632917be7bef11e881cb79f9b773f6bc0ea5777d5ba43e905c0f4836c4fcad",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

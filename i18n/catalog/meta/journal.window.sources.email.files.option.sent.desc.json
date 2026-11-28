@@ -1,0 +1,16 @@
+{
+  "description": "Description under the files-on-mail-you-sent option.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29174a9eb617629ea2100e01b0dfaa6ba1e98d04bc37fe20ca25bbc1b26e945d",
+  "max_length": 123,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

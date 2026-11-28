@@ -1,0 +1,25 @@
+{
+  "description": "Fact value. actual and estimated are formatted counts.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "actual",
+      "type": "string"
+    },
+    {
+      "name": "estimated",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "5e7583b0d6e1d15c733aa08154335c7a514974cc7b0d3cb6b33ed77e1db56891",
+  "max_length": 147,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

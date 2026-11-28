@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line while older mail is still being checked for files.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0a3d52939e4f0c6f326ecff1f4668490ffa77c38189da3212a776ba0a2845b32",
+  "max_length": 111,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

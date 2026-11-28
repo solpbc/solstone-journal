@@ -1,0 +1,16 @@
+{
+  "description": "Heading of the estimate band for attached files, shown apart from the message estimate.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "3a1be61ca0c32004f0b17885ebdf8434bd23eddef552645ccbe16ee82fe4a6ae",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

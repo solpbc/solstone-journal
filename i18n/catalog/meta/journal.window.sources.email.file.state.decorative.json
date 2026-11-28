@@ -1,0 +1,16 @@
+{
+  "description": "An image from a signature or quoted history.",
+  "context": "Journal window, transcripts reader: the short state shown beside an attached file's name under an email (\"attached report.pdf\" followed by this).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2504bfad8366ed6c0a44574ceb55def845d54154231b353a7606e19fe35a6c57",
+  "max_length": 153,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

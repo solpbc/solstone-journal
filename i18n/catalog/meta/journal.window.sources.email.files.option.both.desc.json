@@ -1,0 +1,16 @@
+{
+  "description": "Description under the both-sides option.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "af85e36e0524c0e0c9ce534563b261d46452fa3269d375ccb4f109e2f08752c2",
+  "max_length": 132,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

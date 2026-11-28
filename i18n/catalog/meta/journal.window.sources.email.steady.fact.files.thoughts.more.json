@@ -1,0 +1,30 @@
+{
+  "description": "Sub-line once file history is done.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "cf2fe9c4cac60d644a4a889b2c5db4f4ed4078ca9cae24a64e1c71757cdb33d5",
+  "max_length": 90,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

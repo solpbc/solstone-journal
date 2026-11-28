@@ -1,0 +1,16 @@
+{
+  "description": "Link in an opened file to download the kept original.",
+  "context": "Journal window, transcripts reader: the short state shown beside an attached file's name under an email (\"attached report.pdf\" followed by this).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f786f379defe61cd435bb1e3b0b0fec5cc114e431c999932614e0a30f7be98cf",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Note at the end of the attached-files breakdown.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c04c4d4d7bf1f8864a8f7cee20fba4f5fcc193c00f833b21000b78fbee49b79a",
+  "max_length": 225,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

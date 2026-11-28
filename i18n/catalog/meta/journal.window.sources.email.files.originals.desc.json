@@ -1,0 +1,16 @@
+{
+  "description": "Description under the keep-originals checkbox.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "59799287b15fbfe2957b3b783684ad4d41da507b961896093aa167af3660b2e6",
+  "max_length": 261,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

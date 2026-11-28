@@ -1,0 +1,16 @@
+{
+  "description": "Section heading for the choice of attached files.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29bd5876f16537f36d1521103e854c6de95c6ee9b953f04102bfa7bf541593c6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

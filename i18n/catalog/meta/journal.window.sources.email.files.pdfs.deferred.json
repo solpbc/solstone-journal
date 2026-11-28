@@ -1,0 +1,16 @@
+{
+  "description": "Row label in the attached-files breakdown, followed by a count. Shown when this journal runs where no PDF reader is available; a later sync where one is available brings them in.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c8dcc3205e0c74f13f91c35bb4b39fc6a63625cb0647efa0364eb60071915fb8",
+  "max_length": 165,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Row label in the attached-files breakdown, followed by a count.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "17f9cd7d5651559b5e19f06d9b1a3d5ee70efaeaa6ffeca3986ce973bd83e65e",
+  "max_length": 219,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Fact label for progress reading files on past mail.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "05aecd4b82f9ec295d64d76911eca4908bce716439dbcbe09397992677d8e83c",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

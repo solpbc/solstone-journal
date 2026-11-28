@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line under the attached files fact.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "a3cbd04ba91c40b88ab0179ea5eb0e7c417819c3b2f66f901ca957a571bde888",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

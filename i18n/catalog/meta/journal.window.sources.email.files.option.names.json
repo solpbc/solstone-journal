@@ -1,0 +1,16 @@
+{
+  "description": "Radio option: keep only the names of attached files.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "f4d0ed4a09c18543c6d71d983e432d7f6160ad2e81d8f63c69c7257f6dffa73e",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

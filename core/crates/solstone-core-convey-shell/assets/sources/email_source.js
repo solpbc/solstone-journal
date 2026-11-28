@@ -25,6 +25,10 @@
 
   const RANGE_ORDER = ['30d', '6m', '1y', 'all', 'none'];
   const TYPE_ORDER = ['replies', 'new_messages', 'forwards'];
+  const FILES_ORDER = ['names', 'sent', 'both'];
+  const FILES_NEW_DEFAULT = 'sent';
+  const FILES_SAVED_DEFAULT = 'names';
+  const FILE_COUNT_FIELDS = ['files', 'encoded_bytes', 'unsupported', 'too_large', 'uncertain', 'images', 'pdfs', 'already_synced'];
 
   function t(key, args) {
     return global.JournalI18n.render(key, args || []);
@@ -66,6 +70,101 @@
       case 'new_messages': return t('journal.window.sources.email.type.new.desc');
       case 'forwards': return t('journal.window.sources.email.type.forwards.desc');
       default: return '';
+    }
+  }
+
+  function filesLabel(scope) {
+    switch (scope) {
+      case 'names': return t('journal.window.sources.email.files.option.names');
+      case 'sent': return t('journal.window.sources.email.files.option.sent');
+      case 'both': return t('journal.window.sources.email.files.option.both');
+      default: return String(scope || '');
+    }
+  }
+
+  function filesDesc(scope) {
+    switch (scope) {
+      case 'names': return t('journal.window.sources.email.files.option.names.desc');
+      case 'sent': return t('journal.window.sources.email.files.option.sent.desc');
+      case 'both': return t('journal.window.sources.email.files.option.both.desc');
+      default: return '';
+    }
+  }
+
+  function normalizeFiles(scope) {
+    return FILES_ORDER.indexOf(scope) === -1 ? FILES_SAVED_DEFAULT : scope;
+  }
+
+  function sidesFor(scope) {
+    if (scope === 'sent') return ['sent'];
+    if (scope === 'both') return ['sent', 'answered'];
+    return [];
+  }
+
+  function zeroCounts() {
+    const out = {};
+    FILE_COUNT_FIELDS.forEach((k) => { out[k] = 0; });
+    return out;
+  }
+
+  function sideCounts(files, side) {
+    const src = (files && files[side]) || {};
+    const out = {};
+    FILE_COUNT_FIELDS.forEach((k) => { out[k] = Number(src[k] || 0); });
+    return out;
+  }
+
+  // Files read without the owner picking them: the rest stay names.
+  function readableCount(c) {
+    return Math.max(0, c.files - c.unsupported - c.too_large - c.uncertain);
+  }
+
+  // Header-derived candidates for a scope. The preview's remaining counts are
+  // what is not yet read; older previews without them fall back to an estimate
+  // where a side the saved choice already covered adds only newly selected mail.
+  function fileWork(files, scope, savedScope) {
+    const total = zeroCounts();
+    let newFiles = 0;
+    let newImages = 0;
+    const savedSides = savedScope ? sidesFor(savedScope) : [];
+    sidesFor(scope).forEach((side) => {
+      const c = sideCounts(files, side);
+      FILE_COUNT_FIELDS.forEach((k) => { total[k] += c[k]; });
+      const raw = (files && files[side]) || {};
+      if (typeof raw.remaining_files === 'number') {
+        newFiles += Math.max(0, raw.remaining_files);
+        newImages += Math.max(0, Number(raw.remaining_images || 0));
+        return;
+      }
+      const readable = readableCount(c);
+      if (savedSides.indexOf(side) === -1) {
+        newFiles += readable;
+        newImages += c.images;
+      } else if (c.files > 0) {
+        const share = Math.max(0, c.files - c.already_synced) / c.files;
+        newFiles += Math.ceil(readable * share);
+        newImages += Math.ceil(c.images * share);
+      }
+    });
+    return { total, newFiles, newImages };
+  }
+
+  function formatBytes(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n <= 0) return '0 MB';
+    const mb = n / 1e6;
+    let digits = 0;
+    if (mb < 10) digits = 1;
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'unit',
+        unit: 'megabyte',
+        unitDisplay: 'short',
+        maximumFractionDigits: digits,
+        minimumFractionDigits: 0,
+      }).format(mb < 0.1 ? 0.1 : mb);
+    } catch (_) {
+      return (mb < 0.1 ? 0.1 : mb).toFixed(digits) + ' MB';
     }
   }
 
@@ -148,6 +247,8 @@
       widenMode: false,
       selectedRange: '30d',
       selectedTypes: ['replies', 'new_messages', 'forwards'],
+      selectedFiles: FILES_NEW_DEFAULT,
+      keepOriginals: false,
       preview: null,
       previewSeq: 0,
       previewError: '',
@@ -237,6 +338,8 @@
       if (snap && snap.phase === 'awaiting_choice' && prevPhase !== 'awaiting_choice') {
         state.selectedRange = '30d';
         state.selectedTypes = ['replies', 'new_messages', 'forwards'];
+        state.selectedFiles = FILES_NEW_DEFAULT;
+        state.keepOriginals = false;
         state.widenMode = false;
         state.reconnectMode = false;
         fetchPreview();
@@ -353,6 +456,8 @@
       const res = await apiRequest(CHOICE_API, 'POST', {
         range: state.selectedRange,
         types: state.selectedTypes,
+        attachments: state.selectedFiles,
+        keep_originals: state.keepOriginals,
       });
       if (ended() || !res) return;
       state.busy = false;
@@ -561,6 +666,132 @@
       return wrap;
     }
 
+    // Attached files: names only, files on mail the owner sent, or both sides.
+    // Counts are header candidates for the selected range and types.
+    function renderFileChoice(body, isWiden) {
+      const snap = state.status;
+      const preview = state.preview;
+      const filesPreview = preview && preview.files && typeof preview.files === 'object' ? preview.files : null;
+      const saved = isWiden && snap && snap.choice ? snap.choice : null;
+      const savedScope = saved ? normalizeFiles(saved.attachments) : null;
+      const scope = state.selectedFiles;
+      const work = fileWork(filesPreview, scope, savedScope);
+
+      const sec = frame.el(doc, 'section', 'ss-choice-sec', { 'data-files-section': 'true' });
+      const heading = t('journal.window.sources.email.files.heading');
+      sec.appendChild(frame.text(doc, 'h2', null, heading));
+      const list = frame.el(doc, 'div', 'ss-choice-list', { role: 'radiogroup', 'aria-label': heading });
+      FILES_ORDER.forEach((opt) => {
+        const selected = scope === opt;
+        const row = frame.el(doc, 'label', selected ? 'ss-choice-row sel' : 'ss-choice-row', { 'data-files': opt });
+        const left = frame.el(doc, 'span', 'ss-choice-row-l');
+        const input = frame.el(doc, 'input', null, { type: 'radio', name: 'email-files', value: opt });
+        input.checked = selected;
+        if (selected) input.setAttribute('checked', 'checked');
+        input.addEventListener('change', () => {
+          state.selectedFiles = opt;
+          paint();
+        });
+        left.appendChild(input);
+        const textWrap = frame.el(doc, 'span', null);
+        textWrap.appendChild(frame.text(doc, 'span', 'ss-choice-row-t', filesLabel(opt)));
+        textWrap.appendChild(frame.text(doc, 'span', 'ss-choice-row-d', filesDesc(opt)));
+        left.appendChild(textWrap);
+        row.appendChild(left);
+        if (opt !== 'names' && filesPreview) {
+          const n = fileWork(filesPreview, opt, null).total.files;
+          row.appendChild(frame.text(doc, 'span', 'ss-choice-row-r', t('journal.window.sources.email.files.option.count', [
+            ['quantity', n],
+            ['count', frame.formatCount(n)],
+          ])));
+        }
+        list.appendChild(row);
+      });
+      sec.appendChild(list);
+
+      if (scope !== 'names' && filesPreview && work.total.files > 0) {
+        const c = work.total;
+        const items = [
+          { label: t('journal.window.sources.email.files.names.too.large'), count: c.too_large },
+          { label: t('journal.window.sources.email.files.names.uncertain'), count: c.uncertain },
+          { label: t('journal.window.sources.email.files.names.unsupported'), count: c.unsupported },
+        ];
+        if (filesPreview.pdf_reader_available === false) {
+          items.push({ label: t('journal.window.sources.email.files.pdfs.deferred'), count: c.pdfs });
+        }
+        if (c.already_synced > 0) {
+          items.push({ label: t('journal.window.sources.email.files.already.synced'), count: c.already_synced });
+        }
+        const fold = frame.renderLeftOutDisclosure(doc, {
+          summary: t('journal.window.sources.email.files.found', [
+            ['quantity', c.files],
+            ['count', frame.formatCount(c.files)],
+            ['size', formatBytes(c.encoded_bytes)],
+          ]),
+          items: items.filter((item) => item.count > 0),
+          note: t('journal.window.sources.email.files.found.note'),
+        });
+        fold.setAttribute('data-files-breakdown', 'true');
+        sec.appendChild(fold);
+      }
+
+      if (scope !== 'names') {
+        const row = frame.el(doc, 'label', state.keepOriginals ? 'ss-choice-row sel' : 'ss-choice-row', { 'data-keep-originals': 'true' });
+        const left = frame.el(doc, 'span', 'ss-choice-row-l');
+        const cb = frame.el(doc, 'input', null, { type: 'checkbox', name: 'email-keep-originals', value: 'keep' });
+        cb.checked = state.keepOriginals;
+        if (state.keepOriginals) cb.setAttribute('checked', 'checked');
+        cb.addEventListener('change', () => {
+          state.keepOriginals = !state.keepOriginals;
+          paint();
+        });
+        left.appendChild(cb);
+        const textWrap = frame.el(doc, 'span', null);
+        textWrap.appendChild(frame.text(doc, 'span', 'ss-choice-row-t', t('journal.window.sources.email.files.originals.label')));
+        textWrap.appendChild(frame.text(doc, 'span', 'ss-choice-row-d', t('journal.window.sources.email.files.originals.desc')));
+        left.appendChild(textWrap);
+        row.appendChild(left);
+        const originals = frame.el(doc, 'div', 'ss-choice-list');
+        originals.appendChild(row);
+        sec.appendChild(originals);
+      }
+
+      if (saved) {
+        const narrowed = FILES_ORDER.indexOf(scope) < FILES_ORDER.indexOf(savedScope);
+        const originalsLater = state.keepOriginals && !saved.keep_originals && scope !== 'names';
+        if (narrowed) {
+          sec.appendChild(frame.text(doc, 'p', 'ss-helper-note', t('journal.window.sources.email.files.narrow.note'), { 'data-files-note': 'narrow' }));
+        } else if (originalsLater) {
+          sec.appendChild(frame.text(doc, 'p', 'ss-helper-note', t('journal.window.sources.email.files.originals.later'), { 'data-files-note': 'originals' }));
+        }
+      }
+      body.appendChild(sec);
+
+      return {
+        scope,
+        newFiles: work.newFiles,
+        thoughts: work.newImages,
+        known: !!filesPreview,
+      };
+    }
+
+    // Extra thinking for files, kept apart from the message estimate.
+    function renderFileEstimate(body, files) {
+      if (!files || files.scope === 'names' || !files.known) return;
+      const band = frame.renderEstimateBand(doc, {
+        heading: t('journal.window.sources.email.files.estimate.heading'),
+        isZero: files.newFiles === 0 && files.thoughts === 0,
+        zeroLine: t('journal.window.sources.email.files.estimate.zero'),
+        units: [
+          t('journal.window.sources.email.files.estimate.files', [['quantity', files.newFiles], ['count', frame.formatCount(files.newFiles)]]),
+          t('journal.window.sources.email.files.estimate.thoughts', [['quantity', files.thoughts], ['count', frame.formatCount(files.thoughts)]]),
+        ],
+        glossNodes: [frame.text(doc, 'span', null, t('journal.window.sources.email.files.estimate.gloss'))],
+      });
+      band.setAttribute('data-files-estimate', 'true');
+      body.appendChild(band);
+    }
+
     function renderChoiceControls(body, isWiden) {
       const snap = state.status;
       const preview = state.preview;
@@ -672,6 +903,8 @@
       }
       body.appendChild(typeSec);
 
+      const files = renderFileChoice(body, isWiden);
+
       // 3-unit processing estimate (solstone's own units only, never money)
       const est = isWiden
         ? ((preview && preview.delta_estimate) || { segments: 0, days: 0, thoughts: 0 })
@@ -709,6 +942,8 @@
         glossNodes: [gloss1, gloss2],
       }));
 
+      renderFileEstimate(body, files);
+
       if (state.errorMsg) {
         body.appendChild(frame.renderNotice(doc, { tone: 'err', text: state.errorMsg }));
       }
@@ -716,9 +951,13 @@
       const actions = frame.el(doc, 'div', 'ss-act-row');
       let primaryLabel;
       if (isWiden) {
-        primaryLabel = effectiveCount > 0
-          ? t('journal.window.sources.email.widen.confirm', [['quantity', effectiveCount], ['count', frame.formatCount(effectiveCount)]])
-          : t('journal.window.sources.selective.action.save.choice');
+        if (effectiveCount > 0) {
+          primaryLabel = t('journal.window.sources.email.widen.confirm', [['quantity', effectiveCount], ['count', frame.formatCount(effectiveCount)]]);
+        } else if (files.newFiles > 0) {
+          primaryLabel = t('journal.window.sources.email.files.confirm');
+        } else {
+          primaryLabel = t('journal.window.sources.selective.action.save.choice');
+        }
       } else {
         primaryLabel = (state.selectedRange === 'none' || effectiveCount === 0)
           ? t('journal.window.sources.selective.action.start.from.today')
@@ -1161,6 +1400,60 @@
           value: rangeLabel(choice.range) + (typesStr ? ' \u00b7 ' + typesStr : ''),
         });
       }
+      if (choice) {
+        const scope = normalizeFiles(choice.attachments);
+        facts.push({
+          key: 'files',
+          label: t('journal.window.sources.email.steady.fact.files'),
+          value: filesLabel(scope),
+          sub: scope === 'names'
+            ? ''
+            : (choice.keep_originals
+              ? t('journal.window.sources.email.steady.fact.files.originals.kept')
+              : t('journal.window.sources.email.steady.fact.files.originals.not.kept')),
+        });
+      }
+      const fp = snap.file_progress;
+      if (fp && choice && normalizeFiles(choice.attachments) !== 'names') {
+        const done = Number(fp.exchanges_done || 0);
+        const total = Number(fp.exchanges_total || 0);
+        if (total > 0) {
+          facts.push({
+            key: 'files_history',
+            label: t('journal.window.sources.email.steady.fact.files.history'),
+            value: t('journal.window.sources.email.steady.fact.files.history.value', [
+              ['done', frame.formatCount(done)],
+              ['total', frame.formatCount(total)],
+            ]),
+            sub: done < total ? t('journal.window.sources.email.steady.fact.files.history.sub') : '',
+          });
+        }
+        const estimated = Number(fp.estimated_thoughts || 0);
+        const actual = Number(fp.actual_thoughts || 0);
+        if (estimated > 0 || actual > 0) {
+          const finished = total === 0 || done >= total;
+          let sub = '';
+          if (finished) {
+            const diff = actual - estimated;
+            if (diff > 0) {
+              sub = t('journal.window.sources.email.steady.fact.files.thoughts.more', [['quantity', diff], ['count', frame.formatCount(diff)]]);
+            } else if (diff < 0) {
+              sub = t('journal.window.sources.email.steady.fact.files.thoughts.fewer', [['quantity', -diff], ['count', frame.formatCount(-diff)]]);
+            } else {
+              sub = t('journal.window.sources.email.steady.fact.files.thoughts.same');
+            }
+          }
+          facts.push({
+            key: 'files_thoughts',
+            label: t('journal.window.sources.email.steady.fact.files.thoughts'),
+            value: t('journal.window.sources.email.steady.fact.files.thoughts.value', [
+              ['actual', frame.formatCount(actual)],
+              ['estimated', frame.formatCount(estimated)],
+            ]),
+            sub,
+          });
+        }
+      }
       facts.push({
         key: 'last_added',
         label: t('journal.window.sources.email.steady.fact.last.added'),
@@ -1198,6 +1491,8 @@
         state.selectedTypes = (choice && Array.isArray(choice.types) && choice.types.length > 0)
           ? choice.types.slice()
           : ['replies', 'new_messages', 'forwards'];
+        state.selectedFiles = normalizeFiles(choice && choice.attachments);
+        state.keepOriginals = !!(choice && choice.keep_originals);
         paint();
         fetchPreview();
       });

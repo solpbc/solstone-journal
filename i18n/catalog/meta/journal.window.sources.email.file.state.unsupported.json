@@ -1,0 +1,16 @@
+{
+  "description": "A file type the journal does not read.",
+  "context": "Journal window, transcripts reader: the short state shown beside an attached file's name under an email (\"attached report.pdf\" followed by this).",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "fe5781c8ade44d4f927deaf82e5f85852b98e1fc49b3b4f64796c27296a03b86",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

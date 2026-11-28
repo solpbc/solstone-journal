@@ -1,0 +1,16 @@
+{
+  "description": "Fact label; the value is the chosen file option.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "29bd5876f16537f36d1521103e854c6de95c6ee9b953f04102bfa7bf541593c6",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

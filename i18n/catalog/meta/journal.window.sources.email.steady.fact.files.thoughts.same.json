@@ -1,0 +1,16 @@
+{
+  "description": "Sub-line once file history is done.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5d25b0a989d0c75cdadaed5b214c4b0507a23e76caeddfe60551fd926a3e8952",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

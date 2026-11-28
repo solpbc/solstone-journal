@@ -1,0 +1,34 @@
+{
+  "description": "Summary of a collapsed list breaking down the attached files found. size is an upper bound such as \"14 MB\".",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "quantity",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "size",
+      "type": "string"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "384f453f25f8fe806851e80c4faf045655e5f1ba77c921384880664177a08b8c",
+  "max_length": 126,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ],
+  "selector": {
+    "name": "quantity",
+    "type": "cardinal"
+  }
+}

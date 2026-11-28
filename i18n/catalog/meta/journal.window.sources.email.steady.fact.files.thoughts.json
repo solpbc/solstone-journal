@@ -1,0 +1,16 @@
+{
+  "description": "Fact label comparing thoughts used for files with the estimate.",
+  "context": "Journal window, /app/sources/email steady state facts list.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "947be82bf0d9b061975990b09b6ffdac53ae0b32959c74d7d2aa6cc911a8b8f4",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

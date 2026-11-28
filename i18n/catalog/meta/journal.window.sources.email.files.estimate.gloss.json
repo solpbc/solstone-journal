@@ -1,0 +1,16 @@
+{
+  "description": "Explanation under the file estimate.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "207b20211be21b2cc971099c4d16cc7621a1ccda084b33a57620ae719b418093",
+  "max_length": 522,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

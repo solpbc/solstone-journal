@@ -1,0 +1,16 @@
+{
+  "description": "Note shown when the owner narrows the file choice.",
+  "context": "Journal window, /app/sources/email choice and \"change what comes in\" screens, attached files section.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "0831847bc02fcec0c0caa75a94fa987aeba259d06d4ca863021246aa3fcfaf77",
+  "max_length": 234,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}
