@@ -386,13 +386,22 @@ impl WorkDiscovery {
                     if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
                         return;
                     }
-                    history_walk.after_pass(&journal, &backlog, &|| {
-                        worker_stop.load(Ordering::Acquire) || checkpoint().is_err()
-                    });
+                    // The pass ends here: what follows is not part of what
+                    // the rests between passes are measured from.
+                    let pass = started.elapsed();
+                    // A panic in the read ends this read, not work discovery.
+                    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        history_walk.after_pass(&journal, &backlog, &|| {
+                            worker_stop.load(Ordering::Acquire) || checkpoint().is_err()
+                        });
+                    }))
+                    .is_err()
+                    {
+                        log::warn!("history consolidation panicked");
+                    }
                     if worker_stop.load(Ordering::Acquire) || checkpoint().is_err() {
                         return;
                     }
-                    let pass = started.elapsed();
                     let ended = Instant::now();
                     let owner_days = owner_days_in_queue(&journal, &queue);
                     let owner_done = || {
@@ -1886,7 +1895,10 @@ fn held_thinking(
 struct HistoryWork {
     /// Some of it is still to do.
     left: bool,
-    /// How much of it the pass counted as done.
+    /// How much work on days before today the pass counted as done (bands
+    /// 2-6). It is wider than the walk: a day of the past week that holds
+    /// only what a synced source brought is filled in ahead of the walk, and
+    /// history is read after it as well.
     finished: u64,
 }
 
@@ -1931,16 +1943,26 @@ impl HistoryWalk {
     /// said once. No model is asked, and a failure holds nothing else back.
     /// The pass has published and handed over its work by now, so this holds
     /// no lock and no part of the queue.
+    ///
+    /// A read that was stopped, or that failed, is still owed: the next pass
+    /// to find none of the walk left makes it again. One that could not write
+    /// everything has stamped that, and is not made again until its inputs
+    /// change.
     fn after_pass(&mut self, journal: &Path, backlog: &Backlog, stopped: &dyn Fn() -> bool) {
-        if self.ended(backlog.history)
-            && let Err(error) = crate::segment::consolidate_historical_backfill_span_until(
-                journal,
-                jiff::Timestamp::now().as_millisecond(),
-                stopped,
-            )
-        {
+        if !self.ended(backlog.history) {
+            return;
+        }
+        // Owed until it returns, so a panic part way leaves it owed too.
+        self.open = true;
+        let read = crate::segment::consolidate_historical_backfill_span_until(
+            journal,
+            jiff::Timestamp::now().as_millisecond(),
+            stopped,
+        );
+        if let Err(error) = &read {
             log::warn!("history consolidation: {error}");
         }
+        self.open = read.is_err() || stopped();
     }
 }
 
@@ -2587,7 +2609,7 @@ fn reconcile_pass_with_roots(
     // Only a pass that inspected every day can say none of it is left.
     let history = (report.days_inspected == report.days_total).then(|| HistoryWork {
         left: !no_history_left(&candidates),
-        finished: report.bands[WorkBand::Import as usize - 1..]
+        finished: report.bands[WorkBand::Waiting as usize - 1..]
             .iter()
             .map(|band| band.segments_complete + band.daily_units_complete)
             .sum(),
@@ -4002,6 +4024,9 @@ mod tests {
         });
         assert_eq!(reads(), before + 1);
         assert!(!stamp.exists());
+        // Asked before the read, at its first day, after it, and by the walk:
+        // it went no further than that day.
+        assert_eq!(asked.get(), 4);
         let before = reads();
 
         let mut walk = HistoryWalk::default();
