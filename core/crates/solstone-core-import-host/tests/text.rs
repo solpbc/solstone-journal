@@ -135,8 +135,8 @@ fn generic_caption_and_log_extensions_use_the_import_entry_point() {
     let temp = TempDir::new().unwrap();
     let journal = temp.path().join("journal");
     fs::create_dir_all(&journal).unwrap();
-    // WebVTT cues carry their own times and keep only the cue text; SubRip
-    // captions and a plain log are kept whole and marked untimed.
+    // WebVTT and SubRip cues carry their own times and keep only the cue
+    // text; a plain log is kept whole and marked untimed.
     for (index, (name, text, untimed, kept)) in [
         (
             "captions.vtt",
@@ -147,15 +147,8 @@ fn generic_caption_and_log_extensions_use_the_import_entry_point() {
         (
             "captions.srt",
             "1\n00:00:01,000 --> 00:00:02,000\nRain.\n\n2\n00:00:02,000 --> 00:00:03,000\nWind.\n",
-            true,
-            &[
-                "1",
-                "00:00:01,000 --> 00:00:02,000",
-                "Rain.",
-                "2",
-                "00:00:02,000 --> 00:00:03,000",
-                "Wind.",
-            ][..],
+            false,
+            &["Rain.", "Wind."][..],
         ),
         (
             "exchange.log",
