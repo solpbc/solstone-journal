@@ -794,13 +794,20 @@ async fn staging_failure_fails_closed_without_shared_fallback_or_touching_other_
     let _ = fs::remove_dir_all(&temp_b);
     let _ = fs::remove_file(&temp_b);
     fs::write(&temp_b, b"blocking-temp-file").unwrap();
+    struct RemoveOnDrop(std::path::PathBuf);
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let _temp_b_guard = RemoveOnDrop(temp_b.clone());
 
     // Remove any stale legacy shared fallback path if present so we prove we never create/use it.
     let forbidden_shared = std::env::temp_dir().join("solstone-export-staging-fallback");
     let shared_existed_before = forbidden_shared.exists();
 
     let service_b = ExportService::new(journal_b.clone());
-    let _ = fs::remove_file(&temp_b);
 
     if !shared_existed_before {
         assert!(
@@ -814,6 +821,9 @@ async fn staging_failure_fails_closed_without_shared_fallback_or_touching_other_
     assert_eq!(state_b["status"], "unavailable");
     assert_eq!(state_b["staging_available"], false);
     assert_eq!(state_b["error_code"], "export_staging_unavailable");
+
+    let est_b = service_b.estimate_payload();
+    assert_eq!(est_b["staging_available"], false);
 
     let start_err = service_b
         .start_job(RequesterScope::Local, ExportMode::Full, false)
@@ -835,6 +845,13 @@ async fn staging_failure_fails_closed_without_shared_fallback_or_touching_other_
         .discard_ready(&RequesterScope::Local, "any", false)
         .expect_err("discard must fail closed when staging is unavailable");
     assert_eq!(discard_err.0, StatusCode::SERVICE_UNAVAILABLE);
+
+    if !shared_existed_before {
+        assert!(
+            !forbidden_shared.exists(),
+            "export endpoints must never create or use a shared temp fallback directory"
+        );
+    }
 
     // Journal A's isolated ready copy is completely unaffected.
     let state_a_after = service_a.state_payload(&RequesterScope::Local);
@@ -1013,11 +1030,15 @@ async fn disk_space_enforces_journal_20gb_floor_at_preflight_and_during_packing(
         aborted["active_job"]["error_code"],
         "insufficient_journal_space"
     );
+    let has_part = fs::read_dir(&staging)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".part"))
+        })
+        .unwrap_or(false);
     assert!(
-        fs::read_dir(&staging)
-            .unwrap()
-            .flatten()
-            .all(|e| !e.file_name().to_string_lossy().ends_with(".part")),
+        !has_part,
         "mid-packing space abort must remove partial staged archive"
     );
 }
@@ -1630,4 +1651,290 @@ async fn export_api_silently_omits_legacy_symlinks_and_reports_other_skipped_sym
         outcome["ready"]["skipped_symlinks"],
         serde_json::json!(["notes/shortcut.txt"])
     );
+}
+
+fn export_staging_siblings(parent: &Path) -> Vec<std::ffi::OsString> {
+    fs::read_dir(parent)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name())
+        .filter(|name| name.to_string_lossy().ends_with(".export-staging"))
+        .collect()
+}
+
+#[tokio::test]
+async fn repeated_synthetic_boots_and_reads_leave_no_orphan_staging_dirs() {
+    let work = TempDir::new().unwrap();
+    let journal_a = work.path().join("journal-a");
+    let journal_b = work.path().join("journal-b");
+    seed_journal(&journal_a);
+    seed_journal(&journal_b);
+
+    let temp_a = StagingArea::temp_fallback_path(&journal_a).unwrap();
+    let temp_b = StagingArea::temp_fallback_path(&journal_b).unwrap();
+
+    // Boot A twice, inspecting read-only endpoints and prepared_export_path.
+    for _ in 0..2 {
+        let service_a = ExportService::new(journal_a.clone());
+        assert_eq!(
+            service_a.state_payload(&RequesterScope::Local)["status"],
+            "idle"
+        );
+        service_a.trigger_estimate_if_needed(true);
+        let mut est = Value::Null;
+        for _ in 0..100 {
+            est = service_a.estimate_payload();
+            if est["status"] == "ready" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(est["status"], "ready");
+        assert_eq!(est["staging_available"], true);
+        assert_eq!(est["staging_volume_same_as_journal"], true);
+        assert!(est["journal_disk_free_bytes"].as_u64().unwrap_or(0) > 0);
+        assert!(est["journal_disk_total_bytes"].as_u64().unwrap_or(0) > 0);
+        assert!(super::prepared_export_path(&journal_a, "exp_missing").is_none());
+        assert!(
+            export_staging_siblings(work.path()).is_empty(),
+            "booting and reading export state/estimate must not create sibling staging dirs"
+        );
+        assert!(!temp_a.exists());
+    }
+
+    // Boot fresh temporary journal B via both ExportService::new and the full convey router.
+    let service_b = ExportService::new(journal_b.clone());
+    assert_eq!(
+        service_b.state_payload(&RequesterScope::Local)["status"],
+        "idle"
+    );
+    drop(service_b);
+    let _app = crate::router(journal_b.clone());
+
+    assert!(
+        export_staging_siblings(work.path()).is_empty(),
+        "repeated boots of A, A, and B must leave zero .export-staging siblings"
+    );
+    assert!(!temp_a.exists());
+    assert!(!temp_b.exists());
+}
+
+#[tokio::test]
+async fn production_export_discard_export_and_restart_recovery_lifecycle() {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    seed_journal(&journal);
+    let sibling = fs::canonicalize(work.path())
+        .unwrap()
+        .join(".journal.export-staging");
+
+    // 1. Boot does not create staging dir.
+    let service1 = ExportService::new(journal.clone());
+    assert!(!sibling.exists());
+
+    // 2. First export creates private sibling staging dir and prepares a valid ZIP.
+    let (status1, _) = service1
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    assert_eq!(status1, StatusCode::ACCEPTED);
+    let ready1 = wait_until_not_preparing(&service1, &RequesterScope::Local).await;
+    assert_eq!(ready1["status"], "ready");
+    let id1 = ready1["ready"]["export_id"].as_str().unwrap().to_owned();
+    let sha1 = ready1["ready"]["sha256"].as_str().unwrap().to_owned();
+    assert!(sibling.is_dir());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::symlink_metadata(&sibling).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+    assert!(super::prepared_export_path(&journal, &id1).is_some());
+
+    // 3. Restart recovery preserves the valid prepared copy and sweeps orphan `.part` files.
+    fs::write(sibling.join("interrupted.zip.part"), b"partial").unwrap();
+    drop(service1);
+    let recovered = ExportService::new(journal.clone());
+    assert!(!sibling.join("interrupted.zip.part").exists());
+    let recovered_state = recovered.state_payload(&RequesterScope::Local);
+    assert_eq!(recovered_state["status"], "ready");
+    assert_eq!(recovered_state["ready"]["export_id"], id1);
+
+    let dl1 = recovered
+        .serve_download(
+            &RequesterScope::Local,
+            &id1,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(dl1.status(), StatusCode::OK);
+    let bytes1 = to_bytes(dl1.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(format!("{:x}", Sha256::digest(&bytes1)), sha1);
+
+    // 4. Discard removes staged files AND removes the now-empty sibling staging dir.
+    assert_eq!(
+        recovered
+            .discard_ready(&RequesterScope::Local, &id1, false)
+            .unwrap(),
+        StatusCode::OK
+    );
+    assert!(!sibling.exists());
+    assert_eq!(
+        recovered.state_payload(&RequesterScope::Local)["status"],
+        "idle"
+    );
+    let post_discard_est = recovered.estimate_payload();
+    assert_eq!(post_discard_est["staging_available"], true);
+    assert!(
+        post_discard_est["journal_disk_free_bytes"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+    assert!(
+        !sibling.exists(),
+        "post-discard state/estimate reads must not recreate an empty staging dir"
+    );
+
+    // 5. Reuse after discard: second export recreates private staging dir cleanly and downloads.
+    let (status2, _) = recovered
+        .start_job(
+            RequesterScope::Local,
+            ExportMode::WithoutProcessedMedia,
+            false,
+        )
+        .unwrap();
+    assert_eq!(status2, StatusCode::ACCEPTED);
+    let ready2 = wait_until_not_preparing(&recovered, &RequesterScope::Local).await;
+    assert_eq!(ready2["status"], "ready");
+    let id2 = ready2["ready"]["export_id"].as_str().unwrap().to_owned();
+    let sha2 = ready2["ready"]["sha256"].as_str().unwrap().to_owned();
+    assert_ne!(id2, id1);
+    assert!(sibling.is_dir());
+
+    let dl2 = recovered
+        .serve_download(
+            &RequesterScope::Local,
+            &id2,
+            &Method::GET,
+            &HeaderMap::new(),
+        )
+        .await;
+    assert_eq!(dl2.status(), StatusCode::OK);
+    let bytes2 = to_bytes(dl2.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(format!("{:x}", Sha256::digest(&bytes2)), sha2);
+
+    assert_eq!(
+        recovered
+            .discard_ready(&RequesterScope::Local, &id2, false)
+            .unwrap(),
+        StatusCode::OK
+    );
+    assert!(!sibling.exists());
+
+    // 6. Boot cleans up a pre-existing stale empty or orphan-only staging directory.
+    fs::create_dir(&sibling).unwrap();
+    fs::write(sibling.join("stale.zip.part"), b"orphan").unwrap();
+    let _boot_cleaned = ExportService::new(journal.clone());
+    assert!(
+        !sibling.exists(),
+        "boot must sweep orphan-only staging dir and remove it when empty"
+    );
+}
+
+#[tokio::test]
+async fn probe_measures_volume_without_creating_and_fallback_recovers_and_cleans_up() {
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    seed_journal(&journal);
+    let canonical_parent = fs::canonicalize(work.path()).unwrap();
+    let sibling = canonical_parent.join(".journal.export-staging");
+
+    // 1. Read-only probe checks parent volume identity without creating sibling dir.
+    let same = StagingArea::probe_with_volume_check(&journal, |j, anchor| {
+        assert_eq!(anchor, canonical_parent.as_path());
+        assert_ne!(j, anchor);
+        true
+    })
+    .unwrap();
+    assert_eq!(same.dir, sibling);
+    assert!(same.same_volume_as_journal);
+    assert!(!sibling.exists());
+    assert!(same.disk_space().unwrap().total_bytes > 0);
+    assert!(!sibling.exists());
+
+    let distinct = StagingArea::probe_with_volume_check(&journal, |j, anchor| {
+        assert_eq!(anchor, canonical_parent.as_path());
+        assert_ne!(j, anchor);
+        false
+    })
+    .unwrap();
+    assert_eq!(distinct.dir, sibling);
+    assert!(!distinct.same_volume_as_journal);
+    assert!(!sibling.exists());
+
+    // 2. When sibling path is blocked, probe & export use per-journal temp fallback,
+    //    recover across restart, and remove the temp fallback dir cleanly on discard.
+    fs::write(&sibling, b"blocking-file").unwrap();
+    let fallback = StagingArea::temp_fallback_path(&journal).unwrap();
+    let _ = fs::remove_dir_all(&fallback);
+    let _ = fs::remove_file(&fallback);
+    struct CleanFallback(std::path::PathBuf);
+    impl Drop for CleanFallback {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let _fallback_guard = CleanFallback(fallback.clone());
+
+    let probed_fallback = StagingArea::probe(&journal).unwrap();
+    assert_eq!(probed_fallback.dir, fallback);
+    assert!(
+        !fallback.exists(),
+        "probing fallback path must not create the fallback directory"
+    );
+
+    let service1 = ExportService::new(journal.clone());
+    assert!(!fallback.exists());
+    service1
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready1 = wait_until_not_preparing(&service1, &RequesterScope::Local).await;
+    assert_eq!(ready1["status"], "ready");
+    let id1 = ready1["ready"]["export_id"].as_str().unwrap().to_owned();
+    assert!(fallback.is_dir());
+    assert!(super::prepared_export_path(&journal, &id1).is_some());
+
+    // Restart recovers prepared copy from temp fallback without unblocking sibling.
+    drop(service1);
+    let service2 = ExportService::new(journal.clone());
+    let state2 = service2.state_payload(&RequesterScope::Local);
+    assert_eq!(state2["status"], "ready");
+    assert_eq!(state2["ready"]["export_id"], id1);
+
+    // Discard removes the temp fallback directory cleanly, and a subsequent export reuses it.
+    assert_eq!(
+        service2
+            .discard_ready(&RequesterScope::Local, &id1, false)
+            .unwrap(),
+        StatusCode::OK
+    );
+    assert!(!fallback.exists());
+
+    service2
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+    let ready2 = wait_until_not_preparing(&service2, &RequesterScope::Local).await;
+    assert_eq!(ready2["status"], "ready");
+    let id2 = ready2["ready"]["export_id"].as_str().unwrap().to_owned();
+    assert!(fallback.is_dir());
+    assert_eq!(
+        service2
+            .discard_ready(&RequesterScope::Local, &id2, false)
+            .unwrap(),
+        StatusCode::OK
+    );
+    assert!(!fallback.exists());
 }

@@ -17,7 +17,7 @@
 use std::io;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::fs::MetadataExt;
+use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::ptr::null_mut;
 
@@ -32,9 +32,12 @@ use windows_sys::Win32::Security::{
     UNPROTECTED_DACL_SECURITY_INFORMATION,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_REPARSE_POINT, GetVolumeInformationW, GetVolumePathNameW,
+    FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_LIST_DIRECTORY, FILE_TRAVERSE, GetVolumeInformationW, GetVolumePathNameW,
 };
-use windows_sys::Win32::System::SystemServices::{ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE};
+use windows_sys::Win32::System::SystemServices::{
+    ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, FILE_PERSISTENT_ACLS, FILE_READ_ONLY_VOLUME,
+};
 
 const SYSTEM: &str = "S-1-5-18";
 const ADMINISTRATORS: &str = "S-1-5-32-544";
@@ -239,6 +242,106 @@ pub(super) fn ensure_private_owner_dir(path: &Path) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+fn grants_dir_access(path: &Path, rights: u32) -> bool {
+    std::fs::OpenOptions::new()
+        .access_mode(rights)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .is_ok()
+}
+
+fn volume_supports_private_writes(path: &Path) -> io::Result<bool> {
+    let name = wide(path);
+    let mut volume = vec![0_u16; 1024];
+    // SAFETY: name is NUL-terminated, and volume holds the length passed.
+    if unsafe { GetVolumePathNameW(name.as_ptr(), volume.as_mut_ptr(), volume.len() as u32) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut flags: u32 = 0;
+    // SAFETY: volume is NUL-terminated; flags points to writable storage and the rest are optional.
+    if unsafe {
+        GetVolumeInformationW(
+            volume.as_ptr(),
+            null_mut(),
+            0,
+            null_mut(),
+            null_mut(),
+            &mut flags,
+            null_mut(),
+            0,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(flags & FILE_READ_ONLY_VOLUME == 0 && flags & FILE_PERSISTENT_ACLS != 0)
+}
+
+/// Read-only probe for whether `path` can serve as an owner-private directory
+/// without creating or modifying anything on disk.
+pub(super) fn probe_private_owner_dir(path: &Path) -> io::Result<bool> {
+    let current_owner = solstone_core_local_endpoint::owner_sid()?;
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => {
+            if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !meta.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory path is not a plain directory",
+                ));
+            }
+            let dir_owner = owner_sid_of(path)?;
+            if dir_owner != current_owner && dir_owner != ADMINISTRATORS {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory is not owned by the current account",
+                ));
+            }
+            if !volume_supports_private_writes(path)? {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory volume cannot enforce private writes",
+                ));
+            }
+            if !grants_dir_access(path, FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_TRAVERSE) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory is not writable by the current account",
+                ));
+            }
+            Ok(true)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let parent = path.parent().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory path has no parent directory",
+                )
+            })?;
+            let parent_meta = std::fs::metadata(parent)?;
+            if !parent_meta.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory parent is not a directory",
+                ));
+            }
+            if !volume_supports_private_writes(parent)? {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory parent volume cannot enforce private writes",
+                ));
+            }
+            if !grants_dir_access(parent, FILE_ADD_SUBDIRECTORY) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory parent does not grant directory creation",
+                ));
+            }
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Drop what `path` was granted of its own, so it holds only what it inherits.
@@ -501,6 +604,22 @@ mod tests {
         let file = work.path().join("regular");
         std::fs::write(&file, b"x").unwrap();
         assert!(ensure_private_owner_dir(&file).is_err());
+    }
+
+    #[test]
+    fn probe_private_owner_dir_checks_without_creating_and_rejects_files() {
+        let work = tempfile::tempdir().unwrap();
+        let missing = work.path().join("not-created");
+        assert!(!probe_private_owner_dir(&missing).unwrap());
+        assert!(!missing.exists());
+
+        let existing = work.path().join("existing");
+        std::fs::create_dir(&existing).unwrap();
+        assert!(probe_private_owner_dir(&existing).unwrap());
+
+        let file = work.path().join("regular");
+        std::fs::write(&file, b"x").unwrap();
+        assert!(probe_private_owner_dir(&file).is_err());
     }
 
     #[test]

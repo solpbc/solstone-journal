@@ -120,7 +120,9 @@ pub(crate) struct ExportService {
 
 struct ExportServiceInner {
     journal_root: PathBuf,
-    staging: Result<StagingArea, String>,
+    /// When `Some`, pins staging to an explicit directory (used in tests via
+    /// `with_deps`); when `None`, resolves lazily from `journal_root`.
+    fixed_staging: Option<StagingArea>,
     clock: Arc<dyn ExportClock>,
     disk_probe: Arc<dyn DiskSpaceProbe>,
     state: Mutex<CoordinatorState>,
@@ -179,6 +181,7 @@ struct TerminalOutcome {
 }
 
 struct ReadyEntry {
+    staging: StagingArea,
     record: ReadyRecord,
     active_downloads: usize,
     retired_by_erasure: bool,
@@ -188,23 +191,17 @@ struct ReadyEntry {
 }
 
 impl ExportService {
-    /// Create a production export service for `journal_root`, sweeping orphaned
-    /// `.part` files and recovering any still-valid prepared copy on disk.
+    /// Create a production export service for `journal_root`, recovering any
+    /// still-valid prepared copy and sweeping orphaned `.part` files in an
+    /// already-existing staging directory without creating one on boot.
     ///
-    /// If private per-journal staging cannot be resolved, fails closed for
-    /// export operations while keeping the rest of the journal and dashboard
-    /// operational (never falls back to any shared staging directory).
+    /// Staging directories are created lazily when an export job actually starts,
+    /// and if private per-journal staging cannot be resolved, export endpoints
+    /// fail closed while keeping the rest of the journal operational.
     pub(crate) fn new(journal_root: PathBuf) -> Self {
-        let staging = StagingArea::resolve(&journal_root).map_err(|error| {
-            log::warn!(
-                "export staging unavailable for {}: {error}",
-                journal_root.display()
-            );
-            error.to_string()
-        });
-        Self::with_staging_result(
+        Self::with_fixed_staging(
             journal_root,
-            staging,
+            None,
             Arc::new(SystemExportClock),
             Arc::new(RealDiskSpaceProbe),
         )
@@ -217,20 +214,26 @@ impl ExportService {
         clock: Arc<dyn ExportClock>,
         disk_probe: Arc<dyn DiskSpaceProbe>,
     ) -> Self {
-        Self::with_staging_result(journal_root, Ok(staging), clock, disk_probe)
+        Self::with_fixed_staging(journal_root, Some(staging), clock, disk_probe)
     }
 
-    fn with_staging_result(
+    fn with_fixed_staging(
         journal_root: PathBuf,
-        staging: Result<StagingArea, String>,
+        fixed_staging: Option<StagingArea>,
         clock: Arc<dyn ExportClock>,
         disk_probe: Arc<dyn DiskSpaceProbe>,
     ) -> Self {
         let mut initial_state = CoordinatorState::default();
         let now = clock.now_epoch_secs();
-        let has_staging = staging.is_ok();
-        if let Ok(ref staging_area) = staging {
-            if let Some(record) = staging_area.read_ready_record() {
+        let is_dynamic = fixed_staging.is_none();
+        let existing_areas = match &fixed_staging {
+            None => StagingArea::discover_existing(&journal_root),
+            Some(area) => vec![area.clone()],
+        };
+        for staging_area in existing_areas {
+            if initial_state.ready.is_none()
+                && let Some(record) = staging_area.read_ready_record()
+            {
                 let epoch_matches =
                     !permanent_erasure_invalidated(&journal_root, &record.erasure_epoch);
                 let within_window =
@@ -241,6 +244,7 @@ impl ExportService {
                     let persisted = record.last_activity_epoch_secs;
                     staging_area.sweep_orphans(Some(&keep));
                     initial_state.ready = Some(ReadyEntry {
+                        staging: staging_area,
                         record,
                         active_downloads: 0,
                         retired_by_erasure: false,
@@ -248,26 +252,50 @@ impl ExportService {
                         last_persisted_activity_epoch_secs: persisted,
                         abort_signal: Arc::new(AtomicU8::new(ABORT_NONE)),
                     });
-                } else {
-                    staging_area.clear_ready_files(Some(&record));
+                    continue;
                 }
+                staging_area.clear_ready_files(Some(&record));
             } else {
                 staging_area.sweep_orphans(None);
+                if is_dynamic {
+                    staging_area.remove_dir_if_empty();
+                }
             }
         }
 
         let inner = Arc::new(ExportServiceInner {
             journal_root,
-            staging,
+            fixed_staging,
             clock,
             disk_probe,
             state: Mutex::new(initial_state),
         });
         let service = Self { inner };
-        if has_staging {
-            service.spawn_reaper();
-        }
+        service.spawn_reaper();
         service
+    }
+
+    fn probe_staging(&self) -> Result<StagingArea, String> {
+        match &self.inner.fixed_staging {
+            Some(area) => Ok(area.clone()),
+            None => StagingArea::probe(&self.inner.journal_root).map_err(|error| error.to_string()),
+        }
+    }
+
+    fn materialize_staging(&self) -> Result<StagingArea, String> {
+        match &self.inner.fixed_staging {
+            Some(area) => area
+                .ensure_dir()
+                .map(|()| area.clone())
+                .map_err(|error| error.to_string()),
+            None => StagingArea::resolve(&self.inner.journal_root).map_err(|error| {
+                log::warn!(
+                    "export staging unavailable for {}: {error}",
+                    self.inner.journal_root.display()
+                );
+                error.to_string()
+            }),
+        }
     }
 
     fn spawn_reaper(&self) {
@@ -292,9 +320,12 @@ impl ExportService {
     /// Reconcile prepared-copy liveness against Trash erasure epoch, pairing
     /// revocation, and rolling 24-hour inactivity.
     pub(crate) fn reconcile_ready_state(&self) {
-        let Ok(ref staging) = self.inner.staging else {
-            return;
-        };
+        {
+            let state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+            if state.ready.is_none() {
+                return;
+            }
+        }
         let now = self.inner.clock.now_epoch_secs();
         let current_epoch = read_erasure_epoch(&self.inner.journal_root);
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -332,7 +363,7 @@ impl ExportService {
 
         if should_delete {
             let removed = state.ready.take().expect("ready entry present");
-            staging.clear_ready_files(Some(&removed.record));
+            removed.staging.clear_ready_files(Some(&removed.record));
             if removed.retired_by_erasure {
                 state.last_terminal = Some(TerminalOutcome {
                     owner: removed.record.owner,
@@ -422,15 +453,20 @@ impl ExportService {
     }
 
     fn estimate_payload(&self) -> Value {
-        let staging_available = self.inner.staging.is_ok();
-        let staging_same_vol = self
-            .inner
-            .staging
-            .as_ref()
-            .is_ok_and(|s| s.same_volume_as_journal);
-        let disk = self
-            .inner
-            .staging
+        let (slot, ready_staging) = {
+            let state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+            (
+                state.estimate.clone(),
+                state.ready.as_ref().map(|ready| ready.staging.clone()),
+            )
+        };
+        let staging = match ready_staging {
+            Some(area) => Ok(area),
+            None => self.probe_staging(),
+        };
+        let staging_available = staging.is_ok();
+        let staging_same_vol = staging.as_ref().is_ok_and(|s| s.same_volume_as_journal);
+        let disk = staging
             .as_ref()
             .ok()
             .and_then(|s| self.inner.disk_probe.read(s).ok());
@@ -443,11 +479,6 @@ impl ExportService {
             "windows"
         } else {
             "linux"
-        };
-
-        let slot = {
-            let state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
-            state.estimate.clone()
         };
 
         let status = match slot.status {
@@ -499,7 +530,96 @@ impl ExportService {
     }
 
     fn state_payload(&self, requester: &RequesterScope) -> Value {
-        if let Err(ref reason) = self.inner.staging {
+        self.reconcile_ready_state();
+        let now = self.inner.clock.now_epoch_secs();
+        let current_fp = ChangeFingerprint::capture(&self.inner.journal_root);
+        let last_terminal = {
+            let state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+
+            if let Some(job) = &state.job {
+                if &job.owner == requester {
+                    return json!({
+                        "status": "preparing",
+                        "other_requester_busy": false,
+                        "active_job": {
+                            "job_id": job.job_id,
+                            "mode": job.mode.as_str(),
+                            "phase": job.phase,
+                            "files_done": job.files_done,
+                            "files_total": job.files_total,
+                            "bytes_read": job.bytes_read,
+                            "bytes_total": job.bytes_total,
+                            "started_at": format_epoch_utc(job.started_at_epoch_secs),
+                        },
+                        "ready": Value::Null,
+                    });
+                }
+                return json!({
+                    "status": "idle",
+                    "other_requester_busy": true,
+                    "active_job": Value::Null,
+                    "ready": Value::Null,
+                });
+            }
+
+            if let Some(ready) = &state.ready {
+                if &ready.record.owner == requester
+                    && !ready.retired_by_erasure
+                    && !ready.retired_by_revocation
+                {
+                    let expires_at = ready
+                        .record
+                        .last_activity_epoch_secs
+                        .saturating_add(ROLLING_INACTIVITY_SECS);
+                    let remaining_secs = expires_at.saturating_sub(now).max(0);
+                    let contents_changed_since = current_fp != ready.record.fingerprint;
+                    let export_id = &ready.record.export_id;
+                    return json!({
+                        "status": "ready",
+                        "other_requester_busy": false,
+                        "active_job": Value::Null,
+                        "ready": {
+                            "export_id": export_id,
+                            "mode": ready.record.mode.as_str(),
+                            "filename": ready.record.filename,
+                            "size_bytes": ready.record.size_bytes,
+                            "sha256": ready.record.sha256,
+                            "etag": ready.record.strong_etag(),
+                            "created_at": format_epoch_utc(ready.record.created_at_epoch_secs),
+                            "last_activity_at": format_epoch_utc(ready.record.last_activity_epoch_secs),
+                            "expires_at": format_epoch_utc(expires_at),
+                            "expires_in_seconds": remaining_secs,
+                            "active_downloads": ready.active_downloads,
+                            "contents_changed_since": contents_changed_since,
+                            "is_estimated_size": false,
+                            "days_count": ready.record.days_count,
+                            "files_count": ready.record.files_count,
+                            "omitted_media_files": ready.record.omitted_media_files,
+                            "omitted_media_bytes": ready.record.omitted_media_bytes,
+                            "offloaded_days": ready.record.offloaded_days,
+                            "offloaded_bytes": ready.record.offloaded_bytes,
+                            "offload_degraded": ready.record.offload_degraded,
+                            "skipped_symlink_count": ready.record.skipped_symlink_count,
+                            "skipped_symlinks": ready.record.skipped_symlinks,
+                            "download_path": format!("/app/export/api/ready/{export_id}/download"),
+                            "legacy_download_path": format!("/app/import/api/journal-archive/export?id={export_id}"),
+                        },
+                    });
+                }
+                if &ready.record.owner != requester {
+                    return json!({
+                        "status": "idle",
+                        "other_requester_busy": ready.active_downloads > 0,
+                        "active_job": Value::Null,
+                        "ready": Value::Null,
+                    });
+                }
+            }
+
+            state.last_terminal.clone()
+        };
+
+        if let Err(reason) = self.probe_staging() {
             return json!({
                 "status": "unavailable",
                 "staging_available": false,
@@ -510,92 +630,8 @@ impl ExportService {
                 "ready": Value::Null,
             });
         }
-        self.reconcile_ready_state();
-        let now = self.inner.clock.now_epoch_secs();
-        let current_fp = ChangeFingerprint::capture(&self.inner.journal_root);
-        let state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
 
-        if let Some(job) = &state.job {
-            if &job.owner == requester {
-                return json!({
-                    "status": "preparing",
-                    "other_requester_busy": false,
-                    "active_job": {
-                        "job_id": job.job_id,
-                        "mode": job.mode.as_str(),
-                        "phase": job.phase,
-                        "files_done": job.files_done,
-                        "files_total": job.files_total,
-                        "bytes_read": job.bytes_read,
-                        "bytes_total": job.bytes_total,
-                        "started_at": format_epoch_utc(job.started_at_epoch_secs),
-                    },
-                    "ready": Value::Null,
-                });
-            }
-            return json!({
-                "status": "idle",
-                "other_requester_busy": true,
-                "active_job": Value::Null,
-                "ready": Value::Null,
-            });
-        }
-
-        if let Some(ready) = &state.ready {
-            if &ready.record.owner == requester
-                && !ready.retired_by_erasure
-                && !ready.retired_by_revocation
-            {
-                let expires_at = ready
-                    .record
-                    .last_activity_epoch_secs
-                    .saturating_add(ROLLING_INACTIVITY_SECS);
-                let remaining_secs = expires_at.saturating_sub(now).max(0);
-                let contents_changed_since = current_fp != ready.record.fingerprint;
-                let export_id = &ready.record.export_id;
-                return json!({
-                    "status": "ready",
-                    "other_requester_busy": false,
-                    "active_job": Value::Null,
-                    "ready": {
-                        "export_id": export_id,
-                        "mode": ready.record.mode.as_str(),
-                        "filename": ready.record.filename,
-                        "size_bytes": ready.record.size_bytes,
-                        "sha256": ready.record.sha256,
-                        "etag": ready.record.strong_etag(),
-                        "created_at": format_epoch_utc(ready.record.created_at_epoch_secs),
-                        "last_activity_at": format_epoch_utc(ready.record.last_activity_epoch_secs),
-                        "expires_at": format_epoch_utc(expires_at),
-                        "expires_in_seconds": remaining_secs,
-                        "active_downloads": ready.active_downloads,
-                        "contents_changed_since": contents_changed_since,
-                        "is_estimated_size": false,
-                        "days_count": ready.record.days_count,
-                        "files_count": ready.record.files_count,
-                        "omitted_media_files": ready.record.omitted_media_files,
-                        "omitted_media_bytes": ready.record.omitted_media_bytes,
-                        "offloaded_days": ready.record.offloaded_days,
-                        "offloaded_bytes": ready.record.offloaded_bytes,
-                        "offload_degraded": ready.record.offload_degraded,
-                        "skipped_symlink_count": ready.record.skipped_symlink_count,
-                        "skipped_symlinks": ready.record.skipped_symlinks,
-                        "download_path": format!("/app/export/api/ready/{export_id}/download"),
-                        "legacy_download_path": format!("/app/import/api/journal-archive/export?id={export_id}"),
-                    },
-                });
-            }
-            if &ready.record.owner != requester {
-                return json!({
-                    "status": "idle",
-                    "other_requester_busy": ready.active_downloads > 0,
-                    "active_job": Value::Null,
-                    "ready": Value::Null,
-                });
-            }
-        }
-
-        if let Some(term) = &state.last_terminal
+        if let Some(term) = last_terminal
             && &term.owner == requester
         {
             return json!({
@@ -627,19 +663,16 @@ impl ExportService {
         mode: ExportMode,
         replace: bool,
     ) -> Result<(StatusCode, Value), (StatusCode, Value)> {
-        let staging = match &self.inner.staging {
-            Ok(staging) => staging.clone(),
-            Err(reason) => {
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    json!({
-                        "code": "export_staging_unavailable",
-                        "detail": reason,
-                    }),
-                ));
-            }
-        };
         self.reconcile_ready_state();
+        let probed = self.probe_staging().map_err(|reason| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({
+                    "code": "export_staging_unavailable",
+                    "detail": reason,
+                }),
+            )
+        })?;
 
         // Capture Trash permanent-erasure epoch synchronously before accepting/spawning
         // the background prepare job (fail closed), eliminating any race where an erase
@@ -654,9 +687,9 @@ impl ExportService {
             )
         })?;
 
-        let disk = self.inner.disk_probe.read(&staging).ok();
+        let disk = self.inner.disk_probe.read(&probed).ok();
 
-        let (job_id, cancel) = {
+        let (staging, job_id, cancel) = {
             let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
 
             // Check running job.
@@ -733,9 +766,24 @@ impl ExportService {
                 }
             }
 
+            // Materialize the private staging directory only once the job is
+            // actually admitted; preserve any prior ready copy if resolution fails.
+            let staging = self.materialize_staging().map_err(|reason| {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    json!({
+                        "code": "export_staging_unavailable",
+                        "detail": reason,
+                    }),
+                )
+            })?;
+
             // Clear any idle prior ready copy before claiming the single slot.
             if let Some(old) = state.ready.take() {
-                staging.clear_ready_files(Some(&old.record));
+                old.staging.clear_ready_files_only(Some(&old.record));
+                if old.staging.dir != staging.dir {
+                    old.staging.remove_dir_if_empty();
+                }
             }
             state.last_terminal = None;
 
@@ -753,7 +801,7 @@ impl ExportService {
                 bytes_total: 0,
                 cancel: Arc::clone(&cancel),
             });
-            (job_id, cancel)
+            (staging, job_id, cancel)
         };
 
         let inner = Arc::clone(&self.inner);
@@ -798,15 +846,16 @@ impl ExportService {
         export_id: &str,
         force: bool,
     ) -> Result<StatusCode, (StatusCode, Value)> {
-        let Ok(ref staging) = self.inner.staging else {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                json!({ "code": "export_staging_unavailable" }),
-            ));
-        };
         self.reconcile_ready_state();
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ready) = &state.ready else {
+            drop(state);
+            if self.probe_staging().is_err() {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    json!({ "code": "export_staging_unavailable" }),
+                ));
+            }
             return Err((StatusCode::NOT_FOUND, json!({"code": "export_not_found"})));
         };
         if &ready.record.owner != requester || ready.record.export_id != export_id {
@@ -822,7 +871,7 @@ impl ExportService {
             ));
         }
         let removed = state.ready.take().expect("ready entry present");
-        staging.clear_ready_files(Some(&removed.record));
+        removed.staging.clear_ready_files(Some(&removed.record));
         state.last_terminal = None;
         Ok(StatusCode::OK)
     }
@@ -835,13 +884,6 @@ impl ExportService {
         method: &Method,
         headers: &HeaderMap,
     ) -> Response {
-        let Ok(ref staging) = self.inner.staging else {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({ "code": "export_staging_unavailable" })),
-            )
-                .into_response();
-        };
         self.reconcile_ready_state();
 
         let (record, zip_path, guard) = {
@@ -857,6 +899,14 @@ impl ExportService {
                     return (
                         StatusCode::GONE,
                         Json(json!({ "code": term.error_code.unwrap_or("export_expired") })),
+                    )
+                        .into_response();
+                }
+                drop(state);
+                if self.probe_staging().is_err() {
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(json!({ "code": "export_staging_unavailable" })),
                     )
                         .into_response();
                 }
@@ -896,19 +946,19 @@ impl ExportService {
             if now.saturating_sub(ready.last_persisted_activity_epoch_secs)
                 >= ACTIVITY_TOUCH_INTERVAL_SECS
             {
-                let _ = staging.write_ready_record(&ready.record);
+                let _ = ready.staging.write_ready_record(&ready.record);
                 ready.last_persisted_activity_epoch_secs = now;
             }
 
             let record = ready.record.clone();
-            let zip_path = record.zip_path(&staging.dir);
+            let zip_path = record.zip_path(&ready.staging.dir);
             let guard = if *method == Method::HEAD {
                 None
             } else {
                 ready.active_downloads = ready.active_downloads.saturating_add(1);
                 let hooks: Arc<dyn ActiveTransferHooks> = Arc::new(ExportTransferHooks {
                     inner: Arc::clone(&self.inner),
-                    staging: staging.clone(),
+                    staging: ready.staging.clone(),
                     export_id: record.export_id.clone(),
                     owner: record.owner.clone(),
                     erasure_epoch: record.erasure_epoch.clone(),
@@ -1146,6 +1196,9 @@ fn run_prepare_worker(
         let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.job.as_ref().is_some_and(|j| j.job_id == job_id) {
             state.job = None;
+        }
+        if state.job.is_none() && state.ready.is_none() {
+            staging.remove_dir_if_empty();
         }
         state.last_terminal = Some(TerminalOutcome {
             owner: owner.clone(),
@@ -1571,6 +1624,7 @@ fn run_prepare_worker(
     state.job = None;
     state.last_terminal = None;
     state.ready = Some(ReadyEntry {
+        staging,
         record,
         active_downloads: 0,
         retired_by_erasure: false,
@@ -1797,19 +1851,23 @@ pub fn prepared_export_path(journal_root: &Path, export_id: &str) -> Option<(Pat
     {
         return None;
     }
-    let staging = StagingArea::resolve(journal_root).ok()?;
-    let record = staging.read_ready_record()?;
-    if record.export_id != export_id || record.owner != RequesterScope::Local {
-        return None;
-    }
-    if permanent_erasure_invalidated(journal_root, &record.erasure_epoch) {
-        return None;
-    }
     let now = SystemExportClock.now_epoch_secs();
-    if now.saturating_sub(record.last_activity_epoch_secs) >= ROLLING_INACTIVITY_SECS {
-        return None;
+    for staging in StagingArea::find_existing_readonly(journal_root) {
+        let Some(record) = staging.read_ready_record() else {
+            continue;
+        };
+        if record.export_id != export_id || record.owner != RequesterScope::Local {
+            continue;
+        }
+        if permanent_erasure_invalidated(journal_root, &record.erasure_epoch) {
+            return None;
+        }
+        if now.saturating_sub(record.last_activity_epoch_secs) >= ROLLING_INACTIVITY_SECS {
+            return None;
+        }
+        return Some((record.zip_path(&staging.dir), record.filename));
     }
-    Some((record.zip_path(&staging.dir), record.filename))
+    None
 }
 
 /// Mount all `/app/export/` routes plus the `?id=`-aware `/app/import/api/journal-archive/export` bridge.

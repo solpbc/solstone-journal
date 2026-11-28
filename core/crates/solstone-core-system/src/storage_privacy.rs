@@ -230,6 +230,85 @@ pub fn ensure_private_owner_dir(path: &Path) -> io::Result<()> {
     windows::ensure_private_owner_dir(path)
 }
 
+/// Read-only probe for whether `path` can serve as an owner-private directory
+/// without creating or modifying anything on disk.
+///
+/// Returns `Ok(true)` when `path` already exists as a usable plain directory
+/// owned by the current effective account on a privacy-capable volume,
+/// `Ok(false)` when `path` does not exist yet and its parent directory can
+/// host a new private directory, and `Err(...)` otherwise.
+#[cfg(unix)]
+pub fn probe_private_owner_dir(path: &Path) -> io::Result<bool> {
+    let euid = nix::unistd::geteuid().as_raw();
+    match fs::symlink_metadata(path) {
+        Ok(meta) => {
+            if !meta.file_type().is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory path is not a plain directory",
+                ));
+            }
+            if meta.uid() != euid {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory is not owned by the current user",
+                ));
+            }
+            let (_, ignores_ownership) = volume(path)?;
+            if ignores_ownership {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory permissions are not owner-only",
+                ));
+            }
+            let vfs = nix::sys::statvfs::statvfs(path).map_err(io::Error::from)?;
+            if vfs.flags().contains(nix::sys::statvfs::FsFlags::ST_RDONLY) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory is on a read-only filesystem",
+                ));
+            }
+            Ok(true)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let parent = path.parent().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory path has no parent directory",
+                )
+            })?;
+            let parent_meta = fs::metadata(parent)?;
+            if !parent_meta.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "private directory parent is not a directory",
+                ));
+            }
+            let (_, ignores_ownership) = volume(parent)?;
+            if ignores_ownership {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "private directory permissions are not owner-only",
+                ));
+            }
+            nix::unistd::access(
+                parent,
+                nix::unistd::AccessFlags::W_OK | nix::unistd::AccessFlags::X_OK,
+            )
+            .map_err(io::Error::from)?;
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Read-only probe for whether `path` can serve as an owner-private directory
+/// without creating or modifying anything on disk.
+#[cfg(windows)]
+pub fn probe_private_owner_dir(path: &Path) -> io::Result<bool> {
+    windows::probe_private_owner_dir(path)
+}
+
 /// Read-only: health and doctor must not repair modes or record consent.
 pub fn inspect(root: &Path) -> io::Result<StoragePrivacy> {
     inspect_in(root, ENGLISH)
@@ -352,6 +431,43 @@ mod tests {
         let link = work.path().join("link");
         std::os::unix::fs::symlink(&fresh, &link).unwrap();
         assert!(ensure_private_owner_dir(&link).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_private_owner_dir_checks_without_creating_and_rejects_invalid_paths() {
+        let work = tempfile::tempdir().unwrap();
+        let missing = work.path().join("not-created");
+        assert!(!probe_private_owner_dir(&missing).unwrap());
+        assert!(
+            !missing.exists(),
+            "read-only probe must not create the target directory"
+        );
+
+        let existing = work.path().join("existing");
+        fs::create_dir(&existing).unwrap();
+        assert!(probe_private_owner_dir(&existing).unwrap());
+
+        let regular = work.path().join("regular");
+        fs::write(&regular, b"x").unwrap();
+        assert!(probe_private_owner_dir(&regular).is_err());
+
+        let live_link = work.path().join("live-link");
+        std::os::unix::fs::symlink(&existing, &live_link).unwrap();
+        assert!(probe_private_owner_dir(&live_link).is_err());
+
+        let broken_link = work.path().join("broken-link");
+        std::os::unix::fs::symlink(work.path().join("gone"), &broken_link).unwrap();
+        assert!(probe_private_owner_dir(&broken_link).is_err());
+
+        if nix::unistd::geteuid().as_raw() != 0 {
+            let ro_parent = work.path().join("ro-parent");
+            fs::create_dir(&ro_parent).unwrap();
+            fs::set_permissions(&ro_parent, fs::Permissions::from_mode(0o555)).unwrap();
+            let ro_child = ro_parent.join("child");
+            assert!(probe_private_owner_dir(&ro_child).is_err());
+            fs::set_permissions(&ro_parent, fs::Permissions::from_mode(0o700)).unwrap();
+        }
     }
 
     #[test]
