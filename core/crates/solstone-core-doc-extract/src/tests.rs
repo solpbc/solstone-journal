@@ -949,6 +949,7 @@ fn truncation_respects_utf8_boundaries_desktop_vs_mobile_and_sanitizes_notices()
         title: None,
         markdown: "**hello world**".to_owned(),
         plain_text: "hello world".to_owned(),
+        truncated: false,
         warnings: vec!["hit limit (office_oxide::limits::set_max_text_chars)".to_owned()],
     };
     let mut md_only_tight = ExtractLimits::desktop();
@@ -972,6 +973,7 @@ fn truncation_respects_utf8_boundaries_desktop_vs_mobile_and_sanitizes_notices()
             "[output truncated: text limit reached (office_oxide::limits::set_max_text_chars)]"
                 .to_owned(),
         plain_text: String::new(),
+        truncated: false,
         warnings: Vec::new(),
     };
     assert_eq!(
@@ -1436,4 +1438,748 @@ fn public_helpers_and_size_independent_container_sniffing_work() {
     assert!(!is_supported_container(&plain_cfb));
     assert!(!is_supported_container(b"%PDF-1.7\n"));
     assert!(!is_supported_container(b"hello world"));
+
+    // Unambiguous vs ambiguous extension split.
+    use crate::{UNAMBIGUOUS_DOCUMENT_EXTENSIONS, is_unambiguous_document_extension};
+    for ext in UNAMBIGUOUS_DOCUMENT_EXTENSIONS {
+        assert!(is_unambiguous_document_extension(ext), "{ext}");
+        assert!(is_supported_extension(ext), "{ext}");
+    }
+    for ext in ["csv", "tsv", "html", "htm"] {
+        assert!(is_supported_extension(ext), "{ext}");
+        assert!(!is_unambiguous_document_extension(ext), "{ext}");
+    }
+}
+
+fn build_epub(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    build_zip(entries)
+}
+
+fn minimal_epub(title: &str, chapters: &[(&str, &str, &str)], extra: &[(&str, &[u8])]) -> Vec<u8> {
+    let container = br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+
+    let mut manifest = String::new();
+    let mut spine = String::new();
+    for (id, href, media_type) in chapters {
+        manifest.push_str(&format!(
+            r#"<item id="{id}" href="{href}" media-type="{media_type}"/>"#
+        ));
+        spine.push_str(&format!(r#"<itemref idref="{id}"/>"#));
+    }
+    let opf = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>{title}</dc:title>
+  </metadata>
+  <manifest>{manifest}</manifest>
+  <spine>{spine}</spine>
+</package>"#
+    );
+
+    let mut all: Vec<(String, Vec<u8>)> = vec![
+        ("mimetype".to_owned(), b"application/epub+zip".to_vec()),
+        ("META-INF/container.xml".to_owned(), container.to_vec()),
+        ("OEBPS/content.opf".to_owned(), opf.into_bytes()),
+    ];
+    for (name, bytes) in extra {
+        all.push(((*name).to_owned(), (*bytes).to_vec()));
+    }
+    let refs: Vec<(&str, &[u8])> = all
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_slice()))
+        .collect();
+    build_epub(&refs)
+}
+
+#[test]
+fn extracts_epub_chapters_font_obfuscation_and_defeats_epub_attacks() {
+    let limits = ExtractLimits::desktop();
+
+    // 1. Valid EPUB with percent-encoded href, #fragment, non-HTML SVG cover, and .woff2 font obfuscation.
+    let font_enc = br#"<?xml version="1.0"?>
+<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#">
+  <enc:EncryptedData>
+    <enc:EncryptionMethod Algorithm="http://www.idpf.org/2008/embedding"/>
+    <enc:CipherData><enc:CipherReference URI="OEBPS/fonts/body.woff2"/></enc:CipherData>
+  </enc:EncryptedData>
+  <enc:EncryptedData>
+    <enc:EncryptionMethod Algorithm="http://ns.adobe.com/pdf/enc#RC"/>
+    <enc:CipherData><enc:CipherReference URI="OEBPS/fonts/serif.otf"/></enc:CipherData>
+  </enc:EncryptedData>
+</encryption>"#;
+    let valid = minimal_epub(
+        "Field Manual &amp; Guide",
+        &[
+            ("cover", "cover.svg", "image/svg+xml"),
+            ("ch1", "chapter%201.xhtml#top", "application/xhtml+xml"),
+            ("ch2", "chapter2.xhtml", "application/xhtml+xml"),
+        ],
+        &[
+            ("META-INF/encryption.xml", font_enc),
+            ("OEBPS/cover.svg", b"<svg/>"),
+            (
+                "OEBPS/chapter 1.xhtml",
+                b"<html><body><h1>Chapter One</h1><p>First chapter prose.</p><script>alert(1)</script></body></html>",
+            ),
+            (
+                "OEBPS/chapter2.xhtml",
+                b"<html><body><h2>Chapter Two</h2><p>Second chapter prose.</p></body></html>",
+            ),
+        ],
+    );
+    assert!(crate::is_supported_container(&valid));
+    let ExtractOutcome::Extracted(doc) = extract_bytes(&valid, None, &limits).unwrap() else {
+        panic!("expected extracted EPUB");
+    };
+    assert_eq!(doc.format, DocumentFormat::Epub);
+    assert_eq!(doc.title.as_deref(), Some("Field Manual & Guide"));
+    assert!(doc.markdown.contains("Chapter One"));
+    assert!(doc.markdown.contains("First chapter prose."));
+    assert!(doc.markdown.contains("Second chapter prose."));
+    assert!(!doc.markdown.contains("alert(1)"));
+    assert!(doc.warnings.iter().any(|w| w.contains("non-HTML")));
+
+    // 2. Duplicate spine idref amplification (1,000 copies) extracts chapter once.
+    let container = br#"<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#;
+    let repeated_refs = r#"<itemref idref="c1"/>"#.repeat(1_000);
+    let dup_opf = format!(
+        r#"<?xml version="1.0"?><package><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine>{repeated_refs}</spine></package>"#
+    );
+    let dup_epub = build_zip(&[
+        ("mimetype", b"application/epub+zip"),
+        ("META-INF/container.xml", container),
+        ("content.opf", dup_opf.as_bytes()),
+        (
+            "c1.xhtml",
+            b"<html><body><p>Unique marker 42</p></body></html>",
+        ),
+    ]);
+    let ExtractOutcome::Extracted(dup_doc) =
+        extract_bytes(&dup_epub, Some("dup.epub"), &limits).unwrap()
+    else {
+        panic!("expected extracted deduplicated EPUB");
+    };
+    assert_eq!(dup_doc.plain_text.matches("Unique marker 42").count(), 1);
+
+    // 3. Percent-encoded path traversal (%2e%2e/) is rejected as Invalid.
+    let traversal_epub = minimal_epub(
+        "Traversal",
+        &[("bad", "%2e%2e/secret.xhtml", "application/xhtml+xml")],
+        &[("secret.xhtml", b"<html><body>secret</body></html>")],
+    );
+    assert!(matches!(
+        extract_bytes(&traversal_epub, Some("bad.epub"), &limits),
+        Err(ExtractError::Invalid(_))
+    ));
+
+    // 4. DRM encryption, malformed encryption.xml, and uppercase META-INF/ENCRYPTION.XML fail closed to Encrypted.
+    let drm_xml = br#"<?xml version="1.0"?><encryption><EncryptedData><EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc"/><CipherData><CipherReference URI="OEBPS/chapter1.xhtml"/></CipherData></EncryptedData></encryption>"#;
+    let drm_epub = minimal_epub(
+        "Locked",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[
+            ("META-INF/encryption.xml", drm_xml),
+            ("OEBPS/c1.xhtml", b"<html><body>hidden</body></html>"),
+        ],
+    );
+    assert_eq!(
+        extract_bytes(&drm_epub, Some("drm.epub"), &limits).unwrap(),
+        ExtractOutcome::Encrypted
+    );
+
+    let malformed_enc_epub = minimal_epub(
+        "BrokenEnc",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[
+            ("META-INF/encryption.xml", b"<encryption><unclosed"),
+            ("OEBPS/c1.xhtml", b"<html><body>hidden</body></html>"),
+        ],
+    );
+    assert_eq!(
+        extract_bytes(&malformed_enc_epub, Some("broken.epub"), &limits).unwrap(),
+        ExtractOutcome::Encrypted
+    );
+
+    let upper_enc_epub = minimal_epub(
+        "UpperEnc",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[
+            ("META-INF/ENCRYPTION.XML", drm_xml),
+            ("OEBPS/c1.xhtml", b"<html><body>hidden</body></html>"),
+        ],
+    );
+    assert_eq!(
+        extract_bytes(&upper_enc_epub, Some("upper.epub"), &limits).unwrap(),
+        ExtractOutcome::Encrypted
+    );
+
+    // 5a. Forged-header EPUB zip bomb (central-directory size patched to 100 bytes
+    //     while deflate stream inflates past max_part_bytes) fails safely (LimitExceeded
+    //     or Invalid from zip integrity check) without ever returning Ok or OOMing.
+    let big_chapter = format!("<html><body><p>{}</p></body></html>", "A".repeat(400_000));
+    let mut bomb = minimal_epub(
+        "Bomb",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[("OEBPS/c1.xhtml", big_chapter.as_bytes())],
+    );
+    let real_len = (big_chapter.len() as u32).to_le_bytes();
+    let forged = 100u32.to_le_bytes();
+    for pos in 0..bomb.len().saturating_sub(4) {
+        if bomb[pos..pos + 4] == real_len {
+            bomb[pos..pos + 4].copy_from_slice(&forged);
+        }
+    }
+    let mut tight = ExtractLimits::desktop();
+    tight.max_part_bytes = 64 * 1024;
+    tight.max_uncompressed_bytes = 128 * 1024;
+    assert!(matches!(
+        extract_bytes(&bomb, Some("bomb_zip.epub"), &tight),
+        Err(ExtractError::LimitExceeded(_) | ExtractError::Invalid(_))
+    ));
+
+    // 5b. High-ratio EPUB zip bomb (2 MiB of repeating bytes compressed to ~2 KiB,
+    //     under max_part_bytes so sniff_zip passes) fails deterministically inside
+    //     ZipBudget with LimitExceeded on inflate ratio > 100x.
+    let ratio_chapter = format!(
+        "<html><body><p>{}</p></body></html>",
+        "A".repeat(2 * 1024 * 1024)
+    );
+    let ratio_epub = minimal_epub(
+        "RatioBomb",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[("OEBPS/c1.xhtml", ratio_chapter.as_bytes())],
+    );
+    assert!(matches!(
+        extract_bytes(&ratio_epub, Some("ratio_bomb.epub"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    // 6. Deeply nested HTML inside an EPUB chapter returns LimitExceeded (no stack overflow).
+    let deep_chapter = format!(
+        "<html><body>{}deep{}</body></html>",
+        "<div>".repeat(2000),
+        "</div>".repeat(2000)
+    );
+    let deep_epub = minimal_epub(
+        "Deep",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[("OEBPS/c1.xhtml", deep_chapter.as_bytes())],
+    );
+    assert!(matches!(
+        extract_bytes(&deep_epub, Some("deep.epub"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    // 7. Structurally valid text-free EPUB returns Empty.
+    let blank_epub = minimal_epub(
+        "Blank",
+        &[("c1", "c1.xhtml", "application/xhtml+xml")],
+        &[("OEBPS/c1.xhtml", b"<html><body>   </body></html>")],
+    );
+    assert_eq!(
+        extract_bytes(&blank_epub, Some("blank.epub"), &limits).unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Epub
+        }
+    );
+}
+
+#[test]
+fn extracts_odf_odt_ods_odp_and_defeats_odf_repeat_and_encryption_cases() {
+    let limits = ExtractLimits::desktop();
+
+    // 1. ODT: headings, paragraphs, list, nested table, <text:s/> default 1 space,
+    //    <text:tracked-changes> omitted, embedded Object 1/content.xml ignored.
+    let odt_content = br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+  <office:body><office:text>
+    <text:tracked-changes><text:changed-region><text:deletion><text:p>SECRET DELETED REVISION</text:p></text:deletion></text:changed-region></text:tracked-changes>
+    <text:h text:outline-level="1">Annual Review</text:h>
+    <text:p>Hello<text:s/>World<text:tab/>TabVal</text:p>
+    <text:list><text:list-item><text:p>First item</text:p></text:list-item></text:list>
+    <table:table table:name="Outer">
+      <table:table-row>
+        <table:table-cell><text:p>Key</text:p></table:table-cell>
+        <table:table-cell><text:p>Value</text:p></table:table-cell>
+      </table:table-row>
+      <table:table-row>
+        <table:table-cell><text:p>Nested</text:p></table:table-cell>
+        <table:table-cell>
+          <table:table table:name="Inner">
+            <table:table-row><table:table-cell><text:p>InnerCell</text:p></table:table-cell></table:table-row>
+          </table:table>
+        </table:table-cell>
+      </table:table-row>
+    </table:table>
+  </office:text></office:body>
+</office:document-content>"#;
+    let odt_meta = br#"<?xml version="1.0"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><office:meta><dc:title>Review Doc</dc:title></office:meta></office:document-meta>"#;
+    let odt_manifest = br#"<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/></manifest:manifest>"#;
+    // Note: intentionally omit `mimetype` entry to prove manifest.xml fallback sniffs unhinted ODT!
+    let odt = build_zip(&[
+        ("META-INF/manifest.xml", odt_manifest),
+        ("meta.xml", odt_meta),
+        ("content.xml", odt_content),
+        (
+            "Object 1/content.xml",
+            b"<office:document-content><office:body><text:p>EMBEDDED OBJECT NOISE</text:p></office:body></office:document-content>",
+        ),
+    ]);
+    assert!(crate::is_supported_container(&odt));
+    let ExtractOutcome::Extracted(doc) = extract_bytes(&odt, None, &limits).unwrap() else {
+        panic!("expected extracted ODT");
+    };
+    assert_eq!(doc.format, DocumentFormat::Odt);
+    assert_eq!(doc.title.as_deref(), Some("Review Doc"));
+    assert!(doc.markdown.contains("# Annual Review"));
+    assert!(doc.markdown.contains("Hello World\tTabVal"));
+    assert!(doc.markdown.contains("- First item"));
+    assert!(doc.markdown.contains("InnerCell"));
+    assert!(!doc.markdown.contains("SECRET DELETED REVISION"));
+    assert!(!doc.markdown.contains("EMBEDDED OBJECT NOISE"));
+
+    // 2. Encrypted ODT returns Encrypted.
+    let enc_manifest = br#"<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"><manifest:encryption-data manifest:checksum="abc"/></manifest:file-entry></manifest:manifest>"#;
+    let enc_odt = build_zip(&[
+        ("mimetype", b"application/vnd.oasis.opendocument.text"),
+        ("META-INF/manifest.xml", enc_manifest),
+        ("content.xml", b"ciphertext"),
+    ]);
+    assert_eq!(
+        extract_bytes(&enc_odt, Some("locked.odt"), &limits).unwrap(),
+        ExtractOutcome::Encrypted
+    );
+
+    // 3. ODS: valid multi-sheet with trailing empty 1,048,576-row repeat skipped cleanly,
+    //    AND non-trailing sparse 16,384 empty cols before a populated cell bounded cleanly.
+    let ods_content = br#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body><office:spreadsheet>
+    <table:table table:name="Budget">
+      <table:table-row>
+        <table:table-cell><text:p>Item</text:p></table:table-cell>
+        <table:table-cell><text:p>Cost</text:p></table:table-cell>
+      </table:table-row>
+      <table:table-row>
+        <table:table-cell><text:p>Hosting</text:p></table:table-cell>
+        <table:table-cell><text:p>420</text:p></table:table-cell>
+      </table:table-row>
+      <table:table-row>
+        <table:table-cell table:number-columns-repeated="16384"/>
+        <table:table-cell><text:p>FarCell</text:p></table:table-cell>
+      </table:table-row>
+      <table:table-row table:number-rows-repeated="1048576">
+        <table:table-cell table:number-columns-repeated="16384"/>
+      </table:table-row>
+    </table:table>
+  </office:spreadsheet></office:body>
+</office:document-content>"#;
+    let ods = build_zip(&[
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.spreadsheet",
+        ),
+        ("content.xml", ods_content),
+    ]);
+    let ExtractOutcome::Extracted(ods_doc) =
+        extract_bytes(&ods, Some("budget.ods"), &limits).unwrap()
+    else {
+        panic!("expected extracted ODS");
+    };
+    assert_eq!(ods_doc.format, DocumentFormat::Ods);
+    assert!(ods_doc.markdown.contains("## Budget"));
+    assert!(ods_doc.markdown.contains("Hosting"));
+    assert!(ods_doc.markdown.contains("420"));
+    assert!(ods_doc.truncated);
+    assert!(
+        ods_doc
+            .warnings
+            .iter()
+            .any(|w| w.contains("columns truncated"))
+    );
+
+    // Normal LibreOffice Calc trailing empty-column padding must NOT trigger a
+    // false column-truncation warning.
+    let padded_ods_content = br#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body><office:spreadsheet>
+    <table:table table:name="Clean">
+      <table:table-row>
+        <table:table-cell><text:p>ColA</text:p></table:table-cell>
+        <table:table-cell><text:p>ColB</text:p></table:table-cell>
+        <table:table-cell table:number-columns-repeated="16382"/>
+      </table:table-row>
+      <table:table-row table:number-rows-repeated="1048575">
+        <table:table-cell table:number-columns-repeated="16384"/>
+      </table:table-row>
+    </table:table>
+  </office:spreadsheet></office:body>
+</office:document-content>"#;
+    let padded_ods = build_zip(&[
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.spreadsheet",
+        ),
+        ("content.xml", padded_ods_content),
+    ]);
+    let ExtractOutcome::Extracted(padded_doc) =
+        extract_bytes(&padded_ods, Some("clean.ods"), &limits).unwrap()
+    else {
+        panic!("expected extracted clean ODS");
+    };
+    assert!(!padded_doc.truncated);
+    assert!(
+        padded_doc.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        padded_doc.warnings
+    );
+
+    // Text-free ODP presentation returns Empty rather than a bare slide heading.
+    let empty_odp_content = br#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0">
+  <office:body><office:presentation>
+    <draw:page draw:name="page1"><draw:frame/></draw:page>
+  </office:presentation></office:body>
+</office:document-content>"#;
+    let empty_odp = build_zip(&[
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.presentation",
+        ),
+        ("content.xml", empty_odp_content),
+    ]);
+    assert_eq!(
+        extract_bytes(&empty_odp, Some("blank.odp"), &limits).unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Odp
+        }
+    );
+
+    // Master-page static footer in styles.xml extracts cleanly while dynamic
+    // template fields (<text:page-number>, <presentation:date-time>) are skipped.
+    let master_styles_xml = br#"<?xml version="1.0"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:master-styles>
+    <style:master-page style:name="Default">
+      <draw:frame><draw:text-box><text:p>Master footer text</text:p></draw:text-box></draw:frame>
+      <draw:frame><draw:text-box><text:p>Page <text:page-number>1</text:page-number></text:p></draw:text-box></draw:frame>
+    </style:master-page>
+  </office:master-styles>
+</office:document-styles>"#;
+    let footer_odp = build_zip(&[
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.presentation",
+        ),
+        ("content.xml", empty_odp_content),
+        ("styles.xml", master_styles_xml),
+    ]);
+    let ExtractOutcome::Extracted(footer_doc) =
+        extract_bytes(&footer_odp, Some("footer.odp"), &limits).unwrap()
+    else {
+        panic!("expected extracted ODP with master footer");
+    };
+    assert!(footer_doc.markdown.contains("Master footer text"));
+    assert!(!footer_doc.markdown.contains("Page 1"));
+
+    // 4. Hostile non-empty ODF repeat bomb fails fast with LimitExceeded.
+    let bomb_ods_content = br#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body><office:spreadsheet>
+    <table:table table:name="Bomb">
+      <table:table-row table:number-rows-repeated="1048576">
+        <table:table-cell table:number-columns-repeated="16384"><text:p>X</text:p></table:table-cell>
+      </table:table-row>
+    </table:table>
+  </office:spreadsheet></office:body>
+</office:document-content>"#;
+    let bomb_ods = build_zip(&[
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.spreadsheet",
+        ),
+        ("content.xml", bomb_ods_content),
+    ]);
+    assert!(matches!(
+        extract_bytes(&bomb_ods, Some("bomb_odf_repeat.ods"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    // 5. ODP: slides + speaker notes.
+    let odp_content = br#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+  xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body><office:presentation>
+    <draw:page draw:name="page1">
+      <draw:frame><draw:text-box><text:p>Slide One Headline</text:p></draw:text-box></draw:frame>
+      <presentation:notes><draw:frame><draw:text-box><text:p>Remember to mention Q4.</text:p></draw:text-box></draw:frame></presentation:notes>
+    </draw:page>
+  </office:presentation></office:body>
+</office:document-content>"#;
+    let odp = build_zip(&[
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.presentation",
+        ),
+        ("content.xml", odp_content),
+    ]);
+    let ExtractOutcome::Extracted(odp_doc) =
+        extract_bytes(&odp, Some("deck.odp"), &limits).unwrap()
+    else {
+        panic!("expected extracted ODP");
+    };
+    assert_eq!(odp_doc.format, DocumentFormat::Odp);
+    assert!(odp_doc.markdown.contains("## Slide 1"));
+    assert!(odp_doc.markdown.contains("Slide One Headline"));
+    assert!(odp_doc.markdown.contains("> **Notes:**"));
+    assert!(odp_doc.markdown.contains("Remember to mention Q4."));
+
+    // 6. Deeply nested ODT XML + <text:s text:c="999999999"/> safety + empty ODT.
+    let deep_odt_xml = format!(
+        "<office:document-content>{}hi{}</office:document-content>",
+        "<a:x>".repeat(300),
+        "</a:x>".repeat(300)
+    );
+    let deep_odt = build_zip(&[
+        ("mimetype", b"application/vnd.oasis.opendocument.text"),
+        ("content.xml", deep_odt_xml.as_bytes()),
+    ]);
+    assert!(matches!(
+        extract_bytes(&deep_odt, Some("deep.odt"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    let space_odt = build_zip(&[
+        ("mimetype", b"application/vnd.oasis.opendocument.text"),
+        (
+            "content.xml",
+            br#"<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text><text:p>A<text:s text:c="999999999"/>B</text:p></office:text></office:body></office:document-content>"#,
+        ),
+    ]);
+    let ExtractOutcome::Extracted(space_doc) =
+        extract_bytes(&space_odt, Some("spaces.odt"), &limits).unwrap()
+    else {
+        panic!("expected clamped space run ODT");
+    };
+    assert!(space_doc.plain_text.len() < 400);
+
+    let blank_odt = build_zip(&[
+        ("mimetype", b"application/vnd.oasis.opendocument.text"),
+        (
+            "content.xml",
+            br#"<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"><office:body><office:text/></office:body></office:document-content>"#,
+        ),
+    ]);
+    assert_eq!(
+        extract_bytes(&blank_odt, Some("blank.odt"), &limits).unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Odt
+        }
+    );
+}
+
+#[test]
+fn extracts_structured_csv_tsv_html_eml_with_security_and_edge_cases() {
+    let limits = ExtractLimits::desktop();
+
+    // 1. CSV with UTF-8 BOM, quoted commas/newlines, pipe escaping; blank CSV -> Empty.
+    let bom_csv =
+        b"\xEF\xBB\xBFFamily,Description,Notes\nAC,\"Access, Control\",\"Line 1\nLine 2 | pipe\"\n";
+    let ExtractOutcome::Extracted(csv_doc) =
+        extract_bytes(bom_csv, Some("nist.csv"), &limits).unwrap()
+    else {
+        panic!("expected extracted CSV");
+    };
+    assert_eq!(csv_doc.format, DocumentFormat::Csv);
+    assert!(
+        csv_doc
+            .markdown
+            .starts_with("| Family | Description | Notes |")
+    );
+    assert!(!csv_doc.markdown.contains('\u{feff}'));
+    assert!(csv_doc.markdown.contains("Line 1 Line 2 \\| pipe"));
+    assert_eq!(
+        extract_bytes(b"   \n\n", Some("blank.csv"), &limits).unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Csv
+        }
+    );
+
+    // 2. TSV extraction.
+    let tsv = b"Item\tQty\nBolts\t12\n";
+    let ExtractOutcome::Extracted(tsv_doc) =
+        extract_bytes(tsv, Some("parts.tsv"), &limits).unwrap()
+    else {
+        panic!("expected extracted TSV");
+    };
+    assert_eq!(tsv_doc.format, DocumentFormat::Tsv);
+    assert!(tsv_doc.markdown.contains("| Bolts | 12 |"));
+
+    // 3. HTML: unhinted leading Apache-style comment sniffs cleanly, strips script/style,
+    //    handles 200 unclosed <p> tags, degrades cleanly on wide tables, and rejects deep DOMs.
+    let commented_html = b"<!--\n Licensed under Apache 2.0\n-->\n<html><head><title>Sample &amp; Page</title><style>body{color:red}</style></head><body><h1>Headline</h1><p>Visible text.</p><script>evil()</script></body></html>";
+    let ExtractOutcome::Extracted(html_doc) = extract_bytes(commented_html, None, &limits).unwrap()
+    else {
+        panic!("expected unhinted HTML extraction");
+    };
+    assert_eq!(html_doc.format, DocumentFormat::Html);
+    assert_eq!(html_doc.title.as_deref(), Some("Sample & Page"));
+    assert!(html_doc.markdown.contains("Visible text."));
+    assert!(!html_doc.markdown.contains("evil()"));
+    assert!(!html_doc.markdown.contains("color:red"));
+
+    // Raw text inside <script> containing `<!--` or unmatched quotes must not
+    // swallow subsequent body paragraphs.
+    let tricky_script_html = br#"<html><head><script>var s = "<!--"; var q = "'"; if (a < b) {}</script></head><body><p>Body survives script.</p></body></html>"#;
+    let ExtractOutcome::Extracted(script_doc) =
+        extract_bytes(tricky_script_html, Some("script.html"), &limits).unwrap()
+    else {
+        panic!("expected HTML extraction after raw-text script");
+    };
+    assert!(script_doc.markdown.contains("Body survives script."));
+    assert!(!script_doc.markdown.contains("var s"));
+
+    // Wide CSV stopped early by output char cap must NOT emit a misleading row-limit warning.
+    let mut tight_csv_limits = limits.clone();
+    tight_csv_limits.max_output_chars = 64;
+    let wide_csv = format!("col\n{}\n", "abcdefghij".repeat(600));
+    let ExtractOutcome::Extracted(wide_csv_doc) =
+        extract_bytes(wide_csv.as_bytes(), Some("wide.csv"), &tight_csv_limits).unwrap()
+    else {
+        panic!("expected extracted truncated wide CSV");
+    };
+    assert!(wide_csv_doc.truncated);
+    assert!(
+        wide_csv_doc
+            .warnings
+            .iter()
+            .all(|w| !w.contains("row limit")),
+        "unexpected row-limit warning: {:?}",
+        wide_csv_doc.warnings
+    );
+
+    let flat_ps = format!("<html><body>{}</body></html>", "<p>Item".repeat(200));
+    assert!(matches!(
+        extract_bytes(flat_ps.as_bytes(), Some("flat.html"), &limits),
+        Ok(ExtractOutcome::Extracted(_))
+    ));
+
+    // Wide table that can trigger TooNarrow at width 100 falls back cleanly.
+    let wide_cells = "<td>ColumnValueLong</td>".repeat(40);
+    let wide_html = format!("<html><body><table><tr>{wide_cells}</tr></table></body></html>");
+    let ExtractOutcome::Extracted(wide_doc) =
+        extract_bytes(wide_html.as_bytes(), Some("wide.htm"), &limits).unwrap()
+    else {
+        panic!("expected wide HTML extraction");
+    };
+    assert!(wide_doc.plain_text.contains("ColumnValueLong"));
+
+    let deep_html = format!(
+        "<html><body>{}boom{}</body></html>",
+        "<div>".repeat(2000),
+        "</div>".repeat(2000)
+    );
+    assert!(matches!(
+        extract_bytes(deep_html.as_bytes(), Some("deep.html"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    // 4. EML: whitespace-only text/plain falls back to text/html; deep HTML inside EML
+    //    returns LimitExceeded; random binary renamed .eml returns Invalid; header-only -> Empty.
+    let multipart_eml = concat!(
+        "From: Alice <alice@example.com>\r\n",
+        "To: Bob <bob@example.com>\r\n",
+        "Subject: Quarterly\r\n Update\r\n",
+        "MIME-Version: 1.0\r\n",
+        "Content-Type: multipart/alternative; boundary=\"b1\"\r\n\r\n",
+        "--b1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n   \r\n\r\n",
+        "--b1\r\nContent-Type: text/html; charset=utf-8\r\n\r\n",
+        "<html><body><p>HTML body rendered when plain is blank.</p></body></html>\r\n",
+        "--b1--\r\n"
+    );
+    let ExtractOutcome::Extracted(eml_doc) =
+        extract_bytes(multipart_eml.as_bytes(), Some("msg.eml"), &limits).unwrap()
+    else {
+        panic!("expected extracted EML");
+    };
+    assert_eq!(eml_doc.format, DocumentFormat::Eml);
+    assert_eq!(eml_doc.title.as_deref(), Some("Quarterly Update"));
+    assert!(
+        eml_doc
+            .markdown
+            .contains("**From:** Alice <alice@example.com>")
+    );
+    assert!(
+        eml_doc
+            .markdown
+            .contains("HTML body rendered when plain is blank.")
+    );
+
+    let deep_eml = format!(
+        "From: a@example.com\r\nSubject: Deep\r\nContent-Type: text/html\r\n\r\n<html><body>{}x{}</body></html>",
+        "<div>".repeat(2000),
+        "</div>".repeat(2000)
+    );
+    assert!(matches!(
+        extract_bytes(deep_eml.as_bytes(), Some("deep.eml"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    assert!(matches!(
+        extract_bytes(
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR",
+            Some("fake.eml"),
+            &limits
+        ),
+        Err(ExtractError::Invalid(_))
+    ));
+    assert!(matches!(
+        extract_bytes(
+            b"not an email at all just random text",
+            Some("junk.eml"),
+            &limits
+        ),
+        Err(ExtractError::Invalid(_))
+    ));
+    assert_eq!(
+        extract_bytes(
+            b"From: a@example.com\r\nSubject: Empty\r\n\r\n   \r\n",
+            Some("empty.eml"),
+            &limits
+        )
+        .unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Eml
+        }
+    );
+
+    // 5. Binary-container hint on plain text bytes still returns Invalid.
+    assert!(matches!(
+        extract_bytes(b"just plain text", Some("not-a-book.epub"), &limits),
+        Err(ExtractError::Invalid(_))
+    ));
+    assert!(matches!(
+        extract_bytes(b"just plain text", Some("not-a-doc.odt"), &limits),
+        Err(ExtractError::Invalid(_))
+    ));
 }

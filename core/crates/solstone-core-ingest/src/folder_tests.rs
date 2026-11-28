@@ -1962,3 +1962,185 @@ async fn folder_retry_screenshot_preserves_the_primary_taken_by_another_arrival(
         one
     );
 }
+
+#[tokio::test]
+async fn epub_odf_and_structured_text_land_in_folder_ingest_preserving_transcripts_and_estimate_dedupe()
+ {
+    let dir = journal();
+    let notifier = Arc::new(RecordingNotifier::default());
+    let app = test_app(dir.path(), notifier.clone(), FakePdfReader::unavailable());
+    let folder_meta = json!({
+        "v": 1,
+        "id": "docs-folder",
+        "name": "Library",
+        "facet": "work",
+        "kinds": ["documents", "transcripts"]
+    });
+
+    // 1. Verify /supported exposes ruleset_version 10 and all new document extensions.
+    let (s_sup, sup) = call_json(
+        &app,
+        Method::GET,
+        "/app/devices/ingest/folder/supported",
+        None,
+    )
+    .await;
+    assert_eq!(s_sup, StatusCode::OK, "{sup}");
+    assert_eq!(
+        sup["ruleset_version"],
+        solstone_core_import::triage::RULESET_VERSION
+    );
+    let doc_exts: Vec<&str> = sup["kinds"]["documents"]["extensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    for ext in [
+        "epub", "odt", "ods", "odp", "eml", "csv", "tsv", "html", "htm",
+    ] {
+        assert!(doc_exts.contains(&ext), "missing ext {ext} in {doc_exts:?}");
+    }
+
+    // 2. Build EPUB, encrypted ODT, general CSV, Fireflies CSV, HTML, HTM, and EML fixtures.
+    let epub = stored_zip_bytes(&[
+        ("mimetype", b"application/epub+zip"),
+        (
+            "META-INF/container.xml",
+            br#"<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#,
+        ),
+        (
+            "content.opf",
+            br#"<?xml version="1.0"?><package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Pocket Guide</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>"#,
+        ),
+        (
+            "c1.xhtml",
+            b"<html><body><p>EPUB chapter landed in folder ingest.</p></body></html>",
+        ),
+    ]);
+    let encrypted_odt = stored_zip_bytes(&[
+        ("mimetype", b"application/vnd.oasis.opendocument.text"),
+        (
+            "META-INF/manifest.xml",
+            br#"<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"><manifest:encryption-data manifest:checksum="x"/></manifest:file-entry></manifest:manifest>"#,
+        ),
+        ("content.xml", b"ciphertext"),
+    ]);
+    let general_csv = b"Item,Amount\nServer,199\n";
+    let fireflies_csv = b"Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:04,Fireflies transcript line.\nTheo,00:00:05,00:00:08,Confirmed.\n";
+    let saved_htm = b"<html><head><title>Saved Web Note</title></head><body><p>HTML body text.</p></body></html>";
+    let saved_eml = b"Received: from mx.example.org\r\nFrom: Alice <alice@example.org>\r\nSubject: Status\r\n\r\nAlice: Check in?\r\nBob: All green.\r\n";
+
+    let (status, body) = post_folder(
+        &app,
+        "20261127",
+        "110000_300",
+        folder_meta,
+        &[
+            json!({
+                "v": 1, "event": "added", "path": "books/guide.epub",
+                "at": "2026-11-27T11:00:10-07:00", "observed_at": "2026-11-27T11:00:11-07:00",
+                "content_hash": sha256(&epub), "part": "c_01.epub"
+            }),
+            json!({
+                "v": 1, "event": "added", "path": "docs/locked.odt",
+                "at": "2026-11-27T11:00:20-07:00", "observed_at": "2026-11-27T11:00:21-07:00",
+                "content_hash": sha256(&encrypted_odt), "part": "c_02.odt"
+            }),
+            json!({
+                "v": 1, "event": "added", "path": "tables/budget.csv",
+                "at": "2026-11-27T11:00:30-07:00", "observed_at": "2026-11-27T11:00:31-07:00",
+                "content_hash": sha256(general_csv), "part": "c_03.csv"
+            }),
+            json!({
+                "v": 1, "event": "added", "path": "calls/standup.csv",
+                "at": "2026-11-27T11:00:40-07:00", "observed_at": "2026-11-27T11:00:41-07:00",
+                "content_hash": sha256(fireflies_csv), "part": "c_04.csv"
+            }),
+            json!({
+                "v": 1, "event": "added", "path": "web/clip.htm",
+                "at": "2026-11-27T11:00:50-07:00", "observed_at": "2026-11-27T11:00:51-07:00",
+                "content_hash": sha256(saved_htm), "part": "c_05.htm"
+            }),
+            json!({
+                "v": 1, "event": "added", "path": "mail/status.eml",
+                "at": "2026-11-27T11:01:00-07:00", "observed_at": "2026-11-27T11:01:01-07:00",
+                "content_hash": sha256(saved_eml), "part": "c_06.eml"
+            }),
+        ],
+        &[
+            ("c_01.epub", epub.as_slice()),
+            ("c_02.odt", encrypted_odt.as_slice()),
+            ("c_03.csv", general_csv.as_slice()),
+            ("c_04.csv", fireflies_csv.as_slice()),
+            ("c_05.htm", saved_htm.as_slice()),
+            ("c_06.eml", saved_eml.as_slice()),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let refused = body["refused_files"].as_array().expect("refused_files");
+    assert_eq!(refused.len(), 1, "{body}");
+    assert_eq!(refused[0]["path"], "docs/locked.odt");
+
+    let seg_dir = find_segment_dir(&dir.path().join("chronicle/20261127"), "110000_300");
+    let doc_md = fs::read_to_string(seg_dir.join("document_transcript.md")).unwrap();
+    assert!(
+        doc_md.contains("EPUB chapter landed in folder ingest."),
+        "{doc_md}"
+    );
+    assert!(doc_md.contains("| Server | 199 |"), "{doc_md}");
+    assert!(doc_md.contains("HTML body text."), "{doc_md}");
+    assert!(doc_md.contains("Alice: Check in?"), "{doc_md}");
+
+    let tr_jsonl = fs::read_to_string(seg_dir.join("folder_transcript.jsonl")).unwrap();
+    assert!(
+        tr_jsonl.contains("Fireflies transcript line."),
+        "{tr_jsonl}"
+    );
+
+    // 3. /estimate must classify .htm as content (not activity_only) AND deduplicate
+    //    both the general CSV (documents bucket) and Fireflies CSV (transcripts bucket).
+    let (s_est, est) = call_json(
+        &app,
+        Method::POST,
+        "/app/devices/ingest/folder/estimate",
+        Some(json!({
+            "folder_id": "docs-folder",
+            "items": [
+                {
+                    "path": "tables/budget.csv",
+                    "at": "2026-11-27T11:00:30-07:00",
+                    "file_type": "csv",
+                    "content_hash": sha256(general_csv),
+                    "has_content": true
+                },
+                {
+                    "path": "calls/standup.csv",
+                    "at": "2026-11-27T11:00:40-07:00",
+                    "file_type": "csv",
+                    "content_hash": sha256(fireflies_csv),
+                    "has_content": true
+                },
+                {
+                    "path": "web/clip.htm",
+                    "at": "2026-11-27T11:00:50-07:00",
+                    "file_type": "htm",
+                    "content_hash": sha256(saved_htm),
+                    "has_content": true
+                },
+                {
+                    "path": "web/new-page.htm",
+                    "at": "2026-11-27T12:00:00-07:00",
+                    "file_type": "htm",
+                    "has_content": true
+                }
+            ]
+        })),
+    )
+    .await;
+    assert_eq!(s_est, StatusCode::OK, "{est}");
+    assert_eq!(est["already_in_journal"], 3, "{est}");
+    assert_eq!(est["activity_only_items"], 0, "{est}");
+    assert_eq!(est["content_items"], 1, "{est}");
+}

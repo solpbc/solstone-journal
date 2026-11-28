@@ -534,7 +534,9 @@ fn source_for(filename: &str, content_type: Option<&str>) -> &'static str {
         .to_ascii_lowercase();
     let source = if solstone_core_import_sources::image::is_image_extension(&extension) {
         SavedSource::Image
-    } else if extension == "pdf" || solstone_core_doc_extract::is_supported_extension(&extension) {
+    } else if extension == "pdf"
+        || solstone_core_doc_extract::is_unambiguous_document_extension(&extension)
+    {
         SavedSource::Document
     } else if content_type
         .is_some_and(|value| value.starts_with("audio/") || value.starts_with("video/"))
@@ -3222,7 +3224,7 @@ pub(crate) fn detect_inprocess_source(
     } else if source_hint.as_deref() == Some("document")
         || source.as_deref() == Some("document")
         || extension == "pdf"
-        || solstone_core_doc_extract::is_supported_extension(&extension)
+        || solstone_core_doc_extract::is_unambiguous_document_extension(&extension)
     {
         Some(solstone_core_import::RegistrySource::Document)
     } else {
@@ -3653,7 +3655,7 @@ mod tests {
         assert_eq!(source_for("notes.txt", Some("text/plain")), "text");
         assert_eq!(source_for("scan.pdf", Some("application/pdf")), "document");
         assert_eq!(source_for("photo.png", Some("image/png")), "image");
-        for ext in solstone_core_doc_extract::SUPPORTED_EXTENSIONS {
+        for ext in solstone_core_doc_extract::UNAMBIGUOUS_DOCUMENT_EXTENSIONS {
             let name = format!("report.{ext}");
             assert_eq!(source_for(&name, None), "document", "{name}");
             let empty_meta = ImportMetadata::new();
@@ -3661,6 +3663,25 @@ mod tests {
                 super::detect_inprocess_source(&empty_meta, &name),
                 Some(solstone_core_import::RegistrySource::Document),
                 "{name}"
+            );
+        }
+        // Ambiguous structured extensions stay on text without a hint and route
+        // to Document when explicitly chosen via source_hint.
+        for ext in ["csv", "tsv", "html", "htm"] {
+            let name = format!("report.{ext}");
+            assert_eq!(source_for(&name, None), "text", "{name}");
+            let empty_meta = ImportMetadata::new();
+            assert_eq!(
+                super::detect_inprocess_source(&empty_meta, &name),
+                None,
+                "{name}"
+            );
+            let mut hinted_meta = ImportMetadata::new();
+            hinted_meta.insert("source_hint".to_owned(), serde_json::json!("document"));
+            assert_eq!(
+                super::detect_inprocess_source(&hinted_meta, &name),
+                Some(solstone_core_import::RegistrySource::Document),
+                "{name} hinted"
             );
         }
     }

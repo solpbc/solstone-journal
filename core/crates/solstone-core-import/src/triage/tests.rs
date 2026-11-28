@@ -2371,3 +2371,66 @@ fn pathological_structured_inputs_are_refused_within_bounds() {
         );
     }
 }
+
+#[test]
+fn structured_document_extensions_preserve_signatures_beat_dialogue_turns_and_keep_binary_precedence()
+ {
+    // 1. Real .eml with interleaved Received/DKIM headers and dialogue lines in body
+    //    must classify as Documents (not hijacked by Stage::Turns).
+    let interleaved_eml = concat!(
+        "Received: from mail.example.org by mx.example.com; Fri, 01 May 2026 09:00:00 +0000\r\n",
+        "DKIM-Signature: v=1; a=rsa-sha256; d=example.org; s=sel1; bh=abc; b=def\r\n",
+        "Message-ID: <abc@example.org>\r\n",
+        "From: Alice <alice@example.org>\r\n",
+        "MIME-Version: 1.0\r\n",
+        "To: Bob <bob@example.org>\r\n",
+        "Subject: Notes\r\n\r\n",
+        "Alice: Did we finalize the draft?\r\n",
+        "Bob: Yes, ready for Monday.\r\n",
+        "Alice: Great, thanks.\r\n",
+        "Bob: See you then.\r\n"
+    );
+    let eml_v = verdict("thread.eml", interleaved_eml);
+    assert_eq!(eml_v.kind, Kind::Documents, "{:?}", eml_v.reasons);
+    assert_eq!(eml_v.ruleset_version, RULESET_VERSION);
+
+    // 2. General .html/.htm/.csv/.tsv containing dialogue-like colon lines classify as Documents.
+    let dialogue_html = "<html><body><p>Alice: Hello there.</p><p>Bob: Hi Alice.</p><p>Alice: Ready?</p><p>Bob: Yes.</p></body></html>";
+    let dialogue_csv = "Speaker,Line\nAlice: Hello,1\nBob: Hi,2\nAlice: Ready,3\nBob: Yes,4\n";
+    let dialogue_tsv = "Speaker\tLine\nAlice: Hello\t1\nBob: Hi\t2\nAlice: Ready\t3\nBob: Yes\t4\n";
+    for (name, body) in [
+        ("page.html", dialogue_html),
+        ("page.htm", dialogue_html),
+        ("notes.csv", dialogue_csv),
+        ("notes.tsv", dialogue_tsv),
+    ] {
+        let v = verdict(name, body);
+        assert_eq!(v.kind, Kind::Documents, "{name}: {:?}", v.reasons);
+        assert_eq!(v.reasons, vec!["structured_document_extension"], "{name}");
+    }
+
+    // 3. Recognized transcript signatures STILL win in Stage::Signature with single-element reasons.
+    let fireflies = "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:04,Ready to start.\nTheo,00:00:05,00:00:08,Yes.\n";
+    expected("call.csv", fireflies, Kind::Transcripts, &["fireflies_csv"]);
+    let whisper = "start\tend\ttext\n0\t1200\tWelcome everyone.\n1300\t2600\tLet us begin.\n";
+    expected("call.tsv", whisper, Kind::Transcripts, &["whisper_tsv"]);
+    let telegram = r#"<!DOCTYPE html><html><body><div class="page_body chat_page"><div class="history"><div class="message default"><div class="body"><div class="pull_right date details" title="01.04.2026 11:05:00 UTC+03:00">11:05</div><div class="from_name">Mira</div><div class="text">Ready?</div></div></div></div></div></body></html>"#;
+    expected(
+        "messages.html",
+        telegram,
+        Kind::Transcripts,
+        &["telegram_html"],
+    );
+
+    // 4. Binary image bytes renamed .html/.csv/.eml still classify as images (bytes beat names).
+    let png = b"\x89PNG\r\n\x1a\n";
+    for name in ["photo.html", "photo.csv", "photo.eml"] {
+        let v = verdict(name, png);
+        assert!(
+            matches!(v.kind, Kind::Photos | Kind::Screen),
+            "{name} should classify as image, got {:?} ({:?})",
+            v.kind,
+            v.reasons
+        );
+    }
+}
