@@ -385,6 +385,14 @@ fn scan_folder_segments(journal: &Path) -> (BTreeMap<String, u64>, BTreeSet<Stri
     let Ok(day_entries) = std::fs::read_dir(journal.join("chronicle")) else {
         return (counts, backfill);
     };
+    // Older journals may have no binding for a stream. Keep reading those,
+    // but avoid walking every recording segment on each sources-page visit.
+    let other_streams: BTreeSet<_> = solstone_core_segment::list_stream_bindings(journal)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|record| !solstone_core_format::folder::is_folder_source_name(&record.source))
+        .map(|record| record.name)
+        .collect();
     for day_entry in day_entries.flatten() {
         let day_path = day_entry.path();
         if !day_path.is_dir() {
@@ -402,7 +410,12 @@ fn scan_folder_segments(journal: &Path) -> (BTreeMap<String, u64>, BTreeSet<Stri
         };
         for stream_entry in entries.flatten() {
             let stream_path = stream_entry.path();
-            if !stream_path.is_dir() || stream_entry.file_name().to_str() == Some("health") {
+            let name = stream_entry.file_name();
+            if !stream_path.is_dir()
+                || name
+                    .to_str()
+                    .is_some_and(|s| s == "health" || other_streams.contains(s))
+            {
                 continue;
             }
             let Ok(segs) = std::fs::read_dir(&stream_path) else {
@@ -481,6 +494,27 @@ mod tests {
                 "events": []
             })
             .to_string(),
+        )
+        .unwrap();
+
+        let other = solstone_core_segment::bind_named_stream(
+            root,
+            "20200110",
+            "140000_300",
+            "another",
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "activity",
+            &Default::default(),
+        )
+        .unwrap();
+        let unrelated = root
+            .join("chronicle/20200110")
+            .join(other.stream)
+            .join("140000_300/talents");
+        std::fs::create_dir_all(&unrelated).unwrap();
+        std::fs::copy(
+            seg.join("talents/folder_activity.json"),
+            unrelated.join("folder_activity.json"),
         )
         .unwrap();
 

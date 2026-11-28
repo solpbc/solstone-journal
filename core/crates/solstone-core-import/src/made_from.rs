@@ -606,7 +606,7 @@ impl MadeFrom for MadeFromIt {
         &self,
         journal: &Path,
         item: &Item,
-        _segments: &[Target],
+        segments: &[Target],
     ) -> Result<(), String> {
         let Some(before) = item.trashed_at() else {
             return Ok(());
@@ -673,6 +673,10 @@ impl MadeFrom for MadeFromIt {
         change: Change,
         segments: &[Target],
     ) -> Result<(), String> {
+        match change {
+            Change::Detached => crate::folder_erasure::remember(journal, item, segments)?,
+            Change::Attached => crate::folder_erasure::recover(journal, item)?,
+        }
         // An agent's memory: the names found in it leave with it and come
         // back on recover, as any recording's do. Nothing else made from it
         // is re-made, and its dialog says summaries stay.

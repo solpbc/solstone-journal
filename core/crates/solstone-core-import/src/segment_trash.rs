@@ -291,8 +291,10 @@ impl<'a> ImportSegments<'a> {
 /// A recording's hold, and, coming back, the import it needs in the journal.
 struct NeedsHold<'h> {
     inner: Box<dyn Hold + 'h>,
+    _folder: Option<solstone_core_journal_io::FileLock>,
     journal: std::path::PathBuf,
-    item: String,
+    item: Item,
+    restoring: bool,
     /// What it needs, when it is coming back rather than going.
     returning: Option<Vec<String>>,
 }
@@ -300,7 +302,7 @@ struct NeedsHold<'h> {
 impl NeedsHold<'_> {
     fn needs_met(&self) -> Result<(), String> {
         for need in self.returning.iter().flatten() {
-            let held = solstone_core_trash::holders(&self.journal, need, &self.item)
+            let held = solstone_core_trash::holders(&self.journal, need, &self.item.id)
                 .map_err(|error| error.to_string())?;
             if !held.is_empty() {
                 return Err(serde_json::json!({ "code": IMPORT_IN_TRASH }).to_string());
@@ -322,7 +324,24 @@ impl Hold for NeedsHold<'_> {
     fn moving(&self, path: &str) -> Result<(), String> {
         // The engine asks `check` again under its lock before a recover
         // starts; once started, it finishes.
-        self.inner.moving(path)
+        self.inner.moving(path)?;
+        if self.restoring
+            && self._folder.is_some()
+            && solstone_core_retention::layout::parse_segment_rel(path).is_some()
+        {
+            // Restoring a window can displace a newer arrival in that window.
+            // Only move a baseline if the displaced version is still current.
+            crate::folder_erasure::remember_directories(
+                &self.journal,
+                &format!("{}:displaced", self.item.id),
+                &[self.journal.join(path)],
+            )?;
+            for note in crate::folder_erasure::note_companions(&self.journal, &[path.to_owned()])? {
+                solstone_core_trash::set_aside(&self.journal, &self.item, &note)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -332,6 +351,38 @@ impl Kind for ImportSegments<'_> {
     }
 
     fn hold<'h>(&'h self, journal: &Path, item: &Item) -> Result<Box<dyn Hold + 'h>, String> {
+        let folder = if let Unit::Segment {
+            day,
+            stream,
+            segment,
+        } = &item.unit
+        {
+            let rel = solstone_core_retention::layout::segment_rel(day, stream, segment);
+            let marker =
+                Path::new("talents").join(solstone_core_format::folder::FOLDER_ACTIVITY_FILE);
+            let watched = solstone_core_segment::is_folder_stream(journal, stream)
+                || journal
+                    .join(&rel)
+                    .join(&marker)
+                    .try_exists()
+                    .map_err(|e| e.to_string())?
+                || (item.state != solstone_core_trash::State::Detaching
+                    && solstone_core_trash::held_file(journal, &item.id, &rel)
+                        .map_err(|e| e.to_string())?
+                        .join(marker)
+                        .try_exists()
+                        .map_err(|e| e.to_string())?);
+            if watched {
+                Some(
+                    solstone_core_segment::hold_source_mutation(journal, "folder")
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let inner = self.recordings.hold(journal, item)?;
         // Only a recover starting now is refused: one a stop left part way is
         // finished, never left stuck between the trash and the journal.
@@ -339,13 +390,21 @@ impl Kind for ImportSegments<'_> {
             (item.state == solstone_core_trash::State::Trashed).then(|| item.needs.clone());
         Ok(Box::new(NeedsHold {
             inner,
+            _folder: folder,
             journal: journal.to_path_buf(),
-            item: item.id.clone(),
+            item: item.clone(),
+            restoring: matches!(
+                item.state,
+                solstone_core_trash::State::Trashed | solstone_core_trash::State::Attaching
+            ),
             returning,
         }))
     }
 
     fn present(&self, journal: &Path, path: &str) -> bool {
+        if path.starts_with("config/folders/") {
+            return journal.join(path).is_file();
+        }
         self.recordings.present(journal, path)
     }
 
@@ -367,10 +426,18 @@ impl Kind for ImportSegments<'_> {
     }
 
     fn companions(&self, journal: &Path, item: &Item) -> Result<Vec<String>, String> {
-        self.recordings.companions(journal, item)
+        let mut companions = self.recordings.companions(journal, item)?;
+        companions.extend(crate::folder_erasure::note_companions(
+            journal,
+            &item.paths,
+        )?);
+        Ok(companions)
     }
 
     fn returns(&self, journal: &Path, item: &Item, path: &str) -> bool {
+        if path.starts_with("config/folders/") {
+            return !journal.join(path).exists();
+        }
         self.recordings.returns(journal, item, path)
     }
 
@@ -382,6 +449,21 @@ impl Kind for ImportSegments<'_> {
         files: &[String],
     ) -> Result<(), String> {
         self.recordings.references(journal, item, change, files)
+    }
+
+    fn prepare_erase(&self, journal: &Path, item: &Item) -> Result<(), String> {
+        let Unit::Segment {
+            day,
+            stream,
+            segment,
+        } = &item.unit
+        else {
+            return Ok(());
+        };
+        let rel = solstone_core_retention::layout::segment_rel(day, stream, segment);
+        let held =
+            solstone_core_trash::held_file(journal, &item.id, &rel).map_err(|e| e.to_string())?;
+        crate::folder_erasure::prepare_permanent(journal, item, &held)
     }
 
     fn erasing(&self, journal: &Path, item: &Item) -> Result<(), String> {

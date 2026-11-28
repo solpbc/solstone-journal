@@ -55,6 +55,7 @@ use solstone_core_format::obsidian::{
 };
 use solstone_core_format::screenshots::{SCREENSHOT_STEM, names_screenshot_file};
 use solstone_core_format::stored_markdown::{Document, Message};
+use solstone_core_import::folder_erasure::{ErasedVersions, details_key};
 use solstone_core_import::triage::{self, Kind as TriageKind};
 use solstone_core_import_sources::document::{
     InstalledLocalPdfOcr, LocalPdfOcrOptions, PdfPageOcr, PdfPayload, PdfWorker, WorkerFailure,
@@ -251,11 +252,9 @@ fn received_path(journal: &Path, folder_id: &str, key_hash: &str) -> PathBuf {
 }
 
 fn note_file(journal: &Path, folder_id: &str, path: &str) -> PathBuf {
-    let hash = sha256_hex(path.as_bytes());
-    folder_dir(journal, folder_id)
-        .join("notes")
-        .join(&hash[..2])
-        .join(format!("{hash}.json"))
+    journal.join(solstone_core_import::folder_erasure::note_relative_path(
+        folder_id, path,
+    ))
 }
 
 fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> io::Result<Option<T>> {
@@ -511,16 +510,14 @@ fn read_journal_facets(journal: &Path) -> io::Result<Vec<FacetItem>> {
     Ok(rows)
 }
 
-fn resolve_declared_facet(journal: &Path, requested: Option<&str>) -> Option<String> {
-    let slug = requested?.trim();
-    if slug.is_empty() {
-        return None;
-    }
-    let facets = read_journal_facets(journal).ok()?;
-    if facets.iter().any(|f| f.name == slug) {
-        return Some(slug.to_owned());
-    }
-    None
+fn resolve_declared_facet(journal: &Path, requested: Option<&str>) -> io::Result<Option<String>> {
+    let Some(slug) = requested else {
+        return Ok(None);
+    };
+    Ok(read_journal_facets(journal)?
+        .iter()
+        .any(|f| f.name == slug)
+        .then(|| slug.to_owned()))
 }
 
 /// Note slot used by the per-folder Obsidian-style note diff engine.
@@ -608,10 +605,27 @@ pub(crate) fn write_folder(
         }
     };
 
-    let resolved_facet = resolve_declared_facet(&state.journal_root, upload.meta.facet.as_deref());
+    let resolved_facet =
+        match resolve_declared_facet(&state.journal_root, upload.meta.facet.as_deref()) {
+            Ok(facet) => facet,
+            Err(_) => {
+                return retryable(
+                    ReasonCode::JournalReadFailed,
+                    "cannot read the chosen folder facet",
+                );
+            }
+        };
 
     let mut lines = upload.lines;
     lines.sort_by_key(FolderActivityLine::at_ms);
+
+    // Stable across retries even if some individual received records were saved.
+    let mut upload_digest = Sha256::new();
+    for line in &lines {
+        upload_digest.update(event_dedup_key(line).as_bytes());
+        upload_digest.update([0]);
+    }
+    let upload_key = format!("{:x}", upload_digest.finalize());
 
     let mut note_overlay: HashMap<String, Option<NoteState>> = HashMap::new();
     let mut note_read: HashMap<String, Option<NoteState>> = HashMap::new();
@@ -625,18 +639,46 @@ pub(crate) fn write_folder(
     let mut new_activity_events: Vec<StoredFolderEvent> = Vec::new();
     let mut pending_received: BTreeSet<String> = BTreeSet::new();
     let mut refused_files: Vec<RefusedFile> = Vec::new();
-    let mut latest_observed_ms: Option<i64> = None;
-    let mut latest_observed_rfc3339: Option<String> = None;
-
-    for line in &lines {
-        let obs_ms = line.observed_at_ms();
-        if latest_observed_ms.is_none_or(|prev| obs_ms > prev) {
-            latest_observed_ms = Some(obs_ms);
-            latest_observed_rfc3339 =
-                Some(zoned_rfc3339(&line.observed_at, Precision::AutoSi, false));
+    let erased = match ErasedVersions::open(&state.journal_root) {
+        Ok(versions) => versions,
+        Err(error) => {
+            log::warn!("folder erasure ledger unavailable: {error}");
+            return retryable(
+                ReasonCode::JournalReadFailed,
+                "cannot read erased folder versions",
+            );
         }
-
+    };
+    for line in &lines {
         let ev_key = event_dedup_key(line);
+        let details = details_key(
+            &line.path,
+            line.size,
+            line.modified_at
+                .as_ref()
+                .map_or_else(|| line.at_ms(), |t| t.timestamp().as_millisecond()),
+        );
+        // When the erased version had no bytes to hash, its metadata is all
+        // the journal has. The owner's deletion still holds if bytes arrive later.
+        let suppressed =
+            erased
+                .contains(&details)
+                .and_then(|held| match (held, &line.content_hash) {
+                    (true, _) => Ok(true),
+                    (false, Some(hash)) => erased.contains(hash),
+                    (false, None) => erased.contains(&format!("without-bytes:{details}")),
+                });
+        match suppressed {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!("folder erasure ledger unreadable: {error}");
+                return retryable(
+                    ReasonCode::JournalReadFailed,
+                    "cannot read erased folder versions",
+                );
+            }
+        }
         if pending_received.contains(&ev_key) {
             continue;
         }
@@ -708,15 +750,6 @@ pub(crate) fn write_folder(
                         part: Some(part_name.to_owned()),
                         reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
                         detail: "note exceeds 4 MiB limit".to_owned(),
-                    });
-                    continue;
-                }
-                if bytes.contains(&0) {
-                    refused_files.push(RefusedFile {
-                        path: line.path.clone(),
-                        part: Some(part_name.to_owned()),
-                        reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
-                        detail: "note contains binary NUL bytes".to_owned(),
                     });
                     continue;
                 }
@@ -881,15 +914,6 @@ pub(crate) fn write_folder(
                         }
                     }
                 } else if matches!(ext.as_str(), "md" | "markdown" | "txt" | "log") {
-                    if bytes.contains(&0) {
-                        refused_files.push(RefusedFile {
-                            path: line.path.clone(),
-                            part: Some(part_name.to_owned()),
-                            reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
-                            detail: "document contains binary NUL bytes".to_owned(),
-                        });
-                        continue;
-                    }
                     match triage::decode_text(bytes) {
                         Some(decoded) if !decoded.trim().is_empty() => {
                             format!("# {}\n\n{}\n", line.path, decoded.trim_end())
@@ -945,10 +969,19 @@ pub(crate) fn write_folder(
                         );
                     }
                 }
+                // A selected kind identifies the lane, while the parser needs
+                // the observed format (for example Whisper TSV or Slack JSON).
+                let detected;
+                let transcript_verdict = if line.kind_hint.is_some() {
+                    detected = triage::classify(bytes, basename, parent_dir, None, None);
+                    &detected
+                } else {
+                    &verdict
+                };
                 let Some(rows) = solstone_core_import::text::parse_folder_transcript_rows(
                     bytes,
                     basename,
-                    &verdict,
+                    transcript_verdict,
                     line.at.timestamp(),
                     resolved_facet.as_deref(),
                 ) else {
@@ -1173,6 +1206,7 @@ pub(crate) fn write_folder(
         );
     }
 
+    let merge_proofs = seg_dir.path().join(".folder-merge").join(upload_key);
     // Land content files into the 5-minute segment (merging cleanly when an
     // earlier upload already populated this window).
     let mut written_content_files: Vec<String> = Vec::new();
@@ -1181,7 +1215,7 @@ pub(crate) fn write_folder(
 
     if let Some(doc) = &note_document {
         let note_path = seg_dir.path().join(NOTE_TRANSCRIPT_FILE);
-        let merged_bytes = match std::fs::read(&note_path) {
+        let mut merged_bytes = match std::fs::read(&note_path) {
             Ok(existing) if !existing.is_empty() => {
                 let mut combined = existing;
                 if !combined.ends_with(b"\n") {
@@ -1191,9 +1225,16 @@ pub(crate) fn write_folder(
                 combined.extend_from_slice(doc.as_bytes());
                 combined
             }
-            _ => doc.as_bytes().to_vec(),
+            Ok(_) => doc.as_bytes().to_vec(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => doc.as_bytes().to_vec(),
+            Err(_) => {
+                return retryable(
+                    ReasonCode::JournalReadFailed,
+                    "cannot read existing folder notes",
+                );
+            }
         };
-        if atomic_replace(&note_path, &merged_bytes, PRIVATE).is_err() {
+        if persist_merge(&merge_proofs, &note_path, &mut merged_bytes).is_err() {
             return failed(
                 ReasonCode::JournalWriteFailed,
                 "cannot write folder note transcript",
@@ -1216,8 +1257,14 @@ pub(crate) fn write_folder(
     if !pending_docs.is_empty() {
         let doc_path = seg_dir.path().join(DOCUMENT_TRANSCRIPT_FILE);
         let mut combined = match std::fs::read_to_string(&doc_path) {
-            Ok(existing) if !existing.trim().is_empty() => existing,
-            _ => String::new(),
+            Ok(existing) => existing,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(_) => {
+                return retryable(
+                    ReasonCode::JournalReadFailed,
+                    "cannot read existing folder documents",
+                );
+            }
         };
         for doc in &pending_docs {
             if !combined.is_empty() {
@@ -1231,7 +1278,8 @@ pub(crate) fn write_folder(
                 combined.push('\n');
             }
         }
-        if atomic_replace(&doc_path, combined.as_bytes(), PRIVATE).is_err() {
+        let mut combined = combined.into_bytes();
+        if persist_merge(&merge_proofs, &doc_path, &mut combined).is_err() {
             return failed(
                 ReasonCode::JournalWriteFailed,
                 "cannot write folder document transcript",
@@ -1242,14 +1290,23 @@ pub(crate) fn write_folder(
         descriptors.push(written_descriptor(
             DOCUMENT_TRANSCRIPT_FILE,
             DOCUMENT_TRANSCRIPT_FILE,
-            combined.as_bytes(),
+            &combined,
         ));
     }
 
     if !pending_transcripts.is_empty() {
         let tr_path = seg_dir.path().join(FOLDER_TRANSCRIPT_FILE);
-        let existing_present = tr_path.is_file();
-        let mut combined: Vec<u8> = std::fs::read(&tr_path).unwrap_or_default();
+        let mut combined = match std::fs::read(&tr_path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+            Err(_) => {
+                return retryable(
+                    ReasonCode::JournalReadFailed,
+                    "cannot read existing folder transcripts",
+                );
+            }
+        };
+        let existing_present = !combined.is_empty();
         for (idx, tr) in pending_transcripts.iter().enumerate() {
             let skip_header = existing_present || idx > 0;
             for (row_idx, row) in tr.rows.iter().enumerate() {
@@ -1262,7 +1319,7 @@ pub(crate) fn write_folder(
                 }
             }
         }
-        if atomic_replace(&tr_path, &combined, PRIVATE).is_err() {
+        if persist_merge(&merge_proofs, &tr_path, &mut combined).is_err() {
             return failed(
                 ReasonCode::JournalWriteFailed,
                 "cannot write folder transcript",
@@ -1280,7 +1337,42 @@ pub(crate) fn write_folder(
     let mut primary_screenshot_taken = has_primary_screenshot(seg_dir.path());
     for img in &pending_images {
         let filename = if img.is_screenshot {
-            if !primary_screenshot_taken {
+            let proof = merge_proofs.join(format!("screenshot-{}", img.hash));
+            let primary = match read_json_optional::<bool>(&proof) {
+                Ok(Some(true)) => {
+                    let primary_path = seg_dir
+                        .path()
+                        .join(format!("{SCREENSHOT_STEM}.{}", img.ext));
+                    match std::fs::read(primary_path) {
+                        Ok(current) => sha256_hex(&current) == img.hash,
+                        Err(e) if e.kind() == io::ErrorKind::NotFound => !primary_screenshot_taken,
+                        Err(_) => {
+                            return retryable(
+                                ReasonCode::JournalReadFailed,
+                                "cannot read existing screenshot",
+                            );
+                        }
+                    }
+                }
+                Ok(Some(false)) => false,
+                Ok(None) => {
+                    let primary = !primary_screenshot_taken;
+                    if write_json_private(&proof, &primary).is_err() {
+                        return failed(
+                            ReasonCode::JournalWriteFailed,
+                            "cannot record screenshot placement",
+                        );
+                    }
+                    primary
+                }
+                Err(_) => {
+                    return retryable(
+                        ReasonCode::JournalReadFailed,
+                        "cannot read screenshot placement",
+                    );
+                }
+            };
+            if primary {
                 primary_screenshot_taken = true;
                 format!("{SCREENSHOT_STEM}.{}", img.ext)
             } else {
@@ -1350,10 +1442,16 @@ pub(crate) fn write_folder(
     }
 
     let screen_text_path = talents_dir.join("screen_text.md");
-    let existing_ocr = std::fs::read_to_string(&screen_text_path)
-        .ok()
-        .map(|existing| extract_non_folder_screen_text(&existing))
-        .unwrap_or_default();
+    let existing_ocr = match std::fs::read_to_string(&screen_text_path) {
+        Ok(existing) => extract_non_folder_screen_text(&existing),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(_) => {
+            return retryable(
+                ReasonCode::JournalReadFailed,
+                "cannot read existing folder screen text",
+            );
+        }
+    };
     let rendered_screen_text =
         merge_folder_activity_with_screen_text(&stored_activity, &existing_ocr);
     if atomic_replace(&screen_text_path, rendered_screen_text.as_bytes(), PRIVATE).is_err() {
@@ -1376,10 +1474,16 @@ pub(crate) fn write_folder(
     // facet-limited connections immediately see the folder segment).
     if let Some(slug) = &resolved_facet {
         let facets_path = talents_dir.join("facets.json");
-        let mut rows: Vec<Value> = std::fs::read(&facets_path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let mut rows: Vec<Value> = match read_json_optional(&facets_path) {
+            Ok(Some(rows)) => rows,
+            Ok(None) => Vec::new(),
+            Err(_) => {
+                return retryable(
+                    ReasonCode::JournalReadFailed,
+                    "cannot read existing folder facets",
+                );
+            }
+        };
         if !rows
             .iter()
             .any(|row| row.get("facet").and_then(Value::as_str) == Some(slug.as_str()))
@@ -1495,15 +1599,6 @@ pub(crate) fn write_folder(
         segment: segment.clone(),
         received_at: now_rfc3339.clone(),
     };
-    for key in &pending_received {
-        if let Err(error) = record_received(&state.journal_root, folder_id, key, &received_record) {
-            log::warn!("folder received record not saved: {error}");
-            return failed(
-                ReasonCode::JournalWriteFailed,
-                "cannot record what this folder has received",
-            );
-        }
-    }
     for (path, note_state) in &note_overlay {
         let target = note_file(&state.journal_root, folder_id, path);
         let res = match note_state {
@@ -1522,7 +1617,16 @@ pub(crate) fn write_folder(
             );
         }
     }
-    let sync_stamp = latest_observed_rfc3339.unwrap_or(now_rfc3339);
+    for key in &pending_received {
+        if let Err(error) = record_received(&state.journal_root, folder_id, key, &received_record) {
+            log::warn!("folder received record not saved: {error}");
+            return failed(
+                ReasonCode::JournalWriteFailed,
+                "cannot record what this folder has received",
+            );
+        }
+    }
+    let sync_stamp = now_rfc3339;
     folder_state.v = 1;
     folder_state.id = folder_id.clone();
     folder_state.name = upload.meta.name.clone();
@@ -1546,6 +1650,12 @@ pub(crate) fn write_folder(
         return failed(ReasonCode::JournalWriteFailed, "cannot save folder state");
     }
 
+    // After the permanent event receipts land the temporary proofs are redundant.
+    if let Err(error) = std::fs::remove_dir_all(&merge_proofs)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        log::warn!("cannot retire folder merge proofs: {error}");
+    }
     let written_names: Vec<String> = descriptors.iter().map(|d| d.written.clone()).collect();
     let mut body = json!({
         "status": "ok",
@@ -1559,6 +1669,42 @@ pub(crate) fn write_folder(
         body["refused_files"] = serde_json::to_value(&refused_files).unwrap_or_default();
     }
     IngestCompletion::accepted(day, segment, Json(body).into_response())
+}
+
+/// Remember the proposed prefix before replacing a merged transcript. A later
+/// failure (notification, ledger, or process restart) can replay the upload
+/// after another batch has appended more text. Keep both successful appends.
+fn persist_merge(proofs: &Path, target: &Path, merged: &mut Vec<u8>) -> io::Result<()> {
+    #[derive(Serialize, Deserialize)]
+    struct Prefix {
+        len: usize,
+        sha256: String,
+    }
+    let filename = target.file_name().ok_or(io::ErrorKind::InvalidInput)?;
+    let proof = proofs.join(filename);
+    if let Some(prefix) = read_json_optional::<Prefix>(&proof)? {
+        match std::fs::read(target) {
+            Ok(current)
+                if current
+                    .get(..prefix.len)
+                    .is_some_and(|bytes| sha256_hex(bytes) == prefix.sha256) =>
+            {
+                *merged = current;
+                return Ok(());
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+    }
+    write_json_private(
+        &proof,
+        &Prefix {
+            len: merged.len(),
+            sha256: sha256_hex(merged),
+        },
+    )?;
+    atomic_replace(target, merged, PRIVATE).map_err(io::Error::other)
 }
 
 fn written_descriptor(submitted: &str, written: &str, bytes: &[u8]) -> FileDescriptor {
@@ -1594,6 +1740,15 @@ fn stored_event(
         offset_ms: event_offset_ms(day, segment, &line.at),
         file_type: line.file_type.clone(),
         size: line.size,
+        modified_at_ms: line
+            .modified_at
+            .as_ref()
+            .map(|t| t.timestamp().as_millisecond()),
+        created_at_ms: line
+            .created_at
+            .as_ref()
+            .map(|t| t.timestamp().as_millisecond()),
+        platform: line.platform.clone(),
         content_hash: line.content_hash.clone(),
         origin_url: line.origin_url().map(str::to_owned),
         downloaded_by: line.downloaded_by().map(str::to_owned),
@@ -2127,6 +2282,14 @@ fn compute_estimate(
         ("activity_only", 0),
     ]);
 
+    let erasure_read_error = |_| {
+        (
+            ReasonCode::JournalReadFailed,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cannot read erased folder versions".to_owned(),
+        )
+    };
+    let erased = ErasedVersions::open(journal).map_err(erasure_read_error)?;
     for (idx, item) in request.items.iter().enumerate() {
         let at = solstone_core_time::parse_rfc3339(&item.at).map_err(|_| {
             (
@@ -2137,6 +2300,12 @@ fn compute_estimate(
         })?;
         let kind_bucket = classify_estimate_kind(item);
 
+        if let Some(hash) = item.content_hash.as_deref()
+            && erased.contains(hash).map_err(erasure_read_error)?
+        {
+            already_in_journal += 1;
+            continue;
+        }
         // If folder_id and content_hash were provided, check whether this item
         // is already recorded in the folder's received ledger.
         if let (Some(folder_id), Some(hash)) =

@@ -337,6 +337,12 @@ pub trait Kind {
         unit.clone()
     }
 
+    /// Preserve information needed to honor the erasure on future arrivals.
+    /// Unlike cleanup of derived artifacts, this must succeed before unlink.
+    fn prepare_erase(&self, _journal: &Path, _item: &Item) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Before the item's files are unlinked by an erase: let go of what the
     /// thing still leaves in the journal outside them. Runs again when a
     /// stopped erase is finished, so it must be safe to repeat. A failure is
@@ -2417,6 +2423,7 @@ fn finish_erase(journal: &Path, kinds: &[&dyn Kind], item: &Item) -> Result<(), 
     // Its kind lets go of what it leaves outside its files first. No kind
     // given: it stays erasing, and the sweep, which has every kind, finishes.
     let kind = kind_for(kinds, &item.unit)?;
+    kind.prepare_erase(journal, item).map_err(TrashError::Io)?;
     if let Err(error) = kind.erasing(journal, item) {
         log::warn!(
             "trash item {}: erased, but what it left wasn't: {error}",

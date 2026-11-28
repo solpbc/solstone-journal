@@ -307,3 +307,73 @@ fn a_recover_a_stop_left_part_way_is_finished_even_with_its_import_in_the_trash(
     );
     assert!(root.path().join(FIRST).join("audio.flac").is_file());
 }
+
+#[test]
+fn folder_recovery_displaces_only_the_matching_live_baseline_and_blocks_its_version() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let path = "chronicle/20260801/desk/090000_300";
+    let baseline = crate::folder_erasure::note_relative_path("desk", "note.md");
+    let install = |hash: &str| {
+        write(root, &format!("{path}/note_transcript.md"), hash.as_bytes());
+        write(root,&format!("{path}/talents/folder_activity.json"), json!({"v":1,"folder_id":"desk","folder_name":"desk",
+            "events":[{"key":hash,"event":"changed","path":"note.md","at":"2026-08-01T09:00:00Z","at_ms":0,
+              "offset_ms":0,"kind":"notes","content_hash":hash}]}).to_string().as_bytes());
+        write(
+            root,
+            &baseline,
+            json!({"content_hash":hash,"text":hash})
+                .to_string()
+                .as_bytes(),
+        );
+    };
+    install("original");
+    let (item, _) = delete(root, path);
+    assert!(!root.join(&baseline).exists());
+    install("displaced");
+    recover(root, &item.id).unwrap();
+    let restored: Value = serde_json::from_slice(&fs::read(root.join(baseline)).unwrap()).unwrap();
+    assert_eq!(restored["text"], "original");
+    let erased = crate::folder_erasure::ErasedVersions::open(root).unwrap();
+    assert!(erased.contains("displaced").unwrap());
+    assert!(!erased.contains("original").unwrap());
+}
+
+#[test]
+fn folder_permanent_erase_retains_held_activity_until_it_can_record_versions() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let path = "chronicle/20260801/desk/090000_300";
+    write(root, &format!("{path}/note_transcript.md"), b"old note");
+    write(root,&format!("{path}/talents/folder_activity.json"),json!({"v":1,"folder_id":"desk","folder_name":"desk",
+        "events":[{"key":"one","event":"added","path":"note.md","at":"2026-08-01T09:00:00Z","at_ms":0,"offset_ms":0,"kind":"notes","content_hash":"old-hash"}]}).to_string().as_bytes());
+    // This fixture uses NothingMade on detach, as with an item held before
+    // the journal kept cross-folder erasure identities.
+    let (item, _) = delete(root, path);
+    let baseline = crate::folder_erasure::note_relative_path("desk", "note.md");
+    write(
+        root,
+        &baseline,
+        br#"{"content_hash":"old-hash","text":"old note"}"#,
+    );
+    let db = root.join("config/folder-erasure/versions.sqlite3");
+    fs::create_dir_all(&db).unwrap();
+    let erase = || {
+        crate::trash_kinds::with_kinds(root, |kinds| {
+            solstone_core_trash::erase(root, kinds, &item.id, Action::Erase, surface())
+        })
+    };
+    assert!(erase().is_err());
+    let held = solstone_core_trash::held_file(root, &item.id, path).unwrap();
+    assert!(held.join("talents/folder_activity.json").is_file());
+    fs::remove_dir(db).unwrap();
+    erase().unwrap();
+    assert!(!held.exists());
+    assert!(!root.join(baseline).exists());
+    assert!(
+        crate::folder_erasure::ErasedVersions::open(root)
+            .unwrap()
+            .contains("old-hash")
+            .unwrap()
+    );
+}

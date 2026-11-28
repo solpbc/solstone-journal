@@ -670,6 +670,12 @@ pub struct StoredFolderEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<Map<String, Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_url: Option<String>,

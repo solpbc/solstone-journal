@@ -142,6 +142,15 @@ fn golden_activity_lines_validate_and_render_deterministically() {
                 offset_ms: event_offset_ms("20261127", "140000_300", &line.at),
                 file_type: line.file_type.clone(),
                 size: line.size,
+                modified_at_ms: line
+                    .modified_at
+                    .as_ref()
+                    .map(|t| t.timestamp().as_millisecond()),
+                created_at_ms: line
+                    .created_at
+                    .as_ref()
+                    .map(|t| t.timestamp().as_millisecond()),
+                platform: line.platform.clone(),
                 content_hash: line.content_hash.clone(),
                 origin_url: line.origin_url().map(str::to_owned),
                 downloaded_by: line.downloaded_by().map(str::to_owned),

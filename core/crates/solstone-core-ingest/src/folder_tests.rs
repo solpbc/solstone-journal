@@ -28,6 +28,8 @@ type RecordedNotice = (String, String, String, Vec<String>);
 #[derive(Default)]
 struct RecordingNotifier {
     notices: Mutex<Vec<RecordedNotice>>,
+    fail_next: std::sync::atomic::AtomicBool,
+    block_next_baseline: Mutex<Option<std::path::PathBuf>>,
 }
 
 impl RecordingNotifier {
@@ -45,6 +47,15 @@ impl IngestNotifier for RecordingNotifier {
         &self,
         notice: &IngestNotice<'_>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self
+            .fail_next
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err("synthetic one-time notification interruption".into());
+        }
+        if let Some(target) = self.block_next_baseline.lock().unwrap().take() {
+            fs::create_dir_all(target)?;
+        }
         self.notices.lock().unwrap().push((
             notice.source.to_owned(),
             notice.day.to_owned(),
@@ -108,7 +119,7 @@ impl FolderPdfReader for FakePdfReader {
 }
 
 fn journal() -> tempfile::TempDir {
-    let dir = tempfile::TempDir::new_in("/var/tmp").unwrap();
+    let dir = tempfile::TempDir::new().unwrap();
     let mut ledger = AuthorizationLedger::new(dir.path());
     ledger
         .add(ClientEntry::new(
@@ -1559,4 +1570,382 @@ async fn office_documents_land_in_folder_ingest_dedupe_estimate_and_isolate_fail
     .await;
     assert_eq!(s_bad, StatusCode::BAD_REQUEST, "{b_bad}");
     assert_eq!(b_bad["reason_code"], "folder_file_invalid", "{b_bad}");
+}
+
+#[tokio::test]
+async fn folder_text_decodes_utf16_before_checking_nuls_and_stamps_delivery_on_arrival() {
+    let dir = journal();
+    let app = test_app(dir.path(), Arc::default(), FakePdfReader::ok("unused"));
+    let bytes: Vec<_> = [0xff, 0xfe]
+        .into_iter()
+        .chain("café".encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    for (id, kind, filename) in [
+        ("one", "notes", "note_transcript.md"),
+        ("two", "documents", "document_transcript.md"),
+    ] {
+        let (status, result) = post_folder(&app, "20261127", "120000_300", json!({"v":1,"id":id,"name":id,"kinds":[kind]}),
+            &[json!({"v":1,"event":"added","path":"letter.txt","at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:02:00Z",
+                   "content_hash":sha256(&bytes),"kind_hint":kind,"part":"content.txt"})], &[("content.txt", &bytes)]).await;
+        assert_eq!(status, StatusCode::OK, "{result}");
+        let folders = crate::folder::list_synced_folders(dir.path()).unwrap();
+        let synced = &folders.iter().find(|f| f.id == id).unwrap().devices[LAPTOP];
+        assert_eq!(
+            synced.parse::<jiff::Timestamp>().unwrap().as_millisecond(),
+            fixed_now_ms()()
+        );
+        let file = fs::read_dir(dir.path().join("chronicle/20261127"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("120000_300").join(filename))
+            .find(|p| p.is_file())
+            .unwrap();
+        assert!(fs::read_to_string(file).unwrap().contains("café"));
+    }
+}
+
+#[cfg(feature = "full-tests")]
+#[tokio::test]
+async fn folder_erasure_follows_version_across_folder_ids_while_other_copies_and_later_edits_land()
+{
+    let dir = journal();
+    let app = test_app(dir.path(), Arc::default(), FakePdfReader::ok("unused"));
+    let contents = b"the first version";
+    let meta = |id: &str| json!({"v":1,"id":id,"name":id,"kinds":["notes"]});
+    let events = |bytes: &[u8]| {
+        [
+            json!({"v":1,"event":"added","path":"plan.md","at":"2026-11-27T12:01:00Z",
+               "observed_at":"2026-11-27T12:02:00Z","content_hash":sha256(bytes),"kind_hint":"notes","part":"content.md"}),
+            json!({"v":1,"event":"added","path":"download.bin","at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:02:00Z","size":10}),
+        ]
+    };
+    let day = "20261127";
+    let key = "120000_300";
+    let day_dir = dir.path().join("chronicle").join(day);
+    assert_eq!(
+        post_folder(
+            &app,
+            day,
+            key,
+            meta("first"),
+            &events(contents),
+            &[("content.md", contents)]
+        )
+        .await
+        .1["status"],
+        "ok"
+    );
+    let original = find_segment_dir(&day_dir, key);
+    let stream = original
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        post_folder(
+            &app,
+            day,
+            key,
+            meta("independent"),
+            &events(contents),
+            &[("content.md", contents)]
+        )
+        .await
+        .1["status"],
+        "ok"
+    );
+    let baseline = dir
+        .path()
+        .join(solstone_core_import::folder_erasure::note_relative_path(
+            "first", "plan.md",
+        ));
+    let independent = dir
+        .path()
+        .join(solstone_core_import::folder_erasure::note_relative_path(
+            "independent",
+            "plan.md",
+        ));
+    assert!(baseline.is_file());
+    let owner = solstone_core_transcripts_web::router(
+        dir.path().into(),
+        solstone_core_transcripts_web::Clock::system(),
+        || axum::response::Response::new(Body::empty()),
+    );
+    let (status, result) = call_json(
+        &owner,
+        Method::DELETE,
+        &format!("/app/transcripts/api/segment/{day}/{stream}/{key}"),
+        Some(json!({"erase":true,"backups":false})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["erased"], true, "{result}");
+    assert!(!baseline.exists(), "erased note comparison text survived");
+    assert!(
+        independent.is_file(),
+        "another folder still owns its own copy"
+    );
+    let mut replay = events(contents);
+    replay[1]["event"] = json!("changed");
+    let retry = post_folder(
+        &app,
+        day,
+        key,
+        meta("reinstalled"),
+        &replay,
+        &[("content.md", contents)],
+    )
+    .await;
+    assert_eq!(retry.1["status"], "duplicate", "{}", retry.1);
+    let mut names_only = replay[0].clone();
+    names_only.as_object_mut().unwrap().remove("part");
+    names_only.as_object_mut().unwrap().remove("content_hash");
+    let retry = post_folder(&app, day, key, meta("names-only"), &[names_only], &[]).await;
+    assert_eq!(retry.1["status"], "duplicate", "{}", retry.1);
+    let mut prior_details = replay[1].clone();
+    prior_details["kind_hint"] = json!("documents");
+    prior_details["part"] = json!("later.txt");
+    prior_details["content_hash"] = json!(sha256(b"1234567890"));
+    let identical_metadata = post_folder(
+        &app,
+        day,
+        key,
+        meta("formerly-names-only"),
+        &[prior_details],
+        &[("later.txt", b"1234567890")],
+    )
+    .await;
+    assert_eq!(
+        identical_metadata.1["status"], "duplicate",
+        "{}",
+        identical_metadata.1
+    );
+    let changed = b"the second version";
+    let next = post_folder(
+        &app,
+        day,
+        key,
+        meta("reinstalled"),
+        &events(changed),
+        &[("content.md", changed)],
+    )
+    .await;
+    assert_eq!(next.1["status"], "ok", "{}", next.1);
+}
+
+#[tokio::test]
+async fn unreadable_folder_document_is_preserved_when_another_arrives_in_its_window() {
+    let dir = journal();
+    let app = test_app(dir.path(), Arc::default(), FakePdfReader::ok("unused"));
+    let meta = json!({"v":1, "id":"letters", "name":"letters", "kinds":["documents"]});
+    let line = |name: &str, bytes: &[u8]| {
+        json!({
+            "v":1, "event":"added", "path":name, "at":"2026-11-27T12:00:55Z",
+            "observed_at":"2026-11-27T12:01:00Z", "kind_hint":"documents",
+            "part":"doc.txt", "content_hash":sha256(bytes)
+        })
+    };
+    let first = b"first letter";
+    let later = b"another letter";
+    let (status, _) = post_folder(
+        &app,
+        "20261127",
+        "120000_300",
+        meta.clone(),
+        &[line("a.txt", first)],
+        &[("doc.txt", first)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let segment = find_segment_dir(&dir.path().join("chronicle/20261127"), "120000_300");
+    let doc = segment.join("document_transcript.md");
+    fs::write(&doc, [0xff, 0xff]).unwrap();
+    let (status, result) = post_folder(
+        &app,
+        "20261127",
+        "120000_300",
+        meta,
+        &[line("b.txt", later)],
+        &[("doc.txt", later)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{result}");
+    assert_eq!(fs::read(doc).unwrap(), [0xff, 0xff]);
+}
+
+#[tokio::test]
+async fn folder_retry_after_notification_failure_preserves_interleaved_edits_once() {
+    let dir = journal();
+    let notifier = Arc::new(RecordingNotifier::default());
+    notifier
+        .fail_next
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let app = test_app(dir.path(), notifier, FakePdfReader::ok("unused"));
+    let meta = json!({"v":1,"id":"letters","name":"letters","kinds":["documents"]});
+    let line = |name: &str, bytes: &[u8]| {
+        json!({
+            "v":1,"event":"added","path":name,"at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:01:01Z",
+            "kind_hint":"documents","content_hash":sha256(bytes),"part":"content.txt"
+        })
+    };
+    for (name, bytes, expected) in [
+        (
+            "first.txt",
+            &b"first paragraph"[..],
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+        ("second.txt", &b"second paragraph"[..], StatusCode::OK),
+        ("first.txt", &b"first paragraph"[..], StatusCode::OK),
+    ] {
+        let (status, body) = post_folder(
+            &app,
+            "20261127",
+            "120000_300",
+            meta.clone(),
+            &[line(name, bytes)],
+            &[("content.txt", bytes)],
+        )
+        .await;
+        assert_eq!(status, expected, "{body}");
+    }
+    let segment = find_segment_dir(&dir.path().join("chronicle/20261127"), "120000_300");
+    let doc = fs::read_to_string(segment.join("document_transcript.md")).unwrap();
+    assert_eq!(doc.matches("first paragraph").count(), 1, "{doc}");
+    assert_eq!(doc.matches("second paragraph").count(), 1, "{doc}");
+}
+
+#[tokio::test]
+async fn folder_declared_transcript_uses_its_observed_layout_and_refuses_unrelated_tables() {
+    let dir = journal();
+    let app = test_app(dir.path(), Arc::default(), FakePdfReader::ok("unused"));
+    let spoken = b"start\tend\ttext\n0\t120\tAlmost done.\n121\t480\tReady now.\n";
+    let srt = b"1\n00:00:05,400 --> 00:00:08,500\nA timed subtitle.\n\n2\n00:00:09,000 --> 00:00:11,000\nAnother line.\n";
+    let table = b"fruit\tprice\napple\t1\n";
+    let line = |name: &str, bytes: &[u8]| {
+        json!({"v":1,"event":"added","path":name,
+        "at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:01:00Z",
+        "content_hash":sha256(bytes),"kind_hint":"transcripts","part":name})
+    };
+    let (status, result) = post_folder(
+        &app,
+        "20261127",
+        "120000_300",
+        json!({"v":1,"id":"captions","name":"captions","kinds":["transcripts"]}),
+        &[
+            line("talk.tsv", spoken),
+            line("prices.tsv", table),
+            line("cues.srt", srt),
+        ],
+        &[
+            ("talk.tsv", spoken),
+            ("prices.tsv", table),
+            ("cues.srt", srt),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let refused = result["refused_files"].as_array().unwrap();
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0]["path"], "prices.tsv");
+    let segment = find_segment_dir(&dir.path().join("chronicle/20261127"), "120000_300");
+    let body = fs::read_to_string(segment.join("folder_transcript.jsonl")).unwrap();
+    assert!(body.contains("Ready now."));
+    let subtitle = body
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|row| row["text"] == "A timed subtitle.")
+        .expect("timed subtitle row");
+    assert_eq!(subtitle["cue_start"], "00:00:05.400", "{subtitle}");
+}
+
+#[tokio::test]
+async fn folder_note_baseline_write_failure_can_be_retried_without_losing_the_next_diff() {
+    let dir = journal();
+    let notifier = Arc::new(RecordingNotifier::default());
+    let baseline = dir
+        .path()
+        .join(solstone_core_import::folder_erasure::note_relative_path(
+            "retry", "note.md",
+        ));
+    *notifier.block_next_baseline.lock().unwrap() = Some(baseline.clone());
+    let app = test_app(dir.path(), notifier, FakePdfReader::ok("unused"));
+    let raw = b"first revision";
+    let meta = json!({"v":1,"id":"retry","name":"retry","kinds":["notes"]});
+    let line = json!({"v":1,"event":"added","path":"note.md","at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:01:00Z",
+        "kind_hint":"notes","content_hash":sha256(raw),"part":"note.md"});
+    let lines = [line];
+    let parts = [("note.md", &raw[..])];
+    let first = post_folder(&app, "20261127", "120000_300", meta.clone(), &lines, &parts).await;
+    assert_eq!(first.0, StatusCode::INTERNAL_SERVER_ERROR, "{}", first.1);
+    fs::remove_dir(&baseline).unwrap();
+    let retry = post_folder(&app, "20261127", "120000_300", meta, &lines, &parts).await;
+    assert_eq!(retry.1["status"], "ok");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(baseline).unwrap()).unwrap()["content_hash"],
+        sha256(raw)
+    );
+    let dir = find_segment_dir(&dir.path().join("chronicle/20261127"), "120000_300");
+    assert_eq!(
+        fs::read_to_string(dir.join("note_transcript.md"))
+            .unwrap()
+            .matches("first revision")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn folder_retry_screenshot_preserves_the_primary_taken_by_another_arrival() {
+    let dir = journal();
+    let app = test_app(dir.path(), Arc::default(), FakePdfReader::ok("unused"));
+    let meta = json!({"v":1,"id":"pics","name":"pics","kinds":["screenshots","other"]});
+    let line = |path: &str| json!({"v":1,"event":"added","path":path,"at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:01:00Z"});
+    let seed = post_folder(
+        &app,
+        "20261127",
+        "120000_300",
+        meta.clone(),
+        &[line("a.bin")],
+        &[],
+    )
+    .await;
+    assert_eq!(seed.0, StatusCode::OK, "{}", seed.1);
+    let segment = find_segment_dir(&dir.path().join("chronicle/20261127"), "120000_300");
+    let primary = segment.join("screenshot_screen.png");
+    fs::create_dir(&primary).unwrap();
+    let one = png_bytes(8, 8, 1);
+    let two = png_bytes(8, 8, 2);
+    for (idx, (name, raw, status)) in [
+        ("a.png", &one, StatusCode::INTERNAL_SERVER_ERROR),
+        ("b.png", &two, StatusCode::OK),
+        ("a.png", &one, StatusCode::OK),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut event = line(name);
+        event["part"] = json!(name);
+        event["content_hash"] = json!(sha256(raw));
+        event["kind_hint"] = json!("screenshots");
+        let response = post_folder(
+            &app,
+            "20261127",
+            "120000_300",
+            meta.clone(),
+            &[event],
+            &[(name, raw)],
+        )
+        .await;
+        assert_eq!(response.0, status, "{}", response.1);
+        if idx == 0 {
+            fs::remove_dir(&primary).unwrap();
+        }
+    }
+    assert_eq!(fs::read(primary).unwrap(), two);
+    assert_eq!(
+        fs::read(segment.join(format!("screenshot_{}_screen.png", &sha256(&one)[..12]))).unwrap(),
+        one
+    );
 }

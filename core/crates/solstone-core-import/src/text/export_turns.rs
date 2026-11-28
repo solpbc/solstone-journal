@@ -40,7 +40,9 @@ fn from_structured(parsed: Vec<StructuredTurn>) -> Vec<Turn> {
 pub(super) fn read(text: &str, reasons: &[&str]) -> Option<Reading> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let turns = if reasons.contains(&"webvtt_cues") {
-        captions(text)?
+        captions(text, true)?
+    } else if reasons.contains(&"subrip_cues") {
+        captions(text, false)?
     } else if reasons.contains(&"slack_text") {
         slack(text)?
     } else if reasons.contains(&"whatsapp_bracketed") || reasons.contains(&"whatsapp_dash") {
@@ -76,18 +78,17 @@ pub(super) fn read(text: &str, reasons: &[&str]) -> Option<Reading> {
     })
 }
 
-fn captions(text: &str) -> Option<Vec<Turn>> {
+fn captions(text: &str, webvtt: bool) -> Option<Vec<Turn>> {
     static TIME: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-        r"^((?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9]\.[0-9]{3})[ \t]+-->[ \t]+((?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9]\.[0-9]{3})(?:[ \t]+.*)?$"
+        r"^((?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9][.,][0-9]{3})[ \t]+-->[ \t]+((?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9][.,][0-9]{3})(?:[ \t]+.*)?$"
     ).unwrap()
     });
     let lines: Vec<_> = text.lines().collect();
     let mut blocks = lines
         .split(|line| line.trim().is_empty())
         .filter(|block| !block.is_empty());
-    let header = blocks.next()?.first()?;
-    if header.split_ascii_whitespace().next()? != "WEBVTT" {
+    if webvtt && blocks.next()?.first()?.split_ascii_whitespace().next()? != "WEBVTT" {
         return None;
     }
     let mut turns = Vec::new();
@@ -100,7 +101,7 @@ fn captions(text: &str) -> Option<Vec<Turn>> {
         let start = times.get(1)?.as_str();
         let end = times.get(2)?.as_str();
         let millis = |time: &str| -> Option<u64> {
-            let (clock, fraction) = time.split_once('.')?;
+            let (clock, fraction) = time.split_once(['.', ','])?;
             let seconds = clock.split(':').try_fold(0u64, |acc, part| {
                 acc.checked_mul(60)?.checked_add(part.parse().ok()?)
             })?;
@@ -132,8 +133,8 @@ fn captions(text: &str) -> Option<Vec<Turn>> {
         };
         row.offset = from / 1000;
         row.export_time = ExportTime::Caption {
-            start: start.to_string(),
-            end: end.to_string(),
+            start: start.replace(',', "."),
+            end: end.replace(',', "."),
         };
         turns.push(row);
     }

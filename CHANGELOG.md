@@ -23,6 +23,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- if you erase a folder segment that brought in a PDF, an identical copy of that PDF stays out when you add another folder. a revised PDF can still come in.
+
 - scanned and image-only PDF pages are now read locally on your computer without using thoughts across manual imports, synced folders, and email attachments. for those pages, only manual imports fall back to your model, and only when local reading finds no text (such as a diagram or photo) or can't run.
 - connected agents now receive updated instructions for scanning spoken transcripts across a date range by speaker, searching transcripts by speaker or returning every matching line, and checking places alongside transcripts when checking whether a visit happened. the instructions also tell agents to check their saved notes first without a query or date filter, write updated notes in full with their journal links, and say plainly when a keyword search is not exhaustive.
 - the import page on android and iphone development journals no longer has a Plaud row.
