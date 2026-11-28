@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- connected agents now receive updated instructions for scanning spoken transcripts across a date range by speaker, searching transcripts by speaker or every matching line, and checking places alongside transcripts when checking whether a visit happened. the instructions also tell agents to check their saved notes first without a date filter, write updated notes in full with their journal links, and say plainly when a keyword search is not exhaustive.
 - the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
