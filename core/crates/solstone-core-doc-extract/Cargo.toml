@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 csv = "=1.3.1"
+encoding_rs = "0.8.35"
 html2text.workspace = true
 mail-parser.workspace = true
 office_oxide.workspace = true

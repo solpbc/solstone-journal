@@ -894,6 +894,9 @@ fn is_document_mime(mime: &str) -> bool {
     let lower = mime.to_ascii_lowercase();
     lower == "application/pdf"
         || lower == "application/epub+zip"
+        || lower == "application/rtf"
+        || lower == "text/rtf"
+        || lower == "application/x-rtf"
         || lower == "message/rfc822"
         || lower == "application/msword"
         || lower == "application/vnd.ms-excel"
