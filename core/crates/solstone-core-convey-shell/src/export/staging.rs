@@ -132,6 +132,10 @@ pub(crate) struct ReadyRecord {
     pub(crate) offloaded_bytes: u64,
     #[serde(default)]
     pub(crate) offload_degraded: bool,
+    #[serde(default)]
+    pub(crate) skipped_symlink_count: u64,
+    #[serde(default)]
+    pub(crate) skipped_symlinks: Vec<String>,
 }
 
 impl ReadyRecord {

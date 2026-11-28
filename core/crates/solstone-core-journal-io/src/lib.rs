@@ -310,10 +310,11 @@ pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
 pub use windows_inventory::{
     WindowsCheckedFileReader, WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry,
     WindowsInventoryError, WindowsLiveFileReader, enumerate_windows_inventory,
-    enumerate_windows_inventory_live_pruned, enumerate_windows_inventory_pruned,
-    open_windows_inventory_file_reader, open_windows_inventory_file_reader_live,
-    read_windows_inventory_file, read_windows_inventory_live_snapshot,
-    revalidate_windows_live_entry,
+    enumerate_windows_inventory_live_pruned,
+    enumerate_windows_inventory_live_pruned_allowing_symlinks, enumerate_windows_inventory_pruned,
+    enumerate_windows_inventory_pruned_allowing_symlinks, open_windows_inventory_file_reader,
+    open_windows_inventory_file_reader_live, read_windows_inventory_file,
+    read_windows_inventory_live_snapshot, revalidate_windows_live_entry,
 };
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_inventory::{

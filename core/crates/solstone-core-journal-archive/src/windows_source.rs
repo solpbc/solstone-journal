@@ -9,12 +9,13 @@ use std::path::{Component, Path, PathBuf};
 
 use solstone_core_journal_io::{
     InventoryBudget, JournalEntryKind, JournalRoot, WindowsInventoryEntry, WindowsInventoryError,
-    enumerate_windows_inventory_live_pruned, enumerate_windows_inventory_pruned,
-    open_windows_inventory_file_reader, open_windows_inventory_file_reader_live,
-    read_windows_inventory_live_snapshot, revalidate_windows_live_entry,
+    enumerate_windows_inventory_live_pruned_allowing_symlinks,
+    enumerate_windows_inventory_pruned_allowing_symlinks, open_windows_inventory_file_reader,
+    open_windows_inventory_file_reader_live, read_windows_inventory_live_snapshot,
+    revalidate_windows_live_entry,
 };
 
-use crate::deny::{DenyAction, deny_member, deny_top_level};
+use crate::deny::{DenyAction, deny_legacy_symlink, deny_member, deny_top_level};
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof, ProofIdentity};
 use crate::live::{
     LIVE_METADATA_MAX_FILE_BYTES, LIVE_METADATA_TOTAL_BUDGET_BYTES, SnapshotMode,
@@ -71,10 +72,12 @@ impl ArchiveSource {
     ) -> Result<Self, ArchiveError> {
         let retained_root = JournalRoot::open(root).map_err(crate::error::map_root_error)?;
         let observed = match snapshot_mode {
-            SnapshotMode::Strict => {
-                enumerate_windows_inventory_pruned(&retained_root, budget, should_prune_directory)
-            }
-            SnapshotMode::LiveJournal => enumerate_windows_inventory_live_pruned(
+            SnapshotMode::Strict => enumerate_windows_inventory_pruned_allowing_symlinks(
+                &retained_root,
+                budget,
+                should_prune_directory,
+            ),
+            SnapshotMode::LiveJournal => enumerate_windows_inventory_live_pruned_allowing_symlinks(
                 &retained_root,
                 budget,
                 should_prune_directory,
@@ -176,7 +179,7 @@ impl ArchiveSource {
     pub fn revalidate(&self) -> Result<(), ArchiveError> {
         match self.snapshot_mode {
             SnapshotMode::Strict => {
-                let observed = enumerate_windows_inventory_pruned(
+                let observed = enumerate_windows_inventory_pruned_allowing_symlinks(
                     &self.root,
                     self.budget,
                     should_prune_directory,
@@ -313,6 +316,11 @@ fn build_inventory(
                 ));
                 selected.push(observed_entry.clone());
             }
+            JournalEntryKind::Symlink => {
+                if !deny_member(member.as_str(), false) && !deny_legacy_symlink(member.as_str()) {
+                    inventory.skipped_symlinks.push(member);
+                }
+            }
             kind => {
                 return Err(ArchiveError::UnsafeJournalEntry { member, kind });
             }
@@ -324,6 +332,9 @@ fn build_inventory(
         .sort_by(|left, right| left.as_str().as_bytes().cmp(right.as_str().as_bytes()));
     inventory
         .skipped_root_names
+        .sort_by(|left, right| left.as_str().as_bytes().cmp(right.as_str().as_bytes()));
+    inventory
+        .skipped_symlinks
         .sort_by(|left, right| left.as_str().as_bytes().cmp(right.as_str().as_bytes()));
     inventory.entries.sort_by(|left, right| {
         left.member_name()
@@ -903,18 +914,57 @@ mod tests {
     }
 
     #[test]
-    fn reparse_descendant_refuses_when_link_creation_is_available() {
+    fn symlinks_are_skipped_without_following_when_link_creation_is_available() {
         let (_temporary, root) = fixture("reparse");
         let outside = root.parent().expect("temporary parent").join("outside");
         fs::create_dir(&outside).expect("create reparse target");
-        let link = root.join("junction");
-        if std::os::windows::fs::symlink_dir(&outside, &link).is_err() {
+        let outside_file = outside.join("secret.txt");
+        fs::write(&outside_file, b"outside-secret").expect("write outside target");
+        let dir_link = root.join("junction");
+        if std::os::windows::fs::symlink_dir(&outside, &dir_link).is_err() {
             eprintln!("skipping reparse fixture: symlink creation unavailable");
             return;
         }
+        let legacy_link = root.join("CLAUDE.md");
+        if std::os::windows::fs::symlink_file(&outside_file, &legacy_link).is_err() {
+            eprintln!("skipping file symlink assertion: file symlink creation unavailable");
+            return;
+        }
+        let source = ArchiveSource::open(&root).expect("symlinks should be skipped, not refuse");
+        let members = source
+            .inventory()
+            .entries()
+            .iter()
+            .map(|entry| entry.member_name().as_str())
+            .collect::<Vec<_>>();
+        assert!(!members.iter().any(|name| name.contains("junction")));
+        assert!(!members.iter().any(|name| name.contains("secret.txt")));
+        assert!(!members.contains(&"CLAUDE.md"));
+        let skipped = source
+            .inventory()
+            .skipped_symlinks()
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(skipped, vec!["junction"]);
+        source
+            .revalidate()
+            .expect("revalidate succeeds with unchanged skipped symlinks");
+
+        // Post-inventory swap of an inventoried regular file to a symlink still fails closed.
+        let target_member = root.join("config/journal.json");
+        fs::remove_file(&target_member).expect("remove inventoried regular file");
+        std::os::windows::fs::symlink_file(&outside_file, &target_member)
+            .expect("replace inventoried file with symlink");
+        let entry = source
+            .inventory()
+            .entries()
+            .iter()
+            .find(|entry| entry.member_name().as_str() == "config/journal.json")
+            .expect("config/journal.json entry");
         assert!(matches!(
-            ArchiveSource::open(&root),
-            Err(ArchiveError::UnsafeJournalEntry { .. })
+            source.open_file(entry),
+            Err(ArchiveError::SourceChanged { .. })
         ));
     }
 

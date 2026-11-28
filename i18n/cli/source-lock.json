@@ -90799,6 +90799,20 @@
       ]
     },
     {
+      "id": "journal.cli.journal.archive.skipped.symlinks",
+      "source": "4792f7efe7c29f0f5b19fed90b5570055afabeedb1ba781d31140b9641a5d75c",
+      "contract": "a84d88efb932cfd5bc8320b7f34dd0f0fc8ef9061d09bad2521d4afee5e71621",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
+      "id": "journal.cli.journal.archive.skipped.symlinks.more",
+      "source": "73901b337477e2d5b1d10c84a1f24b12604f140150e1fb2873b21fbc4a96a459",
+      "contract": "a6de3f2e3ba66a82685d2cf0f6cf84d903dd9a162599e02ec5568fc1e4c17dda",
+      "protected": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+      "locales": []
+    },
+    {
       "id": "journal.cli.journal.archive.source.budget",
       "source": "4068d47e88deb869dcf7638311b76038e216aca2d11fe8e6bfe30b3d5ea147f0",
       "contract": "4c6eb2d32c82b93d0a43c4e488fe6257ceededfc212cf4aaad12f5401d303af3",

@@ -139,6 +139,7 @@ pub struct Inventory {
     pub(crate) directory_proofs: Vec<DirectoryEntryProof>,
     pub(crate) included_root_names: Vec<IncludedRootName>,
     pub(crate) skipped_root_names: Vec<SkippedRootName>,
+    pub(crate) skipped_symlinks: Vec<ArchiveMemberName>,
     pub(crate) day_count: usize,
     pub(crate) entity_count: usize,
     pub(crate) facet_count: usize,
@@ -158,6 +159,11 @@ impl Inventory {
     /// Return sorted present top-level directories omitted by a tree prune.
     pub fn skipped_root_names(&self) -> &[SkippedRootName] {
         &self.skipped_root_names
+    }
+
+    /// Return sorted non-legacy symbolic links skipped without following.
+    pub fn skipped_symlinks(&self) -> &[ArchiveMemberName] {
+        &self.skipped_symlinks
     }
 
     /// Return the frozen number of immediate eight-digit chronicle directories.

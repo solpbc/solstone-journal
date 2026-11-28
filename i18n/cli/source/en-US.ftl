@@ -13679,3 +13679,15 @@ journal.cli.journal.archive.omitted.media =
         [one] left out { $size } of processed audio and video ({ $files } file)
        *[other] left out { $size } of processed audio and video ({ $files } files)
     }
+
+journal.cli.journal.archive.skipped.symlinks =
+    { $count ->
+        [one] note: skipped { $count } symbolic link ({ $paths }); exports do not follow symbolic links.
+       *[other] note: skipped { $count } symbolic links ({ $paths }); exports do not follow symbolic links.
+    }
+
+journal.cli.journal.archive.skipped.symlinks.more =
+    { $more ->
+        [one] note: skipped { $count } symbolic links ({ $paths }, and { $more } more); exports do not follow symbolic links.
+       *[other] note: skipped { $count } symbolic links ({ $paths }, and { $more } more); exports do not follow symbolic links.
+    }

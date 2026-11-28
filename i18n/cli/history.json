@@ -62306,6 +62306,77 @@
       "selector": null
     },
     {
+      "id": "journal.cli.journal.archive.skipped.symlinks",
+      "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73",
+      "namespace": "journal.cli.journal.archive.skipped",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "paths",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "count",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.cli.journal.archive.skipped.symlinks.more",
+      "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265",
+      "namespace": "journal.cli.journal.archive.skipped.symlinks",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "paths",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "more",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "more",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.cli.journal.archive.source.budget",
       "resource": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e627564676574",
       "namespace": "journal.cli.journal.archive.source",

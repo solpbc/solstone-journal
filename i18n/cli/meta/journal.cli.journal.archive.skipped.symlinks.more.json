@@ -1,0 +1,35 @@
+{
+  "description": "Journal command-line stderr note disclosing non-legacy symbolic links skipped during archive export when more than the preview list were skipped.",
+  "context": "journal-cli. Journal command-line stderr note disclosing non-legacy symbolic links skipped during archive export when more than the preview list were skipped.",
+  "bundles": [
+    "journal-cli"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    },
+    {
+      "name": "paths",
+      "type": "string"
+    },
+    {
+      "name": "more",
+      "type": "cardinal",
+      "numeric_style": "ungrouped"
+    }
+  ],
+  "format_intent": "cardinal",
+  "source_revision": "73901b337477e2d5b1d10c84a1f24b12604f140150e1fb2873b21fbc4a96a459",
+  "max_length": 240,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-cli"
+  ],
+  "selector": {
+    "name": "more",
+    "type": "cardinal"
+  }
+}

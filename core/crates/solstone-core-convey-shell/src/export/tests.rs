@@ -727,6 +727,8 @@ async fn serves_real_byte_ranges_beyond_4_gib_offset_over_sparse_staged_file() {
         offloaded_days: 0,
         offloaded_bytes: 0,
         offload_degraded: false,
+        skipped_symlink_count: 0,
+        skipped_symlinks: Vec::new(),
     };
     staging_area.write_ready_record(&record).unwrap();
 
@@ -1587,4 +1589,45 @@ async fn ordinary_non_erasure_source_changed_remains_failed_source_changed_even_
         "ordinary non-erasure mutation must stay source_changed; outcome={outcome}"
     );
     assert!(outcome["ready"].is_null());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn export_api_silently_omits_legacy_symlinks_and_reports_other_skipped_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let work = TempDir::new().unwrap();
+    let journal = work.path().join("journal");
+    let staging = work.path().join("staging");
+    seed_journal(&journal);
+    let outside = work.path().join("outside.txt");
+    fs::write(&outside, b"outside-secret").unwrap();
+
+    // Legacy symlink (silently omitted) and non-legacy symlink (skipped and reported).
+    symlink(&outside, journal.join("CLAUDE.md")).unwrap();
+    fs::create_dir_all(journal.join("notes")).unwrap();
+    symlink(&outside, journal.join("notes/shortcut.txt")).unwrap();
+
+    let clock = Arc::new(MockClock::new(1_764_150_000));
+    let disk: Arc<dyn DiskSpaceProbe> = Arc::new(MockDiskSpace::new(
+        50 * 1024 * 1024 * 1024,
+        100 * 1024 * 1024 * 1024,
+    ));
+    let service = ExportService::with_deps(
+        journal.clone(),
+        StagingArea::at_dir(staging.clone(), true).unwrap(),
+        clock,
+        disk,
+    );
+    service
+        .start_job(RequesterScope::Local, ExportMode::Full, false)
+        .unwrap();
+
+    let outcome = wait_until_not_preparing(&service, &RequesterScope::Local).await;
+    assert_eq!(outcome["status"], "ready", "outcome={outcome}");
+    assert_eq!(outcome["ready"]["skipped_symlink_count"], 1);
+    assert_eq!(
+        outcome["ready"]["skipped_symlinks"],
+        serde_json::json!(["notes/shortcut.txt"])
+    );
 }

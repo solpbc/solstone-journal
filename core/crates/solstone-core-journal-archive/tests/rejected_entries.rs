@@ -86,7 +86,7 @@ fn rejects_dangling_file_and_loop_symlink_roots() {
 #[cfg(unix)]
 #[test]
 #[allow(clippy::disallowed_methods)]
-fn rejects_symlink_fifo_and_socket_without_opening_special_members() {
+fn skips_symlinks_without_following_and_rejects_fifo_and_socket() {
     use nix::sys::stat::Mode;
     use nix::unistd::mkfifo;
     use std::os::unix::fs::symlink;
@@ -95,16 +95,25 @@ fn rejects_symlink_fifo_and_socket_without_opening_special_members() {
     let temporary = TempDir::new("special-members");
     let root = journal(&temporary);
     directory(&root, "chronicle/20260101");
+    write(&root, "chronicle/20260101/note.md", b"kept");
     let outside = temporary.path().join("outside");
     fs::write(&outside, b"outside").expect("write outside marker");
     symlink(&outside, root.join("chronicle/20260101/link")).expect("create symlink");
-    assert!(matches!(
-        ArchiveSource::open(&root),
-        Err(ArchiveError::UnsafeJournalEntry {
-            kind: JournalEntryKind::Symlink,
-            ..
-        })
-    ));
+    let source = ArchiveSource::open(&root).expect("symlink is skipped instead of refusing export");
+    let members: Vec<_> = source
+        .inventory()
+        .entries()
+        .iter()
+        .map(|entry| entry.member_name().as_str())
+        .collect();
+    assert_eq!(members, vec!["chronicle/20260101/note.md"]);
+    let skipped: Vec<_> = source
+        .inventory()
+        .skipped_symlinks()
+        .iter()
+        .map(|name| name.as_str())
+        .collect();
+    assert_eq!(skipped, vec!["chronicle/20260101/link"]);
     fs::remove_file(root.join("chronicle/20260101/link")).expect("remove symlink");
 
     mkfifo(
@@ -144,7 +153,7 @@ fn rejects_symlink_fifo_and_socket_without_opening_special_members() {
 #[cfg(unix)]
 #[test]
 #[allow(clippy::disallowed_methods)]
-fn rejects_unexcluded_skill_sibling_symlink() {
+fn reports_unexcluded_skill_sibling_symlink_without_following() {
     use std::os::unix::fs::symlink;
 
     let temporary = TempDir::new("unexcluded-skill-symlink");
@@ -154,13 +163,135 @@ fn rejects_unexcluded_skill_sibling_symlink() {
     fs::write(&outside, b"outside").expect("write outside marker");
     symlink(&outside, root.join(".agents/skills/other")).expect("create symlink");
 
+    let source = ArchiveSource::open(&root).expect("unexcluded symlink is skipped and reported");
+    assert!(source.inventory().entries().is_empty());
+    let skipped: Vec<_> = source
+        .inventory()
+        .skipped_symlinks()
+        .iter()
+        .map(|name| name.as_str())
+        .collect();
+    assert_eq!(skipped, vec![".agents/skills/other"]);
+}
+
+#[cfg(unix)]
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn legacy_symlinks_are_silently_omitted_while_regular_files_and_post_swap_stay_strict() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = TempDir::new("legacy-symlinks");
+    let root = journal(&temporary);
+    let outside_dir = temporary.path().join("outside-dir");
+    fs::create_dir(&outside_dir).expect("create outside dir");
+    let outside_file = outside_dir.join("secret.txt");
+    fs::write(&outside_file, b"outside-secret").expect("write outside file");
+    let missing_target = temporary.path().join("does-not-exist");
+
+    write(&root, "config/journal.json", b"{}");
+    write(&root, "chronicle/20260101/kept.md", b"kept");
+    // Regular owner file at a path that is only omitted when it is a legacy symlink.
+    write(&root, "health/retention.log", b"owner-regular-log");
+
+    directory(&root, ".agents/skills");
+    directory(&root, ".claude/skills");
+    directory(&root, "health");
+    directory(&root, "chronicle/20260101/health");
+    directory(&root, "talents");
+    directory(&root, "agents");
+    directory(&root, "apps/chat/bookmarks");
+
+    // Legacy Solstone symlinks (all silently omitted).
+    for legacy in [
+        "CLAUDE.md",
+        "GEMINI.md",
+        ".agents/skills/sol",
+        ".claude/skills/sol",
+        "health/cron.log",
+        "chronicle/20260101/health/sense.log",
+        "talents/daily.log",
+        "agents/helper.log",
+        "apps/chat/bookmarks/pin-1",
+    ] {
+        symlink(&outside_file, root.join(legacy)).expect(legacy);
+    }
+
+    // Non-legacy symlinks: file, directory, and dangling (all skipped without following and reported).
+    symlink(&outside_dir, root.join("linked-dir")).expect("dir symlink");
+    symlink(&missing_target, root.join("dangling.txt")).expect("dangling symlink");
+
+    let source = ArchiveSource::open(&root).expect("open journal with legacy and custom symlinks");
+    let members: Vec<_> = source
+        .inventory()
+        .entries()
+        .iter()
+        .map(|entry| entry.member_name().as_str())
+        .collect();
+    assert_eq!(
+        members,
+        vec![
+            "chronicle/20260101/kept.md",
+            "config/journal.json",
+            "health/retention.log",
+        ]
+    );
+    let skipped: Vec<_> = source
+        .inventory()
+        .skipped_symlinks()
+        .iter()
+        .map(|name| name.as_str())
+        .collect();
+    assert_eq!(skipped, vec!["dangling.txt", "linked-dir"]);
+
+    // Post-inventory swap of an inventoried regular file to a symlink still fails closed.
+    fs::remove_file(root.join("chronicle/20260101/kept.md")).expect("remove regular file");
+    symlink(&outside_file, root.join("chronicle/20260101/kept.md")).expect("swap with symlink");
+    let kept_entry = source
+        .inventory()
+        .entries()
+        .iter()
+        .find(|entry| entry.member_name().as_str() == "chronicle/20260101/kept.md")
+        .expect("kept entry");
     assert!(matches!(
-        ArchiveSource::open(&root),
-        Err(ArchiveError::UnsafeJournalEntry {
-            kind: JournalEntryKind::Symlink,
-            ..
-        })
+        source.open_file(kept_entry),
+        Err(ArchiveError::SourceChanged { .. })
     ));
+    assert!(matches!(
+        source.revalidate(),
+        Err(ArchiveError::SourceChanged { .. })
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn regular_claude_and_gemini_files_stay_exported_and_repo_fixture_opens_cleanly() {
+    let temporary = TempDir::new("regular-agent-docs");
+    let root = journal(&temporary);
+    write(&root, "CLAUDE.md", b"owner notes");
+    write(&root, "GEMINI.md", b"owner notes 2");
+    let source = ArchiveSource::open(&root).expect("open regular CLAUDE.md and GEMINI.md");
+    let members: Vec<_> = source
+        .inventory()
+        .entries()
+        .iter()
+        .map(|entry| entry.member_name().as_str())
+        .collect();
+    assert_eq!(members, vec!["CLAUDE.md", "GEMINI.md"]);
+    assert!(source.inventory().skipped_symlinks().is_empty());
+
+    // Repo fixture carries legacy CLAUDE.md/GEMINI.md symlinks and must open cleanly without edits.
+    let fixture_root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
+    if fixture_root.is_dir() {
+        let fixture_source =
+            ArchiveSource::open(&fixture_root).expect("repo fixture journal opens cleanly");
+        assert!(
+            fixture_source.inventory().skipped_symlinks().is_empty(),
+            "unexpected skipped symlinks in fixture: {:?}",
+            fixture_source.inventory().skipped_symlinks()
+        );
+    }
 }
 
 #[cfg(unix)]

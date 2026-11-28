@@ -2874,6 +2874,8 @@ pub enum MessageId {
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e726f6f742e706172656e74,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736372617463682e6e616d65,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b6970706564,
+    m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73,
+    m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e627564676574,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e6368616e676564,
     m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e696f2e6c6973742e6a6f75726e616c2e6469726563746f7279,
@@ -9010,6 +9012,8 @@ pub fn render_dotted_with_options(locale: &str, dotted_id: &str, args: &[(&str, 
         ("journal.cli.journal.archive.root.parent", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e726f6f742e706172656e74),
         ("journal.cli.journal.archive.scratch.name", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736372617463682e6e616d65),
         ("journal.cli.journal.archive.skipped", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b6970706564),
+        ("journal.cli.journal.archive.skipped.symlinks", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73),
+        ("journal.cli.journal.archive.skipped.symlinks.more", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265),
         ("journal.cli.journal.archive.source.budget", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e627564676574),
         ("journal.cli.journal.archive.source.changed", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e6368616e676564),
         ("journal.cli.journal.archive.source.io.list.journal.directory", MessageId::m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e696f2e6c6973742e6a6f75726e616c2e6469726563746f7279),
@@ -15174,6 +15178,8 @@ static MESSAGES: &[(&str, Prepare)] = &[
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e726f6f742e706172656e74", no_arguments),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736372617463682e6e616d65", no_arguments),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b6970706564", prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b6970706564),
+    ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73", prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73),
+    ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265", prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e627564676574", prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e627564676574),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e6368616e676564", prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e6368616e676564),
     ("m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e696f2e6c6973742e6a6f75726e616c2e6469726563746f7279", prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e696f2e6c6973742e6a6f75726e616c2e6469726563746f7279),
@@ -48847,6 +48853,65 @@ fn prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065
         _ => return Err(RenderError::InvalidArgumentType("skipped".to_string())),
     };
     f_args.set("skipped", FluentValue::from(v0.clone()));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["count", "paths"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "count").ok_or_else(|| RenderError::MissingArgument("count".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("count".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("count".to_string())); }
+    f_args.set("count", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "paths").ok_or_else(|| RenderError::MissingArgument("paths".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("paths".to_string())),
+    };
+    f_args.set("paths", FluentValue::from(v1.clone()));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v0));
+    Ok((_resource_key, f_args))
+}
+
+fn prepare_m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265(_resource_key: &'static str, args: &[(&str, Value)], _cardinal_rule: Option<&str>) -> Prepared {
+    const DECLARED: &[&str] = &["count", "paths", "more"];
+    for (name, _) in args {
+        if !DECLARED.contains(name) {
+            return Err(RenderError::UnknownArgument((*name).to_string()));
+        }
+    }
+    #[allow(unused_mut)]
+    let mut f_args = FluentArgs::new();
+    let val_v0 = args.iter().find(|(n, _)| *n == "count").ok_or_else(|| RenderError::MissingArgument("count".to_string()))?.1.clone();
+    let v0 = match val_v0 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("count".to_string())),
+    };
+    if v0 < -2147483648_i64 || v0 > 2147483647_i64 { return Err(RenderError::OutOfRange("count".to_string())); }
+    f_args.set("count", FluentValue::from(v0));
+    let val_v1 = args.iter().find(|(n, _)| *n == "paths").ok_or_else(|| RenderError::MissingArgument("paths".to_string()))?.1.clone();
+    let v1 = match val_v1 {
+        Value::String(s) => s.to_string(),
+        _ => return Err(RenderError::InvalidArgumentType("paths".to_string())),
+    };
+    f_args.set("paths", FluentValue::from(v1.clone()));
+    let val_v2 = args.iter().find(|(n, _)| *n == "more").ok_or_else(|| RenderError::MissingArgument("more".to_string()))?.1.clone();
+    let v2 = match val_v2 {
+        Value::Cardinal(c) => c,
+        _ => return Err(RenderError::InvalidArgumentType("more".to_string())),
+    };
+    if v2 < -2147483648_i64 || v2 > 2147483647_i64 { return Err(RenderError::OutOfRange("more".to_string())); }
+    f_args.set("more", FluentValue::from(v2));
+    f_args.set("i18nCategory", plural_category(_cardinal_rule, v2));
     Ok((_resource_key, f_args))
 }
 

@@ -103109,6 +103109,100 @@
       "call_contract": {
         "arguments": [
           {
+            "name": "count",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "paths",
+            "type": "string",
+            "value": "sample"
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.journal.archive.skipped.symlinks\u0004m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.journal.archive.skipped.symlinks",
+        "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "note: skipped ⁨0⁩ symbolic links (⁨sample⁩); exports do not follow symbolic links.",
+      "folder": null,
+      "inputs": {
+        "count": 0,
+        "paths": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "note: skipped ⁨0⁩ symbolic links (⁨sample⁩); exports do not follow symbolic links.",
+      "message_id": "journal.cli.journal.archive.skipped.symlinks",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.skipped.symlinks\", &[(\"count\", Value::Cardinal(0)), (\"paths\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
+            "name": "count",
+            "type": "cardinal",
+            "value": 0
+          },
+          {
+            "name": "paths",
+            "type": "string",
+            "value": "sample"
+          },
+          {
+            "name": "more",
+            "type": "cardinal",
+            "value": 0
+          }
+        ],
+        "bundle": "journal-cli",
+        "entry": "render(locale, MessageId, named_args)",
+        "enum_argument": null,
+        "format_passes": 1,
+        "gettext_lookup_key": "journal.cli.journal.archive.skipped.symlinks.more\u0004m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265",
+        "gettext_plural_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265_plural",
+        "gettext_unsigned_quantity": 0,
+        "locale": "en-US",
+        "message_id": "journal.cli.journal.archive.skipped.symlinks.more",
+        "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265",
+        "signed_quantity": 0
+      },
+      "cardinal": "en",
+      "expectation_kind": "resource-golden",
+      "expected": "note: skipped ⁨0⁩ symbolic links (⁨sample⁩, and ⁨0⁩ more); exports do not follow symbolic links.",
+      "folder": null,
+      "inputs": {
+        "count": 0,
+        "more": 0,
+        "paths": "sample"
+      },
+      "locale": "en-US",
+      "logical_expected": "note: skipped ⁨0⁩ symbolic links (⁨sample⁩, and ⁨0⁩ more); exports do not follow symbolic links.",
+      "message_id": "journal.cli.journal.archive.skipped.symlinks.more",
+      "own_reader": "rust-api",
+      "own_reader_call": "render(\"en-US\", \"journal.cli.journal.archive.skipped.symlinks.more\", &[(\"count\", Value::Cardinal(0)), (\"more\", Value::Cardinal(0)), (\"paths\", Value::String(\"sample\"))])",
+      "platform_reader": "pending",
+      "resource_key": "m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265",
+      "target": "rust"
+    },
+    {
+      "bundle": "journal-cli",
+      "call_contract": {
+        "arguments": [
+          {
             "name": "path",
             "type": "string",
             "value": "sample"

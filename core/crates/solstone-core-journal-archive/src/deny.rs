@@ -137,6 +137,46 @@ pub(crate) fn deny_member(member: &str, regular_file: bool) -> bool {
     false
 }
 
+/// Known legacy Solstone-managed symlinks left in older journals (top-level
+/// agent instruction aliases, pre-rename skill links, legacy `.log` aliases,
+/// and legacy chat bookmark links). Omitted silently only when the entry is a
+/// symlink so regular owner files at the same paths stay in the archive.
+pub(crate) fn deny_legacy_symlink(member: &str) -> bool {
+    #[cfg(windows)]
+    let owned = member.to_ascii_lowercase();
+    #[cfg(windows)]
+    let member = owned.as_str();
+    let exact = if cfg!(windows) {
+        matches!(
+            member,
+            "claude.md" | "gemini.md" | ".agents/skills/sol" | ".claude/skills/sol"
+        )
+    } else {
+        matches!(
+            member,
+            "CLAUDE.md" | "GEMINI.md" | ".agents/skills/sol" | ".claude/skills/sol"
+        )
+    };
+    if exact {
+        return true;
+    }
+    let parts: Vec<&str> = member.split('/').collect();
+    match parts.as_slice() {
+        ["health" | "talents" | "agents", leaf] if is_nonempty_log_leaf(leaf) => true,
+        ["chronicle", day, "health", leaf]
+            if is_eight_digit_day(day) && is_nonempty_log_leaf(leaf) =>
+        {
+            true
+        }
+        ["apps", "chat", "bookmarks", leaf] if !leaf.is_empty() => true,
+        _ => false,
+    }
+}
+
+fn is_nonempty_log_leaf(leaf: &str) -> bool {
+    leaf.ends_with(".log") && leaf.len() > ".log".len()
+}
+
 /// Identified writer-owned runtime `.lock` sidecars outside `health/`, `config/`,
 /// `link/`, `backup/`, and `mcp-endpoint/`.
 ///
@@ -275,7 +315,7 @@ mod tests {
         OplogFormat, OplogNameClassification, classify_oplog_name,
     };
 
-    use super::{DenyAction, deny_member, deny_top_level};
+    use super::{DenyAction, deny_legacy_symlink, deny_member, deny_top_level};
 
     const LOG_LEAF: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
     const JSONL_LEAF: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl";
@@ -485,5 +525,59 @@ mod tests {
         // Never treat a directory with a runtime-lock name as a regular-file lock.
         assert!(!deny_member("imports/.strava.lock", false));
         assert!(!deny_member("solstone/apps/map/places.json.lock", false));
+    }
+
+    #[test]
+    fn legacy_symlinks_are_silently_omitted_without_omitting_regular_files() {
+        let legacy = [
+            "CLAUDE.md",
+            "GEMINI.md",
+            ".agents/skills/sol",
+            ".claude/skills/sol",
+            "health/retention.log",
+            "health/cron.log",
+            "chronicle/20260101/health/sense.log",
+            "talents/daily.log",
+            "agents/helper.log",
+            "apps/chat/bookmarks/pin-1",
+        ];
+        for path in legacy {
+            assert!(
+                deny_legacy_symlink(path),
+                "expected legacy symlink match: {path}"
+            );
+        }
+        // Regular files at the same paths stay exported unless another regular-file rule omits them.
+        for path in [
+            "CLAUDE.md",
+            "GEMINI.md",
+            "health/retention.log",
+            "chronicle/20260101/health/sense.log",
+            "talents/daily.log",
+            "agents/helper.log",
+            "apps/chat/bookmarks/pin-1",
+        ] {
+            assert!(
+                !deny_member(path, true),
+                "regular owner file must stay exported: {path}"
+            );
+        }
+        let non_legacy = [
+            "chronicle/20260101/link",
+            ".agents/skills/other",
+            ".claude/skills/other",
+            "notes/CLAUDE.md",
+            "health/.log",
+            "health/nested/cron.log",
+            "chronicle/not-a-day/health/sense.log",
+            "apps/chat/bookmarks/nested/pin-1",
+            "shortcut",
+        ];
+        for path in non_legacy {
+            assert!(
+                !deny_legacy_symlink(path),
+                "non-legacy symlink must be surfaced, not silently hidden: {path}"
+            );
+        }
     }
 }

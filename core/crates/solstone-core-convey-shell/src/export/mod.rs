@@ -76,6 +76,10 @@ pub(crate) const ROLLING_INACTIVITY_SECS: i64 = 24 * 60 * 60;
 /// Cached estimate freshness window (5 minutes).
 const ESTIMATE_CACHE_TTL_SECS: i64 = 5 * 60;
 
+/// Maximum non-legacy skipped symlink paths persisted in `ready.json` and
+/// surfaced on `/app/export/api/state`.
+const MAX_REPORTED_SKIPPED_SYMLINKS: usize = 20;
+
 /// Wall-clock abstraction so 24-hour rolling expiry and >24-hour continuous
 /// downloads are tested deterministically without real waits.
 pub(crate) trait ExportClock: Send + Sync + 'static {
@@ -574,6 +578,8 @@ impl ExportService {
                         "offloaded_days": ready.record.offloaded_days,
                         "offloaded_bytes": ready.record.offloaded_bytes,
                         "offload_degraded": ready.record.offload_degraded,
+                        "skipped_symlink_count": ready.record.skipped_symlink_count,
+                        "skipped_symlinks": ready.record.skipped_symlinks,
                         "download_path": format!("/app/export/api/ready/{export_id}/download"),
                         "legacy_download_path": format!("/app/import/api/journal-archive/export?id={export_id}"),
                     },
@@ -1518,6 +1524,14 @@ fn run_prepare_worker(
         ),
     };
     let days_count = fingerprint.chronicle_days as u64;
+    let skipped_symlink_count = source.inventory().skipped_symlinks().len() as u64;
+    let skipped_symlinks = source
+        .inventory()
+        .skipped_symlinks()
+        .iter()
+        .take(MAX_REPORTED_SKIPPED_SYMLINKS)
+        .map(|name| name.as_str().to_owned())
+        .collect();
     let record = ReadyRecord {
         schema: ReadyRecord::SCHEMA,
         export_id,
@@ -1538,6 +1552,8 @@ fn run_prepare_worker(
         offloaded_days: plan.breakdown.already_offloaded.days,
         offloaded_bytes: plan.breakdown.already_offloaded.bytes,
         offload_degraded: plan.breakdown.already_offloaded.degraded,
+        skipped_symlink_count,
+        skipped_symlinks,
     };
     if let Err(error) = staging.write_ready_record(&record) {
         let _ = std::fs::remove_file(&final_zip_path);

@@ -33,6 +33,9 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::IO::{
     CancelIoEx, GetOverlappedResult, IO_STATUS_BLOCK, OVERLAPPED,
 };
+use windows_sys::Win32::System::SystemServices::{
+    IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+};
 use windows_sys::Win32::System::Threading::CreateEventW;
 
 use crate::inventory_budget::{CheckedReadUsage, InventoryUsage};
@@ -473,7 +476,35 @@ pub fn enumerate_windows_inventory(
 pub fn enumerate_windows_inventory_pruned<F>(
     root: &JournalRoot,
     budget: InventoryBudget,
+    prune_directory: F,
+) -> Result<WindowsInventory, WindowsInventoryError>
+where
+    F: FnMut(&str) -> bool,
+{
+    enumerate_windows_inventory_pruned_inner(root, budget, prune_directory, false)
+}
+
+/// Build one recursive Windows inventory while skipping descent into directories
+/// matched by `prune_directory` and observing symbolic links / directory junctions
+/// as [`JournalEntryKind::Symlink`] without following or descending into them.
+///
+/// Non-symlink reparse points remain refused fail-closed.
+pub fn enumerate_windows_inventory_pruned_allowing_symlinks<F>(
+    root: &JournalRoot,
+    budget: InventoryBudget,
+    prune_directory: F,
+) -> Result<WindowsInventory, WindowsInventoryError>
+where
+    F: FnMut(&str) -> bool,
+{
+    enumerate_windows_inventory_pruned_inner(root, budget, prune_directory, true)
+}
+
+fn enumerate_windows_inventory_pruned_inner<F>(
+    root: &JournalRoot,
+    budget: InventoryBudget,
     mut prune_directory: F,
+    allow_symlinks: bool,
 ) -> Result<WindowsInventory, WindowsInventoryError>
 where
     F: FnMut(&str) -> bool,
@@ -498,6 +529,7 @@ where
             Some(witness),
             &mut prune_directory,
             None,
+            allow_symlinks,
         )?;
         entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         Ok(WindowsInventory { entries })
@@ -521,8 +553,50 @@ where
 pub fn enumerate_windows_inventory_live_pruned<F, G>(
     root: &JournalRoot,
     budget: InventoryBudget,
+    prune_directory: F,
+    skip_transient_member: G,
+) -> Result<WindowsInventory, WindowsInventoryError>
+where
+    F: FnMut(&str) -> bool,
+    G: FnMut(&str, bool) -> bool,
+{
+    enumerate_windows_inventory_live_pruned_inner(
+        root,
+        budget,
+        prune_directory,
+        skip_transient_member,
+        false,
+    )
+}
+
+/// Live-journal Windows inventory that also observes symbolic links and
+/// directory junctions as [`JournalEntryKind::Symlink`] without following or
+/// descending into them. Other reparse points remain refused fail-closed.
+pub fn enumerate_windows_inventory_live_pruned_allowing_symlinks<F, G>(
+    root: &JournalRoot,
+    budget: InventoryBudget,
+    prune_directory: F,
+    skip_transient_member: G,
+) -> Result<WindowsInventory, WindowsInventoryError>
+where
+    F: FnMut(&str) -> bool,
+    G: FnMut(&str, bool) -> bool,
+{
+    enumerate_windows_inventory_live_pruned_inner(
+        root,
+        budget,
+        prune_directory,
+        skip_transient_member,
+        true,
+    )
+}
+
+fn enumerate_windows_inventory_live_pruned_inner<F, G>(
+    root: &JournalRoot,
+    budget: InventoryBudget,
     mut prune_directory: F,
     mut skip_transient_member: G,
+    allow_symlinks: bool,
 ) -> Result<WindowsInventory, WindowsInventoryError>
 where
     F: FnMut(&str) -> bool,
@@ -548,6 +622,7 @@ where
         None,
         &mut prune_directory,
         Some(&mut skip_transient_member),
+        allow_symlinks,
     )?;
     root.revalidate().map_err(WindowsInventoryError::Root)?;
     entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
@@ -1223,6 +1298,7 @@ fn walk_directory<'pred>(
     mut witness: Option<&mut NamespaceWitness<'_>>,
     prune_directory: &mut impl FnMut(&str) -> bool,
     mut skip_transient_member: Option<&mut TransientSkipPredicate<'pred>>,
+    allow_symlinks: bool,
 ) -> Result<(), WindowsInventoryError> {
     InventoryUsage::check_depth(budget, depth)
         .map_err(|limit| WindowsInventoryError::BudgetExceeded { limit })?;
@@ -1255,7 +1331,34 @@ fn walk_directory<'pred>(
             Err(error) => return Err(error),
         };
         let attributes = attribute_tag(&child, &child_path)?;
-        require_no_reparse(attributes, &child_path)?;
+        if is_reparse_point(attributes) {
+            if allow_symlinks && is_symlink_reparse_tag(attributes.ReparseTag) {
+                let identity = file_id(&child, &child_path)?;
+                if !identity.matches_windows_file_id(listed.file_id) {
+                    return Err(WindowsInventoryError::IdentityChanged { path: child_path });
+                }
+                let mut child_route = route.clone();
+                child_route.push(WindowsRouteComponent {
+                    name,
+                    identity,
+                    kind: JournalEntryKind::Symlink,
+                });
+                entries.push(WindowsInventoryEntry {
+                    relative_path: child_path,
+                    kind: JournalEntryKind::Symlink,
+                    identity,
+                    size: 0,
+                    last_write_time: 0,
+                    route: child_route,
+                });
+                if let Some(witness) = witness.as_deref_mut() {
+                    witness.check()?;
+                }
+                root.revalidate().map_err(WindowsInventoryError::Root)?;
+                continue;
+            }
+            return Err(WindowsInventoryError::ReparsePoint { path: child_path });
+        }
         let identity = file_id(&child, &child_path)?;
         if !identity.matches_windows_file_id(listed.file_id) {
             if listed.is_regular_attributes()
@@ -1308,6 +1411,7 @@ fn walk_directory<'pred>(
                 witness.as_deref_mut(),
                 prune_directory,
                 skip_transient_member.as_deref_mut(),
+                allow_symlinks,
             )?;
         }
         if let Some(witness) = witness.as_deref_mut() {
@@ -1828,6 +1932,10 @@ fn is_directory(attributes: FILE_ATTRIBUTE_TAG_INFO) -> bool {
 
 fn is_reparse_point(attributes: FILE_ATTRIBUTE_TAG_INFO) -> bool {
     attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+fn is_symlink_reparse_tag(tag: u32) -> bool {
+    tag == IO_REPARSE_TAG_SYMLINK || tag == IO_REPARSE_TAG_MOUNT_POINT
 }
 
 fn require_no_reparse(
@@ -2735,6 +2843,46 @@ mod tests {
                 Err(WindowsInventoryError::IdentityChanged { .. })
             ),
             "vanishing a listed directory must fail closed: {vanished_dir_result:?}"
+        );
+    }
+
+    #[test]
+    fn allowing_symlinks_observes_links_without_descending_while_strict_refuses() {
+        let temporary = TempDir::new();
+        let root_path = temporary.path().join("journal");
+        let outside = temporary.path().join("outside");
+        fs::create_dir_all(&root_path).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root_path.join("kept.txt"), b"kept").unwrap();
+        fs::write(outside.join("secret.txt"), b"secret").unwrap();
+        let dir_link = root_path.join("linked-dir");
+        if std::os::windows::fs::symlink_dir(&outside, &dir_link).is_err() {
+            eprintln!("skipping symlink observation test: symlink creation unavailable");
+            return;
+        }
+        let root = JournalRoot::open(&root_path).unwrap();
+
+        // Strict enumeration continues to refuse reparse points fail-closed.
+        assert!(matches!(
+            enumerate_windows_inventory(&root, budget()),
+            Err(WindowsInventoryError::ReparsePoint { .. })
+        ));
+
+        // Symlink-observing enumeration emits the link as Symlink and never descends into `outside`.
+        let observed =
+            enumerate_windows_inventory_pruned_allowing_symlinks(&root, budget(), |_| false)
+                .expect("symlink-observing enumeration succeeds");
+        let entries = observed
+            .entries()
+            .iter()
+            .map(|entry| (entry.relative_path().to_path_buf(), entry.kind()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entries,
+            vec![
+                (PathBuf::from("kept.txt"), JournalEntryKind::RegularFile),
+                (PathBuf::from("linked-dir"), JournalEntryKind::Symlink),
+            ]
         );
     }
 }

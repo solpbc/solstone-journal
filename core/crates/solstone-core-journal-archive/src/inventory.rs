@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 
-use crate::deny::{DenyAction, deny_member, deny_top_level};
+use crate::deny::{DenyAction, deny_legacy_symlink, deny_member, deny_top_level};
 use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof};
 use crate::live::SnapshotMode;
 use crate::source::{
@@ -78,6 +78,11 @@ pub(crate) fn build(
                     },
                 ));
             }
+            JournalEntryKind::Symlink => {
+                if !deny_legacy_symlink(member.as_str()) {
+                    inventory.skipped_symlinks.push(member);
+                }
+            }
             kind => {
                 return Err(ArchiveError::UnsafeJournalEntry { member, kind });
             }
@@ -89,6 +94,9 @@ pub(crate) fn build(
         .sort_by(|left, right| left.as_str().as_bytes().cmp(right.as_str().as_bytes()));
     inventory
         .skipped_root_names
+        .sort_by(|left, right| left.as_str().as_bytes().cmp(right.as_str().as_bytes()));
+    inventory
+        .skipped_symlinks
         .sort_by(|left, right| left.as_str().as_bytes().cmp(right.as_str().as_bytes()));
     entries.sort_by(|left: &InventoryEntry, right| {
         left.member_name()
@@ -156,6 +164,11 @@ fn walk_directory(
                         file,
                     },
                 ));
+            }
+            JournalEntryKind::Symlink => {
+                if !deny_legacy_symlink(member.as_str()) {
+                    inventory.skipped_symlinks.push(member);
+                }
             }
             kind => {
                 return Err(ArchiveError::UnsafeJournalEntry { member, kind });

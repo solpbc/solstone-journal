@@ -6403,6 +6403,16 @@ m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736372617463682e6e616d6
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b6970706564 = { "solstone journal archive export" }: skipped top-level entries: { $skipped }
 
+m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b73 = { $i18nCategory ->
+    [one] note: skipped { NUMBER($count, useGrouping: 0) } symbolic link ({ $paths }); exports do not follow symbolic links.
+   *[other] note: skipped { NUMBER($count, useGrouping: 0) } symbolic links ({ $paths }); exports do not follow symbolic links.
+}
+
+m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736b69707065642e73796d6c696e6b732e6d6f7265 = { $i18nCategory ->
+    [one] note: skipped { NUMBER($count, useGrouping: 0) } symbolic links ({ $paths }, and { NUMBER($more, useGrouping: 0) } more); exports do not follow symbolic links.
+   *[other] note: skipped { NUMBER($count, useGrouping: 0) } symbolic links ({ $paths }, and { NUMBER($more, useGrouping: 0) } more); exports do not follow symbolic links.
+}
+
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e627564676574 = unsupported journal root { $path }: archive source exceeds its supported inventory budget
 
 m6a6f75726e616c2e636c692e6a6f75726e616c2e617263686976652e736f757263652e6368616e676564 = journal source changed at { $member }

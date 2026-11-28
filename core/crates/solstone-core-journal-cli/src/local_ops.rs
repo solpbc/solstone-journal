@@ -1710,6 +1710,51 @@ fn archive_export_for_journal(
             ));
             stderr.push('\n');
         }
+        let skipped_symlinks = source.inventory().skipped_symlinks();
+        if !skipped_symlinks.is_empty() {
+            const MAX_SHOWN: usize = 5;
+            let total = skipped_symlinks.len();
+            let count = i64::try_from(total).unwrap_or(i64::MAX);
+            let paths = skipped_symlinks
+                .iter()
+                .take(MAX_SHOWN)
+                .map(|member| member.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if total > MAX_SHOWN {
+                let more = i64::try_from(total - MAX_SHOWN).unwrap_or(i64::MAX);
+                stderr.push_str(
+                    &solstone_core_cli_copy::MessageDetail::cardinal(
+                        "journal.cli.journal.archive.skipped.symlinks.more",
+                        [("count", count), ("more", more)],
+                        format!(
+                            "note: skipped {total} symbolic links ({paths}, and {} more); exports do not follow symbolic links.",
+                            total - MAX_SHOWN
+                        ),
+                        [("paths", &paths)],
+                    )
+                    .render(locale),
+                );
+            } else {
+                stderr.push_str(
+                    &solstone_core_cli_copy::MessageDetail::cardinal(
+                        "journal.cli.journal.archive.skipped.symlinks",
+                        [("count", count)],
+                        format!(
+                            "note: skipped {total} {} ({paths}); exports do not follow symbolic links.",
+                            if total == 1 {
+                                "symbolic link"
+                            } else {
+                                "symbolic links"
+                            }
+                        ),
+                        [("paths", &paths)],
+                    )
+                    .render(locale),
+                );
+            }
+            stderr.push('\n');
+        }
     }
     Outcome::LocalSuccess {
         stdout: if quiet {
@@ -6355,6 +6400,99 @@ mod tests {
         };
         assert!(stdout.is_empty(), "quiet stdout must be empty: {stdout}");
         assert!(stderr.is_empty(), "quiet stderr must be empty: {stderr}");
+
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn archive_export_omits_legacy_symlinks_silently_and_notes_other_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let (journal, _) = make_test_journal();
+        let base = journal.parent().unwrap();
+        let write = |rel: &str, bytes: &[u8]| {
+            let path = journal.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        };
+        write("config/journal.json", br#"{"schema":1}"#);
+        write("AGENTS.md", b"# agent guide\n");
+        symlink("AGENTS.md", journal.join("CLAUDE.md")).unwrap();
+        symlink("AGENTS.md", journal.join("GEMINI.md")).unwrap();
+
+        let legacy_only_zip = base.join("legacy-only.zip");
+        let Outcome::LocalSuccess { stdout, stderr } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(legacy_only_zip.clone()),
+            false,
+            false,
+            None,
+        ) else {
+            panic!("legacy-only export failed");
+        };
+        assert_eq!(stdout.trim(), legacy_only_zip.display().to_string());
+        assert!(
+            !stderr.contains("symbolic link"),
+            "legacy symlinks should be silently omitted: {stderr}"
+        );
+
+        let outside = base.join("outside.txt");
+        fs::write(&outside, b"outside").unwrap();
+        fs::create_dir_all(journal.join("notes")).unwrap();
+        symlink(&outside, journal.join("notes/link1.md")).unwrap();
+
+        let one_link_zip = base.join("one-link.zip");
+        let Outcome::LocalSuccess { stdout, stderr } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(one_link_zip.clone()),
+            false,
+            false,
+            None,
+        ) else {
+            panic!("one-link export failed");
+        };
+        assert_eq!(stdout.trim(), one_link_zip.display().to_string());
+        assert!(
+            stderr.contains("note: skipped 1 symbolic link (notes/link1.md); exports do not follow symbolic links."),
+            "{stderr}"
+        );
+
+        for idx in 2..=7 {
+            symlink(&outside, journal.join(format!("notes/link{idx}.md"))).unwrap();
+        }
+        let many_links_zip = base.join("many-links.zip");
+        let Outcome::LocalSuccess { stdout, stderr } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(many_links_zip.clone()),
+            false,
+            false,
+            None,
+        ) else {
+            panic!("many-links export failed");
+        };
+        assert_eq!(stdout.trim(), many_links_zip.display().to_string());
+        assert!(
+            stderr.contains("note: skipped 7 symbolic links (notes/link1.md, notes/link2.md, notes/link3.md, notes/link4.md, notes/link5.md, and 2 more); exports do not follow symbolic links."),
+            "{stderr}"
+        );
+
+        let quiet_zip = base.join("quiet-links.zip");
+        let Outcome::LocalSuccess { stdout, stderr } = archive_export_for_journal(
+            solstone_core_cli_copy::ENGLISH,
+            &journal,
+            Some(quiet_zip),
+            false,
+            true,
+            None,
+        ) else {
+            panic!("quiet-links export failed");
+        };
+        assert!(stdout.is_empty());
+        assert!(stderr.is_empty());
 
         fs::remove_dir_all(base).unwrap();
     }
