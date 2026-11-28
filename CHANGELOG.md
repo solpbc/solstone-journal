@@ -8,12 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can keep names only, bring in files you sent, or bring in files from both sides of a selected email exchange. open a file from its message to read text or see an image preview. desktop journals can also read PDFs. these choices work for email already in your journal.
-- folders from a paired app can now come into your journal: every change in a folder you choose appears as screen text without using thoughts, and chosen kinds of files (notes, PDFs, text documents, transcripts, screenshots and photos) can bring in their contents too. folder segments show up on the transcripts page with the activity list and inline cards for those files, and the sources page lists each folder and links to status while older files catch up. when you set up a folder, you can pick one of your facets and preview an older-file estimate in segments, days and thoughts; deleting a segment never touches the folder on your computer, and your journal keeps what's already there if you delete a file or stop syncing the folder.
-- connected agents can now attach a reusable key when saving a note, so newer versions replace earlier ones in their own recall while keeping the full history in your journal; agents can still look up one key or ask for earlier versions.
-- connected agents with transcripts permission can now scan or list spoken transcripts across a day or date range, filtered by speaker (with optional surrounding lines), facet or source. they can also search transcripts by speaker, or return every matching line in a recording instead of only the closest match.
-- connected agents that support MCP resources can now read allowed photos, screenshots, profile pics and audio clips directly from your journal under the same permissions, pause controls and activity trail (listed as `read_resource`).
-- daily maintenance runs at 2 a.m. in your journal’s time zone. you can change the time in settings → storage. if your journal sleeps through that time, it catches up when it wakes.
 - with an updated solstone app on a paired iphone or ipad, sources now lets you bring photos from your Photos library into your journal. the solstone app scans only photo details first without bringing in any photos, then your journal shows how many photos, days and thoughts each date range adds before any photos come in. your journal chooses photos from your moments, leaves out screenshots, videos, near-duplicates and most saved or shared images, and hidden photos are never read. chosen photos come in as small copies at the time and place they were taken. you can pause, widen your range, select photos to move to trash or turn the source off anytime, and photos already in your journal stay if you delete them from Photos or turn the source off.
 - connected agents now have a separate transactions permission (off by default) on the agents page and when connecting an agent, for receipts, orders, bookings, payments and transfers. transaction entries stay out of activities, entities, places and model runs.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
@@ -23,27 +17,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- if you erase a folder segment that brought in a PDF, an identical copy of that PDF stays out when you add another folder. a revised PDF can still come in.
-
-- scanned and image-only PDF pages are now read locally on your computer without using thoughts across manual imports, synced folders, and email attachments. for those pages, only manual imports fall back to your model, and only when local reading finds no text (such as a diagram or photo) or can't run.
-- connected agents now receive updated instructions for scanning spoken transcripts across a date range by speaker, searching transcripts by speaker or returning every matching line, and checking places alongside transcripts when checking whether a visit happened. the instructions also tell agents to check their saved notes first without a query or date filter, write updated notes in full with their journal links, and say plainly when a keyword search is not exhaustive.
 - the import page on android and iphone development journals no longer has a Plaud row.
 
 ### Fixed
 
-- changing the daily maintenance time in settings → storage now takes effect right away, so restarting your journal right after a change no longer runs daily tasks early.
-- when a connected agent without body permission searches a large journal for a common word, your journal no longer pauses for several seconds before returning results.
-- exporting your journal no longer stops when the journal folder contains symbolic links. old helper links created by earlier versions of solstone are left out automatically, any other symbolic links are skipped without being followed, and `solstone journal archive export` notes which ones were skipped.
-- dashboard badges now update faster in large journals. if search needs attention, the home badge updates when the check finishes.
-- Gmail sync now finds mail you sent from your Gmail address or aliases already seen in your sent mail even when Gmail does not mark it as sent, and reconnects automatically if the connection drops mid-run. if a scan or sync stops mid-way, opening email in sources shows the stopped scan as paused to resume and an interrupted sync no longer stays stuck. hourly checks with no new mail also finish faster.
-- your journal's thinking now includes email subjects, copied recipients, attachment names, forwarded messages and the message you replied to. short replies and forwards carry their context instead of being skipped as too brief.
-- synced email history now counts toward imports and older history on status and respects its pause button. email history arriving on older finished days no longer reruns their daily work.
-- older email now processes faster in journals with many people, companies and other entities, and alternate addresses you send from in Gmail no longer become people.
-- when a connected agent saves a note, your journal now adds it to search right away so the agent can recall it immediately; if search is busy, it still updates in the background.
-- when a connected agent saves or recalls a note, the activity trail in agents now records the agent's identity the same way other agent requests do.
-- when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
-- when connected agents search updated transcripts, results now show the current timestamps and speaker names instead of dropping matches, while still keeping outdated text from edited or deleted lines out of results. a full search rescan also refreshes updated transcripts even when the file's modification time hasn't changed.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -80,6 +58,40 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - the journal's built-in audio folder sync is gone, including its controls and scheduled sync on the android and iphone development journals. leftover audio-folder schedules are removed on startup. recordings already in your journal stay, and you can still import an audio file or an audio archive.
+
+## [2.0.94] - 2026-11-28
+
+### Added
+
+- for files attached to your email, you can now keep names only, bring in files on mail you sent, or bring in files on both sides, including the files on each message you answered. open a file from its message to read text or see an image preview. these choices work for email already in your journal.
+- folders you choose on your devices can now go into your journal, once the solstone app on a paired device is updated to offer them. you choose each folder in that app. every change in a chosen folder goes into your journal as folder activity without using thoughts, and the kinds of files you choose (notes, documents, transcripts, screenshots and photos) can bring in their contents too. folder activity shows on the transcripts page with inline cards for those files. deleting a folder segment never changes the folder on your device, and the file versions it held stay out of your journal even if they turn up again in another folder; a changed version can still come in. your journal keeps what it already has if you delete a file or stop syncing the folder.
+- your journal can now read Word, Excel and PowerPoint files (including older .doc, .xls and .ppt files), EPUB books, OpenDocument files and RTF documents on its own, without using thoughts to read them. you can bring them in from the import page or as email attachments, and from folders once your solstone app offers them.
+- connected agents can now give a saved note a name they reuse, so newer versions replace earlier ones in their own recall while keeping the full history in your journal; agents can still look up one note by that name or ask for earlier versions.
+- connected agents with transcripts permission can now scan or list spoken transcripts across a day or date range, filtered by speaker (with optional surrounding lines), facet or source. they can also search transcripts by speaker, or return every matching line in a recording instead of only the closest match.
+- connected agents that support MCP resources can now read allowed photos, screenshots, profile pics and audio clips directly from your journal under the same permissions, pause controls and activity trail (listed as `read_resource`).
+
+### Changed
+
+- daily maintenance now runs at a set time, 2 a.m. in your journal's time zone, instead of a time your journal picked from when you were usually active. you can change it in settings → storage, and a new time takes effect right away. if your journal is asleep at that time, it catches up when it wakes.
+- scanned and image-only PDF pages are now read locally on your computer without using thoughts across manual imports, synced folders, and email attachments. for those pages, only manual imports fall back to your model, and only when local reading finds no text (such as a diagram or photo) or can't run.
+- connected agents now receive updated instructions: check places alongside transcripts when asked whether a visit happened, check their saved notes first without a query or date filter, write updated notes in full with their journal links, and say plainly when a keyword search is not exhaustive.
+
+### Fixed
+
+- security fix: updated the library your journal uses to read audio and video files. the update fixes ways a specially crafted audio or video file could crash your journal or make it read or write outside the memory it set aside for that file.
+- when a connected agent without body permission searches a large journal for a common word, your journal no longer pauses for several seconds before returning results.
+- exporting your journal no longer stops when the journal folder contains symbolic links. old helper links created by earlier versions of solstone are left out automatically, any other symbolic links are skipped without being followed, and `solstone journal archive export` notes which ones were skipped.
+- dashboard badges now update faster in large journals. if search needs attention, the home badge updates when the check finishes.
+- Gmail sync now finds mail you sent from your Gmail address or aliases already seen in your sent mail even when Gmail does not mark it as sent, and reconnects automatically if the connection drops mid-run. if a scan or sync stops mid-way, opening email in sources shows the stopped scan as paused to resume and an interrupted sync no longer stays stuck. hourly checks with no new mail also finish faster.
+- your journal's thinking now includes email subjects, copied recipients, attachment names, forwarded messages and the message you replied to. short replies and forwards carry their context instead of being skipped as too brief.
+- synced email history now shows under imports and older history on the status page, and pauses when you pause older history. email history arriving on older finished days no longer reruns their daily work.
+- older email now processes faster in journals with many people, companies and other entities, and alternate addresses you send from in Gmail no longer become people.
+- when a connected agent saves a note, your journal now adds it to search right away so the agent can recall it immediately; if search is busy, it still updates in the background.
+- when a connected agent saves or recalls a note, the activity trail in agents now records the agent's identity the same way other agent requests do.
+- when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
+- when connected agents search updated transcripts, results now show the current timestamps and speaker names instead of dropping matches, while still keeping outdated text from edited or deleted lines out of results. a full search rescan also refreshes updated transcripts even when the file's modification time hasn't changed.
+- on a large journal, catching up on older days now takes less background work: your journal reads its whole history once when it finishes those days, instead of again for each day.
+- your journal no longer creates an empty hidden export folder next to your journal folder each time it starts. it makes one only while preparing an export copy and removes it once it's empty.
 
 ## [2.0.93] - 2026-11-27
 
