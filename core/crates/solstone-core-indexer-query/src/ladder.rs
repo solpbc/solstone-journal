@@ -27,6 +27,7 @@ pub(super) fn relaxed_plan(
     request: &SearchRequest,
     reference_date: Date,
     boundary: Option<&ConnectionBoundary>,
+    speech_lines_only: bool,
 ) -> Result<Option<SqlPlan>, IndexAccessError> {
     let Some(words) = relaxation_terms(&compilation.temporal.remaining_text) else {
         return Ok(None);
@@ -44,6 +45,7 @@ pub(super) fn relaxed_plan(
             request,
             reference_date,
             boundary,
+            speech_lines_only,
         );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
@@ -57,6 +59,7 @@ pub(super) fn relaxed_plan(
             request,
             reference_date,
             boundary,
+            speech_lines_only,
         );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
@@ -78,6 +81,7 @@ pub(super) fn relaxed_plan(
             request,
             reference_date,
             boundary,
+            speech_lines_only,
         );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
@@ -91,6 +95,7 @@ pub(super) fn relaxed_plan(
             &compilation.temporal,
             request,
             boundary,
+            speech_lines_only,
         );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
@@ -106,9 +111,16 @@ fn candidate_plan(
     request: &SearchRequest,
     reference_date: Date,
     boundary: Option<&ConnectionBoundary>,
+    speech_lines_only: bool,
 ) -> SqlPlan {
     let candidate = compile_query(candidate_text, reference_date);
-    plan_from_outcome_with_boundary(candidate.outcome, &original.temporal, request, boundary)
+    plan_from_outcome_with_boundary(
+        candidate.outcome,
+        &original.temporal,
+        request,
+        boundary,
+        speech_lines_only,
+    )
 }
 
 fn plan_has_date_constraint(compilation: &QueryCompilation, request: &SearchRequest) -> bool {

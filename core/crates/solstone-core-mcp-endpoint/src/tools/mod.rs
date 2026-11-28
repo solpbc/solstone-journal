@@ -15,8 +15,11 @@ pub(crate) use activities::{ValidatedGetActivitySources, ValidatedListActivities
 pub(crate) use entities::{ValidatedGetEntity, ValidatedListEntities};
 pub(crate) use facets::ValidatedListFacets;
 pub(crate) use fetch::ValidatedFetch;
-pub(crate) use search::ValidatedSearch;
-pub(crate) use transcripts::{ValidatedGetTranscript, ValidatedListTranscripts};
+pub(crate) use search::{SearchDedup, ValidatedSearch};
+pub(crate) use transcripts::{
+    TranscriptRangeRequest, TranscriptReferenceRequest, ValidatedGetTranscript,
+    ValidatedListTranscripts,
+};
 pub(crate) use week::ValidatedGetWeek;
 
 pub(crate) const MAX_BATCH_REFERENCES: usize = 12;
@@ -140,7 +143,7 @@ impl ToolError {
                 "this reference is a segment or span from list_transcripts; pass it to get_transcript instead of fetch"
             }
             Self::SourceArguments => {
-                "source needs a day and can't be combined with facet, and entry_kind needs a body source"
+                "a body source needs a day and can't be combined with facet or speaker, and entry_kind needs a body source"
             }
             Self::ActivityDayArguments => {
                 "day can't be combined with day_from or day_to: send one day or a range, and day_to can't be before day_from"

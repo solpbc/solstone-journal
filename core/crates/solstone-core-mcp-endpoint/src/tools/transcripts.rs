@@ -37,6 +37,7 @@ pub(crate) struct ValidatedListTranscripts {
     pub(crate) time_to: Option<String>,
     pub(crate) source: Option<String>,
     pub(crate) kind: Option<String>,
+    pub(crate) speaker: Option<String>,
     pub(crate) summary: bool,
 }
 
@@ -44,6 +45,7 @@ use solstone_core_observe_audio::{MAX_CLIP_DURATION_MS, MIN_CLIP_DURATION_MS};
 
 pub(crate) const DEFAULT_AUDIO_DURATION_MS: u64 = 30_000;
 pub(crate) const MAX_AUDIO_START_MS: u64 = 86_400_000;
+pub(crate) const MAX_CONTEXT_LINES: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AudioEncoding {
@@ -67,12 +69,30 @@ pub(crate) struct AudioClipRequest {
     pub(crate) encoding: AudioEncoding,
 }
 
-pub(crate) struct ValidatedGetTranscript {
+pub(crate) struct TranscriptRangeRequest {
+    pub(crate) day: Option<String>,
+    pub(crate) day_from: Option<String>,
+    pub(crate) day_to: Option<String>,
+    pub(crate) facet_id: Option<String>,
+    pub(crate) source: Option<String>,
+    pub(crate) speaker: Option<String>,
+    pub(crate) context_lines: usize,
+    pub(crate) cursor: Option<String>,
+}
+
+pub(crate) struct TranscriptReferenceRequest {
     pub(crate) offset_ms: Option<u32>,
     pub(crate) display: Option<String>,
     pub(crate) audio: Option<AudioClipRequest>,
     pub(crate) reference: String,
+    pub(crate) speaker: Option<String>,
+    pub(crate) context_lines: usize,
     pub(crate) cursor: Option<String>,
+}
+
+pub(crate) enum ValidatedGetTranscript {
+    Reference(TranscriptReferenceRequest),
+    Range(TranscriptRangeRequest),
 }
 
 #[derive(Deserialize)]
@@ -99,6 +119,8 @@ struct ListParams {
     #[serde(default, alias = "kind")]
     entry_kind: Option<String>,
     #[serde(default)]
+    speaker: Option<String>,
+    #[serde(default)]
     summary: bool,
 }
 
@@ -117,7 +139,22 @@ struct GetParams {
     audio_track: Option<String>,
     #[serde(default)]
     audio_encoding: Option<String>,
-    reference: String,
+    #[serde(default)]
+    reference: Option<String>,
+    #[serde(default)]
+    day: Option<String>,
+    #[serde(default, alias = "from")]
+    day_from: Option<String>,
+    #[serde(default, alias = "to")]
+    day_to: Option<String>,
+    #[serde(default)]
+    facet: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    speaker: Option<String>,
+    #[serde(default)]
+    context_lines: Option<usize>,
     #[serde(default)]
     cursor: Option<String>,
 }
@@ -161,7 +198,8 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
             || params.time_from.is_some()
             || params.time_to.is_some()
             || params.source.is_some()
-            || params.entry_kind.is_some())
+            || params.entry_kind.is_some()
+            || params.speaker.is_some())
     {
         return Err(ToolError::InvalidInput);
     }
@@ -169,6 +207,11 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
     validate_limit(limit)?;
     if !optional_string_within_limit(&params.day, MAX_DAY_BYTES)
         || !optional_string_within_limit(&params.facet, MAX_FACET_BYTES)
+        || !optional_string_within_limit(&params.speaker, MAX_OPAQUE_REFERENCE_BYTES)
+        || params
+            .speaker
+            .as_deref()
+            .is_some_and(|word| word.trim().is_empty())
     {
         return Err(ToolError::InvalidInput);
     }
@@ -189,8 +232,11 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
     {
         return Err(ToolError::ActivityDayArguments);
     }
-    if (params.source.is_some() && (normalized_day.is_none() || params.facet.is_some()))
-        || (params.entry_kind.is_some() && params.source.is_none())
+    if params.entry_kind.is_some()
+        && (params.source.is_none()
+            || normalized_day.is_none()
+            || params.facet.is_some()
+            || params.speaker.is_some())
     {
         return Err(ToolError::SourceArguments);
     }
@@ -224,6 +270,7 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
         time_to: params.time_to,
         source: params.source,
         kind: params.entry_kind,
+        speaker: params.speaker,
         summary: params.summary,
     })
 }
@@ -240,7 +287,76 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetTranscr
     {
         return Err(ToolError::InvalidInput);
     }
-    if params.reference.is_empty() || params.reference.len() > MAX_OPAQUE_REFERENCE_BYTES {
+    if !optional_string_within_limit(&params.speaker, MAX_OPAQUE_REFERENCE_BYTES)
+        || params
+            .speaker
+            .as_deref()
+            .is_some_and(|word| word.trim().is_empty())
+    {
+        return Err(ToolError::InvalidInput);
+    }
+    if let Some(ctx) = params.context_lines
+        && (ctx > MAX_CONTEXT_LINES || params.speaker.is_none())
+    {
+        return Err(ToolError::InvalidInput);
+    }
+    let context_lines = params.context_lines.unwrap_or(0);
+
+    let has_range_fields = params.day.is_some()
+        || params.day_from.is_some()
+        || params.day_to.is_some()
+        || params.facet.is_some()
+        || params.source.is_some();
+    let audio_options_present = params.audio_start_ms.is_some()
+        || params.audio_duration_ms.is_some()
+        || params.audio_track.is_some()
+        || params.audio_encoding.is_some();
+
+    if has_range_fields {
+        if params.reference.is_some()
+            || params.offset_ms.is_some()
+            || params.display.is_some()
+            || params.audio.is_some()
+            || audio_options_present
+            || !optional_string_within_limit(&params.day, MAX_DAY_BYTES)
+            || !optional_string_within_limit(&params.day_from, MAX_DAY_BYTES)
+            || !optional_string_within_limit(&params.day_to, MAX_DAY_BYTES)
+            || !optional_string_within_limit(&params.facet, MAX_FACET_BYTES)
+            || !optional_string_within_limit(&params.source, MAX_FACET_BYTES)
+            || params
+                .source
+                .as_deref()
+                .is_some_and(|source| source.trim().is_empty())
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        let day = super::normalize_day(params.day)?;
+        let day_from = super::normalize_day(params.day_from)?;
+        let day_to = super::normalize_day(params.day_to)?;
+        if day.is_none() && day_from.is_none() && day_to.is_none() {
+            return Err(ToolError::InvalidInput);
+        }
+        if (day.is_some() && (day_from.is_some() || day_to.is_some()))
+            || matches!((&day_from, &day_to), (Some(from), Some(to)) if to < from)
+        {
+            return Err(ToolError::ActivityDayArguments);
+        }
+        return Ok(ValidatedGetTranscript::Range(TranscriptRangeRequest {
+            day,
+            day_from,
+            day_to,
+            facet_id: params.facet,
+            source: params.source,
+            speaker: params.speaker,
+            context_lines,
+            cursor: params.cursor,
+        }));
+    }
+
+    let Some(reference) = params.reference else {
+        return Err(ToolError::InvalidInput);
+    };
+    if reference.is_empty() || reference.len() > MAX_OPAQUE_REFERENCE_BYTES {
         return Err(ToolError::InvalidInput);
     }
     if (params.offset_ms.is_some() && params.cursor.is_some())
@@ -248,16 +364,17 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetTranscr
             .display
             .as_ref()
             .is_some_and(|name| params.offset_ms.is_none() || name.is_empty() || name.len() > 255)
+        || (params.speaker.is_some() && (params.offset_ms.is_some() || params.display.is_some()))
     {
         return Err(ToolError::InvalidInput);
     }
-    let audio_options_present = params.audio_start_ms.is_some()
-        || params.audio_duration_ms.is_some()
-        || params.audio_track.is_some()
-        || params.audio_encoding.is_some();
     let audio = match params.audio {
         Some(true) => {
-            if params.cursor.is_some() || params.offset_ms.is_some() || params.display.is_some() {
+            if params.cursor.is_some()
+                || params.offset_ms.is_some()
+                || params.display.is_some()
+                || params.speaker.is_some()
+            {
                 return Err(ToolError::InvalidInput);
             }
             let start_ms = params.audio_start_ms.unwrap_or(0);
@@ -296,13 +413,17 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetTranscr
             None
         }
     };
-    Ok(ValidatedGetTranscript {
-        offset_ms: params.offset_ms,
-        display: params.display,
-        audio,
-        reference: params.reference,
-        cursor: params.cursor,
-    })
+    Ok(ValidatedGetTranscript::Reference(
+        TranscriptReferenceRequest {
+            offset_ms: params.offset_ms,
+            display: params.display,
+            audio,
+            reference,
+            speaker: params.speaker,
+            context_lines,
+            cursor: params.cursor,
+        },
+    ))
 }
 
 fn validate_limit(limit: usize) -> Result<(), ToolError> {

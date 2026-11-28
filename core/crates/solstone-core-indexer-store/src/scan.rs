@@ -172,8 +172,8 @@ fn discovered_days(files: &BTreeMap<String, PathBuf>) -> HashSet<&str> {
     files.keys().filter_map(|rel| day_of(rel)).collect()
 }
 
-fn removal_candidates(
-    stored: &BTreeMap<String, i64>,
+fn removal_candidates<T>(
+    stored: &BTreeMap<String, T>,
     files: &BTreeMap<String, PathBuf>,
     prune_gone_days: bool,
 ) -> (Vec<String>, BTreeMap<String, usize>) {
@@ -689,34 +689,39 @@ fn scan_journal_pass(
 
     mark_once_reindexes(&mut conn, journal, &files, !full, checkpoint)?;
 
-    let db_mtimes = load_file_mtimes(&conn)?;
+    let db_stamps = load_file_stamps(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
     let mut to_index = Vec::new();
     let mut speech_failed = false;
     for (rel, path) in &files {
         let memory_note = is_memory_note(rel);
-        let observed_mtime = if memory_note {
-            memory_file_mtime_secs(path)
+        let observed = if memory_note {
+            memory_file_mtime_secs(path).map(|mtime| (mtime, None))
         } else {
-            file_mtime_secs(path)
+            file_mtime_and_size(path).map(|(mtime, size)| (mtime, Some(size)))
         };
-        match observed_mtime {
-            Ok(mtime) => {
+        match observed {
+            Ok((mtime, size)) => {
                 let needs_index = if memory_note
                     || written_activity(path, rel)
                     || solstone_core_format::content::screen_text::is_screen_text_path(rel)
                     || missing_memberships.contains(rel)
+                    || (full && solstone_core_format::content::is_audio_transcript_path(rel))
                 {
                     // Memory readiness and activity file bytes can change inside
                     // one mtime second. Queue them and decide from the bytes.
                     // The activity decision is the written family, including a
                     // sibling shape sidecar, matching the index pass below.
+                    // Full scans also verify audio transcript files whose bytes
+                    // may have drifted without changing mtime.
                     true
                 } else {
-                    db_mtimes.get(rel) != Some(&mtime)
+                    !db_stamps
+                        .get(rel)
+                        .is_some_and(|stamp| stamp.matches(mtime, size))
                 };
                 if needs_index {
-                    to_index.push((rel.clone(), path.clone(), mtime));
+                    to_index.push((rel.clone(), path.clone(), mtime, size));
                 }
             }
             Err(error) => {
@@ -728,7 +733,7 @@ fn scan_journal_pass(
                         [("rel", &(rel)), ("error", &(error))],
                     ));
                 if memory_note {
-                    to_index.push((rel.clone(), path.clone(), 0));
+                    to_index.push((rel.clone(), path.clone(), 0, None));
                 } else if !is_not_found(&error) {
                     // A file removed since discovery is gone, not failed.
                     report.fail(Some(rel), None);
@@ -744,7 +749,7 @@ fn scan_journal_pass(
     // a rebuild repairs the days the owner most likely searches first. Files
     // with no day, and facet files named by theirs, sort by that day or today.
     let today = solstone_core_time::day_key(jiff::ZonedDateTime::now().date());
-    to_index.sort_by(|(a, _, _), (b, _, _)| {
+    to_index.sort_by(|(a, _, _, _), (b, _, _, _)| {
         solstone_core_indexer_todo::sort_day(b, &today)
             .cmp(solstone_core_indexer_todo::sort_day(a, &today))
             .then_with(|| a.cmp(b))
@@ -762,8 +767,11 @@ fn scan_journal_pass(
         .is_some_and(|attempts| attempts < 3)
         && to_index
             .iter()
-            .filter(|(rel, path, mtime)| {
-                db_mtimes.get(rel) != Some(mtime) && crate::status::eligible(path, rel)
+            .filter(|(rel, path, mtime, size)| {
+                !db_stamps
+                    .get(rel)
+                    .is_some_and(|stamp| stamp.matches(*mtime, *size))
+                    && crate::status::eligible(path, rel)
             })
             .count()
             > crate::todo::scan_turns_min()
@@ -777,7 +785,7 @@ fn scan_journal_pass(
     let edge_mtimes = edge_file_mtimes(&conn)?;
     let discovered = discovered_days(&files);
     report.gone_days = GoneDays::measure(
-        db_mtimes
+        db_stamps
             .keys()
             .chain(edge_mtimes.keys())
             .map(String::as_str),
@@ -793,11 +801,11 @@ fn scan_journal_pass(
             report.gone_days.indexed
         );
     }
-    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, prune_gone_days);
+    let (removed, retained_days) = removal_candidates(&db_stamps, &files, prune_gone_days);
     let mut pending_chunks = PendingChunkRows::new(
         to_index
             .iter()
-            .map(|(rel, _, _)| rel.clone())
+            .map(|(rel, _, _, _)| rel.clone())
             .chain(removed.iter().cloned()),
     );
     let mut invalid_memory_removed = 0;
@@ -805,7 +813,7 @@ fn scan_journal_pass(
     // they are; the edge pass below reports that file once for the whole scan.
     let mut calendar_zone_readable: Option<bool> = None;
     let mut hides = HideCache::default();
-    for (rel, path, mtime) in &to_index {
+    for (rel, path, mtime, size) in &to_index {
         let family = match resolve_content_shape(path, rel) {
             ContentResolution::Indexed(family) => family,
             ContentResolution::Unrecognized => {
@@ -838,7 +846,7 @@ fn scan_journal_pass(
                         memory_scan_decision(
                             false,
                             has_memory_row,
-                            db_mtimes.get(rel) == Some(mtime),
+                            db_stamps.get(rel).is_some_and(|s| s.mtime == *mtime),
                         ),
                         MemoryScanDecision::Cleanup
                     );
@@ -875,21 +883,33 @@ fn scan_journal_pass(
             if memory_scan_decision(
                 memory_original.is_some(),
                 has_memory_row,
-                db_mtimes.get(rel) == Some(mtime),
+                db_stamps.get(rel).is_some_and(|s| s.mtime == *mtime),
             ) == MemoryScanDecision::Skip
             {
                 continue;
             }
         }
         if family == Family::Activity
-            && db_mtimes.get(rel.as_str()) == Some(mtime)
+            && db_stamps
+                .get(rel.as_str())
+                .is_some_and(|stamp| stamp.matches(*mtime, *size))
             && activity_source_current(&conn, rel, path, &hides.decide(journal, rel))?
         {
             continue;
         }
         if family == Family::ScreenText
-            && db_mtimes.get(rel.as_str()) == Some(mtime)
+            && db_stamps
+                .get(rel.as_str())
+                .is_some_and(|stamp| stamp.matches(*mtime, *size))
             && screen_text_file_current(&conn, journal, rel)?
+        {
+            continue;
+        }
+        if family == Family::Audio
+            && db_stamps
+                .get(rel.as_str())
+                .is_some_and(|stamp| stamp.matches(*mtime, *size))
+            && audio_file_chunks_current(&conn, rel, path, &hides.decide(journal, rel))?
         {
             continue;
         }
@@ -1086,23 +1106,26 @@ pub(crate) fn plan_scan_turns(
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Option<VecDeque<PlannedFile>>, StoreError> {
     let files = discover_indexable_files(journal)?;
-    let db_mtimes = {
+    let db_stamps = {
         let Some(admission) = lease()? else {
             return Ok(None);
         };
         let mut conn = open_index_admitted(journal, &admission, checkpoint)?;
         mark_once_reindexes(&mut conn, journal, &files, false, checkpoint)?;
-        load_file_mtimes(&conn)?
+        load_file_stamps(&conn)?
     };
     let mut planned = Vec::new();
     for (rel, path) in files {
-        let mtime = if is_memory_note(&rel) {
-            memory_file_mtime_secs(&path)
+        let observed = if is_memory_note(&rel) {
+            memory_file_mtime_secs(&path).map(|mtime| (mtime, None))
         } else {
-            file_mtime_secs(&path)
+            file_mtime_and_size(&path).map(|(mtime, size)| (mtime, Some(size)))
         };
-        if mtime.is_ok_and(|mtime| db_mtimes.get(&rel) != Some(&mtime))
-            && crate::status::eligible(&path, &rel)
+        if observed.is_ok_and(|(mtime, size)| {
+            !db_stamps
+                .get(&rel)
+                .is_some_and(|stamp| stamp.matches(mtime, size))
+        }) && crate::status::eligible(&path, &rel)
         {
             planned.push(PlannedFile { rel, path });
         }
@@ -1179,21 +1202,24 @@ fn index_planned_file(
     let ContentResolution::Indexed(family) = resolve_content_shape(path, rel) else {
         return Ok(false);
     };
-    let mtime = if is_memory_note(rel) {
-        memory_file_mtime_secs(path)
+    let observed = if is_memory_note(rel) {
+        memory_file_mtime_secs(path).map(|mtime| (mtime, None))
     } else {
-        file_mtime_secs(path)
+        file_mtime_and_size(path).map(|(mtime, size)| (mtime, Some(size)))
     };
-    let Ok(mtime) = mtime else {
+    let Ok((mtime, size)) = observed else {
         return Ok(false);
     };
-    let stored: Option<i64> = conn
-        .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
-            row.get(0)
+    let stored: Option<FileStamp> = conn
+        .query_row("SELECT mtime, size FROM files WHERE path=?", [rel], |row| {
+            Ok(FileStamp {
+                mtime: row.get(0)?,
+                size: row.get(1)?,
+            })
         })
         .optional()?;
     // A queued save got here first.
-    if stored == Some(mtime) {
+    if stored.is_some_and(|stamp| stamp.matches(mtime, size)) {
         return Ok(false);
     }
     let memory_original = if family == Family::AgentMemory {
@@ -2576,6 +2602,22 @@ fn edge_value_to_sql(value: &EdgeValue) -> SqlValue {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FileStamp {
+    mtime: i64,
+    size: Option<i64>,
+}
+
+impl FileStamp {
+    fn matches(self, observed_mtime: i64, observed_size: Option<i64>) -> bool {
+        self.mtime == observed_mtime
+            && match (self.size, observed_size) {
+                (Some(stored), Some(observed)) => stored == observed,
+                _ => true,
+            }
+    }
+}
+
 pub(crate) fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64>, StoreError> {
     let mut statement =
         conn.prepare("SELECT path, mtime FROM files WHERE path NOT LIKE 'entity_search:%'")?;
@@ -2588,6 +2630,26 @@ pub(crate) fn load_file_mtimes(conn: &Connection) -> Result<BTreeMap<String, i64
         mtimes.insert(path, mtime);
     }
     Ok(mtimes)
+}
+
+fn load_file_stamps(conn: &Connection) -> Result<BTreeMap<String, FileStamp>, StoreError> {
+    let mut statement =
+        conn.prepare("SELECT path, mtime, size FROM files WHERE path NOT LIKE 'entity_search:%'")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            FileStamp {
+                mtime: row.get(1)?,
+                size: row.get(2)?,
+            },
+        ))
+    })?;
+    let mut stamps = BTreeMap::new();
+    for row in rows {
+        let (path, stamp) = row?;
+        stamps.insert(path, stamp);
+    }
+    Ok(stamps)
 }
 
 enum SegmentMigrationOutcome {
@@ -3038,6 +3100,49 @@ fn screen_text_file_current(
     Ok(category.as_deref() == Some("screen_text"))
 }
 
+fn audio_file_chunks_current(
+    conn: &Connection,
+    rel: &str,
+    path: &Path,
+    hide: &FileHide,
+) -> Result<bool, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT c.idx, c.content FROM chunk_sources cs \
+         JOIN chunks c ON c.rowid = cs.rowid \
+         WHERE cs.path = ? ORDER BY c.idx",
+    )?;
+    let stored = stmt
+        .query_map([rel], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    match hide {
+        FileHide::Undecidable(_) => Ok(false),
+        FileHide::Skip => Ok(stored.is_empty()),
+        _ => {
+            let Ok(text) = fs::read_to_string(path) else {
+                return Ok(false);
+            };
+            let produced = produce_chunks(Family::Audio, rel, &text);
+            let expected: Vec<(i64, &str)> = produced
+                .chunks
+                .iter()
+                .enumerate()
+                .filter(|(_, chunk)| hide.keeps(Family::Audio, chunk))
+                .map(|(idx, chunk)| (idx as i64, chunk.content.trim()))
+                .collect();
+            if stored.len() != expected.len() {
+                return Ok(false);
+            }
+            Ok(stored.iter().zip(expected.iter()).all(
+                |((s_idx, s_content), (e_idx, e_content))| {
+                    s_idx == e_idx && s_content.as_str() == *e_content
+                },
+            ))
+        }
+    }
+}
+
 enum FileUpdate<'a> {
     Force,
     IfChanged,
@@ -3061,19 +3166,27 @@ fn ensure_file_current(
     memory_original: Option<&ReadyMemoryOriginal>,
     hides: &mut HideCache,
 ) -> Result<FileOutcome, StoreError> {
-    let stored_mtime = conn
-        .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
-            row.get(0)
+    let observed_size = (!is_memory_note(rel))
+        .then(|| file_size_bytes(path).ok())
+        .flatten();
+    let stored_stamp: Option<FileStamp> = conn
+        .query_row("SELECT mtime, size FROM files WHERE path=?", [rel], |row| {
+            Ok(FileStamp {
+                mtime: row.get(0)?,
+                size: row.get(1)?,
+            })
         })
         .optional()?;
     if !matches!(update, FileUpdate::Force)
-        && stored_mtime == Some(mtime)
+        && stored_stamp.is_some_and(|stamp| stamp.matches(mtime, observed_size))
         && activity_membership_current(conn, rel)?
         && (family != Family::Activity
             || activity_source_current(conn, rel, path, &hides.decide(journal, rel))?)
         && (family != Family::AgentMemory
             || (memory_original.is_some() && memory_original_exists(conn, rel)?))
         && (family != Family::ScreenText || screen_text_file_current(conn, journal, rel)?)
+        && (family != Family::Audio
+            || audio_file_chunks_current(conn, rel, path, &hides.decide(journal, rel))?)
     {
         return Ok(FileOutcome::default());
     }
@@ -3096,14 +3209,14 @@ fn ensure_file_current(
     })?;
     // A file whose hide can't be read keeps no rows and is not current, so
     // every scan tries it again until the hide reads.
-    let stored = if outcome.undecidable.is_some() {
-        UNDECIDED_MTIME
+    let (stored, stored_size) = if outcome.undecidable.is_some() {
+        (UNDECIDED_MTIME, None)
     } else {
-        mtime
+        (mtime, observed_size)
     };
     conn.execute(
-        "REPLACE INTO files(path, mtime) VALUES (?, ?)",
-        params![rel, stored],
+        "REPLACE INTO files(path, mtime, size) VALUES (?, ?, ?)",
+        params![rel, stored, stored_size],
     )?;
     if let Some(stamp) = &outcome.display_stamp {
         conn.execute(
@@ -3424,11 +3537,23 @@ fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBu
 }
 
 pub(crate) fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
-    let modified = fs::metadata(path)?.modified()?;
-    let duration = modified.duration_since(UNIX_EPOCH).map_err(|error| {
-        StoreError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-    })?;
-    Ok(duration.as_secs() as i64)
+    file_mtime_and_size(path).map(|(mtime, _)| mtime)
+}
+
+fn file_mtime_and_size(path: &Path) -> Result<(i64, i64), StoreError> {
+    let meta = fs::metadata(path)?;
+    let duration = meta
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            StoreError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+        })?;
+    let size = i64::try_from(meta.len()).unwrap_or(i64::MAX);
+    Ok((duration.as_secs() as i64, size))
+}
+
+fn file_size_bytes(path: &Path) -> Result<i64, StoreError> {
+    Ok(i64::try_from(fs::metadata(path)?.len()).unwrap_or(i64::MAX))
 }
 
 fn written_activity(path: &Path, rel: &str) -> bool {
@@ -10209,6 +10334,123 @@ not json
         assert!(screen_text_file_current(&conn, &root, rel).unwrap());
 
         drop(conn);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_journal_reindexes_mtime_preserved_size_change_on_incremental_scan() {
+        let root =
+            std::env::temp_dir().join(format!("solstone-scan-size-drift-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let seg = root.join("chronicle/20261119/talk/193000_720");
+        std::fs::create_dir_all(&seg).unwrap();
+        let audio = seg.join("audio.jsonl");
+        std::fs::write(
+            &audio,
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"19:30:05\",\"speaker\":1,\"text\":\"short line\"}\n",
+        )
+        .unwrap();
+
+        let first = scan_journal(&root, true).expect("initial scan");
+        assert_eq!(first.indexed, 1);
+
+        // Rewrite with different length while preserving exact mtime.
+        let modified = std::fs::metadata(&audio).unwrap().modified().unwrap();
+        std::fs::write(
+            &audio,
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"19:30:05\",\"speaker\":1,\"text\":\"much longer updated line\"}\n",
+        )
+        .unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&audio)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+
+        let second = scan_journal(&root, false).expect("incremental scan detects size change");
+        assert_eq!(second.indexed, 1);
+
+        let conn = open_index(&root).unwrap();
+        let content: String = conn
+            .query_row(
+                "SELECT content FROM chunks WHERE path='20261119/talk/193000_720/audio.jsonl'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(content.contains("much longer updated line"), "{content}");
+
+        let third = scan_journal(&root, false).expect("clean incremental scan");
+        assert_eq!(third.indexed, 0);
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_journal_full_reindexes_same_size_mtime_preserved_audio_drift_and_skips_clean_audio() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-scan-audio-full-drift-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let seg_a = root.join("chronicle/20261119/talk/193000_720");
+        let seg_b = root.join("chronicle/20261119/talk/203000_720");
+        std::fs::create_dir_all(&seg_a).unwrap();
+        std::fs::create_dir_all(&seg_b).unwrap();
+        let audio_a = seg_a.join("audio.jsonl");
+        let audio_b = seg_b.join("audio.jsonl");
+        std::fs::write(
+            &audio_a,
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"19:30:20\",\"speaker\":1,\"text\":\"twenty pounds before noon\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &audio_b,
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"20:30:20\",\"speaker\":1,\"text\":\"unchanged audio file\"}\n",
+        )
+        .unwrap();
+
+        let first = scan_journal(&root, true).expect("initial full scan");
+        assert_eq!(first.indexed, 2);
+
+        // Simulate legacy DB with NULL size and an mtime-preserved, same-byte-length clock rewrite on seg_a.
+        {
+            let conn = open_index(&root).unwrap();
+            conn.execute("UPDATE files SET size = NULL", []).unwrap();
+        }
+        let modified_a = std::fs::metadata(&audio_a).unwrap().modified().unwrap();
+        std::fs::write(
+            &audio_a,
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"19:30:52\",\"speaker\":1,\"text\":\"twenty pounds before noon\"}\n",
+        )
+        .unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&audio_a)
+            .unwrap()
+            .set_modified(modified_a)
+            .unwrap();
+
+        let full_rescan = scan_journal(&root, true).expect("full rescan repairs drifted audio");
+        assert_eq!(full_rescan.indexed, 1);
+
+        let conn = open_index(&root).unwrap();
+        let content_a: String = conn
+            .query_row(
+                "SELECT content FROM chunks WHERE path='20261119/talk/193000_720/audio.jsonl'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(content_a.contains("[19:30:52]"), "{content_a}");
+        drop(conn);
+
+        // A second full rescan skips both clean files.
+        let clean_full = scan_journal(&root, true).expect("second full rescan");
+        assert_eq!(clean_full.indexed, 0);
+
         let _ = std::fs::remove_dir_all(&root);
     }
 }

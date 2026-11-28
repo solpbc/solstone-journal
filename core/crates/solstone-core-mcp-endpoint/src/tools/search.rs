@@ -15,6 +15,29 @@ use super::{
 pub(crate) const MAX_QUERY_BYTES: usize = 4_096;
 pub(crate) const MAX_LIMIT: usize = 100;
 
+/// How relevance-ordered search deduplicates multiple hits from the same chronicle segment.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum SearchDedup {
+    /// Collapse multiple hits from one chronicle segment into one result slot (default).
+    #[default]
+    Segment,
+    /// Return every matching line/hit without collapsing within a segment.
+    None,
+}
+
+impl SearchDedup {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Segment => "segment",
+            Self::None => "none",
+        }
+    }
+
+    pub(crate) const fn collapse_segments(self) -> bool {
+        matches!(self, Self::Segment)
+    }
+}
+
 /// Closed, validated agent search arguments.
 pub(crate) struct ValidatedSearch {
     pub(crate) query: String,
@@ -28,6 +51,8 @@ pub(crate) struct ValidatedSearch {
     pub(crate) person: Option<String>,
     pub(crate) place: Option<String>,
     pub(crate) activity: Option<String>,
+    pub(crate) speaker: Option<String>,
+    pub(crate) dedup: SearchDedup,
     pub(crate) facet_id: Option<String>,
 }
 
@@ -56,6 +81,10 @@ struct SearchParams {
     place: Option<String>,
     #[serde(default)]
     activity: Option<String>,
+    #[serde(default)]
+    speaker: Option<String>,
+    #[serde(default)]
+    dedup: Option<String>,
     #[serde(default)]
     facet: Option<String>,
 }
@@ -103,7 +132,8 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         && params.category.is_none()
         && params.person.is_none()
         && params.place.is_none()
-        && params.activity.is_none())
+        && params.activity.is_none()
+        && params.speaker.is_none())
         || params.query.len() > MAX_QUERY_BYTES
         || !(1..=MAX_LIMIT).contains(&params.limit)
         || params
@@ -114,6 +144,11 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         || !optional_string_within_limit(&params.day_from, MAX_DAY_BYTES)
         || !optional_string_within_limit(&params.day_to, MAX_DAY_BYTES)
         || !optional_string_within_limit(&params.facet, MAX_FACET_BYTES)
+        || !optional_string_within_limit(&params.speaker, MAX_OPAQUE_REFERENCE_BYTES)
+        || params
+            .speaker
+            .as_deref()
+            .is_some_and(|word| word.trim().is_empty())
         || [&params.person, &params.place, &params.activity]
             .iter()
             .any(|word| {
@@ -129,6 +164,23 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         .as_deref()
         .map(|word| AdmittedCategory::from_stored_word(word).ok_or(ToolError::InvalidInput))
         .transpose()?;
+    let content_kinds = params.kind.map(ContentKinds::validate).transpose()?;
+    let dedup = match params.dedup.as_deref() {
+        None | Some("segment") => SearchDedup::Segment,
+        Some("none") => SearchDedup::None,
+        Some(_) => return Err(ToolError::InvalidInput),
+    };
+    if params.speaker.is_some()
+        && (category.is_some_and(|cat| cat != AdmittedCategory::Transcripts)
+            || content_kinds
+                .as_ref()
+                .is_some_and(|kinds| kinds.iter().any(|k| *k != AdmittedCategory::Transcripts))
+            || params.person.is_some()
+            || params.place.is_some()
+            || params.activity.is_some())
+    {
+        return Err(ToolError::InvalidInput);
+    }
     let day = normalize_day(params.day)?;
     let day_from = normalize_day(params.day_from)?;
     let day_to = normalize_day(params.day_to)?;
@@ -140,10 +192,12 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         day_from,
         day_to,
         category,
-        content_kinds: params.kind.map(ContentKinds::validate).transpose()?,
+        content_kinds,
         person: params.person,
         place: params.place,
         activity: params.activity,
+        speaker: params.speaker,
+        dedup,
         facet_id: params.facet,
     })
 }

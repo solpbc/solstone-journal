@@ -285,6 +285,10 @@ impl SearchRequest {
     }
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 /// Connection search deliberately has no offset and no aggregate-count mode.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConnectionSearchRequest {
@@ -311,6 +315,10 @@ pub struct ConnectionSearchRequest {
     pub relax: bool,
     #[serde(default)]
     pub order: Order,
+    /// Collapse multiple hits from the same chronicle segment into one result
+    /// slot during relevance-ordered search. Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub collapse_segments: bool,
 }
 
 impl Default for ConnectionSearchRequest {
@@ -328,6 +336,7 @@ impl Default for ConnectionSearchRequest {
             time_bucket: None,
             relax: false,
             order: Order::Relevance,
+            collapse_segments: true,
         }
     }
 }

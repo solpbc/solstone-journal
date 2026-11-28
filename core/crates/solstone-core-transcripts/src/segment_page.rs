@@ -472,7 +472,7 @@ pub fn read_segment_transcript_page_with_body_policy(
             let sentence_id = next_statement_ordinal(line, &mut statement_ordinal);
             let named_line = names
                 .and_then(|names| {
-                    let speaker = names.get(&sentence_id?)?;
+                    let speaker = &names.get(&sentence_id?)?.display;
                     let mut value: Value = serde_json::from_str(line).ok()?;
                     value
                         .as_object_mut()?
@@ -760,11 +760,18 @@ fn is_transcript_name(name: &str) -> bool {
     .is_empty()
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct ResolvedSpeakerLabel {
+    display: String,
+    is_owner: bool,
+    entity_id: Option<String>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn source_version(
     files: &[PathBuf],
     media: &BTreeMap<PathBuf, ConversationMedium>,
-    labels: &Option<(String, BTreeMap<i64, String>)>,
+    labels: &Option<(String, BTreeMap<i64, ResolvedSpeakerLabel>)>,
     run_numbers: &BTreeMap<String, BTreeMap<i64, i64>>,
     possible_names: Option<&PossibleNameLabels>,
     left_out: &BTreeSet<String>,
@@ -812,7 +819,7 @@ fn source_version(
 fn local_speaker_names(
     segment: &Path,
     speakers: &AgentSpeakers,
-) -> Option<(String, BTreeMap<i64, String>)> {
+) -> Option<(String, BTreeMap<i64, ResolvedSpeakerLabel>)> {
     let (source, _) = speaker_label_source(segment);
     let source = source?;
     let labels = load_who_spoke(segment, Some(&source), Some(MAX_TRANSCRIPT_PAGE_BYTES))
@@ -821,9 +828,24 @@ fn local_speaker_names(
         .filter_map(|row| {
             let id = row.get("sentence_id")?.as_i64()?;
             let name = speakers.voices.name_for(row)?;
-            let owner = row.get("speaker").and_then(Value::as_str)
-                == Some(speakers.voices.principal.as_str());
-            Some((id, if owner { speakers.owner.clone() } else { name }))
+            let entity_id = row
+                .get("speaker")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let is_owner = entity_id.as_deref() == Some(speakers.voices.principal.as_str());
+            let display = if is_owner {
+                speakers.owner.clone()
+            } else {
+                name
+            };
+            Some((
+                id,
+                ResolvedSpeakerLabel {
+                    display,
+                    is_owner,
+                    entity_id,
+                },
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     (!labels.is_empty()).then_some((source, labels))
@@ -1067,7 +1089,7 @@ fn project_line(
 /// Largest speech transcript file opened to verify and format an indexed search hit.
 const MAX_INDEXED_SPEECH_FILE_BYTES: usize = 32 * 1024 * 1024;
 
-/// One indexed speech transcript line resolved live from disk with the same
+/// One speech transcript line resolved live from disk with the same
 /// speaker naming, run numbering, and possible-name labelling as `get_transcript`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedSpeechLine {
@@ -1077,8 +1099,506 @@ pub struct ResolvedSpeechLine {
     pub time: Option<String>,
     /// Display speaker resolved identically to `get_transcript`, omitted when unlabelled.
     pub speaker: Option<String>,
+    /// True only when the journal's voice gate or owner assignment attributes this line to the owner.
+    pub is_owner: bool,
+    /// Voice-attributed or owner-assigned entity id for this speaker, when resolved by the voice gate.
+    pub speaker_entity_id: Option<String>,
     /// True when the source file carries `"untimed": true` in its header.
     pub untimed: bool,
+}
+
+/// All permitted spoken transcript lines in one chronicle segment, in chronological file order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpokenSegmentLines {
+    pub lines: Vec<ResolvedSpeechLine>,
+    /// Distinct resolved display speaker labels present across this segment's spoken lines,
+    /// in order of first appearance.
+    pub speakers: Vec<String>,
+    pub untimed: bool,
+    pub version: SegmentTranscriptVersion,
+}
+
+fn is_spoken_transcript_file(
+    path: &Path,
+    relative: &str,
+    medium: Option<ConversationMedium>,
+) -> bool {
+    match medium {
+        Some(ConversationMedium::Spoken) => true,
+        Some(ConversationMedium::Written | ConversationMedium::Unresolved) => false,
+        None => {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            matches!(
+                classify(relative),
+                ContentResolution::Indexed(Family::Audio)
+                    | ContentResolution::Unindexed(RawPerceptFamily::Audio)
+            ) || is_speech_transcript_name(name)
+                || is_transcribe_output(path)
+        }
+    }
+}
+
+/// Whether this segment contains at least one permitted spoken transcript file.
+pub fn segment_has_spoken_transcript_files(
+    segment: &Segment,
+    permissions: &BTreeSet<solstone_core_format::content::AdmittedCategory>,
+) -> bool {
+    if !permissions.contains(&solstone_core_format::content::AdmittedCategory::Transcripts) {
+        return false;
+    }
+    let Ok(permitted) = permitted_transcript_files(segment, Some(permissions)) else {
+        return false;
+    };
+    let origin = segment_origin(segment.path());
+    permitted.paths.iter().any(|path| {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let relative = format!("{origin}/{name}");
+        is_spoken_transcript_file(path, &relative, permitted.media.get(path).copied())
+    })
+}
+
+/// Read every permitted spoken transcript line from one segment, applying the
+/// same voice gate, owner line labels, run numbering, and possible-name labels
+/// as [`read_segment_transcript_page_with_permissions`].
+///
+/// Non-spoken files (notes, screen text, written chats, body records, images)
+/// are ignored; returns [`SegmentTranscriptReadError::NoPermittedFiles`] when
+/// the segment has no permitted spoken transcript files.
+pub fn read_spoken_segment_lines(
+    segment: &Segment,
+    speakers: Option<&AgentSpeakers>,
+    possible_names: Option<&PossibleNameLabels>,
+    permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
+) -> Result<SpokenSegmentLines, SegmentTranscriptReadError> {
+    if permissions.is_some_and(|allowed| {
+        !allowed.contains(&solstone_core_format::content::AdmittedCategory::Transcripts)
+    }) {
+        return Err(SegmentTranscriptReadError::NoPermittedFiles);
+    }
+    let PermittedFiles {
+        paths: mut files,
+        media,
+        ..
+    } = permitted_transcript_files(segment, permissions)?;
+    let origin = segment_origin(segment.path());
+    files.retain(|path| {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let relative = format!("{origin}/{name}");
+        is_spoken_transcript_file(path, &relative, media.get(path).copied())
+    });
+    if files.is_empty() {
+        return Err(SegmentTranscriptReadError::NoPermittedFiles);
+    }
+    let labels = speakers.and_then(|speakers| {
+        let labels = local_speaker_names(segment.path(), speakers)?;
+        files
+            .iter()
+            .any(|path| path.file_stem().and_then(|stem| stem.to_str()) == Some(labels.0.as_str()))
+            .then_some(labels)
+    });
+    let run_numbers = speakers
+        .map(|_| crate::run_numbers_by_source(segment.path(), &files))
+        .unwrap_or_default();
+    let possible_names = possible_names.filter(|labels| {
+        !labels.statements.is_empty()
+            && files.iter().any(|path| {
+                path.file_name().and_then(|name| name.to_str()) == Some(labels.file.as_str())
+            })
+    });
+    let empty_left_out = BTreeSet::new();
+    let version = source_version(
+        &files,
+        &media,
+        &labels,
+        &run_numbers,
+        possible_names,
+        &empty_left_out,
+        false,
+        0,
+    )?;
+
+    let mut lines = Vec::new();
+    let mut distinct_speakers = Vec::new();
+    let mut seen_speakers = BTreeSet::new();
+    let mut any_untimed = false;
+
+    for path in &files {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let relative = format!("{origin}/{name}");
+        let medium = media.get(path).copied();
+
+        if medium == Some(ConversationMedium::Spoken) {
+            let text = long_message::bound_read(
+                path,
+                &relative,
+                ConversationMedium::Spoken,
+                |file, _| read_bounded_utf8_from(file),
+            )?;
+            let untimed = text
+                .lines()
+                .next()
+                .and_then(|first| serde_json::from_str::<Value>(first.trim()).ok())
+                .and_then(|v| v.as_object().cloned())
+                .is_some_and(|meta| meta.get("untimed") == Some(&Value::Bool(true)));
+            any_untimed |= untimed;
+            for raw in text.lines() {
+                let trimmed = raw.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let projected = project_line(&origin, name, true, untimed, trimmed, None);
+                if projected.trim().is_empty() {
+                    continue;
+                }
+                let row = serde_json::from_str::<Value>(trimmed)
+                    .ok()
+                    .and_then(|v| v.as_object().cloned());
+                let time = (!untimed)
+                    .then(|| {
+                        row.as_ref().and_then(|row| {
+                            use solstone_core_format::content::conversation::{
+                                TurnTime, turn_time,
+                            };
+                            if turn_time(stream_name(&origin), row) == TurnTime::Unknown {
+                                return None;
+                            }
+                            row.get("start")
+                                .and_then(Value::as_str)
+                                .filter(|s| !s.is_empty())
+                                .map(str::to_owned)
+                        })
+                    })
+                    .flatten();
+                let speaker = row.as_ref().and_then(|row| {
+                    row.get("speaker")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                });
+                if let Some(ref sp) = speaker
+                    && seen_speakers.insert(sp.clone())
+                {
+                    distinct_speakers.push(sp.clone());
+                }
+                lines.push(ResolvedSpeechLine {
+                    text: projected,
+                    time,
+                    speaker,
+                    is_owner: false,
+                    speaker_entity_id: None,
+                    untimed,
+                });
+            }
+            continue;
+        }
+
+        let text = read_bounded_utf8_path(path)?;
+        let parsed_lines = parse_jsonl_objects_with_raw(&text);
+        let metadata = parsed_lines
+            .first()
+            .filter(|(_, record)| !record.contains_key("start"))
+            .map(|(_, record)| record.clone());
+        let untimed = metadata
+            .as_ref()
+            .is_some_and(|meta| meta.get("untimed") == Some(&Value::Bool(true)));
+        any_untimed |= untimed;
+
+        if metadata.as_ref().is_some_and(|meta| {
+            meta.get(solstone_core_format::content::granola::HEADER_KEY)
+                .is_some_and(Value::is_object)
+        }) {
+            let produced = produce_chunks(Family::Audio, &relative, &text);
+            for chunk in produced.chunks {
+                if let Some(resolved) = resolve_granola_spoken_chunk(&chunk, untimed) {
+                    if let Some(ref sp) = resolved.speaker
+                        && seen_speakers.insert(sp.clone())
+                    {
+                        distinct_speakers.push(sp.clone());
+                    }
+                    lines.push(resolved);
+                }
+            }
+            continue;
+        }
+
+        let file_labels = labels
+            .as_ref()
+            .filter(|(source, _)| name.strip_suffix(".jsonl") == Some(source.as_str()))
+            .map(|(_, names)| names);
+        let file_numbers = name
+            .strip_suffix(".jsonl")
+            .and_then(|stem| run_numbers.get(stem));
+        let file_possible_names = possible_names.filter(|labels| labels.file == name);
+        let mut statement_ordinal = 0_u64;
+        for (index, (raw, _record)) in parsed_lines.into_iter().enumerate() {
+            if index == 0 && metadata.is_some() {
+                continue;
+            }
+            let Some(ordinal) = next_statement_ordinal(&raw, &mut statement_ordinal) else {
+                continue;
+            };
+            if let Some(resolved) = render_speech_record(
+                &relative,
+                untimed,
+                metadata.as_ref(),
+                file_labels,
+                file_numbers,
+                file_possible_names,
+                &raw,
+                ordinal,
+            ) {
+                if let Some(ref sp) = resolved.speaker
+                    && seen_speakers.insert(sp.clone())
+                {
+                    distinct_speakers.push(sp.clone());
+                }
+                lines.push(resolved);
+            }
+        }
+    }
+
+    Ok(SpokenSegmentLines {
+        lines,
+        speakers: distinct_speakers,
+        untimed: any_untimed,
+        version,
+    })
+}
+
+fn read_bounded_utf8_path(path: &Path) -> Result<String, SegmentTranscriptReadError> {
+    let meta = fs::symlink_metadata(path).map_err(|_| SegmentTranscriptReadError::Io)?;
+    if !meta.file_type().is_file() {
+        return Err(SegmentTranscriptReadError::Io);
+    }
+    if meta.len() > MAX_INDEXED_SPEECH_FILE_BYTES as u64 {
+        return Err(SegmentTranscriptReadError::RecordTooLarge);
+    }
+    let mut file = File::open(path).map_err(|_| SegmentTranscriptReadError::Io)?;
+    read_bounded_utf8_from(&mut file)
+}
+
+fn read_bounded_utf8_from(file: &mut File) -> Result<String, SegmentTranscriptReadError> {
+    let mut bytes = Vec::new();
+    file.take(MAX_INDEXED_SPEECH_FILE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| SegmentTranscriptReadError::Io)?;
+    if bytes.len() > MAX_INDEXED_SPEECH_FILE_BYTES {
+        return Err(SegmentTranscriptReadError::RecordTooLarge);
+    }
+    String::from_utf8(bytes).map_err(|_| SegmentTranscriptReadError::Io)
+}
+
+fn parse_jsonl_objects_with_raw(text: &str) -> Vec<(String, serde_json::Map<String, Value>)> {
+    let mut parsed_lines = Vec::new();
+    for raw in text.lines() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
+            parsed_lines.push((raw.to_owned(), map));
+        }
+    }
+    parsed_lines
+}
+
+fn resolve_granola_spoken_chunk(
+    chunk: &solstone_core_format::content::IndexChunk,
+    untimed: bool,
+) -> Option<ResolvedSpeechLine> {
+    let source = chunk.source.as_ref()?;
+    if !source.contains_key("source_ms") {
+        return None;
+    }
+    let time = (!untimed)
+        .then(|| {
+            source
+                .get("start")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        })
+        .flatten();
+    let speaker = source
+        .get("speaker")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    if chunk.content.trim().is_empty() {
+        return None;
+    }
+    Some(ResolvedSpeechLine {
+        text: chunk.content.clone(),
+        time,
+        speaker,
+        is_owner: false,
+        speaker_entity_id: None,
+        untimed,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_speech_record(
+    normalized: &str,
+    untimed: bool,
+    metadata: Option<&serde_json::Map<String, Value>>,
+    labels: Option<&BTreeMap<i64, ResolvedSpeakerLabel>>,
+    run_numbers: Option<&BTreeMap<i64, i64>>,
+    possible_names: Option<&PossibleNameLabels>,
+    raw_line: &str,
+    statement_ordinal: i64,
+) -> Option<ResolvedSpeechLine> {
+    let voice_label = labels.and_then(|names| names.get(&statement_ordinal));
+    let named_line = voice_label
+        .and_then(|label| {
+            let mut value: Value = serde_json::from_str(raw_line).ok()?;
+            value
+                .as_object_mut()?
+                .insert("speaker".into(), Value::String(label.display.clone()));
+            Some(value.to_string())
+        })
+        .or_else(|| run_numbers.and_then(|numbers| crate::renumber_line(raw_line, numbers)));
+    let named = named_line.as_deref().unwrap_or(raw_line);
+    let labelled_line = possible_names
+        .and_then(|labels| label_line(named, labels.statements.get(&statement_ordinal)?));
+    let final_line = labelled_line.as_deref().unwrap_or(named);
+    let final_record =
+        serde_json::from_str::<Value>(final_line)
+            .ok()
+            .and_then(|value| match value {
+                Value::Object(map) => Some(map),
+                _ => None,
+            })?;
+    let speaker =
+        solstone_core_format::content::audio_speaker_label(normalized, metadata, &final_record)
+            .filter(|s| !s.is_empty());
+    let time = (!untimed)
+        .then(|| {
+            final_record
+                .get("start")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        })
+        .flatten();
+    let mut pair = Vec::with_capacity(2);
+    if let Some(meta) = metadata {
+        pair.push(meta.clone());
+    }
+    pair.push(final_record);
+    let rendered = solstone_core_format::content::produce_chunks_by_shape(
+        Family::Audio,
+        Some(normalized),
+        &pair,
+    )
+    .chunks
+    .into_iter()
+    .map(|chunk| chunk.content)
+    .collect::<Vec<_>>()
+    .join("\n");
+    let text = append_speaker_change_warning(&rendered, raw_line);
+    if text.trim().is_empty() {
+        return None;
+    }
+    Some(ResolvedSpeechLine {
+        text,
+        time,
+        speaker,
+        is_owner: voice_label.is_some_and(|label| label.is_owner),
+        speaker_entity_id: voice_label.and_then(|label| label.entity_id.clone()),
+        untimed,
+    })
+}
+
+fn strip_leading_bracket_clock(text: &str) -> &str {
+    let trimmed = text.trim();
+    if let Some(after_open) = trimmed.strip_prefix('[')
+        && let Some(close) = after_open.find(']')
+        && close > 0
+        && !after_open[..close].chars().any(char::is_whitespace)
+    {
+        after_open[close + 1..].trim_start()
+    } else {
+        trimmed
+    }
+}
+
+/// Whether an indexed audio chunk string matches a live spoken body from disk,
+/// allowing clock, `(source)` tag, or speaker-label prefix drift while refusing
+/// any edited, truncated, or missing spoken text.
+fn speech_chunk_matches_body(expected_indexed_content: &str, live_body: &str) -> bool {
+    let live_body = live_body.trim();
+    if live_body.is_empty() {
+        return false;
+    }
+    let rest = strip_leading_bracket_clock(expected_indexed_content);
+    if rest == live_body {
+        return true;
+    }
+    let Some(before) = rest.strip_suffix(live_body) else {
+        return false;
+    };
+    if let Some(speaker_prefix) = before.strip_suffix(": ") {
+        return !speaker_prefix.is_empty()
+            && !speaker_prefix.contains('\n')
+            && !speaker_prefix.contains(": ");
+    }
+    if let Some(source_prefix) = before.strip_suffix(' ') {
+        return source_prefix.starts_with('(')
+            && source_prefix.ends_with(')')
+            && !source_prefix.chars().any(char::is_whitespace);
+    }
+    false
+}
+
+fn granola_chunk_matches_expected(
+    chunk: &solstone_core_format::content::IndexChunk,
+    expected_indexed_content: &str,
+) -> bool {
+    if chunk.content.trim() == expected_indexed_content.trim() {
+        return true;
+    }
+    let Some(source) = chunk.source.as_ref() else {
+        return false;
+    };
+    if !source.contains_key("source_ms") {
+        return false;
+    }
+    let live_text = source
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if live_text.is_empty() {
+        return false;
+    }
+    let rest = strip_leading_bracket_clock(expected_indexed_content);
+    let label = source.get("speaker").and_then(Value::as_str).unwrap_or("");
+    if label.is_empty() {
+        rest == live_text
+    } else {
+        rest == format!("{label}: {live_text}")
+    }
+}
+
+struct CachedSpeechLine {
+    indexed_content: String,
+    spoken_body: String,
+    raw_line: String,
+    statement_ordinal: i64,
 }
 
 enum CachedSpeechFile {
@@ -1090,10 +1610,9 @@ enum CachedSpeechFile {
     Speech {
         untimed: bool,
         metadata: Option<serde_json::Map<String, Value>>,
-        labels: Option<BTreeMap<i64, String>>,
+        labels: Option<BTreeMap<i64, ResolvedSpeakerLabel>>,
         run_numbers: Option<BTreeMap<i64, i64>>,
-        /// One entry per emitted chunk index: `(indexed_content, raw_line, statement_ordinal)`.
-        lines: Vec<(String, String, i64)>,
+        lines: Vec<CachedSpeechLine>,
     },
 }
 
@@ -1107,8 +1626,9 @@ impl SpeechLineCache {
     /// Resolve one indexed speech chunk against the live file on disk.
     ///
     /// Returns `None` if the segment or file is missing, unreadable, outside the
-    /// journal, or has changed so that chunk `chunk_idx` no longer matches
-    /// `expected_indexed_content`.
+    /// journal, or no live line preserves the indexed spoken words (fail-closed
+    /// on deletion, redaction, or text edits). Timestamp or speaker-label drift
+    /// with unchanged spoken words resolves to the live disk line.
     pub fn resolve_line(
         &mut self,
         journal_root: &Path,
@@ -1128,10 +1648,22 @@ impl SpeechLineCache {
         match cached {
             CachedSpeechFile::Unreadable => None,
             CachedSpeechFile::Granola { untimed, chunks } => {
-                let chunk = chunks.get(idx)?;
-                if chunk.content.trim() != expected_indexed_content.trim() {
-                    return None;
-                }
+                let chunk = chunks
+                    .get(idx)
+                    .filter(|c| granola_chunk_matches_expected(c, expected_indexed_content))
+                    .or_else(|| {
+                        chunks
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, c)| {
+                                c.source
+                                    .as_ref()
+                                    .is_some_and(|s| s.contains_key("source_ms"))
+                                    && granola_chunk_matches_expected(c, expected_indexed_content)
+                            })
+                            .min_by_key(|(i, _)| i.abs_diff(idx))
+                            .map(|(_, c)| c)
+                    })?;
                 let source = chunk.source.as_ref();
                 let is_spoken = source.is_some_and(|record| record.contains_key("source_ms"));
                 let time = (!*untimed && is_spoken)
@@ -1156,6 +1688,8 @@ impl SpeechLineCache {
                     text: chunk.content.clone(),
                     time,
                     speaker,
+                    is_owner: false,
+                    speaker_entity_id: None,
                     untimed: *untimed,
                 })
             }
@@ -1166,77 +1700,37 @@ impl SpeechLineCache {
                 run_numbers,
                 lines,
             } => {
-                let (indexed_content, raw_line, statement_ordinal) = lines.get(idx)?;
-                if indexed_content.trim() != expected_indexed_content.trim() {
-                    return None;
-                }
-                let named_line = labels
-                    .as_ref()
-                    .and_then(|names| {
-                        let speaker = names.get(statement_ordinal)?;
-                        let mut value: Value = serde_json::from_str(raw_line).ok()?;
-                        value
-                            .as_object_mut()?
-                            .insert("speaker".into(), Value::String(speaker.clone()));
-                        Some(value.to_string())
+                let line = lines
+                    .get(idx)
+                    .filter(|l| {
+                        l.indexed_content.trim() == expected_indexed_content.trim()
+                            || speech_chunk_matches_body(expected_indexed_content, &l.spoken_body)
                     })
                     .or_else(|| {
-                        run_numbers
-                            .as_ref()
-                            .and_then(|numbers| crate::renumber_line(raw_line, numbers))
-                    });
-                let named = named_line.as_deref().unwrap_or(raw_line.as_str());
+                        lines
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, l)| {
+                                l.indexed_content.trim() == expected_indexed_content.trim()
+                                    || speech_chunk_matches_body(
+                                        expected_indexed_content,
+                                        &l.spoken_body,
+                                    )
+                            })
+                            .min_by_key(|(i, _)| i.abs_diff(idx))
+                            .map(|(_, l)| l)
+                    })?;
                 let name_labels = possible_names.filter(|labels| labels.file == filename);
-                let labelled_line = name_labels.and_then(|labels| {
-                    label_line(named, labels.statements.get(statement_ordinal)?)
-                });
-                let final_line = labelled_line.as_deref().unwrap_or(named);
-                let final_record = serde_json::from_str::<Value>(final_line).ok().and_then(
-                    |value| match value {
-                        Value::Object(map) => Some(map),
-                        _ => None,
-                    },
-                )?;
-                let speaker = solstone_core_format::content::audio_speaker_label(
+                render_speech_record(
                     normalized,
+                    *untimed,
                     metadata.as_ref(),
-                    &final_record,
+                    labels.as_ref(),
+                    run_numbers.as_ref(),
+                    name_labels,
+                    &line.raw_line,
+                    line.statement_ordinal,
                 )
-                .filter(|s| !s.is_empty());
-                let time = (!*untimed)
-                    .then(|| {
-                        final_record
-                            .get("start")
-                            .and_then(Value::as_str)
-                            .filter(|s| !s.is_empty())
-                            .map(str::to_owned)
-                    })
-                    .flatten();
-                let mut pair = Vec::with_capacity(2);
-                if let Some(meta) = metadata {
-                    pair.push(meta.clone());
-                }
-                pair.push(final_record);
-                let rendered = solstone_core_format::content::produce_chunks_by_shape(
-                    Family::Audio,
-                    Some(normalized),
-                    &pair,
-                )
-                .chunks
-                .into_iter()
-                .map(|chunk| chunk.content)
-                .collect::<Vec<_>>()
-                .join("\n");
-                let text = append_speaker_change_warning(&rendered, raw_line);
-                if text.trim().is_empty() {
-                    return None;
-                }
-                Some(ResolvedSpeechLine {
-                    text,
-                    time,
-                    speaker,
-                    untimed: *untimed,
-                })
             }
         }
     }
@@ -1255,38 +1749,11 @@ fn load_cached_speech_file(
         return CachedSpeechFile::Unreadable;
     };
     let file_path = segment.path().join(filename);
-    let Ok(meta) = fs::symlink_metadata(&file_path) else {
-        return CachedSpeechFile::Unreadable;
-    };
-    if !meta.file_type().is_file() || meta.len() > MAX_INDEXED_SPEECH_FILE_BYTES as u64 {
-        return CachedSpeechFile::Unreadable;
-    }
-    let Ok(file) = File::open(&file_path) else {
-        return CachedSpeechFile::Unreadable;
-    };
-    let mut bytes = Vec::new();
-    if file
-        .take(MAX_INDEXED_SPEECH_FILE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .is_err()
-        || bytes.len() > MAX_INDEXED_SPEECH_FILE_BYTES
-    {
-        return CachedSpeechFile::Unreadable;
-    }
-    let Ok(text) = String::from_utf8(bytes) else {
+    let Ok(text) = read_bounded_utf8_path(&file_path) else {
         return CachedSpeechFile::Unreadable;
     };
     let produced = produce_chunks(Family::Audio, normalized_rel, &text);
-    let mut parsed_lines: Vec<(String, serde_json::Map<String, Value>)> = Vec::new();
-    for raw in text.lines() {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
-            parsed_lines.push((raw.to_owned(), map));
-        }
-    }
+    let parsed_lines = parse_jsonl_objects_with_raw(&text);
     let metadata = parsed_lines
         .first()
         .filter(|(_, record)| !record.contains_key("start"))
@@ -1325,7 +1792,15 @@ fn load_cached_speech_file(
             && chunk.source.as_ref() == Some(&record)
         {
             let chunk = chunk_iter.next().expect("peeked chunk");
-            lines.push((chunk.content, raw, ordinal));
+            let spoken_body = crate::statement_text(&record)
+                .map(|(_, body)| body.trim().to_owned())
+                .unwrap_or_default();
+            lines.push(CachedSpeechLine {
+                indexed_content: chunk.content,
+                spoken_body,
+                raw_line: raw,
+                statement_ordinal: ordinal,
+            });
         }
     }
     CachedSpeechFile::Speech {
@@ -2967,5 +3442,249 @@ mod tests {
             err,
             crate::SegmentTranscriptReadError::NoPermittedFiles
         ));
+    }
+
+    #[test]
+    fn resolve_line_recovers_timestamp_and_index_drift_but_fails_closed_on_text_edits() {
+        use std::collections::BTreeMap;
+
+        let root = tempfile::tempdir().unwrap();
+        let seg = root.path().join("chronicle/20261119/talk/193000_720");
+        fs::create_dir_all(seg.join("talents")).unwrap();
+        fs::write(
+            seg.join("audio.jsonl"),
+            concat!(
+                "{\"raw\":\"audio.flac\"}\n",
+                "{\"sentence_id\":1,\"speaker\":\"other_person\",\"start\":\"19:30:05\",\"text\":\"Will you bring the ledger?\"}\n",
+                "{\"sentence_id\":2,\"speaker\":\"owner_id\",\"start\":\"19:30:52\",\"text\":\"Yes. I will bring twenty pounds before noon.\"}\n",
+                "{\"sentence_id\":3,\"speaker\":\"(the templar)\",\"start\":\"19:31:10\",\"text\":\"He said: meet at the bridge.\"}\n",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            seg.join("talents/speaker_labels.json"),
+            serde_json::json!({
+                "labels": [
+                    {"sentence_id": 1, "speaker": "person_b", "method": "user_assigned", "confidence": "high"},
+                    {"sentence_id": 2, "speaker": "person_owner", "method": "user_assigned", "confidence": "high"}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let speakers = super::AgentSpeakers {
+            owner: "Alex Rivera (owner)".to_owned(),
+            voices: crate::VoiceNames {
+                principal: "person_owner".to_owned(),
+                owner_voice_confirmed: true,
+                people: BTreeMap::from([("person_b".to_owned(), "Sam Patel".to_owned())]),
+                owner_name: Some("Alex Rivera (owner)".to_owned()),
+            },
+        };
+        let rel = "20261119/talk/193000_720/audio.jsonl";
+        let mut cache = super::SpeechLineCache::default();
+
+        // Stale clock at same index (19:30:48 -> live 19:30:52) recovers live clock and voice attribution.
+        let drifted = cache
+            .resolve_line(
+                root.path(),
+                rel,
+                1,
+                "[19:30:48] owner_id: Yes. I will bring twenty pounds before noon.",
+                Some(&speakers),
+                None,
+            )
+            .expect("timestamp drift should resolve to live disk line");
+        assert_eq!(drifted.time.as_deref(), Some("19:30:52"));
+        assert_eq!(drifted.speaker.as_deref(), Some("Alex Rivera (owner)"));
+        assert!(drifted.is_owner);
+        assert_eq!(drifted.speaker_entity_id.as_deref(), Some("person_owner"));
+        assert!(drifted.text.starts_with("[19:30:52] Alex Rivera (owner):"));
+
+        // Shifted index with unnamed parenthetical speaker recovers live line without claiming ownership.
+        let shifted = cache
+            .resolve_line(
+                root.path(),
+                rel,
+                0,
+                "[19:31:00] (the templar): He said: meet at the bridge.",
+                Some(&speakers),
+                None,
+            )
+            .expect("shifted index with unchanged spoken words should resolve");
+        assert_eq!(shifted.time.as_deref(), Some("19:31:10"));
+        assert_eq!(shifted.speaker.as_deref(), Some("(the templar)"));
+        assert!(!shifted.is_owner);
+        assert_eq!(shifted.speaker_entity_id, None);
+
+        // Redacted or edited spoken words fail closed.
+        assert!(
+            cache
+                .resolve_line(
+                    root.path(),
+                    rel,
+                    1,
+                    "[19:30:52] owner_id: Yes. I will bring thirty pounds before noon.",
+                    Some(&speakers),
+                    None,
+                )
+                .is_none()
+        );
+        // Truncating after an embedded colon in the spoken text must also fail closed.
+        assert!(
+            cache
+                .resolve_line(
+                    root.path(),
+                    rel,
+                    2,
+                    "[19:31:10] (the templar): Different prefix: He said: meet at the bridge.",
+                    Some(&speakers),
+                    None,
+                )
+                .is_none()
+        );
+
+        // Deleting the file fails closed on a fresh cache.
+        fs::remove_file(seg.join("audio.jsonl")).unwrap();
+        let mut fresh = super::SpeechLineCache::default();
+        assert!(
+            fresh
+                .resolve_line(
+                    root.path(),
+                    rel,
+                    1,
+                    "[19:30:52] owner_id: Yes. I will bring twenty pounds before noon.",
+                    Some(&speakers),
+                    None,
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn read_spoken_segment_lines_filters_non_speech_and_respects_owner_clears() {
+        use solstone_core_format::content::AdmittedCategory::{Messages, Notes, Transcripts};
+        use std::collections::BTreeMap;
+
+        let root = tempfile::tempdir().unwrap();
+        let seg = root.path().join("chronicle/20261119/talk/090000_300");
+        fs::create_dir_all(seg.join("talents")).unwrap();
+        fs::write(
+            seg.join("audio.jsonl"),
+            concat!(
+                "{\"raw\":\"audio.flac\"}\n",
+                "{\"sentence_id\":1,\"speaker\":1,\"start\":\"09:00:05\",\"text\":\"Owner confirmed line.\"}\n",
+                "{\"sentence_id\":2,\"speaker\":2,\"start\":\"09:00:15\",\"text\":\"Cleared owner line.\"}\n",
+                "{\"sentence_id\":3,\"speaker\":3,\"start\":\"09:00:25\",\"text\":\"Unnamed speaker line.\"}\n",
+            ),
+        )
+        .unwrap();
+        // Sibling non-spoken note should never appear in spoken-only reads.
+        fs::write(seg.join("note_transcript.md"), "Private note text\n").unwrap();
+        fs::write(
+            seg.join("talents/speaker_labels.json"),
+            serde_json::json!({
+                "labels": [
+                    {"sentence_id": 1, "speaker": "person_owner", "method": "user_assigned", "confidence": "high"},
+                    {"sentence_id": 2, "speaker": "person_owner", "method": "owner_centroid", "confidence": "high"},
+                    {"sentence_id": 3, "speaker": "person_other", "method": "text_inferred", "confidence": "low"}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        // Clear sentence 2 via owner_line_labels.json so it must stay anonymous and not is_owner.
+        let cleared_sha = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(b"Cleared owner line."))
+        };
+        fs::write(
+            seg.join("talents/owner_line_labels.json"),
+            serde_json::json!({
+                "version": 1,
+                "entries": [{
+                    "source": "audio",
+                    "sentence_id": 2,
+                    "start": "09:00:15",
+                    "text_sha256": cleared_sha,
+                    "speaker": null,
+                    "set_at": "2026-11-19T09:05:00Z"
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let segment = iter_segments(root.path(), PathOrDay::Day("20261119"))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let speakers = super::AgentSpeakers {
+            owner: "Alex Rivera (owner)".to_owned(),
+            voices: crate::VoiceNames {
+                principal: "person_owner".to_owned(),
+                owner_voice_confirmed: true,
+                people: BTreeMap::from([("person_other".to_owned(), "Sam Patel".to_owned())]),
+                owner_name: Some("Alex Rivera (owner)".to_owned()),
+            },
+        };
+
+        // Without Transcripts permission, spoken read fails closed even when Notes/Messages are granted.
+        let no_transcripts = BTreeSet::from([Notes, Messages]);
+        assert!(!super::segment_has_spoken_transcript_files(
+            &segment,
+            &no_transcripts
+        ));
+        assert!(matches!(
+            super::read_spoken_segment_lines(
+                &segment,
+                Some(&speakers),
+                None,
+                Some(&no_transcripts),
+            ),
+            Err(crate::SegmentTranscriptReadError::NoPermittedFiles)
+        ));
+
+        let grants = BTreeSet::from([Transcripts, Notes]);
+        assert!(super::segment_has_spoken_transcript_files(
+            &segment, &grants
+        ));
+        let spoken =
+            super::read_spoken_segment_lines(&segment, Some(&speakers), None, Some(&grants))
+                .expect("spoken lines");
+        assert_eq!(spoken.lines.len(), 3);
+        assert!(
+            spoken
+                .lines
+                .iter()
+                .all(|l| !l.text.contains("Private note"))
+        );
+
+        // Line 1: voice-attributed owner.
+        assert!(spoken.lines[0].is_owner);
+        assert_eq!(
+            spoken.lines[0].speaker.as_deref(),
+            Some("Alex Rivera (owner)")
+        );
+        assert_eq!(
+            spoken.lines[0].speaker_entity_id.as_deref(),
+            Some("person_owner")
+        );
+
+        // Line 2: cleared by owner_line_labels.json -> NOT owner, no entity id, plain speaker number.
+        assert!(!spoken.lines[1].is_owner);
+        assert_eq!(spoken.lines[1].speaker_entity_id, None);
+        assert_eq!(spoken.lines[1].speaker.as_deref(), Some("Speaker 2"));
+
+        // Line 3: text_inferred is ignored by voice gate -> plain speaker number.
+        assert!(!spoken.lines[2].is_owner);
+        assert_eq!(spoken.lines[2].speaker_entity_id, None);
+        assert_eq!(spoken.lines[2].speaker.as_deref(), Some("Speaker 3"));
+
+        assert_eq!(
+            spoken.speakers,
+            vec!["Alex Rivera (owner)", "Speaker 2", "Speaker 3"]
+        );
     }
 }

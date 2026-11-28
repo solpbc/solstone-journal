@@ -48,10 +48,11 @@ pub use segment_page::{
     MessageBounds, POSSIBLE_SPEAKER_CHANGE_WITHIN_SENTENCE, PermittedSummaryFile,
     ResolvedSpeechLine, SegmentClock, SegmentTranscriptCursor, SegmentTranscriptEntry,
     SegmentTranscriptPage, SegmentTranscriptReadError, SegmentTranscriptVersion, SpeechLineCache,
-    TurnPart, permitted_segment_files_for_summary, read_segment_transcript_page,
-    read_segment_transcript_page_leaving_out, read_segment_transcript_page_with_body_policy,
-    read_segment_transcript_page_with_permissions, read_spoken_conversation,
-    read_talent_conversation, segment_clock, segment_has_permitted_files,
+    SpokenSegmentLines, TurnPart, permitted_segment_files_for_summary,
+    read_segment_transcript_page, read_segment_transcript_page_leaving_out,
+    read_segment_transcript_page_with_body_policy, read_segment_transcript_page_with_permissions,
+    read_spoken_conversation, read_spoken_segment_lines, read_talent_conversation, segment_clock,
+    segment_has_permitted_files, segment_has_spoken_transcript_files,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

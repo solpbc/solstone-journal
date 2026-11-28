@@ -87,7 +87,7 @@ pub fn search_connection(
     request: &ConnectionSearchRequest,
     reference_date: Date,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
-    search_connection_admitting(journal, boundary, request, reference_date, None)
+    search_connection_admitting(journal, boundary, request, reference_date, None, None)
 }
 
 /// Connection search that returns the possible-name rows `admission` admits
@@ -109,6 +109,29 @@ pub fn search_connection_with_possible_names(
         request,
         reference_date,
         Some((admission, body_entries)),
+        None,
+    )
+}
+
+/// Connection search that applies possible-name, body-entry, and optional
+/// speech-line admissions inside SQLite before ranking, segment collapse,
+/// query relaxation, or continuation anchoring.
+pub fn search_connection_with_admissions(
+    journal: &Path,
+    boundary: &ConnectionBoundary,
+    request: &ConnectionSearchRequest,
+    reference_date: Date,
+    admission: PossibleNameAdmission,
+    body_entries: BodyEntryAdmission,
+    speech_lines: Option<SpeechLineAdmission>,
+) -> Result<ConnectionSearchResponse, IndexAccessError> {
+    search_connection_admitting(
+        journal,
+        boundary,
+        request,
+        reference_date,
+        Some((admission, body_entries)),
+        speech_lines,
     )
 }
 
@@ -145,6 +168,7 @@ pub fn connection_search_withheld_body(
         reference_date,
         compilation,
         Some(boundary),
+        false,
     )?;
     // An activity file's rows are judged by the admission: body entries and
     // Strava lines only.
@@ -165,6 +189,7 @@ fn search_connection_admitting(
     request: &ConnectionSearchRequest,
     reference_date: Date,
     admission: Option<(PossibleNameAdmission, BodyEntryAdmission)>,
+    speech_lines: Option<SpeechLineAdmission>,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
     let compilation = compile_query(&request.query, reference_date);
     let no_tokenizable_term = matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm);
@@ -188,6 +213,10 @@ fn search_connection_admitting(
         }
         None => Arc::new(|_: &str, _: i64| false),
     };
+    let speech_lines_only = speech_lines.is_some();
+    if let Some(speech_admission) = speech_lines {
+        connection.admit_speech_lines(speech_admission)?;
+    }
     connection.set_body_entries(BodyEntries::Admitted {
         admission: body_entries,
         strava_lines,
@@ -212,6 +241,7 @@ fn search_connection_admitting(
         reference_date,
         compilation,
         Some(boundary.connection().expect("connection boundary")),
+        speech_lines_only,
     )?;
     let order = if plan.has_live_match_expression {
         request.order
@@ -222,7 +252,13 @@ fn search_connection_admitting(
         append_connection_start_after(&mut plan, request.start_after.as_ref());
     }
     let results = connection
-        .fetch_connection_hits(&plan, request.limit, order, request.start_after.as_ref())?
+        .fetch_connection_hits(
+            &plan,
+            request.limit,
+            order,
+            request.start_after.as_ref(),
+            request.collapse_segments,
+        )?
         .into_iter()
         .map(|hit| ConnectionSearchHit {
             row_id: hit.row_id,
@@ -567,7 +603,14 @@ fn resolve_plan(
     } else {
         BodyEntries::None
     });
-    resolve_plan_with_boundary(connection, request, reference_date, compilation, None)
+    resolve_plan_with_boundary(
+        connection,
+        request,
+        reference_date,
+        compilation,
+        None,
+        false,
+    )
 }
 
 fn resolve_plan_with_boundary(
@@ -576,6 +619,7 @@ fn resolve_plan_with_boundary(
     reference_date: Date,
     compilation: crate::QueryCompilation,
     boundary: Option<&ConnectionBoundary>,
+    speech_lines_only: bool,
 ) -> Result<(SqlPlan, bool), IndexAccessError> {
     let mut plan = match boundary {
         Some(boundary) => plan_from_outcome_with_boundary(
@@ -583,14 +627,21 @@ fn resolve_plan_with_boundary(
             &compilation.temporal,
             request,
             Some(boundary),
+            speech_lines_only,
         ),
         None => plan_from_outcome(compilation.outcome.clone(), &compilation.temporal, request),
     };
     let mut relaxed = false;
     if request.relax
         && !connection.has_rows(&plan)?
-        && let Some(candidate) =
-            relaxed_plan(connection, &compilation, request, reference_date, boundary)?
+        && let Some(candidate) = relaxed_plan(
+            connection,
+            &compilation,
+            request,
+            reference_date,
+            boundary,
+            speech_lines_only,
+        )?
     {
         plan = candidate;
         relaxed = true;
@@ -612,7 +663,7 @@ pub(crate) fn plan_from_outcome(
     temporal: &TemporalExtraction,
     request: &SearchRequest,
 ) -> SqlPlan {
-    plan_from_outcome_with_boundary(outcome, temporal, request, None)
+    plan_from_outcome_with_boundary(outcome, temporal, request, None, false)
 }
 
 pub(crate) fn plan_from_outcome_with_boundary(
@@ -620,6 +671,7 @@ pub(crate) fn plan_from_outcome_with_boundary(
     temporal: &TemporalExtraction,
     request: &SearchRequest,
     boundary: Option<&ConnectionBoundary>,
+    speech_lines_only: bool,
 ) -> SqlPlan {
     let predicate = QueryPredicate::new(outcome, temporal, predicate_input(request));
     let mut plan = match &predicate.outcome {
@@ -653,6 +705,13 @@ pub(crate) fn plan_from_outcome_with_boundary(
     // candidate the keys pick is admitted or not with its row.
     plan.where_clause.push_str(POSSIBLE_NAME_ROWS_ADMITTED);
     plan.where_clause.push_str(BODY_ENTRY_ROWS_ADMITTED);
+    if speech_lines_only {
+        plan.where_clause.push_str(SPEECH_LINE_ROWS_ADMITTED);
+        if let Some(key) = &mut plan.key {
+            key.clause
+                .push_str(" AND solstone_is_audio_transcript(chunks.path)");
+        }
+    }
     if let Some(boundary) = boundary {
         append_connection_prefilter(&mut plan, boundary);
     }
@@ -942,6 +1001,19 @@ fn register_indexed_permissions(
         },
     )?;
     connection.create_scalar_function(
+        "solstone_is_audio_transcript",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_DIRECTONLY,
+        |context| match context.get_raw(0).as_str() {
+            Ok(path) => Ok(solstone_core_format::content::is_audio_transcript_path(
+                path,
+            )),
+            Err(_) => Ok(false),
+        },
+    )?;
+    connection.create_scalar_function(
         "solstone_relevance_tie_priority",
         1,
         FunctionFlags::SQLITE_UTF8
@@ -1172,6 +1244,14 @@ impl QueryConnection {
             .map_err(|error| self.classify(error))
     }
 
+    fn admit_speech_lines(
+        &mut self,
+        admission: SpeechLineAdmission,
+    ) -> Result<(), IndexAccessError> {
+        register_speech_line_admission(&self.connection, Some(admission))
+            .map_err(|error| self.classify(error))
+    }
+
     fn set_body_entries(&self, entries: BodyEntries) {
         let mut state = self
             .body_entries
@@ -1294,6 +1374,47 @@ fn register_possible_name_admission(
             let path = context.get_raw(0).as_str().unwrap_or_default();
             if !solstone_core_format::content::possible_names::is_possible_names_path(path) {
                 return Ok(true);
+            }
+            let Some(admission) = admission.as_ref() else {
+                return Ok(false);
+            };
+            let idx = match context.get_raw(1) {
+                rusqlite::types::ValueRef::Integer(idx) => idx,
+                rusqlite::types::ValueRef::Text(text) => {
+                    match std::str::from_utf8(text).ok().and_then(|t| t.parse().ok()) {
+                        Some(idx) => idx,
+                        None => return Ok(false),
+                    }
+                }
+                _ => return Ok(false),
+            };
+            let content = context.get_raw(2).as_str().unwrap_or_default();
+            Ok(admission(path, idx, content))
+        },
+    )
+}
+
+const SPEECH_LINE_ROWS_ADMITTED: &str = " AND solstone_is_audio_transcript(chunks.path) \
+     AND solstone_speech_line_admitted(chunks.path, chunks.idx, chunks.content)";
+const SPEECH_LINE_ADMISSION_FUNCTION: &str = "solstone_speech_line_admitted";
+
+/// Decides whether one indexed audio speech transcript row may be returned:
+/// the stored path, chunk index and chunk content.
+pub type SpeechLineAdmission = std::sync::Arc<dyn Fn(&str, i64, &str) -> bool + Send + Sync>;
+
+fn register_speech_line_admission(
+    connection: &Connection,
+    admission: Option<SpeechLineAdmission>,
+) -> rusqlite::Result<()> {
+    connection.create_scalar_function(
+        SPEECH_LINE_ADMISSION_FUNCTION,
+        3,
+        // Not deterministic: an admission reads the journal as it is now.
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |context| {
+            let path = context.get_raw(0).as_str().unwrap_or_default();
+            if !solstone_core_format::content::is_audio_transcript_path(path) {
+                return Ok(false);
             }
             let Some(admission) = admission.as_ref() else {
                 return Ok(false);
@@ -2064,6 +2185,8 @@ impl QueryConnection {
     pub(crate) fn new(connection: Connection, path: PathBuf) -> Result<Self, IndexAccessError> {
         register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
+        register_speech_line_admission(&connection, None)
+            .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_indexed_permissions(
             &connection,
             path.parent().and_then(Path::parent).map(Path::to_path_buf),
@@ -2335,6 +2458,7 @@ impl QueryConnection {
         limit: usize,
         order: Order,
         start_after: Option<&crate::types::ConnectionStartAfter>,
+        collapse_segments: bool,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
         const CONNECTION_RECENCY_ORDER: &str =
             "ORDER BY COALESCE(day, '') DESC, path DESC, idx DESC";
@@ -2356,7 +2480,7 @@ impl QueryConnection {
             }
             Order::Relevance => {
                 if start_after.is_none()
-                    && let Some(hits) = self.first_relevance_page(plan, limit)?
+                    && let Some(hits) = self.first_relevance_page(plan, limit, collapse_segments)?
                 {
                     return Ok(hits);
                 }
@@ -2364,12 +2488,17 @@ impl QueryConnection {
                     && solstone_core_indexer_store::chunk_sources::chunk_keys_ready(
                         &self.connection,
                     )
-                    && let Some(hits) =
-                        self.fetch_connection_hits_by_keys_relevance(plan, key, limit, start_after)?
+                    && let Some(hits) = self.fetch_connection_hits_by_keys_relevance(
+                        plan,
+                        key,
+                        limit,
+                        start_after,
+                        collapse_segments,
+                    )?
                 {
                     return Ok(hits);
                 }
-                self.fetch_connection_hits_relevance(plan, limit, start_after)
+                self.fetch_connection_hits_relevance(plan, limit, start_after, collapse_segments)
             }
         }
     }
@@ -2381,6 +2510,7 @@ impl QueryConnection {
         &self,
         plan: &SqlPlan,
         limit: usize,
+        collapse_segments: bool,
     ) -> Result<Option<Vec<SearchHit>>, IndexAccessError> {
         const WINDOW: usize = 256;
         let Some(rest) = plan.where_clause.strip_prefix(MATCH_CLAUSE) else {
@@ -2422,7 +2552,8 @@ impl QueryConnection {
             .into_iter()
             .flat_map(|(rid, score)| [Value::Integer(rid), Value::Real(score)])
             .collect();
-        let hits = self.pick_relevance_hits(plan, rest, &matched, values, limit, None)?;
+        let hits =
+            self.pick_relevance_hits(plan, rest, &matched, values, limit, None, collapse_segments)?;
         Ok((complete || hits.len() == limit).then_some(hits))
     }
 
@@ -2436,6 +2567,7 @@ impl QueryConnection {
         key: &KeyPlan,
         limit: usize,
         start_after: Option<&crate::types::ConnectionStartAfter>,
+        collapse_segments: bool,
     ) -> Result<Option<Vec<SearchHit>>, IndexAccessError> {
         if limit == 0 {
             return Ok(Some(Vec::new()));
@@ -2444,6 +2576,11 @@ impl QueryConnection {
             return Ok(None);
         };
         let key_clause = &key.clause;
+        let collapse_expr = if collapse_segments {
+            "solstone_relevance_collapse_key(chunks.path)"
+        } else {
+            "NULL"
+        };
         let mut values = vec![Value::Text(expression.clone())];
         values.extend(key.params.iter().cloned().map(Value::Text));
         let sql = format!(
@@ -2452,7 +2589,7 @@ impl QueryConnection {
                     solstone_relevance_tie_priority(chunks.path) AS tie_priority, \
                     COALESCE(chunks.day, '') AS day, COALESCE(chunks.path, '') AS path, \
                     COALESCE(chunks.idx, 0) AS idx, \
-                    solstone_relevance_collapse_key(chunks.path) AS collapse_key \
+                    {collapse_expr} AS collapse_key \
              FROM matched LEFT JOIN chunk_sources AS chunks ON chunks.rowid = matched.rid \
              WHERE chunks.rowid IS NULL OR ({key_clause}) \
              ORDER BY unkeyed DESC, matched.score ASC, tie_priority ASC, \
@@ -2591,6 +2728,7 @@ impl QueryConnection {
         plan: &SqlPlan,
         limit: usize,
         start_after: Option<&crate::types::ConnectionStartAfter>,
+        collapse_segments: bool,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
         if limit == 0 {
             return Ok(Vec::new());
@@ -2613,9 +2751,11 @@ impl QueryConnection {
             vec![Value::Text(expression.clone())],
             limit,
             start_after,
+            collapse_segments,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn pick_relevance_hits(
         &self,
         plan: &SqlPlan,
@@ -2624,9 +2764,15 @@ impl QueryConnection {
         mut values: Vec<Value>,
         limit: usize,
         start_after: Option<&crate::types::ConnectionStartAfter>,
+        collapse_segments: bool,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
         let (extra_columns, joins) = self.hit_projection()?;
         let base_where = format!("1=1{rest}");
+        let collapse_expr = if collapse_segments {
+            "solstone_relevance_collapse_key(chunks.path)"
+        } else {
+            "NULL"
+        };
         values.extend(plan.params[1..].iter().cloned().map(Value::Text));
         let mut outer_filter = String::from("1=1");
         append_relevance_start_after(&mut outer_filter, &mut values, start_after);
@@ -2637,7 +2783,7 @@ impl QueryConnection {
                  SELECT matched.rid AS rid, matched.score AS score, \
                         solstone_relevance_tie_priority(chunks.path) AS tie_priority, \
                         chunks.day AS day, chunks.path AS path, chunks.idx AS idx, \
-                        solstone_relevance_collapse_key(chunks.path) AS collapse_key \
+                        {collapse_expr} AS collapse_key \
                  FROM matched CROSS JOIN chunks ON chunks.rowid = matched.rid \
                  WHERE ({base_where}) \
              ), \
@@ -3363,7 +3509,7 @@ mod first_page_tests {
             }),
         };
         let top = reader
-            .fetch_connection_hits(&plan, 1, Order::Relevance, None)
+            .fetch_connection_hits(&plan, 1, Order::Relevance, None, true)
             .unwrap();
         assert_eq!(top[0].metadata.path, "notes/best.md");
         assert!(
@@ -3371,7 +3517,7 @@ mod first_page_tests {
             "a full admission scan for one decisive hit"
         );
         let page = reader
-            .fetch_connection_hits(&plan, 3, Order::Relevance, None)
+            .fetch_connection_hits(&plan, 3, Order::Relevance, None, true)
             .unwrap();
         assert_eq!(page.len(), 3);
         assert_eq!(page[0].metadata.path, "notes/best.md");

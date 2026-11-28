@@ -37,8 +37,7 @@ pub struct StreamPruneCounts {
     pub files: u64,
 }
 
-const CREATE_FILES: &str =
-    "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime INTEGER, display_stamp TEXT)";
+const CREATE_FILES: &str = "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime INTEGER, display_stamp TEXT, size INTEGER)";
 const CREATE_MEMORY_ORIGINALS: &str = "CREATE TABLE IF NOT EXISTS memory_originals(\
 path TEXT PRIMARY KEY, day TEXT NOT NULL, stream TEXT NOT NULL, segment TEXT NOT NULL, \
 source_key TEXT NOT NULL, bytes BLOB NOT NULL, origin_json TEXT NOT NULL, digest TEXT NOT NULL, \
@@ -845,6 +844,13 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     )? {
         conn.execute("ALTER TABLE files ADD COLUMN display_stamp TEXT", [])?;
     }
+    if !conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('files') WHERE name='size')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )? {
+        conn.execute("ALTER TABLE files ADD COLUMN size INTEGER", [])?;
+    }
     conn.execute(CREATE_CHUNKS, [])?;
     conn.execute(CREATE_CHUNK_SOURCES, [])?;
     conn.execute(CREATE_CHUNK_SOURCES_PATH_INDEX, [])?;
@@ -1577,7 +1583,7 @@ mod tests {
             .expect("files schema");
         assert_eq!(
             files_sql,
-            "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER, display_stamp TEXT)"
+            "CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER, display_stamp TEXT, size INTEGER)"
         );
         let chunk_cols: Vec<String> = conn
             .prepare("PRAGMA table_info(chunks)")
@@ -1614,26 +1620,32 @@ mod tests {
         create_schema(&conn).unwrap();
         let read = || {
             conn.query_row(
-                "SELECT mtime, display_stamp FROM files WHERE path='document'",
+                "SELECT mtime, display_stamp, size FROM files WHERE path='document'",
                 [],
-                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, Option<i64>>(2)?,
+                    ))
+                },
             )
             .unwrap()
         };
-        assert_eq!(read(), (12, None));
+        assert_eq!(read(), (12, None, None));
         conn.execute(
-            "UPDATE files SET display_stamp='current' WHERE path='document'",
+            "UPDATE files SET display_stamp='current', size=42 WHERE path='document'",
             [],
         )
         .unwrap();
-        assert_eq!(read(), (12, Some("current".into())));
+        assert_eq!(read(), (12, Some("current".into()), Some(42)));
         // Earlier writers name the two columns they understand when replacing a file's rows.
         conn.execute(
             "REPLACE INTO files(path, mtime) VALUES ('document', 13)",
             [],
         )
         .unwrap();
-        assert_eq!(read(), (13, None));
+        assert_eq!(read(), (13, None, None));
     }
 
     #[test]

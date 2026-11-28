@@ -18,10 +18,10 @@ use solstone_core_format::content::topics::{
 };
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
-    ConnectionStartAfter, EntryLocation, OwnMemoryOpenError, QueryBoundary,
+    ConnectionStartAfter, EntryLocation, OwnMemoryOpenError, QueryBoundary, SpeechLineAdmission,
     indexed_path_has_later_chunk, locate_indexed_entry, memory_row_matches_original,
     open_own_memory_index, read_indexed_entry, read_indexed_path_entries, read_own_memory_row,
-    search_connection_with_possible_names,
+    search_connection_with_admissions,
 };
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::paths::{
@@ -47,9 +47,10 @@ use crate::references::{
 use crate::registry::{ToolEntry, category_token, find_tool, requirement_refusal};
 use crate::segment_links::{LinkSubject, LiveTranscriptPages, issue_segment_links};
 use crate::tools::{
-    ToolError, ValidatedFetch, ValidatedGetActivitySources, ValidatedGetEntity,
-    ValidatedGetTranscript, ValidatedGetWeek, ValidatedListEntities, ValidatedListFacets,
-    ValidatedListTranscripts, ValidatedSearch, ValidatedTool, execute_after_audit,
+    SearchDedup, ToolError, TranscriptReferenceRequest, ValidatedFetch,
+    ValidatedGetActivitySources, ValidatedGetEntity, ValidatedGetTranscript, ValidatedGetWeek,
+    ValidatedListEntities, ValidatedListFacets, ValidatedListTranscripts, ValidatedSearch,
+    ValidatedTool, execute_after_audit,
 };
 
 /// Upper bound on indexed rows examined to fill one search page after live drops.
@@ -451,22 +452,45 @@ fn scope_refusal(
     request: &ValidatedTool,
 ) -> Option<(Reason, Option<AdmittedCategory>)> {
     let named = match request {
-        ValidatedTool::GetTranscript(request)
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Reference(request))
             if request.offset_ms.is_some()
                 && !snapshot.categories.contains(&AdmittedCategory::Screenshots) =>
         {
             Some(AdmittedCategory::Screenshots)
         }
-        ValidatedTool::GetTranscript(request)
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Reference(request))
             if request.audio.is_some()
                 && !snapshot.categories.contains(&AdmittedCategory::AudioMedia) =>
         {
             Some(AdmittedCategory::AudioMedia)
         }
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Reference(request))
+            if request.speaker.is_some()
+                && !snapshot.categories.contains(&AdmittedCategory::Transcripts) =>
+        {
+            Some(AdmittedCategory::Transcripts)
+        }
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Range(_))
+            if !snapshot.categories.contains(&AdmittedCategory::Transcripts) =>
+        {
+            Some(AdmittedCategory::Transcripts)
+        }
+        ValidatedTool::ListTranscripts(request)
+            if request.speaker.is_some()
+                && !snapshot.categories.contains(&AdmittedCategory::Transcripts) =>
+        {
+            Some(AdmittedCategory::Transcripts)
+        }
         ValidatedTool::Search(request) | ValidatedTool::Find(_, request) => request
             .category
             .into_iter()
             .chain(request.content_kinds.iter().flatten().copied())
+            .chain(
+                request
+                    .speaker
+                    .as_ref()
+                    .map(|_| AdmittedCategory::Transcripts),
+            )
             .find(|category| !snapshot.categories.contains(category)),
         _ => fetch_target_missing_kind(journal_root, principal, snapshot, request),
     };
@@ -670,6 +694,16 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             insert_present(&mut arguments, "person", request.person.as_deref());
             insert_present(&mut arguments, "place", request.place.as_deref());
             insert_present(&mut arguments, "activity", request.activity.as_deref());
+            if let Some(speaker) = request.speaker.as_deref() {
+                if crate::references::is_framed_entity_token(speaker) {
+                    arguments.insert("speaker".to_owned(), reference_fingerprint(speaker).into());
+                } else {
+                    arguments.insert("speaker".to_owned(), speaker.into());
+                }
+            }
+            if request.dedup != SearchDedup::Segment {
+                arguments.insert("dedup".to_owned(), request.dedup.as_str().into());
+            }
             if let Some(kinds) = &request.content_kinds {
                 arguments.insert(
                     "kind".into(),
@@ -718,11 +752,18 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             insert_present(&mut arguments, "time_to", request.time_to.as_deref());
             insert_present(&mut arguments, "source", request.source.as_deref());
             insert_present(&mut arguments, "entry_kind", request.kind.as_deref());
+            if let Some(speaker) = request.speaker.as_deref() {
+                if crate::references::is_framed_entity_token(speaker) {
+                    arguments.insert("speaker".to_owned(), reference_fingerprint(speaker).into());
+                } else {
+                    arguments.insert("speaker".to_owned(), speaker.into());
+                }
+            }
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
         }
-        ValidatedTool::GetTranscript(request) => {
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Reference(request)) => {
             if let Some(offset) = request.offset_ms {
                 arguments.insert("offset_ms".into(), offset.into());
             }
@@ -742,6 +783,36 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
                 "reference".to_owned(),
                 reference_fingerprint(&request.reference).into(),
             );
+            if let Some(speaker) = request.speaker.as_deref() {
+                if crate::references::is_framed_entity_token(speaker) {
+                    arguments.insert("speaker".to_owned(), reference_fingerprint(speaker).into());
+                } else {
+                    arguments.insert("speaker".to_owned(), speaker.into());
+                }
+            }
+            if request.context_lines > 0 {
+                arguments.insert("context_lines".into(), request.context_lines.into());
+            }
+            if let Some(cursor) = request.cursor.as_deref() {
+                arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
+            }
+        }
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Range(request)) => {
+            insert_present(&mut arguments, "day", request.day.as_deref());
+            insert_present(&mut arguments, "day_from", request.day_from.as_deref());
+            insert_present(&mut arguments, "day_to", request.day_to.as_deref());
+            insert_present(&mut arguments, "facet", request.facet_id.as_deref());
+            insert_present(&mut arguments, "source", request.source.as_deref());
+            if let Some(speaker) = request.speaker.as_deref() {
+                if crate::references::is_framed_entity_token(speaker) {
+                    arguments.insert("speaker".to_owned(), reference_fingerprint(speaker).into());
+                } else {
+                    arguments.insert("speaker".to_owned(), speaker.into());
+                }
+            }
+            if request.context_lines > 0 {
+                arguments.insert("context_lines".into(), request.context_lines.into());
+            }
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
@@ -1144,6 +1215,8 @@ pub(crate) fn week_kind_summaries_range(
             person: None,
             place: None,
             activity: None,
+            speaker: None,
+            dedup: SearchDedup::Segment,
         };
         let mut result = match search(journal, principal, snapshot, request) {
             Ok(result) => result,
@@ -1347,13 +1420,17 @@ fn read_batch(
     for (index, reference) in references.into_iter().enumerate() {
         let request = match tool {
             ToolName::Fetch => ValidatedTool::Fetch(ValidatedFetch { reference, size }),
-            ToolName::GetTranscript => ValidatedTool::GetTranscript(ValidatedGetTranscript {
-                offset_ms: None,
-                display: None,
-                audio: None,
-                reference,
-                cursor: None,
-            }),
+            ToolName::GetTranscript => ValidatedTool::GetTranscript(
+                ValidatedGetTranscript::Reference(TranscriptReferenceRequest {
+                    offset_ms: None,
+                    display: None,
+                    audio: None,
+                    reference,
+                    speaker: None,
+                    context_lines: 0,
+                    cursor: None,
+                }),
+            ),
             ToolName::GetActivitySources => {
                 ValidatedTool::GetActivitySources(ValidatedGetActivitySources {
                     reference,
@@ -1429,6 +1506,9 @@ fn arguments_within_scope(snapshot: &ConnectionReadSnapshot, request: &Validated
             request.facet_id.as_deref()
         }
         ValidatedTool::ListTranscripts(request) => request.facet_id.as_deref(),
+        ValidatedTool::GetTranscript(ValidatedGetTranscript::Range(request)) => {
+            request.facet_id.as_deref()
+        }
         ValidatedTool::ListEntities(request) => request.facet_id.as_deref(),
         _ => None,
     };
@@ -1965,7 +2045,8 @@ fn search(
         || request.content_kinds.is_some()
         || request.activity.is_some()
         || request.person.is_some()
-        || request.place.is_some();
+        || request.place.is_some()
+        || request.speaker.is_some();
     let implicit_end = filtered
         && request.query.trim().is_empty()
         && request.day.is_none()
@@ -1978,6 +2059,29 @@ fn search(
     } else {
         boundary
     };
+    let boundary = if request.speaker.is_some() {
+        boundary.filtered_to(Some(AdmittedCategory::Transcripts))
+    } else {
+        boundary
+    };
+    let speakers = request
+        .speaker
+        .as_ref()
+        .and_then(|_| solstone_core_talent_runtime::agent_speakers(journal_root));
+    let speaker_filter = request
+        .speaker
+        .as_deref()
+        .map(|raw| {
+            crate::speaker_filter::resolve_speaker_filter(
+                journal_root,
+                principal,
+                snapshot,
+                request.facet_id.as_deref(),
+                speakers.as_ref(),
+                raw,
+            )
+        })
+        .transpose()?;
     let resolution =
         resolve_search_entities(journal_root, principal, snapshot, &boundary, &request);
     let resolution_status_str = match resolution.status {
@@ -2019,10 +2123,14 @@ fn search(
         ("person", &request.person),
         ("place", &request.place),
         ("activity", &request.activity),
+        ("speaker", &request.speaker),
     ] {
         if let Some(value) = value {
             query_identity[key] = json!(value);
         }
+    }
+    if request.dedup != SearchDedup::Segment {
+        query_identity["dedup"] = json!(request.dedup.as_str());
     }
     let query_hash = digest_json(&query_identity);
     let resolved_cursor = request
@@ -2085,7 +2193,25 @@ fn search(
     // may not see never matches, counts, relaxes the query or anchors a cursor.
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
     let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names), snapshot);
-    let mut speech_lines = solstone_core_transcripts::SpeechLineCache::default();
+    let speech_lines = Arc::new(std::sync::Mutex::new(
+        solstone_core_transcripts::SpeechLineCache::default(),
+    ));
+    let speech_admission: Option<SpeechLineAdmission> = speaker_filter.as_ref().map(|filter| {
+        let root = journal_root.to_path_buf();
+        let cache = Arc::clone(&speech_lines);
+        let speakers = speakers.clone();
+        let filter = filter.clone();
+        let admission: SpeechLineAdmission =
+            Arc::new(move |path: &str, idx: i64, content: &str| {
+                let mut cache = cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                cache
+                    .resolve_line(&root, path, idx, content, speakers.as_ref(), None)
+                    .is_some_and(|line| filter.matches(&line))
+            });
+        admission
+    });
     let mut import_previews = BTreeMap::new();
     let mut sources: Option<BTreeMap<String, String>> = None;
     let mut seen_document_paths: BTreeSet<String> = (!request.query.trim().is_empty())
@@ -2114,7 +2240,7 @@ fn search(
             && !request.query.trim().is_empty()
             && request.limit + 1 < remaining;
         let batch = if short { request.limit + 1 } else { remaining };
-        let response = search_connection_with_possible_names(
+        let response = search_connection_with_admissions(
             journal_root,
             &boundary,
             &ConnectionSearchRequest {
@@ -2128,6 +2254,7 @@ fn search(
                 // word must match and none does, the index retries on the content
                 // words; `relaxed` tells the agent the hits match only some of them.
                 relax: true,
+                collapse_segments: request.dedup.collapse_segments(),
                 ..ConnectionSearchRequest::default()
             },
             // Journal days are the owner's days, so relative dates resolve against
@@ -2137,6 +2264,7 @@ fn search(
                 .date(),
             possible_names.admission(),
             crate::body_source::body_entry_admission(journal_root, snapshot, day_files.clone()),
+            speech_admission.clone(),
         )
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
@@ -2299,17 +2427,28 @@ fn search(
                 let line_possible_names = segment_dir
                     .as_deref()
                     .and_then(|dir| possible_names.labels(dir));
-                let Some(resolved) = speech_lines.resolve_line(
-                    journal_root,
-                    &hit.metadata.path,
-                    hit.metadata.idx,
-                    &served_text,
-                    checker.speakers(journal_root),
-                    line_possible_names.as_ref(),
-                ) else {
+                let Some(resolved) = speech_lines
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .resolve_line(
+                        journal_root,
+                        &hit.metadata.path,
+                        hit.metadata.idx,
+                        &served_text,
+                        checker.speakers(journal_root),
+                        line_possible_names.as_ref(),
+                    )
+                else {
                     live_dropped = true;
                     continue;
                 };
+                if speaker_filter
+                    .as_ref()
+                    .is_some_and(|filter| !filter.matches(&resolved))
+                {
+                    live_dropped = true;
+                    continue;
+                }
                 let text = resolved.text.clone();
                 resolved_speech = Some(resolved);
                 text
@@ -4903,10 +5042,26 @@ fn list_transcripts(
                 || cursor.facet != request.facet_id
                 || cursor.source != request.source
                 || cursor.kind != request.kind
+                || cursor.speaker != request.speaker
             {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
             Ok(cursor)
+        })
+        .transpose()?;
+    let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
+    let speaker_filter = request
+        .speaker
+        .as_deref()
+        .map(|raw| {
+            crate::speaker_filter::resolve_speaker_filter(
+                journal_root,
+                principal,
+                snapshot,
+                request.facet_id.as_deref(),
+                speakers.as_ref(),
+                raw,
+            )
         })
         .transpose()?;
     // A body source's label lists that source's windows, its own way. Any
@@ -5013,6 +5168,7 @@ fn list_transcripts(
     // What the owner hid of their body data, read once for the list.
     let hides = crate::body_source::BodyHides::read(journal_root);
     let declarations = FacetDeclarationSet::from_journal(journal_root).ok();
+    let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
 
     'outer: for day in &days {
         let day_segments =
@@ -5118,8 +5274,6 @@ fn list_transcripts(
             },
         );
 
-        let speakers = solstone_core_talent_runtime::agent_speakers(journal_root);
-        let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
         for (segment, stream, name, clock) in matching_segments {
             let start_seconds = clock.as_ref().map(|c| c.start_seconds).unwrap_or(0);
             if !is_after_cursor(day, start_seconds, &stream, &name, cursor.as_ref()) {
@@ -5143,6 +5297,120 @@ fn list_transcripts(
             }) else {
                 continue;
             };
+
+            if let Some(ref filter) = speaker_filter {
+                if !solstone_core_transcripts::segment_has_spoken_transcript_files(
+                    &segment,
+                    &snapshot.categories,
+                ) {
+                    continue;
+                }
+                #[cfg(feature = "test-hooks")]
+                crate::source_freeze_barrier::checkpoint(
+                    crate::source_freeze_barrier::FreezePoint::Before,
+                );
+                let allowed = crate::source_release::check_segment_transcript_release(
+                    journal_root,
+                    day,
+                    &stream,
+                    &name,
+                );
+                let spoken_res = if allowed {
+                    Some(solstone_core_transcripts::read_spoken_segment_lines(
+                        &segment,
+                        speakers.as_ref(),
+                        possible_names.labels(segment.path()).as_ref(),
+                        Some(&snapshot.categories),
+                    ))
+                } else {
+                    None
+                };
+                let segment_has_audio = allowed
+                    && segments.len() < request.limit
+                    && snapshot.categories.contains(&AdmittedCategory::AudioMedia)
+                    && spoken_res.as_ref().is_some_and(Result::is_ok)
+                    && crate::audio_media::has_audio(journal_root, segment.path());
+                let allowed = allowed
+                    && crate::source_release::check_segment_transcript_release(
+                        journal_root,
+                        day,
+                        &stream,
+                        &name,
+                    );
+                #[cfg(feature = "test-hooks")]
+                crate::source_freeze_barrier::checkpoint(
+                    crate::source_freeze_barrier::FreezePoint::After,
+                );
+                if !allowed {
+                    continue;
+                }
+                let spoken = match spoken_res.expect("allowed reads spoken lines") {
+                    Ok(spoken) => spoken,
+                    Err(
+                        solstone_core_transcripts::SegmentTranscriptReadError::NoPermittedFiles,
+                    ) => {
+                        continue;
+                    }
+                    Err(_) => {
+                        unreadable += 1;
+                        continue;
+                    }
+                };
+                let matched_lines = spoken.lines.iter().filter(|l| filter.matches(l)).count();
+                if matched_lines == 0 {
+                    continue;
+                }
+                if segments.len() == request.limit {
+                    has_more = true;
+                    break 'outer;
+                }
+                last_examined = Some((day.clone(), stream.clone(), name.clone()));
+                let reference = segment_reference(
+                    journal_root,
+                    principal,
+                    snapshot,
+                    SegmentReference {
+                        day: day.clone(),
+                        stream: stream.clone(),
+                        segment: name.clone(),
+                        version: spoken.version.fingerprint(),
+                        source_index: None,
+                        byte_offset: None,
+                        statement_ordinal: None,
+                        message: None,
+                    },
+                )?;
+                targets.push(format!("{day}/{stream}/{name}"));
+                let time_str = clock.as_ref().map(|c| c.label.as_str()).unwrap_or("");
+                let mut seg_val = json!({
+                    "title": segment_title(&["transcripts"], false, day),
+                    "date": day,
+                    "time": time_str,
+                    "source": source_label(&sources, &stream),
+                    "content_kinds": ["transcripts"],
+                    "speakers": spoken.speakers,
+                    "reference": reference,
+                    "lines": matched_lines,
+                });
+                owner_links.attach(journal_root, &mut seg_val, day, &stream, &name);
+                if let Some(clock) = &clock {
+                    seg_val["seconds"] = json!(
+                        clock
+                            .exclusive_end_seconds
+                            .saturating_sub(clock.start_seconds)
+                    );
+                }
+                if segment_has_audio {
+                    seg_val["has_audio"] = Value::Bool(true);
+                }
+                if let Some(zone) =
+                    differing_capture_zone(journal_root, &owner_zone, day, &name, &segment)
+                {
+                    seg_val["capture_zone"] = zone;
+                }
+                segments.push(seg_val);
+                continue;
+            }
 
             #[cfg(feature = "test-hooks")]
             crate::source_freeze_barrier::checkpoint(
@@ -5283,6 +5551,7 @@ fn list_transcripts(
                             facet: request.facet_id.clone(),
                             source: request.source.clone(),
                             kind: None,
+                            speaker: request.speaker.clone(),
                             last_day,
                             last_stream,
                             last_name,
@@ -5308,7 +5577,9 @@ fn list_transcripts(
         response_val["unreadable"] = json!(unreadable);
     }
     // A day's list can be read in one go, and says what it doesn't cover.
-    if let Some(day) = request.day.as_deref() {
+    if let Some(day) = request.day.as_deref()
+        && speaker_filter.is_none()
+    {
         response_val["gaps"] = json!(crate::segment_span::day_gaps(
             journal_root,
             snapshot,
@@ -5330,11 +5601,11 @@ fn list_transcripts(
             )?);
         }
     }
-    // A list narrowed to one source says nothing of the day's other sources.
+    // A list narrowed to one source or speaker says nothing of the day's other sources.
     let other_sources = request
         .day
         .as_deref()
-        .filter(|_| request.source.is_none())
+        .filter(|_| request.source.is_none() && speaker_filter.is_none())
         .map_or_else(Vec::new, |day| {
             crate::body_source::other_sources(journal_root, snapshot, &hides, day)
         });
@@ -5378,12 +5649,33 @@ fn get_transcript(
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetTranscript,
 ) -> Result<Prepared, DispatchError> {
+    let request = match request {
+        ValidatedGetTranscript::Range(range) => {
+            return crate::segment_span::read_transcript_range(
+                journal_root,
+                principal,
+                snapshot,
+                &range,
+            );
+        }
+        ValidatedGetTranscript::Reference(request) => request,
+    };
     let moment = request.offset_ms.map(|ms| (ms, request.display.as_deref()));
     // A segment's name: found among the day's segments as the journal lists
     // them, then read as any segment is.
     if crate::names::is_name(&request.reference) {
         let address = crate::names::resolve_segment(journal_root, &request.reference)
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+        if request.speaker.is_some() {
+            return crate::segment_span::read_spoken_single_segment(
+                journal_root,
+                principal,
+                snapshot,
+                &address,
+                &request,
+                Some(&request.reference),
+            );
+        }
         return read_segment_with_reference(
             journal_root,
             principal,
@@ -5404,7 +5696,14 @@ fn get_transcript(
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
     {
         ReferenceTarget::Segment(reference) => reference,
-        ReferenceTarget::SourceSpan(_) | ReferenceTarget::SegmentSpan(_)
+        ReferenceTarget::SourceSpan(_)
+            if request.offset_ms.is_some()
+                || request.audio.is_some()
+                || request.speaker.is_some() =>
+        {
+            return Err(DispatchError::InvalidInput);
+        }
+        ReferenceTarget::SegmentSpan(_)
             if request.offset_ms.is_some() || request.audio.is_some() =>
         {
             return Err(DispatchError::InvalidInput);
@@ -5429,11 +5728,22 @@ fn get_transcript(
         }
         _ => return Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     };
+    let address: crate::references::SegmentAddress = reference.into();
+    if request.speaker.is_some() {
+        return crate::segment_span::read_spoken_single_segment(
+            journal_root,
+            principal,
+            snapshot,
+            &address,
+            &request,
+            Some(&request.reference),
+        );
+    }
     read_segment_with_reference(
         journal_root,
         principal,
         snapshot,
-        &reference.into(),
+        &address,
         request.cursor.as_deref(),
         moment,
         request.audio.as_ref(),

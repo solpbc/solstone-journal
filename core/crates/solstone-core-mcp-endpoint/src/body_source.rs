@@ -39,7 +39,7 @@ use crate::references::{
     ReferenceKind, ReferenceTarget, SegmentReference, SourceSpanPosition, SourceSpanReference,
     TranscriptListCursor,
 };
-use crate::tools::{ToolError, ValidatedGetTranscript, ValidatedListTranscripts};
+use crate::tools::{ToolError, TranscriptReferenceRequest, ValidatedListTranscripts};
 use solstone_core_indexer_query::AdmittedCategory;
 
 /// Windows one `get_transcript` call visits. A sparse span gets short pages rather
@@ -2422,6 +2422,9 @@ pub(crate) fn list_source(
     source: &str,
     cursor: Option<&TranscriptListCursor>,
 ) -> Result<Prepared, DispatchError> {
+    if request.facet_id.is_some() || request.speaker.is_some() {
+        return Err(DispatchError::Tool(ToolError::SourceArguments));
+    }
     let day = request
         .day
         .as_deref()
@@ -2651,6 +2654,7 @@ pub(crate) fn list_source(
                 facet: None,
                 source: Some(source.to_owned()),
                 kind: request.kind.clone(),
+                speaker: None,
                 last_day: day.to_owned(),
                 last_stream: (*stream).to_owned(),
                 last_name,
@@ -2727,7 +2731,7 @@ pub(crate) fn read_source_span(
     journal_root: &Path,
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
-    request: &ValidatedGetTranscript,
+    request: &TranscriptReferenceRequest,
     reference: SourceSpanReference,
 ) -> Result<Prepared, DispatchError> {
     let not_found = || DispatchError::Tool(ToolError::ReferenceNotFound);

@@ -34,6 +34,7 @@ pub(crate) enum ReferenceKind {
     WeekRange,
     LocationDay,
     Experience,
+    TranscriptRange,
 }
 
 impl ReferenceKind {
@@ -54,6 +55,7 @@ impl ReferenceKind {
             Self::WeekRange => 13,
             Self::LocationDay => 14,
             Self::Experience => 15,
+            Self::TranscriptRange => 16,
         }
     }
 
@@ -74,6 +76,7 @@ impl ReferenceKind {
             13 => Some(Self::WeekRange),
             14 => Some(Self::LocationDay),
             15 => Some(Self::Experience),
+            16 => Some(Self::TranscriptRange),
             _ => None,
         }
     }
@@ -179,6 +182,9 @@ pub(crate) struct TranscriptListCursor {
     /// One kind of body entry, for a source's list of the windows holding it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// Optional speaker filter bound into a spoken-segment list continuation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
     pub last_day: String,
     pub last_stream: String,
     pub last_name: String,
@@ -372,6 +378,45 @@ pub(crate) struct ExperienceReference {
     pub experience_id: String,
 }
 
+/// Where a date-range or speaker-filtered spoken transcript scan stands.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct TranscriptRangePosition {
+    pub day: String,
+    pub stream: String,
+    pub segment: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_line_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u64>,
+}
+
+/// Bound continuation cursor for `get_transcript` date-range or speaker-filtered scans.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct TranscriptRangeCursor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facet: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    #[serde(default)]
+    pub context_lines: usize,
+    /// When paging a speaker-filtered single-segment read, binds the segment itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub single_segment: Option<(String, String, String)>,
+    pub position: TranscriptRangePosition,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "target", rename_all = "snake_case")]
 pub(crate) enum ReferenceTarget {
@@ -390,6 +435,7 @@ pub(crate) enum ReferenceTarget {
     WeekRange(WeekRangeCursor),
     LocationDay(LocationDayReference),
     Experience(ExperienceReference),
+    TranscriptRange(TranscriptRangeCursor),
 }
 
 impl ReferenceTarget {
@@ -410,6 +456,7 @@ impl ReferenceTarget {
             Self::WeekRange(_) => ReferenceKind::WeekRange,
             Self::LocationDay(_) => ReferenceKind::LocationDay,
             Self::Experience(_) => ReferenceKind::Experience,
+            Self::TranscriptRange(_) => ReferenceKind::TranscriptRange,
         }
     }
 }
@@ -668,11 +715,12 @@ mod tests {
             (ReferenceKind::WeekRange, 13),
             (ReferenceKind::LocationDay, 14),
             (ReferenceKind::Experience, 15),
+            (ReferenceKind::TranscriptRange, 16),
         ] {
             assert_eq!(kind.tag(), expected_tag);
             assert_eq!(ReferenceKind::from_tag(expected_tag), Some(kind));
         }
-        for unknown in [0, 16, 255] {
+        for unknown in [0, 17, 255] {
             assert_eq!(ReferenceKind::from_tag(unknown), None);
         }
     }

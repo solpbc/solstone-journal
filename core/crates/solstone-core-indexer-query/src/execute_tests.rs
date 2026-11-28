@@ -5274,3 +5274,159 @@ fn connection_relevance_collapses_chronicle_segments_prefers_audio_on_tie_and_pa
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn speech_line_admission_runs_before_segment_collapse_and_supports_uncollapsed_paging() {
+    use std::sync::Arc;
+
+    let root = temp_root("speech-admission-collapse");
+    let seg_a = root.join("chronicle/20251001/talk/193000_720");
+    let seg_b = root.join("chronicle/20251002/talk/090000_360");
+    fs::create_dir_all(seg_a.join("talents")).unwrap();
+    fs::create_dir_all(&seg_b).unwrap();
+
+    // Segment A: other speaker has a shorter, higher-BM25 "lantern" line AND a talent summary also
+    // mentions "lantern", while owner has two longer "lantern" utterances.
+    fs::write(
+        seg_a.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"19:30:05\",\"speaker\":\"other\",\"text\":\"lantern\"}\n",
+            "{\"start\":\"19:30:20\",\"speaker\":\"owner\",\"text\":\"we spoke about carrying the brass lantern down the river lane before dusk\"}\n",
+            "{\"start\":\"19:30:40\",\"speaker\":\"owner\",\"text\":\"and I will return the brass lantern to the gatehouse tomorrow morning\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(seg_a.join("talents/activity.md"), "lantern\n").unwrap();
+    fs::write(
+        seg_b.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"start\":\"09:00:10\",\"speaker\":\"owner\",\"text\":\"the lantern oil is ready in the cellar\"}\n",
+        ),
+    )
+    .unwrap();
+    scan_journal(&root, true).unwrap();
+
+    let boundary = connection_boundary(&["transcripts", "facets"], ConnectionScope::WholeJournal);
+
+    // Without speech admission, S4 collapses seg_a onto its highest-BM25 row (activity.md when
+    // facets is granted, or other's idx 0 when transcripts-only).
+    let unfiltered = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "lantern".to_string(),
+            limit: 10,
+            relax: false,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    let seg_a_unfiltered = unfiltered
+        .results
+        .iter()
+        .find(|hit| hit.metadata.path.starts_with("20251001/talk/193000_720/"))
+        .expect("seg_a present");
+    assert_eq!(
+        seg_a_unfiltered.metadata.path,
+        "20251001/talk/193000_720/talents/activity.md"
+    );
+
+    let transcripts_only = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+    let unfiltered_tx = crate::search_connection(
+        &root,
+        &transcripts_only,
+        &ConnectionSearchRequest {
+            query: "lantern".to_string(),
+            limit: 10,
+            relax: false,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    let seg_a_unfiltered_tx = unfiltered_tx
+        .results
+        .iter()
+        .find(|hit| hit.metadata.path == "20251001/talk/193000_720/audio.jsonl")
+        .expect("seg_a audio present");
+    assert_eq!(seg_a_unfiltered_tx.metadata.idx, 0);
+
+    let only_owner: crate::SpeechLineAdmission =
+        Arc::new(|_path, _idx, content| content.contains("owner:"));
+    let deny_pn: crate::PossibleNameAdmission = Arc::new(|_, _, _| false);
+    let deny_body: crate::BodyEntryAdmission = Arc::new(|_, _| false);
+
+    // With speech admission + S4 segment collapse: seg_a MUST survive with an owner line (never
+    // evicted by other's higher-BM25 idx 0 or by talents/activity.md), returning 2 segments total.
+    let collapsed = crate::search_connection_with_admissions(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "lantern".to_string(),
+            limit: 10,
+            relax: false,
+            collapse_segments: true,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+        Arc::clone(&deny_pn),
+        Arc::clone(&deny_body),
+        Some(Arc::clone(&only_owner)),
+    )
+    .unwrap();
+    assert_eq!(collapsed.results.len(), 2);
+    assert!(collapsed.results.iter().all(|h| h.text.contains("owner:")));
+    assert!(collapsed.results.iter().any(|h| h.metadata.path
+        == "20251001/talk/193000_720/audio.jsonl"
+        && (h.metadata.idx == 1 || h.metadata.idx == 2)));
+
+    // With collapse_segments = false, all 3 owner utterances return cleanly across pages (limit=2).
+    let mut start_after = None;
+    let mut seen = Vec::new();
+    loop {
+        let page = crate::search_connection_with_admissions(
+            &root,
+            &boundary,
+            &ConnectionSearchRequest {
+                query: "lantern".to_string(),
+                limit: 2,
+                start_after: start_after.clone(),
+                relax: false,
+                collapse_segments: false,
+                ..ConnectionSearchRequest::default()
+            },
+            reference_date(),
+            Arc::clone(&deny_pn),
+            Arc::clone(&deny_body),
+            Some(Arc::clone(&only_owner)),
+        )
+        .unwrap();
+        if page.results.is_empty() {
+            break;
+        }
+        for hit in &page.results {
+            seen.push((hit.metadata.path.clone(), hit.metadata.idx));
+        }
+        if page.results.len() < 2 {
+            break;
+        }
+        let last = page.results.last().unwrap();
+        start_after = Some(crate::ConnectionStartAfter {
+            day: last.metadata.day.clone(),
+            path: last.metadata.path.clone(),
+            idx: last.metadata.idx,
+            score_bits: Some(last.score.to_bits()),
+        });
+    }
+    assert_eq!(seen.len(), 3, "seen={seen:?}");
+    let unique: std::collections::BTreeSet<_> = seen.iter().cloned().collect();
+    assert_eq!(unique.len(), 3);
+    assert!(unique.contains(&("20251001/talk/193000_720/audio.jsonl".to_string(), 1)));
+    assert!(unique.contains(&("20251001/talk/193000_720/audio.jsonl".to_string(), 2)));
+    assert!(unique.contains(&("20251002/talk/090000_360/audio.jsonl".to_string(), 0)));
+
+    fs::remove_dir_all(root).unwrap();
+}

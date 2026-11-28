@@ -188,7 +188,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::Search,
         wire_name: "search",
         title: "search the journal",
-        description: "find what this connection may read in the owner's journal. give a few keywords, or leave query out to browse by day or kind. a query ranks closer matches first; browsing without a query returns the newest entries first. use kind for one kind or a list. for writing in a week, use kind with notes and facets, activity writing, and the date range. experiences match by title, summary and moments when summaries permission (kind facets) and the experience's facet allow them (omitting hidden experiences) and return references for fetch. person matches names on activities. place matches named location information. notes and photos give a preview and a journal link when available. photo results carry time when known and time_source when available, and browsing photos returns each complete day's photos in chronological order. places returns one result per day; when kind includes places, on the first page it also returns places_precision and the owner's places list (for each place: day counts, a combined count of visits and stays, the sum of their known durations in seconds, and coordinates or ~1 km cells when allowed). pass next_cursor as cursor with the same filters. when transcripts are allowed, search also reads spoken transcript lines and returns each line's time (or untimed when true), speaker when known, and segment reference. use get_transcript to read the surrounding transcript before quoting anyone. use fetch to read the entry itself. screen text shows what was visible. it does not establish what the owner read or did.",
+        description: "find what this connection may read in the owner's journal. give a few keywords, or leave query out to browse by day or kind. a query ranks closer matches first; browsing without a query returns the newest entries first. use kind for one kind or a list. for writing in a week, use kind with notes and facets, activity writing, and the date range. experiences match by title, summary and moments when summaries permission (kind facets) and the experience's facet allow them (omitting hidden experiences) and return references for fetch. person matches names on activities. place matches named location information. notes and photos give a preview and a journal link when available. photo results carry time when known and time_source when available, and browsing photos returns each complete day's photos in chronological order. places returns one result per day; when kind includes places, on the first page it also returns places_precision and the owner's places list (for each place: day counts, a combined count of visits and stays, the sum of their known durations in seconds, and coordinates or ~1 km cells when allowed). pass next_cursor as cursor with the same filters. when transcripts are allowed, search also reads spoken transcript lines and returns each line's time (or untimed when true), speaker when known, and segment reference. pass speaker to narrow spoken transcript search before per-segment deduplication (requires transcripts permission: owner, a person's entity reference which also requires entities permission, or a display name or speaker label). pass dedup: \"none\" to return every matching entry or line in a segment instead of one hit per segment. use get_transcript to read the surrounding transcript before quoting anyone. use fetch to read the entry itself. screen text shows what was visible. it does not establish what the owner read or did.",
         input_schema: search_input_schema,
         requires: SEARCH,
         audit_name: solstone_core_mcp_audit::ToolName::Search,
@@ -206,7 +206,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
         title: "list transcripts",
-        description: "list transcript segments this connection may read. use day or day_from and day_to. time_from and time_to narrow a single day. for one day without a facet or find filter, pass a source label as source. a body source also takes entry_kind to narrow its entries, for example sleep. pass summary: true (with optional day, day_from, day_to or facet, and without limit, cursor, time_from, time_to, source, entry_kind, kind, person, place or activity) to return counts by permitted kind and source (with body windows and Strava workouts both counted under body, and calendar occurrences requiring whole-journal scope without a facet filter and counted in the month of their first matching day), days with a match, monthly counts by kind, summed segment durations in seconds for transcripts and screen_text when positive, and word counts for transcripts, messages, notes and documents when positive, in one call. a day's span_reference reads its segments together with get_transcript. gaps show times no readable timed segment covers. they say nothing about what happened. other_sources lists body sources. omitted_workouts counts Strava workouts left out of this list. use search to find them. body_note explains when body access is missing. when include audio is allowed, segments that still have a recording carry has_audio: true. the shared kind, person, place and activity filters list journal entries for fetch and take a date range or facet. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
+        description: "list transcript segments this connection may read. use day or day_from and day_to. time_from and time_to narrow a single day. pass a source label as source to narrow to streams with that label; a body source requires day without facet or speaker, and also takes entry_kind to narrow its entries, for example sleep. pass speaker to list only spoken transcript segments with a matching line (requires transcripts permission: owner, a person's entity reference which also requires entities permission, or a display name or speaker label; cannot be combined with summary, body sources, entry_kind, kind, person, place or activity). pass summary: true (with optional day, day_from, day_to or facet, and without limit, cursor, time_from, time_to, source, entry_kind, speaker, kind, person, place or activity) to return counts by permitted kind and source (with body windows and Strava workouts both counted under body, and calendar occurrences requiring whole-journal scope without a facet filter and counted in the month of their first matching day), days with a match, monthly counts by kind, summed segment durations in seconds for transcripts and screen_text when positive, and word counts for transcripts, messages, notes and documents when positive, in one call. a day's span_reference reads its segments together with get_transcript. gaps show times no readable timed segment covers. they say nothing about what happened. other_sources lists body sources. omitted_workouts counts Strava workouts left out of this list. use search to find them. body_note explains when body access is missing. when include audio is allowed, segments that still have a recording carry has_audio: true. the shared kind, person, place and activity filters list journal entries for fetch and take a date range or facet. pass next_cursor as cursor with the same filters. give the owner a journal link when available.",
         input_schema: list_transcripts_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
@@ -215,7 +215,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "read a transcript segment or a span_reference from list_transcripts. pass either reference for one read or references for up to 12 reads in input order. each batch item carries its own result or error. pass next_cursor as cursor with that single reference to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. for one transcript segment, pass audio: true to request a 16 kHz mono WAV clip (up to 60 seconds; default 30000 ms from audio_start_ms 0) when include audio is allowed and a recording is kept. by default the clip arrives as an audio content block at audio.audio_content_index, with a suggested download name in audio.filename; pass audio_encoding \"base64\" to return the WAV bytes in audio.data_base64 instead (for interactive pages or clients that cannot read audio content blocks). pass audio.next_start_ms as audio_start_ms to continue, or a name from audio.tracks as audio_track when there is more than one recording. the journal makes no public link for audio. a span returns segments with times, sources, content_kinds and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
+        description: "read a transcript segment, a span_reference from list_transcripts, or spoken transcripts across a day or date range. pass reference for one read, references for up to 12 reads in input order, or day (or day_from and day_to) to scan spoken transcripts directly across days in chronological order (requires transcripts permission). each batch item carries its own result or error. in date-range mode or with a single segment or day span reference, pass speaker to keep matching spoken lines (requires transcripts permission: owner, a person's entity reference which also requires entities permission, or a display name or speaker label), and optional context_lines (0 to 5, default 0) to include surrounding spoken lines in the same segment. date-range mode also accepts facet and source, omits days after today, and returns segments with date, time, source, content_kinds, speakers, entries, reference and link, paged with next_cursor. pass next_cursor as cursor with the same single reference or date-range arguments to continue. for one screen segment, pass offset_ms from the start (0 for a screenshot) to request a picture. when a timed description is available, description_offset_ms gives its time. segment_description describes the whole segment. if there are several screens, pass a display from the returned list. for one transcript segment, pass audio: true to request a 16 kHz mono WAV clip (up to 60 seconds; default 30000 ms from audio_start_ms 0) when include audio is allowed and a recording is kept. by default the clip arrives as an audio content block at audio.audio_content_index, with a suggested download name in audio.filename; pass audio_encoding \"base64\" to return the WAV bytes in audio.data_base64 instead (for interactive pages or clients that cannot read audio content blocks). pass audio.next_start_ms as audio_start_ms to continue, or a name from audio.tracks as audio_track when there is more than one recording. the journal makes no public link for audio. a span returns segments with times, sources, content_kinds and entries. a body span returns entries with their sources. give the owner the journal link when present. append ~HHMMSS from a timed line you actually read. use the link alone when untimed is true.",
         input_schema: transcript_input_schema,
         requires: SEGMENT,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -569,6 +569,7 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
         }
     }
     if properties.contains_key("references")
+        && name != "get_transcript"
         && arguments.contains_key("reference") == arguments.contains_key("references")
     {
         return format!("{name} takes either `reference` or `references`.");
@@ -577,7 +578,26 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
         && arguments.contains_key("references")
         && arguments.contains_key("cursor")
     {
+        if name == "get_transcript" {
+            return "get_transcript takes `cursor` with a single `reference` or a date range, not `references`."
+                .to_owned();
+        }
         return format!("{name} takes `cursor` with a single `reference`.");
+    }
+    if name == "list_transcripts"
+        && arguments.get("summary").and_then(Value::as_bool) == Some(true)
+        && arguments.contains_key("speaker")
+    {
+        return "list_transcripts cannot combine `summary` with `speaker`.".to_owned();
+    }
+    if name == "list_transcripts"
+        && arguments.contains_key("speaker")
+        && ["kind", "person", "place", "activity"]
+            .iter()
+            .any(|key| arguments.contains_key(*key))
+    {
+        return "list_transcripts cannot combine `speaker` with `kind`, `person`, `place`, or `activity`."
+            .to_owned();
     }
     if name == "list_transcripts"
         && !arguments.contains_key("source")
@@ -592,6 +612,30 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     }
     if name == "search" && arguments.contains_key("category") && arguments.contains_key("kind") {
         return "search takes either `kind` or `category`.".to_owned();
+    }
+    if name == "search" && arguments.contains_key("speaker") {
+        if ["person", "place", "activity"]
+            .iter()
+            .any(|key| arguments.contains_key(*key))
+        {
+            return "search cannot combine `speaker` with `person`, `place`, or `activity`."
+                .to_owned();
+        }
+        let non_transcript_category = arguments
+            .get("category")
+            .and_then(Value::as_str)
+            .is_some_and(|word| word != "transcripts");
+        let non_transcript_kind = match arguments.get("kind") {
+            Some(Value::String(word)) => word != "transcripts",
+            Some(Value::Array(items)) => items
+                .iter()
+                .any(|item| item.as_str() != Some("transcripts")),
+            _ => false,
+        };
+        if non_transcript_category || non_transcript_kind {
+            return "search `speaker` only filters spoken transcripts; omit `kind` or pass `transcripts`."
+                .to_owned();
+        }
     }
     if name == "list_activities" {
         if let Some(group_by) = arguments.get("group_by") {
@@ -627,6 +671,36 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
         }
     }
     if name == "get_transcript" {
+        let has_range = ["day", "day_from", "day_to", "facet", "source"]
+            .iter()
+            .any(|key| arguments.contains_key(*key));
+        let has_date = ["day", "day_from", "day_to"]
+            .iter()
+            .any(|key| arguments.contains_key(*key));
+        if has_range
+            && (arguments.contains_key("reference") || arguments.contains_key("references"))
+        {
+            return "get_transcript takes either `reference`/`references` or a date range (`day`, `day_from`, `day_to`), not both."
+                .to_owned();
+        }
+        if !has_range && arguments.contains_key("reference") == arguments.contains_key("references")
+        {
+            return "get_transcript takes `reference`, `references`, or a date (`day`, `day_from`, or `day_to`)."
+                .to_owned();
+        }
+        if has_range && !has_date {
+            return "get_transcript needs `day`, `day_from`, or `day_to` when filtering by `facet` or `source`."
+                .to_owned();
+        }
+        if arguments.contains_key("context_lines") && !arguments.contains_key("speaker") {
+            return "get_transcript needs `speaker` when using `context_lines`.".to_owned();
+        }
+        if arguments.contains_key("references")
+            && (arguments.contains_key("speaker") || arguments.contains_key("context_lines"))
+        {
+            return "get_transcript takes `speaker` with a single `reference` or a date range, not `references`."
+                .to_owned();
+        }
         let has_audio_options = [
             "audio_start_ms",
             "audio_duration_ms",
@@ -644,9 +718,11 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
             && (arguments.contains_key("references")
                 || arguments.contains_key("cursor")
                 || arguments.contains_key("offset_ms")
-                || arguments.contains_key("display"))
+                || arguments.contains_key("display")
+                || arguments.contains_key("speaker")
+                || has_range)
         {
-            return "get_transcript takes `audio` with a single segment `reference`, without `references`, `cursor`, `offset_ms`, or `display`."
+            return "get_transcript takes `audio` with a single segment `reference`, without `references`, `cursor`, `offset_ms`, `display`, `speaker`, or date-range arguments."
                 .to_owned();
         }
     }
@@ -678,7 +754,7 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
     if name == "search"
         && query_empty
         && !day_bounded
-        && !["kind", "category", "person", "place", "activity"]
+        && !["kind", "category", "person", "place", "activity", "speaker"]
             .iter()
             .any(|key| arguments.contains_key(*key))
     {
@@ -902,6 +978,8 @@ fn search_input_schema(context: &SchemaContext<'_>) -> Value {
             "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
+            "speaker": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "filter spoken transcript lines by speaker before per-segment deduplication. requires transcripts permission: owner, a person's entity reference (also requires entities permission), or a display name or speaker label. cannot be combined with non-transcript kinds or person, place or activity." },
+            "dedup": { "type": "string", "enum": ["segment", "none"], "default": "segment", "description": "how relevance-ordered search groups multiple hits in one segment: segment (default, one hit per segment) or none (return every matching entry or line in a segment; documents still return one hit per document and places one per day)." },
         }
     });
     let mut schema = with_find_filters(schema, context);
@@ -977,9 +1055,10 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
             "day_to": { "type": "string", "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "time_from": { "type": "string", "description": "Start of a time range within day, as HH:MM." },
             "time_to": { "type": "string", "description": "End of a time range within day, as HH:MM." },
-            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A source label, exactly as a segment, search result, other_sources or that day's body document gives it. Matches every readable stream with that label. Needs day, and can't be combined with facet." },
+            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "a source label, exactly as a segment, search result, other_sources or that day's body document gives it. matches every readable stream with that label. a body source needs day without facet or speaker." },
             "entry_kind": { "type": "string", "minLength": 1, "maxLength": 256, "description": "one kind of entry in a body source, such as resting heart rate, workout or sleep. the list shows windows with matching entries. the span returns only those entries." },
-            "summary": { "type": "boolean", "default": false, "description": "return counts by permitted kind and source (with body windows and Strava workouts both counted under body, and calendar occurrences requiring whole-journal scope without a facet filter and counted in the month of their first matching day), days with a match, monthly counts by kind, summed segment durations in seconds for transcripts and screen_text when positive, and word counts for transcripts, messages, notes and documents when positive, across the requested day or date range in one call, without paging individual segments. cannot be combined with limit, cursor, time_from, time_to, source, entry_kind, kind, person, place or activity." },
+            "speaker": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "filter to spoken transcript segments with a matching line. requires transcripts permission: owner, a person's entity reference (also requires entities permission), or a display name or speaker label. cannot be combined with summary, body sources, entry_kind, kind, person, place or activity." },
+            "summary": { "type": "boolean", "default": false, "description": "return counts by permitted kind and source (with body windows and Strava workouts both counted under body, and calendar occurrences requiring whole-journal scope without a facet filter and counted in the month of their first matching day), days with a match, monthly counts by kind, summed segment durations in seconds for transcripts and screen_text when positive, and word counts for transcripts, messages, notes and documents when positive, across the requested day or date range in one call, without paging individual segments. cannot be combined with limit, cursor, time_from, time_to, source, entry_kind, speaker, kind, person, place or activity." },
         }
     });
     let mut schema = with_find_filters(schema, context);
@@ -1009,12 +1088,18 @@ fn list_entities_input_schema(context: &SchemaContext<'_>) -> Value {
     with_scoped_facet(schema, context)
 }
 
-fn transcript_input_schema(_context: &SchemaContext<'_>) -> Value {
+fn transcript_input_schema(context: &SchemaContext<'_>) -> Value {
     let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
         "properties": {
             "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "scan spoken transcripts on a single day in chronological order, as YYYYMMDD or YYYY-MM-DD (requires transcripts permission; mutually exclusive with reference, references, day_from and day_to)." },
+            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "first day of an inclusive spoken-transcript scan, as YYYYMMDD or YYYY-MM-DD (requires transcripts permission; mutually exclusive with reference, references and day)." },
+            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": "last day of an inclusive spoken-transcript scan, as YYYYMMDD or YYYY-MM-DD (days after today are omitted; requires transcripts permission; mutually exclusive with reference, references and day)." },
+            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "narrow a date-range spoken-transcript scan to streams with this source label." },
+            "speaker": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES, "description": "filter spoken transcript lines by speaker in date-range mode or on a single segment or day span. requires transcripts permission: owner, a person's entity reference (also requires entities permission), or a display name or speaker label." },
+            "context_lines": { "type": "integer", "minimum": 0, "maximum": crate::tools::transcripts::MAX_CONTEXT_LINES, "default": 0, "description": "surrounding spoken lines to include before and after each matching line in the same segment, from 0 to 5 (default 0). requires speaker." },
             "offset_ms": { "type": "integer", "minimum": 0, "maximum": u32::MAX, "description": "milliseconds from the start of a single screen segment" },
             "display": { "type": "string", "minLength": 1, "maxLength": 255 },
             "audio": { "type": "boolean", "description": "request a bounded 16 kHz mono WAV clip from a single transcript segment. requires the include audio permission." },
@@ -1026,7 +1111,7 @@ fn transcript_input_schema(_context: &SchemaContext<'_>) -> Value {
         }
     });
     with_batch_references(&mut schema);
-    schema
+    with_scoped_facet(schema, context)
 }
 
 fn week_input_schema(_context: &SchemaContext<'_>) -> Value {

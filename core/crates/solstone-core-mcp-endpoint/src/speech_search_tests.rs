@@ -904,3 +904,629 @@ fn mcp_search_collapses_chronicle_segments_preserves_boundaries_fidelity_and_pag
     assert_eq!(photo_rows[0]["time"], "09:00:00");
     assert_eq!(photo_rows[1]["time"], "17:05:00");
 }
+
+fn add_stream(journal: &Path, name: &str) {
+    fs::create_dir_all(journal.join("streams")).unwrap();
+    fs::write(
+        journal.join("streams").join(format!("{name}.json")),
+        json!({
+            "name": name,
+            "kind": "observer",
+            "host": null,
+            "platform": null,
+            "created_at": 1735689600000_i64,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1,
+            "source": name
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn get_transcript_date_range_speaker_context_and_boundaries() {
+    use solstone_core_format::markdown::literal_text;
+
+    let journal = fixture("solstone-mcp-range-scan-");
+    add_stream(journal.path(), "talk");
+    add_stream(journal.path(), "calls");
+    add_entity(journal.path(), "owner_alex", "Alex Rivera", true, "alpha");
+    add_entity(journal.path(), "sam_patel", "Sam Patel", false, "alpha");
+    add_entity(journal.path(), "beta_only", "Morgan Lee", false, "beta");
+
+    // Day 1 (alpha, talk): owner + Sam + unnamed (the templar) + cleared owner line.
+    let seg1 = segment_dir(journal.path(), "20251001", "talk", "193000_720");
+    fs::write(
+        seg1.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"19:30:02\",\"text\":\"Will you send the parcel?\"}\n",
+            "{\"sentence_id\":2,\"speaker\":2,\"start\":\"19:30:10\",\"text\":\"I will send the parcel before noon.\"}\n",
+            "{\"sentence_id\":3,\"speaker\":\"(the templar)\",\"start\":\"19:30:22\",\"text\":\"Keep the seal intact.\"}\n",
+            "{\"sentence_id\":4,\"speaker\":10,\"start\":\"19:30:35\",\"text\":\"Speaker ten remark.\"}\n",
+            "{\"sentence_id\":5,\"speaker\":1,\"start\":\"19:30:45\",\"text\":\"Cleared owner line.\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("talents/speaker_labels.json"),
+        json!({
+            "labels": [
+                {"sentence_id": 1, "speaker": "sam_patel", "method": "user_assigned", "confidence": "high"},
+                {"sentence_id": 2, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"},
+                {"sentence_id": 5, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let cleared_sha = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(b"Cleared owner line."))
+    };
+    fs::write(
+        seg1.join("talents/owner_line_labels.json"),
+        json!({
+            "version": 1,
+            "entries": [{
+                "source": "audio",
+                "sentence_id": 5,
+                "start": "19:30:45",
+                "text_sha256": cleared_sha,
+                "speaker": null,
+                "set_at": "2025-10-01T20:00:00Z"
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Day 2 (alpha, calls): owner line on a second stream + non-spoken sibling note segment.
+    let seg2 = segment_dir(journal.path(), "20251005", "calls", "110000_360");
+    fs::write(
+        seg2.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg2.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"11:00:15\",\"text\":\"Let us check the numbers.\"}\n",
+            "{\"sentence_id\":2,\"speaker\":2,\"start\":\"11:01:04\",\"text\":\"I will post the ledger tonight.\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        seg2.join("talents/speaker_labels.json"),
+        json!({
+            "labels": [
+                {"sentence_id": 1, "speaker": "sam_patel", "method": "user_assigned", "confidence": "high"},
+                {"sentence_id": 2, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let note_seg = segment_dir(journal.path(), "20251005", "import.obsidian", "120000_60");
+    fs::write(
+        note_seg.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        note_seg.join("note_transcript.md"),
+        "Private note never spoken\n",
+    )
+    .unwrap();
+
+    // Day 3 (beta, talk): must stay invisible to alpha-scoped connection.
+    let beta_seg = segment_dir(journal.path(), "20251008", "talk", "140000_300");
+    fs::write(
+        beta_seg.join("talents/facets.json"),
+        json!([{"facet": "beta"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        beta_seg.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"14:00:05\",\"text\":\"Beta secret owner line.\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        beta_seg.join("talents/speaker_labels.json"),
+        json!({
+            "labels": [
+                {"sentence_id": 1, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Future day (alpha, talk): must always be omitted.
+    let future_seg = segment_dir(journal.path(), "20990101", "talk", "090000_300");
+    fs::write(
+        future_seg.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        future_seg.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"09:00:05\",\"text\":\"Future day line.\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        future_seg.join("talents/speaker_labels.json"),
+        json!({
+            "labels": [
+                {"sentence_id": 1, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // 1. Without transcripts permission (notes + facets only), date-range get_transcript is refused.
+    grant(
+        journal.path(),
+        &["notes", "facets"],
+        ReadScope::WholeJournal,
+    );
+    assert!(
+        probe(
+            journal.path(),
+            "get_transcript",
+            json!({"day_from": "20251001", "day_to": "20251010", "speaker": "owner"})
+        )
+        .is_err()
+    );
+
+    // 2. Transcripts-only on alpha (NO entities permission!): owner filter works, skips note,
+    //    omits beta and future day, excludes cleared owner line, preserves clocks and speakers.
+    grant(
+        journal.path(),
+        &["transcripts"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let range_owner = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"day_from": "20251001", "day_to": "20990101", "speaker": "owner"}),
+    )
+    .unwrap();
+    let segs = range_owner["segments"].as_array().unwrap();
+    assert_eq!(segs.len(), 2, "{range_owner}");
+    assert_eq!(segs[0]["date"], "20251001");
+    let talk_label = segs[0]["source"].as_str().unwrap().to_owned();
+    let calls_label = segs[1]["source"].as_str().unwrap().to_owned();
+    assert_ne!(talk_label, calls_label);
+    assert_eq!(segs[0]["content_kinds"], json!(["transcripts"]));
+    assert_eq!(
+        segs[0]["entries"],
+        json!([literal_text(
+            "[19:30:10] Alex Rivera (owner): I will send the parcel before noon."
+        )])
+    );
+    assert!(
+        segs[0]["speakers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "Sam Patel")
+    );
+    assert!(segs[0]["reference"].as_str().is_some());
+    assert_eq!(segs[1]["date"], "20251005");
+    assert_eq!(
+        segs[1]["entries"],
+        json!([literal_text(
+            "[11:01:04] Alex Rivera (owner): I will post the ledger tonight."
+        )])
+    );
+
+    // 3. context_lines: 1 includes immediately adjacent lines on both sides.
+    let with_ctx = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"day": "20251001", "speaker": "owner", "context_lines": 1}),
+    )
+    .unwrap();
+    let ctx_entries = with_ctx["segments"][0]["entries"].as_array().unwrap();
+    assert_eq!(ctx_entries.len(), 3, "{with_ctx}");
+    assert!(ctx_entries[0].as_str().unwrap().contains("Sam Patel"));
+    assert!(ctx_entries[1].as_str().unwrap().contains("Alex Rivera"));
+    assert!(ctx_entries[2].as_str().unwrap().contains("the templar"));
+
+    // 4. Unnamed and numbered speaker filtering keeps Speaker 1 distinct from Speaker 10.
+    let templar = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"day": "20251001", "speaker": "(the templar)"}),
+    )
+    .unwrap();
+    assert_eq!(
+        templar["segments"][0]["entries"],
+        json!([literal_text(
+            "[19:30:22] (the templar): Keep the seal intact."
+        )])
+    );
+    let speaker1 = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"day": "20251001", "speaker": "Speaker 1"}),
+    )
+    .unwrap();
+    let s1_entries = speaker1["segments"][0]["entries"].as_array().unwrap();
+    assert_eq!(s1_entries.len(), 1, "{speaker1}");
+    assert!(
+        s1_entries[0]
+            .as_str()
+            .unwrap()
+            .contains("Cleared owner line")
+    );
+
+    // 5. Source filter in date-range mode narrows to calls only.
+    let calls_only = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"day_from": "20251001", "day_to": "20251010", "source": calls_label, "speaker": "owner"}),
+    )
+    .unwrap();
+    assert_eq!(calls_only["segments"].as_array().unwrap().len(), 1);
+    assert_eq!(calls_only["segments"][0]["date"], "20251005");
+
+    // 6. Single-segment get_transcript with speaker + context_lines works on segment reference.
+    let seg1_ref = segs[0]["reference"].as_str().unwrap();
+    let single = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"reference": seg1_ref, "speaker": "owner", "context_lines": 1}),
+    )
+    .unwrap();
+    assert_eq!(single["entries"].as_array().unwrap().len(), 3, "{single}");
+
+    // 7. Entity token as speaker requires entities permission and fails closed without it.
+    grant(
+        journal.path(),
+        &["transcripts", "entities"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    let entities = probe(journal.path(), "list_entities", json!({})).unwrap();
+    let sam_ref = entities["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "Sam Patel")
+        .unwrap()["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let by_token = probe(
+        journal.path(),
+        "get_transcript",
+        json!({"day_from": "20251001", "day_to": "20251010", "speaker": sam_ref}),
+    )
+    .unwrap();
+    assert_eq!(
+        by_token["segments"].as_array().unwrap().len(),
+        2,
+        "{by_token}"
+    );
+    // Revoke entities: entity token must fail closed.
+    grant(
+        journal.path(),
+        &["transcripts"],
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    assert!(
+        probe(
+            journal.path(),
+            "get_transcript",
+            json!({"day_from": "20251001", "day_to": "20251010", "speaker": sam_ref})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn list_transcripts_relaxes_non_body_source_and_supports_speaker_filter() {
+    let journal = fixture("solstone-mcp-list-tx-");
+    add_stream(journal.path(), "calls");
+    add_stream(journal.path(), "talk");
+    add_entity(journal.path(), "owner_alex", "Alex Rivera", true, "alpha");
+    add_entity(journal.path(), "sam_patel", "Sam Patel", false, "alpha");
+
+    let seg1 = segment_dir(journal.path(), "20251001", "calls", "090000_300");
+    fs::write(
+        seg1.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"sentence_id\":1,\"speaker\":1,\"start\":\"09:00:05\",\"text\":\"Owner call one.\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        seg1.join("talents/speaker_labels.json"),
+        json!({"labels": [{"sentence_id": 1, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}]}).to_string(),
+    )
+    .unwrap();
+
+    let seg2 = segment_dir(journal.path(), "20251003", "calls", "100000_300");
+    fs::write(
+        seg2.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg2.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"sentence_id\":1,\"speaker\":1,\"start\":\"10:00:05\",\"text\":\"Only Sam spoke here.\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        seg2.join("talents/speaker_labels.json"),
+        json!({"labels": [{"sentence_id": 1, "speaker": "sam_patel", "method": "user_assigned", "confidence": "high"}]}).to_string(),
+    )
+    .unwrap();
+
+    let seg3 = segment_dir(journal.path(), "20251005", "talk", "110000_300");
+    fs::write(
+        seg3.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        seg3.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"sentence_id\":1,\"speaker\":1,\"start\":\"11:00:05\",\"text\":\"Owner talk two.\"}\n",
+    )
+    .unwrap();
+    fs::write(
+        seg3.join("talents/speaker_labels.json"),
+        json!({"labels": [{"sentence_id": 1, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}]}).to_string(),
+    )
+    .unwrap();
+
+    grant(journal.path(), &["transcripts"], ReadScope::WholeJournal);
+
+    // Non-body source across a multi-day range AND with facet works (passing the label shown on rows).
+    let all = probe(
+        journal.path(),
+        "list_transcripts",
+        json!({"day_from": "20251001", "day_to": "20251010"}),
+    )
+    .unwrap();
+    let calls_label = all["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["date"] == "20251001")
+        .unwrap()["source"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let calls = probe(
+        journal.path(),
+        "list_transcripts",
+        json!({"day_from": "20251001", "day_to": "20251010", "source": calls_label, "facet": FACET_A}),
+    )
+    .unwrap();
+    assert_eq!(calls["transcripts"].as_array().unwrap().len(), 2, "{calls}");
+
+    // Speaker filter lists only segments with a matching line and paginates with cursor.
+    let page1 = probe(
+        journal.path(),
+        "list_transcripts",
+        json!({"day_from": "20251001", "day_to": "20251010", "speaker": "owner", "limit": 1}),
+    )
+    .unwrap();
+    assert_eq!(page1["transcripts"].as_array().unwrap().len(), 1, "{page1}");
+    assert_eq!(page1["transcripts"][0]["date"], "20251005");
+    assert_eq!(page1["transcripts"][0]["lines"], 1);
+    let cursor = page1["next_cursor"].as_str().expect("next_cursor");
+    let page2 = probe(
+        journal.path(),
+        "list_transcripts",
+        json!({"day_from": "20251001", "day_to": "20251010", "speaker": "owner", "limit": 1, "cursor": cursor}),
+    )
+    .unwrap();
+    assert_eq!(page2["transcripts"].as_array().unwrap().len(), 1, "{page2}");
+    assert_eq!(page2["transcripts"][0]["date"], "20251001");
+    assert!(page2.get("next_cursor").is_none());
+
+    // Invalid combinations are rejected.
+    assert!(
+        probe(
+            journal.path(),
+            "list_transcripts",
+            json!({"day": "20251001", "summary": true, "speaker": "owner"})
+        )
+        .is_err()
+    );
+    assert!(
+        probe(
+            journal.path(),
+            "get_transcript",
+            json!({"day": "20251001", "context_lines": 1})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn search_speaker_pre_dedup_uncollapsed_dedup_and_stale_timestamp_recovery() {
+    let journal = fixture("solstone-mcp-search-speaker-");
+    add_entity(journal.path(), "owner_alex", "Alex Rivera", true, "alpha");
+    add_entity(journal.path(), "sam_patel", "Sam Patel", false, "alpha");
+
+    // Segment A: Sam has a short, higher-BM25 "lantern" line and activity.md mentions "lantern",
+    // while owner has two longer "lantern" lines.
+    let seg_a = segment_dir(journal.path(), "20251001", "talk", "193000_720");
+    fs::write(
+        seg_a.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    fs::write(seg_a.join("talents/activity.md"), "lantern\n").unwrap();
+    fs::write(
+        seg_a.join("audio.jsonl"),
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"19:30:05\",\"text\":\"lantern\"}\n",
+            "{\"sentence_id\":2,\"speaker\":2,\"start\":\"19:30:20\",\"text\":\"I will bring the brass lantern to the north gatehouse before evening falls\"}\n",
+            "{\"sentence_id\":3,\"speaker\":2,\"start\":\"19:30:40\",\"text\":\"I will leave the spare lantern oil on the workbench tomorrow morning\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        seg_a.join("talents/speaker_labels.json"),
+        json!({
+            "labels": [
+                {"sentence_id": 1, "speaker": "sam_patel", "method": "user_assigned", "confidence": "high"},
+                {"sentence_id": 2, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"},
+                {"sentence_id": 3, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Segment B: owner line whose audio.jsonl clock drifts after indexing with mtime preserved.
+    let seg_b = segment_dir(journal.path(), "20251002", "calls", "100000_300");
+    fs::write(
+        seg_b.join("talents/facets.json"),
+        json!([{"facet": "alpha"}]).to_string(),
+    )
+    .unwrap();
+    let audio_b = seg_b.join("audio.jsonl");
+    fs::write(
+        &audio_b,
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"10:00:05\",\"text\":\"I will pack the brass lantern tonight.\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        seg_b.join("talents/speaker_labels.json"),
+        json!({
+            "labels": [
+                {"sentence_id": 1, "speaker": "owner_alex", "method": "user_assigned", "confidence": "high"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+    // Simulate stale index: shift clock 10:00:05 -> 10:00:12 with preserved mtime and no reindex.
+    let mtime_b = fs::metadata(&audio_b).unwrap().modified().unwrap();
+    fs::write(
+        &audio_b,
+        concat!(
+            "{\"raw\":\"audio.flac\"}\n",
+            "{\"sentence_id\":1,\"speaker\":1,\"start\":\"10:00:12\",\"text\":\"I will pack the brass lantern tonight.\"}\n",
+        ),
+    )
+    .unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&audio_b)
+        .unwrap()
+        .set_modified(mtime_b)
+        .unwrap();
+
+    grant(
+        journal.path(),
+        &["transcripts", "facets"],
+        ReadScope::WholeJournal,
+    );
+
+    // 1. Default dedup="segment" with speaker="owner": seg_a survives with owner's line (zero
+    //    eviction by Sam's higher-BM25 line or activity.md), and seg_b recovers live clock 10:00:12!
+    let collapsed = probe(
+        journal.path(),
+        "search",
+        json!({"query": "lantern", "speaker": "owner", "kind": ["transcripts"], "limit": 10}),
+    )
+    .unwrap();
+    let hits = collapsed["results"].as_array().unwrap();
+    assert_eq!(hits.len(), 2, "{collapsed}");
+    assert!(hits.iter().all(|h| h["speaker"] == "Alex Rivera (owner)"));
+    assert!(hits.iter().any(|h| h["date"] == "20251001"));
+    let hit_b = hits
+        .iter()
+        .find(|h| h["date"] == "20251002")
+        .expect("seg_b recovered");
+    assert_eq!(hit_b["time"], "10:00:12");
+
+    // 2. dedup="none" returns all 3 owner utterances across 2 pages of limit=2 with zero dups.
+    let p1 = probe(
+        journal.path(),
+        "search",
+        json!({"query": "lantern", "speaker": "owner", "dedup": "none", "limit": 2}),
+    )
+    .unwrap();
+    let p1_hits = p1["results"].as_array().unwrap();
+    assert_eq!(p1_hits.len(), 2, "{p1}");
+    let cursor = p1["next_cursor"].as_str().expect("next_cursor");
+    let p2 = probe(
+        journal.path(),
+        "search",
+        json!({"query": "lantern", "speaker": "owner", "dedup": "none", "limit": 2, "cursor": cursor}),
+    )
+    .unwrap();
+    let p2_hits = p2["results"].as_array().unwrap();
+    assert_eq!(p2_hits.len(), 1, "{p2}");
+    assert!(p2["next_cursor"].is_null());
+    let mut times: Vec<&str> = p1_hits
+        .iter()
+        .chain(p2_hits.iter())
+        .map(|h| h["time"].as_str().unwrap())
+        .collect();
+    times.sort_unstable();
+    assert_eq!(times, vec!["10:00:12", "19:30:20", "19:30:40"]);
+
+    // 3. Invalid filter combinations rejected cleanly.
+    for invalid in [
+        json!({"query": "lantern", "speaker": "owner", "kind": ["notes"]}),
+        json!({"query": "lantern", "speaker": "owner", "person": "Sam"}),
+        json!({"query": "lantern", "dedup": "invalid"}),
+    ] {
+        assert!(
+            probe(journal.path(), "search", invalid.clone()).is_err(),
+            "{invalid}"
+        );
+    }
+
+    // 4. Without transcripts permission, speaker search is refused.
+    grant(journal.path(), &["facets"], ReadScope::WholeJournal);
+    assert!(
+        probe(
+            journal.path(),
+            "search",
+            json!({"query": "lantern", "speaker": "owner"})
+        )
+        .is_err()
+    );
+}

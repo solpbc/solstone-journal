@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- connected agents with transcripts permission can now scan or list spoken transcripts across a day or date range, filtered by speaker (with optional surrounding lines), facet or source. they can also search transcripts by speaker, or return every matching line in a recording instead of only the closest match.
 - connected agents that support MCP resources can now read allowed photos, screenshots, profile pics and audio clips directly from your journal under the same permissions, pause controls and activity trail (listed as `read_resource`).
 - daily maintenance runs at 2 a.m. in your journal’s time zone. you can change the time in settings → storage. if your journal sleeps through that time, it catches up when it wakes.
 - with an updated solstone app on a paired iphone or ipad, sources now lets you bring photos from your Photos library into your journal. the solstone app scans only photo details first without bringing in any photos, then your journal shows how many photos, days and thoughts each date range adds before any photos come in. your journal chooses photos from your moments, leaves out screenshots, videos, near-duplicates and most saved or shared images, and hidden photos are never read. chosen photos come in as small copies at the time and place they were taken. you can pause, widen your range, select photos to move to trash or turn the source off anytime, and photos already in your journal stay if you delete them from Photos or turn the source off.
@@ -25,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - when you edit an experience, your journal can update its story even if it has already finished thinking about that day. previously the story could stay unchanged after an edit.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
+- when connected agents search updated transcripts, results now show the current timestamps and speaker names instead of dropping matches, while still keeping outdated text from edited or deleted lines out of results. a full search rescan also refreshes updated transcripts even when the file's modification time hasn't changed.
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
