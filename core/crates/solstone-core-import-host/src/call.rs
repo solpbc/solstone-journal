@@ -55,6 +55,7 @@ pub use crate::cli_argv::{ArgumentClass, BodyAdmission, admit_arguments, classif
 /// The bundle is the existing text, image, document-model, PDF, and archive
 /// reindex boundaries. It is not a plugin host and not a command string.
 pub struct ImportSeams {
+    pub email_attachment: Option<solstone_core_format::attachment::SharedAttachmentReader>,
     pub text: Box<dyn solstone_core_import::text::WireClient + Send>,
     pub image: Box<dyn solstone_core_import_sources::image::WireClient + Send>,
     pub model: Box<dyn solstone_core_import_sources::document::DocumentModelClient + Send>,
@@ -239,6 +240,7 @@ mod tests {
 
     fn idle_seams(journal: &Path) -> ImportSeams {
         ImportSeams {
+            email_attachment: None,
             text: Box::new(IdleText),
             image: Box::new(solstone_core_import_sources::NullWireClient),
             model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
@@ -512,6 +514,7 @@ mod tests {
         let (release_tx, release_rx) = mpsc::channel();
         let stop = WorkStop::new();
         let seams = ImportSeams {
+            email_attachment: None,
             text: Box::new(IdleText),
             image: Box::new(solstone_core_import_sources::NullWireClient),
             model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
@@ -580,6 +583,7 @@ mod tests {
         let (release_tx, release_rx) = mpsc::channel();
         let stop = WorkStop::new();
         let seams = ImportSeams {
+            email_attachment: None,
             text: Box::new(BlockingText {
                 entered: entered_tx,
                 release: std::sync::Mutex::new(release_rx),
@@ -826,6 +830,7 @@ mod tests {
         let parent = Arc::new(AtomicBool::new(false));
         let stop = WorkStop::linked(Arc::clone(&parent), None);
         let seams = ImportSeams {
+            email_attachment: None,
             text: Box::new(IdleText),
             image: Box::new(solstone_core_import_sources::NullWireClient),
             model: Box::new(solstone_core_import_sources::NullDocumentModelClient),
@@ -887,6 +892,7 @@ mod tests {
             seen.load(std::sync::atomic::Ordering::Acquire)
         });
         let seams = ImportSeams {
+            email_attachment: None,
             text: Box::new(IdleText),
             image: Box::new(solstone_core_import_sources::NullWireClient),
             model: Box::new(solstone_core_import_sources::NullDocumentModelClient),

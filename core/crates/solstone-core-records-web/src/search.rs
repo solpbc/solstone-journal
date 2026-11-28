@@ -380,6 +380,12 @@ fn search_response_with_index_in(
                     "idx": hit.metadata.idx,
                     "score": hit.score,
                 });
+                if let Some((id, _)) = solstone_core_format::content::segment_items::coordinate(&hit.metadata.path) {
+                    let mut parts = hit.metadata.path.trim_start_matches("chronicle/").split('/');
+                    if let (Some(day), Some("import.email"), Some(key)) = (parts.next(), parts.next(), parts.next()) {
+                        hit_obj["attachment_url"] = json!(format!("/app/transcripts/{day}?stream=import.email&item={id}#{key}/transcript"));
+                    }
+                }
                 if let Some((item, message)) = conversation_hits.remove(&hit.row_id) {
                     hit_obj["conversation_item"] = item;
                     if let Some(mut message) = message {

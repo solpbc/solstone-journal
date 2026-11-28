@@ -24,6 +24,9 @@ pub(crate) fn import_folder(path: &str) -> Option<&str> {
         .strip_prefix("chronicle/")
         .unwrap_or(path)
         .strip_suffix("/screenshot_transcript.md")?;
+    if solstone_core_format::content::segment_items::coordinate(path).is_some() {
+        return Some(folder);
+    }
     let mut parts = folder.split('/');
     let day = parts.next()?;
     if !solstone_core_format::segment::is_date_key(day) || parts.next()? != "import.image" {
@@ -84,6 +87,9 @@ pub(crate) fn imported(root: &Path, folder: &str, size: PictureSize) -> Reply {
     let Some(dir) = open(root, &Path::new("chronicle").join(folder)) else {
         return unreadable();
     };
+    if folder.contains("/import.email/") {
+        return still(&dir, ["preview.jpg".to_owned()], size);
+    }
     still(
         &dir,
         ["png", "jpg", "jpeg", "webp", "gif"].map(|ext| format!("original.screenshot.{ext}")),

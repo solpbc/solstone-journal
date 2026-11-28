@@ -24308,3 +24308,176 @@ fn mcp_resource_read_fails_closed_on_mid_read_permission_revocation_and_tombston
     assert!(tomb_fired, "tombstone must run mid-read");
     assert!(matches!(tomb_result, Err(ResourceError::NotFound { .. })));
 }
+
+#[test]
+fn email_items_follow_their_own_kinds_and_each_ends_facets() {
+    let journal = fixture();
+    let root = journal.path();
+    let key = "111213_0";
+    let parent = root
+        .join("chronicle")
+        .join(DAY)
+        .join("import.email")
+        .join(key);
+    let ids = [
+        "a".repeat(64),
+        "b".repeat(64),
+        "c".repeat(64),
+        "d".repeat(64),
+    ];
+    for (id, name, words) in [
+        (
+            &ids[0],
+            "document_transcript.md",
+            "sharedneedle firstdocument",
+        ),
+        (
+            &ids[1],
+            "document_transcript.md",
+            "sharedneedle seconddocument",
+        ),
+        (&ids[2], "image_transcript.md", "photoonlyneedle"),
+        (&ids[3], "screenshot_transcript.md", "screenshotonlyneedle"),
+    ] {
+        let d = parent.join("items").join(id);
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join(name), words).unwrap();
+    }
+    for id in &ids[2..] {
+        image::DynamicImage::new_rgb8(12, 8)
+            .save(parent.join("items").join(id).join("preview.jpg"))
+            .unwrap();
+    }
+    let row = json!({"start":"11:12:13","speaker":"Owner","text":"messageneedle","email":{"key":"gm:1"},
+                     "attachments":[{"name":"plan.pdf","item_ref":ids[0]},{"name":"plan.pdf","item_ref":ids[1]},{"name":"scene.jpg","item_ref":ids[2]},{"name":"screen.png","item_ref":ids[3]}]});
+    fs::write(
+        parent.join("conversation_transcript.jsonl"),
+        format!("{}\n{row}\n", json!({"source":"email","email_schema":1})),
+    )
+    .unwrap();
+    fs::create_dir_all(parent.join("talents")).unwrap();
+    fs::write(parent.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    // Another reply in a different facet points to the first occurrence on this segment.
+    let second_key = "143000_0";
+    let second = parent.with_file_name(second_key);
+    fs::create_dir_all(second.join("talents")).unwrap();
+    fs::write(second.join("talents/facets.json"), r#"[{"facet":"beta"}]"#).unwrap();
+    let second_row = json!({"start":"14:30:00","text":"betareplyneedle","reply_to":{"text":"the earlier message","attachments":[
+        {"name":"plan.pdf","item_ref":ids[0],"item_day":DAY,"item_segment":key}
+    ]}});
+    fs::write(
+        second.join("conversation_transcript.jsonl"),
+        format!("{{}}\n{second_row}\n"),
+    )
+    .unwrap();
+    let scan = solstone_core_indexer_store::scan::scan_journal(root, true).unwrap();
+    assert_eq!(scan.failed, 0, "{:?}", scan.warnings);
+    let set = |kinds: &[&str], facet: Option<&str>| {
+        PermissionStore::open(root)
+            .set_permission(
+                CONNECTION,
+                ReadPermission {
+                    categories: kinds.iter().map(|s| s.to_string()).collect(),
+                    scope: facet.map_or(ReadScope::WholeJournal, |f| ReadScope::Facets {
+                        ids: vec![f.to_owned()],
+                    }),
+                },
+            )
+            .unwrap();
+    };
+    let hits = |query: &str| {
+        let o = probe(&journal, "search", json!({"query":query})).unwrap();
+        o["results"].as_array().unwrap().clone()
+    };
+    let fetch = |r: &Value| probe(&journal, "fetch", json!({"reference":r})).unwrap();
+    for facet in [None, Some(FACET_A), Some(FACET_B)] {
+        let visible = facet != Some(FACET_B);
+        for (kinds, message, documents) in [
+            (vec!["notes"], false, false),
+            (vec!["messages"], true, false),
+            (vec!["documents"], false, true),
+            (vec!["messages", "documents"], true, true),
+        ] {
+            set(&kinds, facet);
+            let m = hits("messageneedle");
+            assert_eq!(
+                m.len(),
+                usize::from(visible && message),
+                "{kinds:?} {facet:?} {m:?}"
+            );
+            let d = hits("sharedneedle");
+            assert_eq!(
+                d.len(),
+                if visible && documents { 2 } else { 0 },
+                "{kinds:?} {facet:?} {d:?}"
+            );
+            assert!(hits("photoonlyneedle").is_empty());
+            if let Some(message_hit) = m.first() {
+                let m = fetch(&message_hit["reference"]);
+                assert!(m["text"].as_str().unwrap().contains("plan.pdf"));
+                assert!(!m["text"].as_str().unwrap().contains("firstdocument"));
+                let links = m["attachment_references"].as_array();
+                assert_eq!(links.map(Vec::len), documents.then_some(2), "{m:?}");
+                if let Some(links) = links {
+                    assert_ne!(links[0]["reference"], links[1]["reference"]);
+                    assert_eq!(links[0]["name"], links[1]["name"]);
+                    let item = fetch(&links[0]["reference"]);
+                    assert!(item["text"].as_str().unwrap().contains("firstdocument"));
+                    assert!(
+                        fetch(&item["message_reference"])["text"]
+                            .as_str()
+                            .unwrap()
+                            .contains("messageneedle")
+                    );
+                }
+            }
+            if let Some(item_hit) = d.first() {
+                let item = fetch(&item_hit["reference"]);
+                assert_eq!(item["message_reference"].is_string(), message);
+                assert!(!item["text"].as_str().unwrap().contains("messageneedle"));
+            }
+        }
+    }
+    for (facet, links) in [(Some(FACET_B), false), (None, true)] {
+        set(&["messages", "documents"], facet);
+        let beta = hits("betareplyneedle");
+        let message = fetch(&beta[0]["reference"]);
+        assert_eq!(
+            message["attachment_references"].is_array(),
+            links,
+            "{message:?}"
+        );
+    }
+    set(&["photos"], None);
+    let photo = hits("photoonlyneedle");
+    assert_eq!(photo.len(), 1);
+    let output = dispatch_output(
+        &journal,
+        "fetch",
+        json!({"reference":photo[0]["reference"]}),
+    );
+    assert_eq!(output.value["picture"]["state"], "attached");
+    assert_eq!(output.images.len(), 1);
+    assert!(hits("screenshotonlyneedle").is_empty());
+    for (grants, pixels) in [
+        (vec!["screen_text"], false),
+        (vec!["screen_text", "screenshots"], true),
+    ] {
+        set(&grants, None);
+        let screen = hits("screenshotonlyneedle");
+        assert_eq!(screen.len(), 1);
+        let output = dispatch_output(
+            &journal,
+            "fetch",
+            json!({"reference":screen[0]["reference"]}),
+        );
+        assert_eq!(
+            output.value["picture"]["state"],
+            if pixels { "attached" } else { "not_allowed" }
+        );
+        assert_eq!(output.images.len(), usize::from(pixels));
+        assert!(hits("photoonlyneedle").is_empty());
+    }
+    let message = hits("messageneedle");
+    assert!(message.is_empty());
+}

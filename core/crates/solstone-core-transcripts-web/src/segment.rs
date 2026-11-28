@@ -1591,11 +1591,58 @@ fn imported_conversation_turns<'a>(
                 message_blocks_for_row, message_fields,
             };
             let mut message = message_fields(context.stream, file, index, row, untimed)?;
+            if context.stream == "import.email" {
+                enrich_owner_attachments(&mut message, row);
+            }
             message["blocks"] = json!(message_blocks_for_row(text, row));
             chunk["message"] = message;
         }
         Some(chunk)
     })
+}
+
+// Fields for the owner's controls stay out of general message projections.
+fn enrich_owner_attachments(message: &mut Value, row: &Map<String, Value>) {
+    fn enrich(target: &mut Value, raw: Option<&Value>) {
+        let Some(projected) = target.get_mut("attachments").and_then(Value::as_array_mut) else {
+            return;
+        };
+        let Some(source) = raw.and_then(Value::as_array) else {
+            return;
+        };
+        let source = source
+            .iter()
+            .filter(|item| item["name"].as_str().is_some_and(|n| !n.trim().is_empty()));
+        for (item, stored) in projected.iter_mut().zip(source) {
+            for key in [
+                "inline",
+                "item_ref",
+                "state",
+                "attachment_id",
+                "item_day",
+                "item_segment",
+                "sender",
+                "partial",
+                "kind",
+                "thoughts",
+                "mailbox_reference",
+                "mime",
+                "part_path",
+            ] {
+                if let Some(field) = stored.get(key) {
+                    item[key] = field.clone();
+                }
+            }
+        }
+    }
+    enrich(message, row.get("attachments"));
+    if let Some(reply) = message.get_mut("reply_to") {
+        enrich(
+            reply,
+            row.get("reply_to")
+                .and_then(|reply| reply.get("attachments")),
+        );
+    }
 }
 
 fn audio_chunks(

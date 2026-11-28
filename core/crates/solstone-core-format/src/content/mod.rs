@@ -20,6 +20,7 @@ mod day_accumulator;
 mod desktop_activity;
 mod documents;
 pub mod experiences;
+pub mod segment_items;
 pub use experiences::{
     ActivityRef, ExperienceMoment, ExperienceRecord, MembershipSource, OwnerHolds,
     ShareDetailPolicy, experience_field_held, experience_moment_held, is_hidden_experience,
@@ -459,6 +460,22 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FilePattern] = &[
         condition: FileCondition::Path,
         segment: None,
     },
+    segment_items::spec(
+        "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/document_transcript.md",
+        Kind::Documents,
+    ),
+    segment_items::spec(
+        "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/note_transcript.md",
+        Kind::Notes,
+    ),
+    segment_items::spec(
+        "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/image_transcript.md",
+        Kind::Photos,
+    ),
+    segment_items::spec(
+        "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/screenshot_transcript.md",
+        Kind::Screen,
+    ),
     FilePattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/document_transcript.md",
         root: PatternRoot::DayRooted,
@@ -2497,7 +2514,21 @@ pub fn classify_file(path: &std::path::Path, rel: &str) -> ContentResolution {
     }
 }
 
+fn valid_item_coordinate(rel: &str) -> bool {
+    !rel.contains("/import.email/")
+        || rel
+            .strip_prefix("chronicle/")
+            .unwrap_or(rel)
+            .split('/')
+            .nth(3)
+            != Some("items")
+        || segment_items::coordinate(rel).is_some()
+}
+
 pub fn classify(rel: &str) -> ContentResolution {
+    if !valid_item_coordinate(rel) {
+        return ContentResolution::Unrecognized;
+    }
     if let Some(row) = CONTENT_RESOLVER.resolve_spec_where(rel, |row| {
         row.classification != ContentResolution::Unrecognized
     }) {
@@ -2524,6 +2555,9 @@ pub fn classify(rel: &str) -> ContentResolution {
 /// This deliberately ignores a sibling `shape.json`: sidecars select chunking,
 /// not who may see an already-indexed source.
 pub fn resolve_spec(rel: &str) -> Option<FamilyPattern> {
+    if !valid_item_coordinate(rel) {
+        return None;
+    }
     CONTENT_RESOLVER
         .resolve_spec_where(rel, |row| {
             matches!(row.classification, ContentResolution::Indexed(_))
@@ -2549,6 +2583,9 @@ pub fn file_spec(rel: &str) -> Option<&'static FilePattern> {
 }
 
 pub fn file_spec_with_facts(rel: &str, facts: FileFacts) -> Option<&'static FilePattern> {
+    if !valid_item_coordinate(rel) {
+        return None;
+    }
     let rel = rel.strip_prefix("chronicle/").unwrap_or(rel);
     let parts = rel.split('/').collect::<Vec<_>>();
     let direct;

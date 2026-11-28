@@ -4,7 +4,13 @@
 //! One retained foreground consumer of the shared importer grammar and worker.
 
 use std::any::Any;
+use std::path::PathBuf;
 use std::sync::Arc;
+
+use solstone_core_describe::OcrWorkerFactory;
+use solstone_core_import_sources::attachment::{
+    PrepareFailure, PreparedAttachment, SharedAttachmentReader,
+};
 use std::sync::atomic::AtomicBool;
 
 use solstone_core_generate::{ClientError, GenerateExecutor, GenerateRequest, GenerateResponse};
@@ -38,6 +44,7 @@ type StopCheckpoint = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 /// }
 /// ```
 pub struct ImportRequest {
+    attachment_reader: SharedAttachmentReader,
     context: ImportContext,
     factory: Arc<ImportSeamFactory>,
     lease: Arc<TargetUse>,
@@ -54,6 +61,7 @@ pub struct ImportKeepalive {
 /// Retain this value or its keepalive through snapshot and metadata retirement.
 /// Binding arguments does not admit a native import attempt.
 pub struct ImportPreparation {
+    attachment_reader: SharedAttachmentReader,
     root: Arc<JournalRoot>,
     generator: Arc<dyn GenerateExecutor + Send + Sync>,
     factory: Arc<ImportSeamFactory>,
@@ -62,6 +70,15 @@ pub struct ImportPreparation {
 }
 
 impl ImportPreparation {
+    pub(crate) fn read_attachment(
+        &self,
+        name: &str,
+        mime: &str,
+        bytes: &[u8],
+    ) -> Result<PreparedAttachment, PrepareFailure> {
+        (self.attachment_reader.read)(name, mime, bytes)
+    }
+
     pub fn checkpoint(&self) -> Result<(), String> {
         if self.stop.is_requested() {
             Err("import stopped".into())
@@ -93,6 +110,7 @@ impl ImportPreparation {
     ) -> Result<ImportRequest, String> {
         self.checkpoint()?;
         let Self {
+            attachment_reader,
             root,
             generator,
             factory,
@@ -100,6 +118,7 @@ impl ImportPreparation {
             lease,
         } = self;
         Ok(ImportRequest {
+            attachment_reader,
             context: ImportContext {
                 root,
                 args,
@@ -133,6 +152,7 @@ impl ImportRequest {
     /// its target use, including time spent waiting in that worker's queue.
     pub fn prepare(self) -> Result<PreparedImport, String> {
         let Self {
+            attachment_reader,
             context,
             factory,
             lease,
@@ -145,6 +165,7 @@ impl ImportRequest {
         let class = context.class.clone();
         let _work = WorkStopGuard::install(&stop);
         let mut prepared = factory(context)?;
+        prepared.seams.email_attachment = Some(attachment_reader);
         if stop.is_requested() {
             return Err("import stopped".into());
         }
@@ -192,6 +213,7 @@ impl ImportContext {
             stop: self.stop.clone(),
         };
         ImportSeams {
+            email_attachment: None,
             text: Box::new(generate.clone()),
             image: Box::new(generate.clone()),
             model: Box::new(generate),
@@ -374,9 +396,19 @@ pub(super) fn preparation(
         let stop = stop.clone();
         Arc::new(move || stop.is_requested())
     };
+    let executor = generator.executor(cancelled, priority);
+    let attachment_reader = mobile_attachment_reader(
+        generator.payload.clone(),
+        ImportGenerate {
+            root: Arc::clone(&root),
+            executor: Arc::clone(&executor),
+            stop: stop.clone(),
+        },
+    );
     Ok(ImportPreparation {
+        attachment_reader,
         root,
-        generator: generator.executor(cancelled, priority),
+        generator: executor,
         stop,
         factory,
         lease,
@@ -450,6 +482,44 @@ pub(super) fn execute(
     // The shared worker owns the terminal facts. A Stop arriving after a
     // successful commit must not rewrite that actual completed outcome.
     run.exit_code
+}
+
+fn mobile_attachment_reader(payload: PathBuf, generate: ImportGenerate) -> SharedAttachmentReader {
+    SharedAttachmentReader::mobile(Arc::new(move |name, mime, bytes| {
+        let _work = WorkStopGuard::install(&generate.stop);
+        if generate.stop.is_requested() {
+            return Err(PrepareFailure::Unavailable);
+        }
+        let mut ocr = |png: &[u8]| {
+            let mut worker = crate::screen_ocr::ScreenOcrFactory::new(&payload)
+                .create()
+                .ok()
+                .flatten()
+                .ok_or(PrepareFailure::Unavailable)?;
+            solstone_core_describe::read_still_ocr_text(worker.as_mut(), png)
+                .map_err(|_| PrepareFailure::Unavailable)
+        };
+        // Mail from other people needs a bounded PDF reader. Mobile PDFium
+        // runs in-process with no address-space, CPU or wall-time limit.
+        let result = solstone_core_import_sources::attachment::prepare(
+            name,
+            mime,
+            bytes,
+            &|| Err(PrepareFailure::Unavailable),
+            &generate,
+            &mut ocr,
+        );
+        if generate.stop.is_requested() {
+            return Err(match result {
+                Ok(file) if file.thoughts > 0 => PrepareFailure::DescriptionUnavailable,
+                Err(PrepareFailure::DescriptionUnavailable) => {
+                    PrepareFailure::DescriptionUnavailable
+                }
+                _ => PrepareFailure::Unavailable,
+            });
+        }
+        result
+    }))
 }
 
 #[derive(Clone)]

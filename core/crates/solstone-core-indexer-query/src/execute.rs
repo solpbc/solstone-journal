@@ -343,7 +343,9 @@ fn append_connection_start_after(
 /// - `body.jsonl` (one window file holds multiple distinct body records).
 pub(crate) fn relevance_collapse_key(path: &str) -> Option<&str> {
     let rel = path.strip_prefix("chronicle/").unwrap_or(path);
-    if rel.ends_with("/location.md") {
+    if rel.ends_with("/location.md")
+        || solstone_core_format::content::segment_items::coordinate(rel).is_some()
+    {
         return Some(rel);
     }
     let (day, after_day) = rel.split_once('/')?;

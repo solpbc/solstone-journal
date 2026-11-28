@@ -201,3 +201,97 @@ pub fn decode_fetched_part(part: &Part, mime_header: Option<&[u8]>, body: &[u8])
     let parsed = MessageParser::default().parse(&message)?;
     leaf_text(&parsed, &[1])
 }
+
+/// Decode the MIME transfer encoding without treating a textual attachment as
+/// UTF-8 or normalizing its bytes. The caller has already bounded the wire input.
+pub(crate) fn decode_attachment_bytes(
+    encoding: Option<&str>,
+    mut bytes: Vec<u8>,
+    decoded_limit: usize,
+) -> crate::error::Result<Vec<u8>> {
+    use crate::error::EmailError;
+    use mail_parser::decoders::{
+        base64::base64_decode, quoted_printable::quoted_printable_decode_char,
+    };
+
+    let invalid = || EmailError::InvalidInput("malformed attachment transfer encoding".into());
+    let too_large = || EmailError::InvalidInput("attachment exceeds decoded budget".into());
+    match encoding.unwrap_or("7bit").to_ascii_lowercase().as_str() {
+        "7bit" | "8bit" | "binary" => (),
+        "base64" => {
+            bytes.retain(|c| !matches!(c, b' ' | b'\t' | b'\r' | b'\n'));
+            let pad = bytes.iter().rev().take_while(|c| **c == b'=').count();
+            let data = &bytes[..bytes.len() - pad];
+            if bytes.is_empty()
+                || !bytes.len().is_multiple_of(4)
+                || pad > 2
+                || !data
+                    .iter()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'+' | b'/'))
+            {
+                return Err(invalid());
+            }
+            if bytes.len() / 4 * 3 - pad > decoded_limit {
+                return Err(too_large());
+            }
+            bytes = base64_decode(&bytes).ok_or_else(invalid)?;
+        }
+        "quoted-printable" => {
+            let mut read = 0;
+            let mut written = 0;
+            while read < bytes.len() {
+                let ch = bytes[read];
+                read += 1;
+                let decoded = if ch == b'=' {
+                    if bytes[read..].starts_with(b"\r\n") {
+                        read += 2;
+                        continue;
+                    }
+                    if bytes.get(read) == Some(&b'\n') {
+                        read += 1;
+                        continue;
+                    }
+                    let pair = bytes.get(read..read + 2).ok_or_else(invalid)?;
+                    read += 2;
+                    quoted_printable_decode_char(pair[0], pair[1]).ok_or_else(invalid)?
+                } else {
+                    ch
+                };
+                if written == decoded_limit {
+                    return Err(too_large());
+                }
+                bytes[written] = decoded;
+                written += 1;
+            }
+            bytes.truncate(written);
+        }
+        _ => {
+            return Err(EmailError::InvalidInput(
+                "unsupported attachment transfer encoding".into(),
+            ));
+        }
+    }
+    if bytes.len() > decoded_limit {
+        return Err(too_large());
+    }
+    Ok(bytes)
+}
+
+/// Decode RFC 2231 parameter bytes or RFC 2392 CID URL bytes. A plus sign is literal.
+pub(crate) fn percent_decoded(value: &str) -> Option<Vec<u8>> {
+    let mut bytes = value.bytes();
+    let mut out = Vec::with_capacity(value.len());
+    while let Some(b) = bytes.next() {
+        if b == b'%' {
+            out.push(
+                mail_parser::decoders::quoted_printable::quoted_printable_decode_char(
+                    bytes.next()?,
+                    bytes.next()?,
+                )?,
+            );
+        } else {
+            out.push(b);
+        }
+    }
+    Some(out)
+}

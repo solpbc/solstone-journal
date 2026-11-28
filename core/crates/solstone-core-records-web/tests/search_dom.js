@@ -277,6 +277,16 @@ test('screen-text continuation hits retain their segment citation and direct lin
   assert.strictEqual(ordinary.querySelectorAll('a')[0].href, '/app/transcripts/20260403?stream=ja1r#090000_300');
 });
 
+test('an extracted email file opens its own occurrence inside the exchange', () => {
+  const env = seededSearch();
+  const url = '/app/transcripts/20261118?stream=import.email&item=' + 'e'.repeat(64) + '#101600_0/transcript';
+  const card = env.window.renderHit({
+    day: '20261118', stream: 'import.email', agent_label: 'document', text: 'Room seven', attachment_url: url,
+    path: '20261118/import.email/101600_0/items/' + 'e'.repeat(64) + '/document_transcript.md',
+  }, '/app/transcripts/20261118');
+  assert.ok(card.querySelectorAll('a').some(link => link.href === url));
+});
+
 test('a message hit names its item, who wrote it and to whom, and opens the reader at the passage', () => {
   const env = seededSearch();
   const conversation = { file: 'conversation_transcript.jsonl', day: '20261117', first_sent_at: '2026-11-18T01:44:00Z', last_sent_at: '2026-11-18T01:44:00Z', source: 'ChatGPT', content_kind: 'messages' };

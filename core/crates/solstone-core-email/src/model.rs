@@ -125,6 +125,9 @@ pub struct Header {
     pub auto_submitted: Option<String>,
     pub list_id: Option<String>,
     pub tree: Part,
+    /// Older header caches predate RFC 2231 filename decoding.
+    #[serde(default)]
+    pub attachment_names_checked: bool,
 }
 
 impl Header {
@@ -156,12 +159,46 @@ impl Header {
     }
 
     #[must_use]
-    pub fn calendar_method(&self) -> Option<String> {
-        let mut all = Vec::new();
-        self.tree.walk(&mut all);
-        all.iter()
-            .find(|p| p.mime == "text/calendar")
-            .map(|p| p.method.clone().unwrap_or_else(|| "unknown".into()))
+    pub fn is_calendar_message(&self) -> bool {
+        fn calendar_body(part: &Part) -> bool {
+            match part.mime.as_str() {
+                "text/calendar" => true,
+                // A calendar representation offered as the message body (often
+                // beside a generated plain/HTML rendering) is a scheduling email.
+                "multipart/alternative" => part.children.iter().any(calendar_body),
+                "multipart/related" => part
+                    .start
+                    .as_deref()
+                    .and_then(|start| {
+                        part.children.iter().find(|p| {
+                            p.content_id.as_deref().is_some_and(|id| {
+                                id.trim_matches(['<', '>']) == start.trim_matches(['<', '>'])
+                            })
+                        })
+                    })
+                    .or_else(|| part.children.first())
+                    .is_some_and(calendar_body),
+                // A calendar client may also enclose a duplicate invite or
+                // its cryptographic signature. Preserve a personal note or
+                // other independent file wherever it occurs in a mixed mail.
+                "multipart/mixed" => part.children.split_first().is_some_and(|(body, rest)| {
+                    calendar_body(body)
+                        && rest.iter().all(|p| {
+                            matches!(
+                                p.mime.as_str(),
+                                "text/calendar"
+                                    | "application/ics"
+                                    | "application/pgp-signature"
+                                    | "application/pkcs7-signature"
+                                    | "application/x-pkcs7-signature"
+                            )
+                        })
+                }),
+                "multipart/signed" => part.children.first().is_some_and(calendar_body),
+                _ => false,
+            }
+        }
+        calendar_body(&self.tree)
     }
 
     #[must_use]
@@ -177,53 +214,35 @@ impl Header {
         all.iter().any(|p| p.mime == "message/rfc822")
     }
 
-    /// Non-inline file attachment names.
+    /// Non-inline file attachment names, including typed, unnamed files.
     #[must_use]
     pub fn attachment_names(&self) -> Vec<String> {
-        let mut all = Vec::new();
-        self.tree.walk(&mut all);
-        all.iter()
-            .filter(|p| !p.is_multipart() && p.is_attachment())
-            .filter(|p| {
-                !p.disposition
-                    .as_deref()
-                    .is_some_and(|d| d.eq_ignore_ascii_case("inline"))
-            })
-            .map(|p| p.filename.clone().unwrap_or_else(|| p.mime.clone()))
+        self.named_attachments()
+            .into_iter()
+            .filter(|a| !a.inline)
+            .map(|a| a.name)
             .collect()
     }
 
-    /// Non-text parts shown inline (embedded images, etc.). Named, never read.
+    /// Inline resources, including those held for the owner's choice.
     #[must_use]
     pub fn embedded_names(&self) -> Vec<String> {
-        let mut all = Vec::new();
-        self.tree.walk(&mut all);
-        all.iter()
-            .filter(|p| !p.is_multipart() && !p.mime.starts_with("text/"))
-            .filter(|p| {
-                p.disposition
-                    .as_deref()
-                    .is_some_and(|d| d.eq_ignore_ascii_case("inline"))
-                    || (p.content_id.is_some() && !p.is_attachment())
-            })
-            .map(|p| p.filename.clone().unwrap_or_else(|| p.mime.clone()))
+        self.named_attachments()
+            .into_iter()
+            .filter(|a| a.inline)
+            .map(|a| a.name)
             .collect()
     }
 
-    /// Combined named attachments + inline images in deterministic order.
     #[must_use]
     pub fn named_attachments(&self) -> Vec<NamedAttachment> {
-        let mut out = Vec::new();
-        for name in self.attachment_names() {
-            out.push(NamedAttachment {
-                name,
-                inline: false,
-            });
-        }
-        for name in self.embedded_names() {
-            out.push(NamedAttachment { name, inline: true });
-        }
-        out
+        crate::attachment_parts::candidates(self, None)
+            .into_iter()
+            .map(|p| NamedAttachment {
+                name: p.name,
+                inline: p.inline,
+            })
+            .collect()
     }
 }
 

@@ -156,7 +156,7 @@ pub struct PdfWorkerRequest {
 #[cfg(windows)]
 #[derive(Clone, Debug, Default)]
 pub struct PdfWorkerResources {
-    _render_directory: Option<std::sync::Arc<TemporaryRenderDirectory>>,
+    pub(crate) _directory: Option<std::sync::Arc<dyn std::fmt::Debug + Send + Sync>>,
 }
 
 #[derive(Clone, Debug)]
@@ -212,6 +212,20 @@ impl SystemPdfWorker {
             }
         }
     }
+}
+
+/// The installed desktop PDF reader shared by sources that have no standalone import.
+pub fn installed_pdf_worker(timeout: Duration) -> Result<Box<dyn PdfWorker>, String> {
+    #[cfg(windows)]
+    let worker = WindowsPdfWorker::from_verified_package(timeout).map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
+    let worker = {
+        let current = std::env::current_exe().map_err(|e| e.to_string())?;
+        let parent = current.parent().ok_or("current executable has no parent")?;
+        SystemPdfWorker::new(parent.join("solstone-core-pdf"), timeout)
+    };
+    worker.prepare()?;
+    Ok(Box::new(worker))
 }
 
 impl PdfWorker for SystemPdfWorker {
@@ -1262,7 +1276,7 @@ pub fn prepare_document_import(
             #[cfg(windows)]
             let render_request = PdfWorkerRequest {
                 resources: PdfWorkerResources {
-                    _render_directory: Some(render_dir.clone()),
+                    _directory: Some(render_dir.clone()),
                 },
                 ..render_request
             };
@@ -1569,7 +1583,7 @@ fn empty_result(summary: &str) -> ImportResult {
     }
 }
 
-fn worker_request(
+pub(crate) fn worker_request(
     command: PdfCommand,
     source: &Path,
     password: Option<&str>,

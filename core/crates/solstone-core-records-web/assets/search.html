@@ -189,7 +189,7 @@
   // it only when the day heading is not already carrying it.
   else if(hit.day){const href='/app/transcripts/'+encodeURIComponent(hit.day);if(href!==dayHref){const a=node('a','search-link',window.JournalI18n.render('journal.window.search.link.day'));a.href=href;actions.append(a);}}
   const path=String(hit.path||'');
-  const passage=passageLink(hit);
+  const passage=hit.attachment_url || passageLink(hit);
   if(passage){
    // A message opens in the reader at the passage, not as a stored record.
    const a=node('a','search-link',window.JournalI18n.render('journal.window.search.entry.open'));a.href=passage;actions.append(a);card.append(actions);

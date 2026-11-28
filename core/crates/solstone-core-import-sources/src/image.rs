@@ -312,6 +312,21 @@ impl WireClient for SystemWireClient {
     }
 }
 
+/// Generate under the journal that owns this source, including service invocations.
+pub(crate) struct JournalWireClient<'a>(pub &'a Path);
+
+impl WireClient for JournalWireClient<'_> {
+    fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        let journal = self
+            .0
+            .to_str()
+            .ok_or_else(|| ClientError::Resolve("journal path is not UTF-8".to_owned()))?;
+        OneShotClient::sibling()?
+            .with_env("SOLSTONE_JOURNAL", journal)
+            .execute(request)
+    }
+}
+
 /// Return whether `extension` (no leading dot, any case) names an advertised image format.
 pub fn is_image_extension(extension: &str) -> bool {
     IMAGE_EXTENSIONS
@@ -756,7 +771,7 @@ fn prepare(
             reason: "generate cancelled".to_owned(),
         },
         Ok(jpeg) => {
-            let described = interpret_generate_vision(wire.execute(&build_generate_request(&jpeg)));
+            let (described, _) = read_vision_pixels(&jpeg, wire);
             if solstone_core_import::work_continues() {
                 described
             } else {
@@ -1887,6 +1902,25 @@ fn format_details(format: ImageFormat) -> Option<(&'static str, &'static str)> {
     }
 }
 
+/// Describe a bounded JPEG with the same single pass used by manual image import.
+pub(crate) fn read_vision_pixels(jpeg: &[u8], wire: &dyn WireClient) -> (PhotoVisionOutcome, bool) {
+    let response = wire.execute(&build_generate_request(jpeg));
+    // Count only a confirmed provider result. A launch/transport failure may never
+    // have reached an engine, and a missing engine is common when thinking is off.
+    let completion = match &response {
+        Ok(GenerateResponse::Generated(_)) => true,
+        Ok(GenerateResponse::Refused(refusal)) => matches!(
+            refusal.reason,
+            RefusalReason::IncompleteJson
+                | RefusalReason::IncompleteText
+                | RefusalReason::ProviderResponseInvalid
+                | RefusalReason::SchemaValidationFailed
+        ),
+        _ => false,
+    };
+    (interpret_generate_vision(response), completion)
+}
+
 fn build_generate_request(jpeg: &[u8]) -> GenerateRequest {
     GenerateRequest {
         id: None,
@@ -2185,7 +2219,7 @@ pub fn retry_photo_observation(
         .as_str()
         .to_owned();
     let vision = match vision_jpeg(&pixel_path, format, &image, orientation) {
-        Ok(jpeg) => interpret_generate_vision(wire.execute(&build_generate_request(&jpeg))),
+        Ok(jpeg) => read_vision_pixels(&jpeg, wire).0,
         Err(error) => PhotoVisionOutcome::AnalysisUnavailable {
             reason: format!("cannot prepare image for vision: {error}"),
         },

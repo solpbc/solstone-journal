@@ -5,6 +5,26 @@
     "condition": "Path"
   },
   {
+    "path": "20260107/import.email/120000_60/items/0000000000000000000000000000000000000000000000000000000000000001/document_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/document_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.email/120000_60/items/0000000000000000000000000000000000000000000000000000000000000002/note_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/note_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.email/120000_60/items/0000000000000000000000000000000000000000000000000000000000000003/image_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/image_transcript.md",
+    "condition": "Path"
+  },
+  {
+    "path": "20260107/import.email/120000_60/items/0000000000000000000000000000000000000000000000000000000000000004/screenshot_transcript.md",
+    "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/items/*/screenshot_transcript.md",
+    "condition": "Path"
+  },
+  {
     "path": "20260107/import.email/120000_60/document_transcript.md",
     "pattern": "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.email/*/document_transcript.md",
     "condition": "Path"

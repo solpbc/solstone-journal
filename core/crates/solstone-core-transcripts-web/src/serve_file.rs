@@ -8,7 +8,7 @@ use std::sync::Arc;
 use axum::Extension;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use solstone_core_convey_http::media::{
     MediaBody, ParsedRange, media_response, mime_type, parse_range,
 };
@@ -58,6 +58,19 @@ pub(crate) async fn serve_file(
             );
         }
     };
+    // Nested item media follows the typed reader, including the parent tombstone.
+    let item_media = |rel: &Path| {
+        let mut components = rel.iter();
+        components.next().is_some_and(|s| s == "import.email")
+            && components.nth(1).is_some_and(|s| s == "items")
+    };
+    if item_media(Path::new(&rel_path))
+        || fs::canonicalize(&day_root)
+            .ok()
+            .is_some_and(|root| path.strip_prefix(root).is_ok_and(item_media))
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     solstone_core_convey_http::owner_read::spawn_blocking_response(
         solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsServeFile,
         move || {

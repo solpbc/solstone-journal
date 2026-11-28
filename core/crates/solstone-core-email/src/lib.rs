@@ -8,6 +8,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod attachment_parts;
+pub mod attachment_prepare;
+pub mod attachment_sync;
 pub mod cache;
 pub mod choice;
 pub mod error;

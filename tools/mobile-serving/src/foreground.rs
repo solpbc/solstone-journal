@@ -695,6 +695,7 @@ impl ProductionGenerateExecutor {
 
 #[derive(Clone)]
 struct HostGenerator {
+    payload: PathBuf,
     observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     root: Arc<JournalRoot>,
     injected: Option<Arc<dyn GenerateExecutor + Send + Sync>>,
@@ -2044,6 +2045,7 @@ impl ForegroundProcessingHost {
             // Recovery is a startup action, before any callable use can be live.
             let cortex_owner = Arc::new(CallableCortex::open(&journal)?);
             let generator = HostGenerator {
+                payload: payload.to_path_buf(),
                 observation,
                 root: Arc::clone(&root),
                 injected: executor,

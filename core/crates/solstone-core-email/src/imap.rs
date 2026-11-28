@@ -19,6 +19,7 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use serde::{Deserialize, Serialize};
 
+use crate::attachment_parts::HARD_LIMIT;
 use crate::error::{EmailError, Result};
 use crate::headers;
 use crate::model::{Header, Location, Part};
@@ -190,7 +191,28 @@ impl<S: Write> Write for AuditedStream<S> {
 pub trait ImapSource {
     fn mailbox_info(&mut self) -> Result<MailboxInfo>;
     fn scan_page(&mut self, mailbox: &MailboxInfo, lo: u32, hi: u32) -> Result<Vec<Header>>;
+    /// Read only the requested existing header rows on a metadata upgrade.
+    fn scan_uids(&mut self, mailbox: &MailboxInfo, uids: &[u32]) -> Result<Vec<Header>> {
+        let mut rows = Vec::new();
+        for &uid in uids {
+            rows.extend(self.scan_page(mailbox, uid, uid)?);
+        }
+        Ok(rows)
+    }
     fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>>;
+    /// Fetch one selected leaf from the same mailbox identity. None means the
+    /// message is gone or its durable identity no longer matches.
+    fn fetch_attachment(
+        &mut self,
+        _header: &Header,
+        _part: &Part,
+        _max_encoded: usize,
+        _max_decoded: usize,
+    ) -> Result<Option<Vec<u8>>> {
+        Err(EmailError::InvalidInput(
+            "attachment fetch is unavailable".into(),
+        ))
+    }
     fn wire_audit(&self) -> WireAudit;
     fn logout(&mut self) -> Result<()>;
 }
@@ -364,9 +386,27 @@ where
         })
     }
 
+    fn scan_uids(&mut self, mailbox: &MailboxInfo, uids: &[u32]) -> Result<Vec<Header>> {
+        self.call_with_reconnect(Some(mailbox.uid_validity), |src| {
+            src.scan_uids(mailbox, uids)
+        })
+    }
+
     fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>> {
         let expected_uid_validity = reqs.first().map(|(h, _)| h.location.uid_validity);
         self.call_with_reconnect(expected_uid_validity, |src| src.fetch_texts(reqs))
+    }
+
+    fn fetch_attachment(
+        &mut self,
+        header: &Header,
+        part: &Part,
+        max_encoded: usize,
+        max_decoded: usize,
+    ) -> Result<Option<Vec<u8>>> {
+        self.call_with_reconnect(Some(header.location.uid_validity), |src| {
+            src.fetch_attachment(header, part, max_encoded, max_decoded)
+        })
     }
 
     fn wire_audit(&self) -> WireAudit {
@@ -393,6 +433,7 @@ pub struct GmailImap<S: Read + Write> {
     reader: BufReader<AuditedStream<S>>,
     audit: Arc<Mutex<WireAudit>>,
     tag_seq: u64,
+    command_in_flight: bool,
     all_mail_name: Option<String>,
     examined: Option<MailboxInfo>,
 }
@@ -460,6 +501,7 @@ impl<S: Read + Write> GmailImap<S> {
             reader: BufReader::new(audited),
             audit,
             tag_seq: 0,
+            command_in_flight: false,
             all_mail_name: None,
             examined: None,
         };
@@ -503,11 +545,22 @@ impl<S: Read + Write> GmailImap<S> {
     /// Read one complete IMAP response frame (one CRLF line plus any trailing
     /// `{N}\r\n<N bytes>` literal continuations belonging to that response).
     fn read_response_frame(&mut self) -> Result<ResponseFrame> {
+        let mut remaining = usize::MAX;
+        self.read_bounded_frame(&mut remaining, MAX_LITERAL_BYTES)
+    }
+
+    fn read_bounded_frame(
+        &mut self,
+        remaining: &mut usize,
+        max_literal: usize,
+    ) -> Result<ResponseFrame> {
         let mut segments: Vec<Segment> = Vec::new();
         loop {
             let mut line = Vec::new();
             let n = self
                 .reader
+                .by_ref()
+                .take(remaining.saturating_add(1) as u64)
                 .read_until(b'\n', &mut line)
                 .map_err(map_transport_error)?;
             if n == 0 {
@@ -515,6 +568,9 @@ impl<S: Read + Write> GmailImap<S> {
                     "connection closed by server".into(),
                 ));
             }
+            *remaining = remaining
+                .checked_sub(n)
+                .ok_or_else(|| EmailError::Protocol("IMAP response exceeds byte budget".into()))?;
             if line.ends_with(b"\n") {
                 line.pop();
             }
@@ -523,13 +579,14 @@ impl<S: Read + Write> GmailImap<S> {
             }
             let literal_len = parse_trailing_literal_len(&line);
             if let Some((prefix_end, len)) = literal_len {
-                if len > MAX_LITERAL_BYTES {
+                if len > max_literal || len > *remaining {
                     return Err(EmailError::Protocol(format!(
                         "IMAP literal {len} exceeds maximum bound"
                     )));
                 }
                 line.truncate(prefix_end);
                 segments.push(Segment::Line(line));
+                *remaining -= len;
                 let mut lit = vec![0u8; len];
                 self.reader
                     .read_exact(&mut lit)
@@ -544,16 +601,34 @@ impl<S: Read + Write> GmailImap<S> {
     }
 
     fn run_command(&mut self, command: &str) -> Result<CommandResponse> {
+        self.run_bounded_command(command, usize::MAX, MAX_LITERAL_BYTES)
+    }
+
+    fn run_bounded_command(
+        &mut self,
+        command: &str,
+        mut remaining: usize,
+        max_literal: usize,
+    ) -> Result<CommandResponse> {
+        // A framing/budget failure may leave a literal unread. Only a fresh
+        // connection may issue the next command after such a failure.
+        if self.command_in_flight {
+            return Err(EmailError::Unreachable(
+                "IMAP connection needs to be reopened".into(),
+            ));
+        }
+        self.command_in_flight = true;
         let tag = self.next_tag();
         self.write_line(&format!("{tag} {command}"))?;
         let mut untagged = Vec::new();
         let tag_prefix = format!("{tag} ");
         loop {
-            let frame = self.read_response_frame()?;
+            let frame = self.read_bounded_frame(&mut remaining, max_literal)?;
             let head = frame.head_str();
             if let Some(rest) = head.strip_prefix(&tag_prefix) {
                 let upper = rest.to_ascii_uppercase();
                 let ok = upper.starts_with("OK");
+                self.command_in_flight = false;
                 return Ok(CommandResponse {
                     ok,
                     status_line: rest.to_owned(),
@@ -562,6 +637,75 @@ impl<S: Read + Write> GmailImap<S> {
             }
             untagged.push(frame);
         }
+    }
+
+    fn scan_uid_set(
+        &mut self,
+        mb: &MailboxInfo,
+        uids: &str,
+        requested: impl Fn(u32) -> bool,
+    ) -> Result<Vec<Header>> {
+        let fields = headers::SCAN_FIELDS.join(" ");
+        let cmd = format!(
+            "UID FETCH {uids} (UID FLAGS INTERNALDATE RFC822.SIZE X-GM-MSGID X-GM-THRID X-GM-LABELS BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS ({fields})])"
+        );
+        let resp = self.run_command(&cmd)?;
+        if !resp.ok {
+            return Err(classify_server_rejection(&resp.status_line));
+        }
+        let mut out = Vec::new();
+        for frame in &resp.untagged {
+            let Some(items) = parse_fetch_items(frame) else {
+                continue;
+            };
+            let Some(uid) = find_u32(&items, "UID") else {
+                continue;
+            };
+            if !requested(uid) {
+                continue;
+            }
+            let mut h = Header {
+                location: Location {
+                    mailbox: mb.name.clone(),
+                    uid_validity: mb.uid_validity,
+                    uid,
+                },
+                ..Header::default()
+            };
+            if let Some(flags) = find_list(&items, "FLAGS") {
+                h.flags = flags.iter().filter_map(ImapVal::as_string_lossy).collect();
+            }
+            if let Some(idate) = find_str(&items, "INTERNALDATE") {
+                h.internal_date_ms = parse_internaldate_ms(&idate);
+            }
+            if let Some(sz) = find_u64(&items, "RFC822.SIZE") {
+                h.size = sz;
+            }
+            if let Some(mid) = find_str(&items, "X-GM-MSGID") {
+                h.gm_msgid = Some(mid);
+            }
+            if let Some(tid) = find_str(&items, "X-GM-THRID") {
+                h.gm_thrid = Some(tid);
+            }
+            if let Some(labels) = find_list(&items, "X-GM-LABELS") {
+                h.labels = labels.iter().filter_map(ImapVal::as_string_lossy).collect();
+            }
+            if let Some(bs) = find_value(&items, "BODYSTRUCTURE") {
+                h.tree = parse_bodystructure(bs, Vec::new());
+                h.attachment_names_checked = true;
+            }
+            if let Some(raw_hdr) = find_body_header_bytes(&items) {
+                headers::fill_from_raw_headers(&mut h, raw_hdr);
+            }
+            h.key = h
+                .gm_msgid
+                .as_deref()
+                .map(|m| format!("gm:{m}"))
+                .unwrap_or_else(|| format!("{}-{}-{}", mb.name, mb.uid_validity, uid));
+            out.push(h);
+        }
+        out.sort_by_key(|h| h.location.uid);
+        Ok(out)
     }
 
     fn find_all_mail(&mut self) -> Result<String> {
@@ -646,66 +790,19 @@ impl<S: Read + Write> ImapSource for GmailImap<S> {
         if lo == 0 || lo > hi {
             return Ok(Vec::new());
         }
-        let fields = headers::SCAN_FIELDS.join(" ");
-        let cmd = format!(
-            "UID FETCH {lo}:{hi} (UID FLAGS INTERNALDATE RFC822.SIZE X-GM-MSGID X-GM-THRID X-GM-LABELS BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS ({fields})])"
-        );
-        let resp = self.run_command(&cmd)?;
-        if !resp.ok {
-            return Err(classify_server_rejection(&resp.status_line));
+        self.scan_uid_set(mb, &format!("{lo}:{hi}"), |uid| (lo..=hi).contains(&uid))
+    }
+
+    fn scan_uids(&mut self, mailbox: &MailboxInfo, uids: &[u32]) -> Result<Vec<Header>> {
+        if uids.is_empty() {
+            return Ok(Vec::new());
         }
-        let mut out = Vec::new();
-        for frame in &resp.untagged {
-            let Some(items) = parse_fetch_items(frame) else {
-                continue;
-            };
-            let Some(uid) = find_u32(&items, "UID") else {
-                continue;
-            };
-            if uid < lo || uid > hi {
-                continue;
-            }
-            let mut h = Header {
-                location: Location {
-                    mailbox: mb.name.clone(),
-                    uid_validity: mb.uid_validity,
-                    uid,
-                },
-                ..Header::default()
-            };
-            if let Some(flags) = find_list(&items, "FLAGS") {
-                h.flags = flags.iter().filter_map(ImapVal::as_string_lossy).collect();
-            }
-            if let Some(idate) = find_str(&items, "INTERNALDATE") {
-                h.internal_date_ms = parse_internaldate_ms(&idate);
-            }
-            if let Some(sz) = find_u64(&items, "RFC822.SIZE") {
-                h.size = sz;
-            }
-            if let Some(mid) = find_str(&items, "X-GM-MSGID") {
-                h.gm_msgid = Some(mid);
-            }
-            if let Some(tid) = find_str(&items, "X-GM-THRID") {
-                h.gm_thrid = Some(tid);
-            }
-            if let Some(labels) = find_list(&items, "X-GM-LABELS") {
-                h.labels = labels.iter().filter_map(ImapVal::as_string_lossy).collect();
-            }
-            if let Some(bs) = find_value(&items, "BODYSTRUCTURE") {
-                h.tree = parse_bodystructure(bs, Vec::new());
-            }
-            if let Some(raw_hdr) = find_body_header_bytes(&items) {
-                headers::fill_from_raw_headers(&mut h, raw_hdr);
-            }
-            h.key = h
-                .gm_msgid
-                .as_deref()
-                .map(|m| format!("gm:{m}"))
-                .unwrap_or_else(|| format!("{}-{}-{}", mb.name, mb.uid_validity, uid));
-            out.push(h);
-        }
-        out.sort_by_key(|h| h.location.uid);
-        Ok(out)
+        let set = uids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        self.scan_uid_set(mailbox, &set, |uid| uids.contains(&uid))
     }
 
     fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>> {
@@ -768,6 +865,105 @@ impl<S: Read + Write> ImapSource for GmailImap<S> {
             }
         }
         Ok(out)
+    }
+
+    fn fetch_attachment(
+        &mut self,
+        header: &Header,
+        part: &Part,
+        max_encoded: usize,
+        max_decoded: usize,
+    ) -> Result<Option<Vec<u8>>> {
+        const BLOCK: usize = 256 * 1024;
+        const OVERHEAD: usize = 64 * 1024;
+        let length = usize::try_from(part.size)
+            .ok()
+            .filter(|n| *n > 0 && *n <= max_encoded.min(HARD_LIMIT))
+            .ok_or_else(|| {
+                EmailError::InvalidInput("attachment exceeds encoded budget or has no size".into())
+            })?;
+        let max_decoded = max_decoded.min(HARD_LIMIT);
+        if max_decoded == 0 || part.path.is_empty() || part.path.contains(&0) || part.is_multipart()
+        {
+            return Err(EmailError::InvalidInput(
+                "invalid attachment section or decoded budget".into(),
+            ));
+        }
+        let mb = self.mailbox_info()?;
+        let uid = header.location.uid;
+        let Some(provider_id) = header.gm_msgid.as_deref() else {
+            return Ok(None);
+        };
+        if uid == 0
+            || mb.name != header.location.mailbox
+            || mb.uid_validity != header.location.uid_validity
+        {
+            return Ok(None);
+        }
+        // Confirm the cached UID still names the intended message before asking for bytes.
+        let identity = self.run_bounded_command(
+            &format!("UID FETCH {uid} (UID X-GM-MSGID)"),
+            OVERHEAD,
+            OVERHEAD,
+        )?;
+        if !identity.ok {
+            return Err(classify_server_rejection(&identity.status_line));
+        }
+        if !identity
+            .untagged
+            .iter()
+            .filter_map(parse_fetch_items)
+            .any(|items| {
+                find_u32(&items, "UID") == Some(uid)
+                    && find_str(&items, "X-GM-MSGID").as_deref() == Some(provider_id)
+            })
+        {
+            return Ok(None);
+        }
+
+        let section = part
+            .path
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(".");
+        let mut bytes = Vec::with_capacity(length);
+        while bytes.len() < length {
+            let offset = bytes.len();
+            let expected = BLOCK.min(length - offset);
+            // On the last request, one extra octet proves the announced end of the leaf.
+            let count = expected + usize::from(offset + expected == length);
+            let key = format!("BODY[{section}]<{offset}>");
+            let cmd =
+                format!("UID FETCH {uid} (UID X-GM-MSGID BODY.PEEK[{section}]<{offset}.{count}>)");
+            let reply = self.run_bounded_command(&cmd, count + OVERHEAD, count)?;
+            if !reply.ok {
+                return Err(classify_server_rejection(&reply.status_line));
+            }
+            let mut matched = false;
+            for items in reply.untagged.iter().filter_map(parse_fetch_items) {
+                if find_u32(&items, "UID") != Some(uid) {
+                    continue;
+                }
+                if find_str(&items, "X-GM-MSGID").as_deref() != Some(provider_id) {
+                    continue;
+                }
+                let Some(value) = find_bytes(&items, &key) else {
+                    continue;
+                };
+                if matched || value.len() != expected {
+                    return Err(EmailError::Protocol(
+                        "attachment range did not match its requested length".into(),
+                    ));
+                }
+                bytes.extend_from_slice(value);
+                matched = true;
+            }
+            if !matched {
+                return Ok(None);
+            }
+        }
+        headers::decode_attachment_bytes(part.encoding.as_deref(), bytes, max_decoded).map(Some)
     }
 
     fn wire_audit(&self) -> WireAudit {
@@ -1171,6 +1367,63 @@ fn lookup_param(params: &[(String, String)], key: &str) -> Option<String> {
         .map(|(_, v)| v.clone())
 }
 
+// RFC 2231 continuations may split a multibyte character. Join their octets
+// before translating the declared charset, even when the server lists them
+// out of order (the single-part MessageParser decodes each piece separately).
+fn extended_filename(params: &[(String, String)], name: &str) -> Option<String> {
+    let prefix = format!("{name}*");
+    let mut pieces = BTreeMap::new();
+    for (key, value) in params {
+        let Some(suffix) = key.strip_prefix(&prefix) else {
+            continue;
+        };
+        let encoded = suffix.is_empty() || suffix.ends_with('*');
+        let digits = suffix.strip_suffix('*').unwrap_or(suffix);
+        let index: usize = if suffix.is_empty() {
+            0
+        } else {
+            digits.parse().ok()?
+        };
+        if pieces.insert(index, (value.as_str(), encoded)).is_some() {
+            return None;
+        }
+    }
+    if pieces.is_empty() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    let mut charset = "utf-8";
+    for (n, (index, (mut piece, encoded))) in pieces.into_iter().enumerate() {
+        if n != index {
+            return None;
+        }
+        if index == 0 && encoded {
+            let (declared, tail) = piece.split_once('\'')?;
+            let (_, value) = tail.split_once('\'')?;
+            if !declared.is_empty() {
+                charset = declared;
+            }
+            piece = value;
+        }
+        if encoded {
+            bytes.extend(headers::percent_decoded(piece)?);
+        } else {
+            bytes.extend_from_slice(piece.as_bytes());
+        }
+    }
+    let decoded =
+        if charset.eq_ignore_ascii_case("utf-8") || charset.eq_ignore_ascii_case("us-ascii") {
+            String::from_utf8(bytes).ok()?
+        } else {
+            mail_parser::decoders::charsets::map::charset_decoder(charset.as_bytes())?(&bytes)
+        };
+    (!decoded.is_empty() && !decoded.chars().any(char::is_control)).then_some(decoded)
+}
+
+fn filename_param(params: &[(String, String)], name: &str) -> Option<String> {
+    extended_filename(params, name).or_else(|| lookup_param(params, name))
+}
+
 fn parse_disposition(val: Option<&ImapVal>) -> (Option<String>, Option<String>) {
     let Some(list) = val.and_then(ImapVal::as_list) else {
         return (None, None);
@@ -1180,7 +1433,7 @@ fn parse_disposition(val: Option<&ImapVal>) -> (Option<String>, Option<String>) 
         .and_then(ImapVal::as_string_lossy)
         .map(|s| s.to_ascii_lowercase());
     let params = param_map(list.get(1));
-    let filename = lookup_param(&params, "filename");
+    let filename = filename_param(&params, "filename");
     (disp, filename)
 }
 
@@ -1211,7 +1464,7 @@ fn parse_bodystructure(val: &ImapVal, path: Vec<u32>) -> Part {
             mime: format!("multipart/{subtype}"),
             start: lookup_param(&params, "start"),
             disposition,
-            filename: disp_filename.or_else(|| lookup_param(&params, "name")),
+            filename: disp_filename.or_else(|| filename_param(&params, "name")),
             ..Part::default()
         };
         for (i, child) in child_vals.into_iter().enumerate() {
@@ -1268,7 +1521,7 @@ fn parse_bodystructure(val: &ImapVal, path: Vec<u32>) -> Part {
         content_id,
         encoding,
         disposition,
-        filename: disp_filename.or_else(|| lookup_param(&params, "name")),
+        filename: disp_filename.or_else(|| filename_param(&params, "name")),
         size,
         children: Vec::new(),
     }
@@ -1358,5 +1611,153 @@ mod tests {
         let ms = parse_internaldate_ms("18-Nov-2026 10:16:00 -0700").expect("timestamp");
         let ts = Timestamp::from_millisecond(ms).unwrap();
         assert_eq!(ts.to_string(), "2026-11-18T17:16:00Z");
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    struct Replay {
+        input: Cursor<Vec<u8>>,
+        output: Vec<u8>,
+    }
+    impl Read for Replay {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.input.read(buf)
+        }
+    }
+    impl Write for Replay {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.output.write(buf)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn connected(replies: &[u8]) -> (GmailImap<Replay>, Header, Part) {
+        let mut input = b"* OK synthetic\r\ns1 OK login\r\n* LIST (\\All) \"/\" \"All Mail\"\r\ns2 OK list\r\n* 3 EXISTS\r\n* OK [UIDVALIDITY 42] fixture\r\ns3 OK [READ-ONLY] done\r\n".to_vec();
+        input.extend_from_slice(replies);
+        let client = GmailImap::from_stream(
+            Replay {
+                input: Cursor::new(input),
+                output: vec![],
+            },
+            "test@example.invalid",
+            "fixture",
+        )
+        .unwrap();
+        let part = Part {
+            mime: "application/pdf".into(),
+            path: vec![2, 1],
+            encoding: Some("base64".into()),
+            size: 8,
+            ..Part::default()
+        };
+        let header = Header {
+            gm_msgid: Some("123".into()),
+            location: Location {
+                uid: 17,
+                uid_validity: 42,
+                mailbox: "All Mail".into(),
+            },
+            tree: part.clone(),
+            ..Header::default()
+        };
+        (client, header, part)
+    }
+
+    const IDENT: &str = "* 2 FETCH (UID 17 X-GM-MSGID 123)\r\ns4 OK checked\r\n";
+    fn fetch_reply(item: &str) -> Vec<u8> {
+        format!("{IDENT}* 2 FETCH (UID 17 X-GM-MSGID 123 {item})\r\ns5 OK read\r\n").into_bytes()
+    }
+
+    #[test]
+    fn fetch_attachment_uses_one_exact_peek_and_preserves_binary_bytes() {
+        let input = fetch_reply("BODY[2.1]<0> {8}\r\nAP8QgA==");
+        let (mut client, h, p) = connected(&input);
+        assert_eq!(
+            client.fetch_attachment(&h, &p, 8, 4).unwrap().unwrap(),
+            [0, 255, 16, 128]
+        );
+        assert_eq!(client.wire_audit().body_section_requests, 1);
+        let sent = String::from_utf8(client.reader.get_ref().inner.output.clone()).unwrap();
+        assert!(sent.ends_with("s4 UID FETCH 17 (UID X-GM-MSGID)\r\ns5 UID FETCH 17 (UID X-GM-MSGID BODY.PEEK[2.1]<0.9>)\r\n"));
+    }
+
+    #[test]
+    fn fetches_multiple_ranges_in_order_and_requires_the_final_boundary() {
+        let block = 256 * 1024;
+        let mut input =
+            format!("{IDENT}* 2 FETCH (UID 17 X-GM-MSGID 123 BODY[2.1]<0> {{{block}}}\r\n")
+                .into_bytes();
+        input.resize(input.len() + block, b'a');
+        input.extend_from_slice(format!(")\r\ns5 OK block\r\n* 2 FETCH (UID 17 X-GM-MSGID 123 BODY[2.1]<{block}> {{3}}\r\nend)\r\ns6 OK tail\r\n").as_bytes());
+        let (mut client, h, mut p) = connected(&input);
+        p.size = (block + 3) as u64;
+        p.encoding = Some("binary".into());
+        let data = client
+            .fetch_attachment(&h, &p, block + 3, block + 3)
+            .unwrap()
+            .unwrap();
+        assert_eq!(data.len(), block + 3);
+        assert_eq!(&data[block..], b"end");
+        let cmds = std::str::from_utf8(&client.reader.get_ref().inner.output).unwrap();
+        assert!(cmds.contains("BODY.PEEK[2.1]<0.262144>"));
+        assert!(cmds.contains("BODY.PEEK[2.1]<262144.4>"));
+    }
+
+    #[test]
+    fn verifies_identity_and_budgets_before_requesting_bytes() {
+        let (mut client, mut h, p) =
+            connected(b"* 2 FETCH (UID 17 X-GM-MSGID 999)\r\ns4 OK checked\r\n");
+        assert!(client.fetch_attachment(&h, &p, 7, 8).is_err());
+        assert_eq!(client.wire_audit().commands, 3);
+        h.location.uid_validity = 43;
+        assert!(client.fetch_attachment(&h, &p, 8, 8).unwrap().is_none());
+        assert_eq!(client.wire_audit().commands, 3);
+        h.location.uid_validity = 42;
+        assert!(client.fetch_attachment(&h, &p, 8, 8).unwrap().is_none());
+        assert_eq!(client.wire_audit().body_section_requests, 0);
+    }
+
+    #[test]
+    fn rejects_overlong_short_or_wrong_offset_and_bad_decoding() {
+        for item in [
+            "BODY[2.1]<0> {9}\r\nAP8QgA==Z",
+            "BODY[2.1]<0> {4}\r\nAP8Q",
+            "BODY[2.1]<0> {8}\r\ndx@xxA==",
+            "BODY[2.1]<99> {8}\r\nAP8QgA==",
+            "BODY[2.2]<0> {8}\r\nAP8QgA==",
+            "BODY[2.1]<0> {4294967295}\r\n",
+        ] {
+            let (mut c, h, p) = connected(&fetch_reply(item));
+            assert!(
+                !matches!(c.fetch_attachment(&h, &p, 8, 8), Ok(Some(_))),
+                "{item}"
+            );
+        }
+        let (mut c, h, p) = connected(&fetch_reply("BODY[2.1]<0> {8}\r\nAP8QgA=="));
+        assert!(c.fetch_attachment(&h, &p, 8, 3).is_err());
+    }
+
+    #[test]
+    fn extended_names_and_continuations_round_trip_from_bodystructure() {
+        for params in [
+            r#""FILENAME*" "utf-8''caf%C3%A9.pdf""#,
+            r#""FILENAME*1*" "%A9.pdf" "FILENAME*0*" "utf-8''caf%C3""#,
+        ] {
+            let line = format!(
+                r#"* 1 FETCH (UID 42 BODYSTRUCTURE ("APPLICATION" "OCTET-STREAM" NIL NIL NIL "BASE64" 8192 NIL ("ATTACHMENT" ({params})) NIL))"#
+            );
+            let frame = ResponseFrame {
+                segments: vec![Segment::Line(line.into_bytes())],
+            };
+            let items = parse_fetch_items(&frame).unwrap();
+            let part = parse_bodystructure(find_value(&items, "BODYSTRUCTURE").unwrap(), vec![]);
+            assert_eq!(part.filename.as_deref(), Some("café.pdf"));
+        }
     }
 }

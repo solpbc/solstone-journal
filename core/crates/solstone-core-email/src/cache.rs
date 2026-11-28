@@ -6,12 +6,15 @@
 //! Deleting this file loses no owner choices, skip decisions, or landed
 //! exchanges — the next scan rebuilds it cleanly from the mailbox.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{EmailError, Result};
+use crate::imap::{ImapSource, MailboxInfo};
 use crate::model::Header;
+use crate::select::Decision;
 
 /// Persisted scan cursor for one IMAP mailbox.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +114,10 @@ impl HeaderCache {
                             first.labels.push(label.clone());
                         }
                     }
+                    if h.attachment_names_checked && !first.attachment_names_checked {
+                        first.tree = h.tree.clone();
+                        first.attachment_names_checked = true;
+                    }
                     first.location = h.location.clone();
                     first
                 }
@@ -144,6 +151,87 @@ impl HeaderCache {
             ],
         )?;
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Upgrade the projections that could have lost an extended filename.
+    /// Preserve the scan cursor, decisions and all non-MIME cached fields.
+    pub(crate) fn refresh_attachment_names(
+        &mut self,
+        source: &mut dyn ImapSource,
+        mailbox: &MailboxInfo,
+        headers: &mut [Header],
+        decisions: &[Decision],
+        cancelled: impl Fn() -> bool,
+    ) -> Result<()> {
+        let selected: HashSet<&str> = decisions
+            .iter()
+            .filter(|d| d.outcome == "selected")
+            .flat_map(|d| std::iter::once(d.key.as_str()).chain(d.parent.parent_key.as_deref()))
+            .collect();
+        let pending: Vec<usize> = headers
+            .iter()
+            .enumerate()
+            .filter_map(|(i, h)| {
+                if h.attachment_names_checked
+                    || !selected.contains(h.key.as_str())
+                    || h.gm_msgid.is_none()
+                    || h.location.mailbox != mailbox.name
+                    || h.location.uid_validity != mailbox.uid_validity
+                {
+                    return None;
+                }
+                let mut parts = Vec::new();
+                h.tree.walk(&mut parts);
+                parts
+                    .iter()
+                    .any(|p| {
+                        p.filename.is_none()
+                            && !p.is_multipart()
+                            && (p.is_attachment()
+                                || !matches!(p.mime.as_str(), "text/html" | "text/plain")
+                                || (p.path.len() > 1
+                                    && p.content_id.is_none()
+                                    && p.disposition.is_some()))
+                    })
+                    .then_some(i)
+            })
+            .collect();
+        for batch in pending.chunks(50) {
+            if cancelled() {
+                return Err(EmailError::Cancelled);
+            }
+            let uids: Vec<_> = batch.iter().map(|i| headers[*i].location.uid).collect();
+            let mut reads: HashMap<_, _> = source
+                .scan_uids(mailbox, &uids)?
+                .into_iter()
+                .map(|h| (h.location.uid, h))
+                .collect();
+            let tx = self.conn.transaction()?;
+            for &i in batch {
+                let h = &mut headers[i];
+                if let Some(row) = reads.remove(&h.location.uid) {
+                    // An anomalous response can never change the remembered message.
+                    if row.gm_msgid != h.gm_msgid
+                        || row.location != h.location
+                        || !row.attachment_names_checked
+                    {
+                        continue;
+                    }
+                    h.tree = row.tree;
+                }
+                // A nonexistent UID in this UIDVALIDITY cannot reappear. Keep
+                // its existing display names for already-landed conversations.
+                h.attachment_names_checked = true;
+                let json =
+                    serde_json::to_string(h).map_err(|e| EmailError::Storage(e.to_string()))?;
+                tx.execute(
+                    "UPDATE messages SET json=?1 WHERE key=?2",
+                    params![json, h.key],
+                )?;
+            }
+            tx.commit()?;
+        }
         Ok(())
     }
 

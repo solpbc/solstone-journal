@@ -139,6 +139,7 @@ fn refusal_output(refusal: SupervisorRefusal, locale: &str) -> (String, String, 
 
 fn desktop_seams(journal: &Path) -> ImportSeams {
     ImportSeams {
+        email_attachment: None,
         text: Box::new(TextWire::sibling()),
         image: Box::new(ImageWire),
         model: Box::new(desktop_model()),

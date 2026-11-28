@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+/// Sibling name used while removing a journal segment.
+pub const STAGED_REMOVAL_PREFIX: &str = ".removing_";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SegmentTimes {
     pub hour: u8,

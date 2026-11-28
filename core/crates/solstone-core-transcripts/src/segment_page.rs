@@ -370,10 +370,8 @@ pub fn read_segment_transcript_page_with_body_policy(
     let mut entry_content_kinds = Vec::new();
     while source_index < files.len() && entries.len() < MAX_TRANSCRIPT_PAGE_ITEMS {
         let path = &files[source_index];
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
+        let relative_name = file_inside_segment(segment.path(), path);
+        let name = relative_name.as_str();
         let relative = format!("{segment_origin}/{name}");
         let medium = media.get(path).copied();
         let content_kind = match medium {
@@ -595,11 +593,7 @@ pub fn permitted_segment_files_for_summary(
     let origin = segment_origin(segment.path());
     let mut permitted = Vec::new();
     for path in files {
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        let relative = format!("{origin}/{name}");
+        let relative = format!("{origin}/{}", file_inside_segment(segment.path(), &path));
         let medium = file_medium(&path, &relative);
         let ordinary = segment_file_permission(&relative);
         let required: &[_] = match medium {
@@ -658,6 +652,16 @@ struct PermittedFiles {
     content_kinds: Vec<&'static str>,
 }
 
+/// Preserve an item's occurrence ID when constructing a journal-relative address.
+fn file_inside_segment(segment: &Path, file: &Path) -> String {
+    file.strip_prefix(segment)
+        .unwrap_or(file)
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn permitted_transcript_files(
     segment: &Segment,
     permissions: Option<&BTreeSet<solstone_core_format::content::AdmittedCategory>>,
@@ -670,11 +674,7 @@ fn permitted_transcript_files(
     let mut media = BTreeMap::new();
     let mut content_kinds = Vec::new();
     files.retain(|path| {
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        let relative = format!("{origin}/{name}");
+        let relative = format!("{origin}/{}", file_inside_segment(segment.path(), path));
         let medium = file_medium(path, &relative);
         let ordinary = segment_file_permission(&relative);
         let required: &[_] = match medium {
@@ -747,6 +747,10 @@ fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptRea
             files.push(path);
         }
     }
+    files.extend(
+        solstone_core_format::content::segment_items::list(segment)
+            .map_err(|_| SegmentTranscriptReadError::Io)?,
+    );
     files.sort();
     Ok(files)
 }
@@ -798,6 +802,14 @@ fn source_version(
     for path in files {
         let metadata = fs::metadata(path).map_err(|_| SegmentTranscriptReadError::Io)?;
         path.file_name().hash(&mut hasher);
+        if let Some(parent) = path.parent()
+            && parent
+                .parent()
+                .and_then(Path::file_name)
+                .is_some_and(|n| n == "items")
+        {
+            parent.file_name().hash(&mut hasher);
+        }
         if let Some(medium) = media.get(path) {
             medium.hash(&mut hasher);
         }
@@ -855,6 +867,26 @@ fn read_window(
     path: &Path,
     offset: u64,
 ) -> Result<(Vec<u8>, usize, bool), SegmentTranscriptReadError> {
+    if let Some(segment) = path.ancestors().nth(3)
+        && segment
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|stream| stream == "import.email")
+        && let Some(root) = segment.ancestors().nth(4)
+        && let Some(parent) = path.parent().and_then(|dir| dir.strip_prefix(root).ok())
+    {
+        use solstone_core_journal_io::{JournalRoot, media::MediaDirectory};
+        let root = JournalRoot::open(root).map_err(|_| SegmentTranscriptReadError::Io)?;
+        let dir = MediaDirectory::open(std::sync::Arc::new(root), parent)
+            .map_err(|_| SegmentTranscriptReadError::Io)?;
+        return dir
+            .with_read_file(
+                path.file_name().ok_or(SegmentTranscriptReadError::Io)?,
+                |mut file| read_window_from(&mut file, offset),
+            )
+            .map_err(|_| SegmentTranscriptReadError::Io)?
+            .ok_or(SegmentTranscriptReadError::Changed)?;
+    }
     let meta = fs::symlink_metadata(path).map_err(|_| SegmentTranscriptReadError::Io)?;
     if !meta.file_type().is_file() {
         return Err(SegmentTranscriptReadError::Io);
@@ -3372,12 +3404,44 @@ mod tests {
         )
         .unwrap();
 
+        for (id, name, content) in [
+            ('a', "note_transcript.md", "independent note"),
+            ('b', "image_transcript.md", "independent photo"),
+            (
+                'c',
+                "screenshot_transcript.md",
+                "independent screenshot OCR",
+            ),
+            ('d', "document_transcript.md", "independent document"),
+        ] {
+            let dir = seg.join("items").join(id.to_string().repeat(64));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(name), content).unwrap();
+        }
         let segment = iter_segments(root.path(), PathOrDay::Day("20261118"))
             .unwrap()
             .into_iter()
             .find(|s| s.path() == seg)
             .unwrap();
 
+        for (kind, expected) in [
+            (AdmittedCategory::Notes, "independent note"),
+            (AdmittedCategory::Photos, "independent photo"),
+            (AdmittedCategory::ScreenText, "independent screenshot OCR"),
+        ] {
+            let perms = BTreeSet::from([kind]);
+            let page = super::read_segment_transcript_page_with_permissions(
+                &segment,
+                None,
+                None,
+                None,
+                &BTreeSet::new(),
+                Some(&perms),
+            )
+            .unwrap();
+            assert_eq!(page.entries.len(), 1);
+            assert_eq!(page.entries[0].text, expected);
+        }
         // Messages-only reader sees the exchange and both filenames, never the extracted PDF.
         let messages_only = BTreeSet::from([AdmittedCategory::Messages]);
         let page = super::read_segment_transcript_page_with_permissions(

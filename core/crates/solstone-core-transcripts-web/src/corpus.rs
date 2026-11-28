@@ -130,6 +130,29 @@ mod tests {
         )
     }
 
+    #[tokio::test]
+    async fn email_item_media_opens_only_on_its_typed_route() {
+        let journal = tempfile::tempdir().unwrap();
+        let id = "e".repeat(64);
+        let key = "101600_0";
+        let origin = format!("import.email/{key}");
+        let dir = journal.path().join("chronicle").join(DAY).join(&origin);
+        let item = dir.join("items").join(&id);
+        fs::create_dir_all(&item).unwrap();
+        fs::write(dir.join("conversation_transcript.jsonl"), "{}\n").unwrap();
+        fs::write(item.join("image_transcript.md"), "a photograph").unwrap();
+        fs::write(item.join("preview.jpg"), b"fixture pixels").unwrap();
+        let app = app(journal.path());
+        let typed = format!("/app/transcripts/api/segment/{DAY}/{origin}/items/{id}/preview");
+        let raw = format!("/app/transcripts/api/serve_file/{DAY}/{origin}/items/{id}/preview.jpg");
+        let (status, _, bytes) = response(app.clone(), &typed).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(bytes, b"fixture pixels");
+        assert_eq!(response(app.clone(), &raw).await.0, StatusCode::NOT_FOUND);
+        fs::write(dir.join("tombstone.json"), "{}").unwrap();
+        assert_eq!(response(app, &typed).await.0, StatusCode::NOT_FOUND);
+    }
+
     async fn response(
         app: axum::Router,
         path: &str,

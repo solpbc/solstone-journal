@@ -323,6 +323,13 @@ pub fn classify_source(
     stream: Option<&str>,
     declarations: &FacetDeclarationSet,
 ) -> ChunkClassification {
+    if solstone_core_format::content::segment_items::coordinate(path).is_some()
+        && !resolve_journal_path(journal, path).is_ok_and(|full| {
+            solstone_core_format::content::segment_items::is_published_path(&full, path)
+        })
+    {
+        return excluded(path);
+    }
     let spec = resolve_spec(path);
     let agent_memory_note =
         spec.is_some_and(|spec| spec.family == solstone_core_format::content::Family::AgentMemory);

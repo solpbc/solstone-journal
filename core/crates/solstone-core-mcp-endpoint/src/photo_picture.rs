@@ -108,6 +108,9 @@ pub(crate) enum PhotoDocumentPreview {
 /// The folder of a photo import or synced library photo, when `path` is a photo's description.
 fn photo_folder(path: &str) -> Option<&str> {
     let folder = path.strip_suffix(PHOTO_DESCRIPTION)?;
+    if solstone_core_format::content::segment_items::coordinate(path).is_some() {
+        return Some(folder);
+    }
     let mut parts = folder.trim_end_matches('/').rsplit('/');
     let _segment = parts.next().filter(|segment| !segment.is_empty())?;
     matches!(parts.next()?, IMAGE_IMPORT_STREAM | "photos").then_some(folder)
@@ -313,6 +316,17 @@ pub(crate) fn photo_picture(
 
 fn read_photo(journal_root: &Path, description_path: &str) -> Option<Vec<u8>> {
     let folder = photo_folder(description_path)?;
+    if solstone_core_format::content::segment_items::coordinate(description_path).is_some() {
+        let name = format!(
+            "chronicle/{}preview.jpg",
+            folder.trim_start_matches("chronicle/")
+        );
+        return solstone_core_format::content::segment_items::read_file(
+            journal_root,
+            &name,
+            MAX_PHOTO_SOURCE_BYTES,
+        );
+    }
     let root = JournalRoot::open(journal_root).ok()?;
     // An indexed path is day-rooted; the files live under chronicle/.
     let prefixes: &[&str] = if folder.starts_with("chronicle/") {

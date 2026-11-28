@@ -1,0 +1,1 @@
+screenshot attachment fixture

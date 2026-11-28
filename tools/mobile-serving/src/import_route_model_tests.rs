@@ -219,6 +219,30 @@ fn ordinary_text_uses_same_host_generate_and_preserves_source_words() {
     server.shutdown_for_retirement().unwrap();
 }
 
+#[test]
+fn mobile_attachment_photo_uses_the_retained_owners_configured_executor() {
+    if in_isolated_child(
+        "model_effects::mobile_attachment_photo_uses_the_retained_owners_configured_executor",
+    ) {
+        return;
+    }
+    let _serial = crate::foreground::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let (_journal, server, host, generator) = model_fixture();
+    let file = server
+        .import_route()
+        .read_attachment("meeting.png", "image/png", &fixture_png())
+        .unwrap();
+    assert_eq!(file.kind, "photos");
+    assert_eq!(file.text, "cobalt ordinary model description");
+    assert_eq!(file.thoughts, 1);
+    assert!(file.preview_jpeg.is_some());
+    assert_eq!(*generator.calls.lock().unwrap(), ["import.image.vision"]);
+    host.shutdown().unwrap();
+    server.shutdown_for_retirement().unwrap();
+}
+
 fn fixture_png() -> Vec<u8> {
     vec![
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 8, 0, 0, 0, 8, 8, 2,

@@ -12,13 +12,13 @@ use crate::model::{Header, MessageType, Reference};
 use crate::text::is_forward_subject;
 
 /// Current selection rules version stamped onto every persisted decision.
-pub const RULES_VERSION: u32 = 2;
+pub const RULES_VERSION: u32 = 3;
 
 /// Releases can bump this threshold to trigger re-evaluation of previously
 /// skipped decisions with `rules_version < STALE_SKIP_BEFORE_VERSION`.
 /// Re-reach only ever adds newly qualifying mail and never modifies or
 /// removes already-landed exchanges.
-pub const STALE_SKIP_BEFORE_VERSION: u32 = 2;
+pub const STALE_SKIP_BEFORE_VERSION: u32 = 3;
 
 /// Left-out reason buckets shown on `/app/sources/` and `/app/sources/email`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -329,7 +329,7 @@ pub fn evaluate_decisions(
 
         let (reason, bucket) = if h.is_draft() {
             (Some("draft"), Some(LeftOutBucket::Drafts))
-        } else if h.calendar_method().is_some() {
+        } else if h.is_calendar_message() {
             (
                 Some("calendar_part"),
                 Some(LeftOutBucket::CalendarResponses),

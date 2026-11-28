@@ -3600,6 +3600,127 @@ fn verified_markdown_document(
     (chunk.content == indexed).then_some(full_text)
 }
 
+/// An email item's relationship is itself visible only where both ends are readable.
+fn email_item_links(
+    root: &Path,
+    principal: DispatchPrincipal<'_>,
+    snapshot: &ConnectionReadSnapshot,
+    entry: &EntryReference,
+    content: &str,
+    result: &mut Value,
+) {
+    use solstone_core_format::content::{conversation::indexed_message, segment_items};
+    let parts: Vec<_> = entry.path.split('/').collect();
+    let [day, "import.email", key, ..] = parts.as_slice() else {
+        return;
+    };
+    let message = format!("{day}/import.email/{key}/conversation_transcript.jsonl");
+    let incoming = segment_items::coordinate(&entry.path);
+    if entry.path != message && incoming.is_none() {
+        return;
+    }
+    let access = boundary(snapshot, None, None);
+    if !live_allows(root, &access, &message, Some("import.email")) {
+        return;
+    }
+    let Some(bytes) =
+        segment_items::read_file(root, &format!("chronicle/{message}"), 8 * 1024 * 1024)
+    else {
+        return;
+    };
+    let Ok(raw) = std::str::from_utf8(&bytes) else {
+        return;
+    };
+    let mint = |path: &str, idx: i64, expected: Option<&str>| -> Option<String> {
+        if !live_allows(root, &access, path, Some("import.email"))
+            || !crate::source_release::check_indexed_source_release(root, path)
+        {
+            return None;
+        }
+        let (rid, _) = current_row_id(root, &access, path, idx, -1).ok()??;
+        let chunk = read_indexed_entry(
+            root,
+            QueryBoundary::Connection(access.clone()),
+            path,
+            idx,
+            rid,
+            MAX_INDEXED_ENTRY_BYTES,
+        )
+        .ok()?;
+        let text = chunk.content()?;
+        if expected.is_some_and(|expected| expected != text) {
+            return None;
+        }
+        codec()
+            .mint(
+                principal.connection,
+                snapshot.generation,
+                ReferenceTarget::Entry(EntryReference {
+                    day: path.split('/').next()?.into(),
+                    stream: "import.email".into(),
+                    path: path.into(),
+                    idx,
+                    row_id: rid,
+                    activity_proof: None,
+                    record_identity: None,
+                    markdown_fingerprint: path.ends_with(".md").then(|| digest(text)),
+                    source_digest: None,
+                    byte_offset: None,
+                }),
+            )
+            .ok()
+    };
+    let mut links = Vec::new();
+    let rows = raw
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Map<String, Value>>(line).ok())
+        .filter_map(|row| Some((indexed_message(&row)?, row)));
+    for (idx, (text, row)) in rows.enumerate() {
+        if incoming.is_none() && (entry.idx != idx as i64 || content != text) {
+            continue;
+        }
+        for attachment in row
+            .get("attachments")
+            .into_iter()
+            .chain(row.get("reply_to").and_then(|r| r.get("attachments")))
+            .filter_map(Value::as_array)
+            .flatten()
+            .take(64)
+        {
+            let Some((target_day, target_segment, id)) =
+                segment_items::item_origin(attachment, day, key)
+            else {
+                continue;
+            };
+            if let Some((item_id, _)) = incoming {
+                if (target_day, target_segment, id) == (*day, *key, item_id)
+                    && let Some(reference) = mint(&message, idx as i64, Some(&text))
+                {
+                    result["message_reference"] = Value::String(reference);
+                    return;
+                }
+            } else {
+                let parent = format!("{target_day}/import.email/{target_segment}");
+                let Some(file) =
+                    segment_items::published_item(&root.join("chronicle").join(&parent), id)
+                else {
+                    continue;
+                };
+                let Some(name) = file.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                let path = format!("{parent}/items/{id}/{name}");
+                if let Some(reference) = mint(&path, 0, None) {
+                    links.push(json!({"name":attachment["name"], "reference":reference}));
+                }
+            }
+        }
+    }
+    if !links.is_empty() {
+        result["attachment_references"] = Value::Array(links)
+    }
+}
+
 fn screen_text_identity_current(journal_root: &Path, path: &str, pinned_digest: &str) -> bool {
     let Ok(connection) = solstone_core_indexer_store::open_index_reader(journal_root) else {
         return false;
@@ -4066,6 +4187,7 @@ fn fetch(
             if let Some(stream) = indexed_hit_stream(&entry.stream, &entry.path, record.as_ref()) {
                 value["source"] = json!(source_label(&source_labels(journal_root), stream));
             }
+            email_item_links(journal_root, principal, snapshot, &entry, &text, &mut value);
             if let Some(hidden) = hidden {
                 value["hidden"] = Value::Bool(hidden);
             }

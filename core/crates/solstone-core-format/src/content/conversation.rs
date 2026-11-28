@@ -293,19 +293,9 @@ fn project_attachments(attachments: &[Value]) -> Vec<Value> {
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|s| !s.is_empty())?;
-            let mut out = serde_json::json!({ "name": name });
-            if att.get("inline").and_then(Value::as_bool) == Some(true) {
-                out["inline"] = Value::from(true);
-            }
-            if let Some(item_ref) = att
-                .get("item_ref")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                out["item_ref"] = Value::from(item_ref);
-            }
-            Some(out)
+            // The attachment's name is part of the exchange. Item locators, provenance
+            // and processing details are released separately by the owner reader.
+            Some(serde_json::json!({ "name": name }))
         })
         .collect()
 }
@@ -1282,7 +1272,10 @@ mod tests {
         assert_eq!(fields["reply_to"]["truncated"], true);
         assert_eq!(fields["reply_to"]["cut_chars"], 4200);
         assert_eq!(fields["forwarded"][0]["from"], "Alex");
-        assert_eq!(fields["attachments"][0]["name"], "agenda.pdf");
+        assert_eq!(
+            fields["attachments"][0],
+            serde_json::json!({"name":"agenda.pdf"})
+        );
         assert_eq!(fields["attachments"][1]["name"], "site-photo.jpg");
 
         let blocks = message_blocks_for_row(row_map["text"].as_str().unwrap(), &row_map);

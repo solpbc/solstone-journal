@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_email::store::{EMAIL_STREAM, journal_timezone};
 use solstone_core_email::sync::{
-    CreatedEmailSegment, status_snapshot, sync_live_gmail_with_publisher,
+    CreatedEmailSegment, status_snapshot, sync_live_gmail_with_attachments,
 };
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::publish::{CreatedSegment, PublicationInput, PublicationStatus, publish};
@@ -34,7 +34,11 @@ pub fn publish_email_batch(root: &Path, run_id: &str, created: &[CreatedEmailSeg
             },
         })
         .collect();
-    let files: Vec<PathBuf> = created.iter().map(|seg| seg.file.clone()).collect();
+    let files: Vec<PathBuf> = created
+        .iter()
+        .flat_map(|seg| std::iter::once(&seg.file).chain(&seg.attachment_files))
+        .cloned()
+        .collect();
     match publish(PublicationInput {
         journal: root,
         import_dir: None,
@@ -62,15 +66,24 @@ pub(crate) fn run_cli_sync(
     save: bool,
     dry_run: bool,
     scheduled: bool,
+    reader: Option<&solstone_core_format::attachment::SharedAttachmentReader>,
 ) -> CliRun {
     let zone = journal_timezone(journal_path);
     if save && !dry_run {
         let publisher = |run_id: &str, batch: &[CreatedEmailSegment]| {
             publish_email_batch(journal_path, run_id, batch);
         };
-        if let Err(err) =
-            sync_live_gmail_with_publisher(journal_path, scheduled, false, Some(&publisher))
-        {
+        let reader = reader.cloned().unwrap_or_else(|| {
+            solstone_core_import_sources::attachment::installed_reader(journal_path.to_path_buf())
+        });
+        if let Err(err) = sync_live_gmail_with_attachments(
+            journal_path,
+            scheduled,
+            false,
+            Some(&publisher),
+            Some(reader.read.as_ref()),
+            reader.pdf_unavailable,
+        ) {
             return failure("", &format!("{err}\n"), 1);
         }
     }

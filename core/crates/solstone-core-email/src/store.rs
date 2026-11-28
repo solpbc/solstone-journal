@@ -78,6 +78,8 @@ pub struct SourceState {
     pub fetching_active: bool,
     pub fetch_done: usize,
     pub fetch_total: usize,
+    pub file_history_done: usize,
+    pub file_history_total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_added_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -174,6 +176,7 @@ pub fn clear_cancel(root: &Path) {
 #[must_use]
 pub fn is_cancel_requested(root: &Path) -> bool {
     cancel_flag_path(root).is_file()
+        || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(root)
 }
 
 /// Acquire the exclusive email source sync/mutation lock (`config/email/sync.lock`).

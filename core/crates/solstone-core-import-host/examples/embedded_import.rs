@@ -98,6 +98,7 @@ fn embedded_seams(journal: &std::path::Path, library: PathBuf, stop: WorkStop) -
         stop,
     };
     ImportSeams {
+        email_attachment: None,
         text: Box::new(generate.clone_text()),
         image: Box::new(generate.clone_image()),
         model: Box::new(generate),

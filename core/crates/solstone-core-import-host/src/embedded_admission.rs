@@ -40,6 +40,7 @@ impl solstone_core_import::text::WireClient for IdleText {
 
 fn idle_seams(journal: &Path) -> ImportSeams {
     ImportSeams {
+        email_attachment: None,
         text: Box::new(IdleText),
         image: Box::new(solstone_core_import_sources::NullWireClient),
         model: Box::new(solstone_core_import_sources::NullDocumentModelClient),

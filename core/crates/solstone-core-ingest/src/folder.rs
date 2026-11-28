@@ -58,7 +58,7 @@ use solstone_core_format::screenshots::{SCREENSHOT_STEM, names_screenshot_file};
 use solstone_core_format::stored_markdown::{Document, Message};
 use solstone_core_import::triage::{self, Kind as TriageKind};
 use solstone_core_import_sources::document::{
-    PdfCommand, PdfPayload, PdfWorker, PdfWorkerRequest, WorkerFailure,
+    PdfCommand, PdfPayload, PdfWorkerRequest, WorkerFailure,
 };
 use solstone_core_ingest_resolve::IngestNotice;
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, create_directory_with_mode};
@@ -105,7 +105,9 @@ pub(crate) struct SystemFolderPdfReader;
 
 impl FolderPdfReader for SystemFolderPdfReader {
     fn extract(&self, journal_root: &Path, bytes: &[u8]) -> Result<PdfPayload, PdfReadError> {
-        let worker = resolve_pdf_worker()?;
+        let worker =
+            solstone_core_import_sources::document::installed_pdf_worker(PDF_WORKER_TIMEOUT)
+                .map_err(PdfReadError::Unavailable)?;
         let tmp_dir = journal_root.join(STATE_DIR).join(".tmp");
         create_directory_with_mode(&tmp_dir, 0o700).map_err(|e| {
             PdfReadError::Unavailable(format!("cannot create pdf staging dir: {e}"))
@@ -133,32 +135,6 @@ impl Drop for TempFileGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
-}
-
-#[cfg(not(windows))]
-fn resolve_pdf_worker()
--> Result<solstone_core_import_sources::document::SystemPdfWorker, PdfReadError> {
-    let current = std::env::current_exe()
-        .map_err(|e| PdfReadError::Unavailable(format!("current executable unknown: {e}")))?;
-    let parent = current
-        .parent()
-        .ok_or_else(|| PdfReadError::Unavailable("current executable has no parent".to_owned()))?;
-    let path = parent.join(format!("solstone-core-pdf{}", std::env::consts::EXE_SUFFIX));
-    let worker =
-        solstone_core_import_sources::document::SystemPdfWorker::new(path, PDF_WORKER_TIMEOUT);
-    worker.prepare().map_err(PdfReadError::Unavailable)?;
-    Ok(worker)
-}
-
-#[cfg(windows)]
-fn resolve_pdf_worker()
--> Result<solstone_core_import_sources::document::WindowsPdfWorker, PdfReadError> {
-    let worker = solstone_core_import_sources::document::WindowsPdfWorker::from_verified_package(
-        PDF_WORKER_TIMEOUT,
-    )
-    .map_err(|e| PdfReadError::Unavailable(e.to_string()))?;
-    worker.prepare().map_err(PdfReadError::Unavailable)?;
-    Ok(worker)
 }
 
 fn map_worker_failure(failure: WorkerFailure) -> PdfReadError {

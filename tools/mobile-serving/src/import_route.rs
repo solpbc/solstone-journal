@@ -80,6 +80,26 @@ struct ForegroundAdmission {
 }
 
 impl ImportAdmission for ForegroundAdmission {
+    fn read_attachment(
+        &self,
+        name: &str,
+        mime: &str,
+        bytes: &[u8],
+    ) -> Result<
+        solstone_core_import_sources::attachment::PreparedAttachment,
+        solstone_core_import_sources::attachment::PrepareFailure,
+    > {
+        use solstone_core_import_sources::attachment::PrepareFailure;
+        let preparation = self
+            .preparation
+            .lock()
+            .map_err(|_| PrepareFailure::Unavailable)?;
+        preparation
+            .as_ref()
+            .ok_or(PrepareFailure::Unavailable)?
+            .read_attachment(name, mime, bytes)
+    }
+
     fn checkpoint(&self) -> Result<(), String> {
         self.preparation
             .lock()

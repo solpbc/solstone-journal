@@ -1380,6 +1380,15 @@ test('the import band gets its own calm row with a pause that only covers older 
   assert.strictEqual(bar.hidden, true);
 
   // Finished, only day outputs left, or never started: the list keeps all six bands.
+  context.work.backfill = { ...backfill, landed_segments: 0, interpreted_segments: 0, owed_segments: 0, email_exchanges_done: 2, email_exchanges_total: 7 };
+  vm.runInContext('renderWorkProgress(work)', context);
+  assert.strictEqual(block.hidden, false);
+  assert.strictEqual(bar.getAttribute('aria-valuenow'), '2');
+  assert.strictEqual(bar.getAttribute('aria-valuemax'), '7');
+  context.work.backfill.email_exchanges_done = 7;
+  vm.runInContext('renderWorkProgress(work)', context);
+  assert.strictEqual(block.hidden, true);
+
   for (const finished of [{ paused: false, landed_segments: 1420, interpreted_segments: 1420, owed_segments: 0 },
     { paused: false, landed_segments: 0, interpreted_segments: 0, owed_segments: 0, daily_units_owed: 5, activities_owed: 2 }, undefined]) {
     context.work.backfill = finished;

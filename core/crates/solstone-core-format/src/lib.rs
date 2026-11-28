@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 pub mod agent_memory;
+pub mod attachment;
 pub mod audio_archive;
 pub mod briefing;
 pub mod calendar;

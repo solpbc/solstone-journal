@@ -4784,8 +4784,59 @@
       for (const att of list) {
         html += '<li>';
         html += `<span>${window.JournalI18n.renderHtml('journal.window.transcripts.message.attached', [['name', att.name.trim()]])}</span>`;
-        if (typeof att.item_ref === 'string' && att.item_ref.trim()) {
-          html += ` <a class="tr-msg-doc-link" href="#${encodeURIComponent(att.item_ref.trim())}" data-item-ref="${escapeHtml(att.item_ref.trim())}">${window.JournalI18n.renderHtml('journal.window.transcripts.message.open.document')}</a>`;
+        const stateLabels = {
+          ambiguous: 'journal.window.sources.email.file.state.ambiguous',
+          too_large: 'journal.window.sources.email.file.state.too.large',
+          over_limit: 'journal.window.sources.email.file.state.over.limit',
+          unsupported: 'journal.window.sources.email.file.state.unsupported',
+          unavailable: 'journal.window.sources.email.file.state.unavailable',
+          reader_unavailable: 'journal.window.sources.email.file.state.reader.unavailable',
+          pending: 'journal.window.sources.email.file.state.pending',
+          failed: 'journal.window.sources.email.file.state.failed',
+          removed: 'journal.window.sources.email.file.state.removed',
+          decorative: 'journal.window.sources.email.file.state.decorative',
+          encrypted: 'journal.window.sources.email.file.state.encrypted',
+          names_only: 'journal.window.sources.email.file.state.names.only',
+        };
+        if (Object.hasOwn(stateLabels, att.state)) {
+          html += ` <small>${window.JournalI18n.renderHtml(stateLabels[att.state])}</small>`;
+        }
+        if (att.partial === true) {
+          html += ` <small>${window.JournalI18n.renderHtml('journal.window.sources.email.file.state.partial')}</small>`;
+        }
+        const kindLabels = {
+          documents: 'journal.window.shared.import.item.kind.document',
+          notes: 'journal.window.shared.import.item.kind.note',
+          photos: 'journal.window.shared.import.item.kind.photo',
+          screenshots: 'journal.window.shared.import.item.kind.screenshot',
+        };
+        if (Object.hasOwn(kindLabels, att.kind)) {
+          html += ` <small>${window.JournalI18n.renderHtml(kindLabels[att.kind])}</small>`;
+        }
+        if (typeof att.sender === 'string' && att.sender.trim()) {
+          html += ` <small>${window.JournalI18n.renderHtml('journal.window.transcripts.stretch.copy.from.from')} ${escapeHtml(att.sender.trim())}</small>`;
+        }
+        if (Number.isSafeInteger(att.thoughts) && att.thoughts >= 0) {
+          html += ` <small>${window.JournalI18n.renderHtml('journal.window.thinking.column.heading.thoughts')} ${att.thoughts.toLocaleString(window.JournalI18n.formatLocale)}</small>`;
+        }
+        const validId = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+        if (validId(att.item_ref)) {
+          const itemDay = att.item_day || day;
+          const itemSegment = att.item_segment || selectedSegment?.key;
+          const itemUrl = `/app/transcripts/api/segment/${encodeURIComponent(itemDay)}/import.email/${encodeURIComponent(itemSegment)}/items/${att.item_ref}`;
+          html += ` <button type="button" class="tr-msg-doc-link" data-item-ref="${att.item_ref}" data-filename="${escapeHtml(att.name)}" data-item-url="${escapeHtml(itemUrl)}" aria-expanded="false">${window.JournalI18n.renderHtml('journal.window.transcripts.show.label')}</button>`;
+        } else if (validId(att.attachment_id) && ['ambiguous', 'too_large', 'failed'].includes(att.state)) {
+          const label = att.state === 'failed' ? 'journal.window.chrome.retry' : 'journal.window.sources.email.file.action.bring.in';
+          html += ` <button type="button" class="tr-msg-import" data-attachment-id="${att.attachment_id}">${window.JournalI18n.renderHtml(label)}</button>`;
+        }
+        const source = att.mailbox_reference;
+        if (typeof source?.account === 'string' && source.account.includes('@')
+            && typeof source.gm_thrid === 'string' && /^[1-9][0-9]{0,19}$/.test(source.gm_thrid)) {
+          const id = BigInt(source.gm_thrid);
+          if (id <= 0xffffffffffffffffn) {
+            const url = `https://mail.google.com/mail/?authuser=${encodeURIComponent(source.account)}#all/${id.toString(16)}`;
+            html += ` <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${window.JournalI18n.renderHtml('journal.window.sources.email.provider.gmail')}</a>`;
+          }
         }
         html += '</li>';
       }
@@ -4951,12 +5002,85 @@
       return `<p class="tr-also">${window.JournalI18n.renderHtml('journal.window.transcripts.also.at.this.time')} ${links.join(' · ')}</p>`;
     }
 
+    function closeMessageAttachment(button, pane) {
+      pane.remove();
+      button.setAttribute('aria-expanded', 'false');
+      button.textContent = window.JournalI18n.render('journal.window.transcripts.show.label');
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('item') === button.dataset.itemRef) {
+        url.searchParams.delete('item');
+        ctx.history.replace(url.pathname + url.search + url.hash);
+      }
+      button.focus();
+    }
+
+    async function openMessageAttachment(button) {
+      const pane = document.createElement('div');
+      pane.className = 'tr-msg-item';
+      button.closest('li').appendChild(pane);
+      button.setAttribute('aria-expanded', 'true');
+      button.textContent = window.JournalI18n.render('journal.window.sources.selective.action.hide');
+      try {
+        const url = button.dataset.itemUrl;
+        const item = await dayRead(url + '/text', { signal: currentSegmentAbort?.signal });
+        if (!pane.parentElement) return;
+        if (item.preview) {
+          const picture = document.createElement('img');
+          picture.src = url + '/preview';
+          picture.alt = '';
+          pane.appendChild(picture);
+        }
+        const body = document.createElement('pre');
+        body.textContent = item.text;
+        pane.appendChild(body);
+        if (item.original) {
+          const original = document.createElement('a');
+          original.href = url + '/original';
+          original.download = button.dataset.filename;
+          original.textContent = window.JournalI18n.render('journal.window.sources.email.file.action.download');
+          pane.appendChild(original);
+        }
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        pane.textContent = window.JournalI18n.render('journal.window.transcripts.response.error.that.file.couldn.t.be.read');
+      }
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.textContent = window.JournalI18n.render('journal.window.transcripts.button.label.close');
+      back.addEventListener('click', () => closeMessageAttachment(button, pane));
+      pane.appendChild(back);
+    }
+
     function wireMessagePane(targetEl) {
       targetEl.querySelectorAll('.tr-msg-unfold').forEach(button => {
         button.addEventListener('click', () => {
           const body = button.closest('.tr-msg-body');
           body.querySelector('.tr-msg-earlier').hidden = false;
           button.closest('.tr-msg-fold').remove();
+        });
+      });
+      targetEl.querySelectorAll('.tr-msg-doc-link').forEach(button => {
+        button.addEventListener('click', () => {
+          const pane = button.closest('li').querySelector('.tr-msg-item');
+          if (pane) closeMessageAttachment(button, pane);
+          else openMessageAttachment(button);
+        });
+      });
+      targetEl.querySelectorAll('.tr-msg-import').forEach(button => {
+        button.addEventListener('click', async () => {
+          const segment = selectedSegment;
+          const currentDay = day;
+          button.disabled = true;
+          try {
+            await apiJson('/app/sources/api/email/attachment', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ day: currentDay, segment: segment.key, item_id: button.dataset.attachmentId }),
+            });
+            if (day === currentDay && selectedSegment?.key === segment.key) loadSegmentContent(segment, activeTab);
+          } catch {
+            button.disabled = false;
+            button.textContent = window.JournalI18n.render('journal.window.chrome.retry');
+          }
         });
       });
       targetEl.querySelectorAll('.tr-also a').forEach(link => {
@@ -4967,6 +5091,17 @@
           selectSegment(other);
         });
       });
+      const linkedId = new URLSearchParams(window.location.search).get('item');
+      if (linkedId && /^[0-9a-f]{64}$/.test(linkedId)) {
+        const button = [...targetEl.querySelectorAll('.tr-msg-doc-link')].find(el => el.dataset.itemRef === linkedId);
+        if (button) {
+          const quote = button.closest('details');
+          if (quote) quote.open = true;
+          revealBoundedEntry(targetEl, button.closest('.tr-msg'));
+          openMessageAttachment(button);
+          button.scrollIntoView?.({ block: 'nearest' });
+        }
+      }
       const passage = linkedPassage();
       if (!passage) return;
       const entry = [...targetEl.querySelectorAll('.tr-msg[data-turn-id]')].find(el => el.dataset.turnId === passage.turn);

@@ -215,8 +215,15 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
             .unwrap_or((false, false, false));
         let work_ok = work.ok().flatten();
         let index_pending = search_index.index.pending as u64;
-        let backfill_view =
+        let mut backfill_view =
             work_view::backfill_summary(work_ok.as_ref(), backfill_paused, index_pending);
+        if let Ok(bytes)=std::fs::read(root.join("config/email/state.json"))
+            && let Ok(email)=serde_json::from_slice::<serde_json::Value>(&bytes)
+            && email["phase"]!="disconnected"
+        {
+            backfill_view["email_exchanges_done"]=email["file_history_done"].clone();
+            backfill_view["email_exchanges_total"]=email["file_history_total"].clone();
+        }
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
         #[cfg(any(unix, windows))]

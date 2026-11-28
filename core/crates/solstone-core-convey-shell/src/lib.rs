@@ -1884,7 +1884,16 @@ fn router_with_roots(
         .merge(photos_library::router())
         .merge(folders_source::router())
         .merge(solstone_core_entities::api_router(journal_root.clone()))
-        .merge(solstone_core_settings_web::routes(journal_root.clone()))
+        .merge(match import_route.clone() {
+            Some(route) => solstone_core_settings_web::routes_with_attachment_reader(
+                journal_root.clone(),
+                solstone_core_format::attachment::SharedAttachmentReader::mobile(Arc::new(
+                    move |name, mime, bytes| route.read_attachment(name, mime, bytes),
+                )),
+                target_use.clone(),
+            ),
+            None => solstone_core_settings_web::routes(journal_root.clone()),
+        })
         .merge(solstone_core_health_web::routes(journal_root.clone()))
         .merge(solstone_core_profile_web::routes(journal_root.clone()))
         .merge(solstone_core_stats_web::routes_with_talent_roots(

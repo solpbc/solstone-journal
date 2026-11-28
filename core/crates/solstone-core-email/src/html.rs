@@ -5,6 +5,7 @@
 //! apply the two-signal removal / hold rules, and render the remainder cleanly.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 
 use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::{
@@ -245,6 +246,30 @@ fn is_gmail_forward(e: &El) -> bool {
         })
 }
 
+#[derive(Default)]
+pub(crate) struct ImageRegions {
+    pub authored: BTreeSet<String>,
+    pub omitted: BTreeSet<String>,
+    pub uncertain: BTreeSet<String>,
+}
+
+fn image_id(e: &El) -> Option<String> {
+    (e.name == "img")
+        .then(|| e.attr("src").and_then(cid_url_id))
+        .flatten()
+}
+
+fn record_omitted(node: &Node, ids: &mut BTreeSet<String>) {
+    if let Node::El(e) = node {
+        if let Some(id) = image_id(e) {
+            ids.insert(id);
+        }
+        for n in &e.children {
+            record_omitted(n, ids);
+        }
+    }
+}
+
 struct Ctx<'a> {
     parent: Option<&'a str>,
     removed: Vec<Removal>,
@@ -253,6 +278,7 @@ struct Ctx<'a> {
     sig_text: String,
     novel_text: String,
     forwarded: Vec<ForwardedBlock>,
+    image_regions: ImageRegions,
     in_container: usize,
     cut: bool,
 }
@@ -269,7 +295,8 @@ fn transform(nodes: &[Node], ctx: &mut Ctx<'_>, in_gq: bool) -> Vec<Node> {
     let mut out: Vec<Node> = Vec::new();
     for n in nodes {
         if ctx.cut {
-            break;
+            record_omitted(n, &mut ctx.image_regions.omitted);
+            continue;
         }
         let Node::El(e) = n else {
             if let (Node::Text(t), 0) = (n, ctx.in_container) {
@@ -293,9 +320,11 @@ fn transform(nodes: &[Node], ctx: &mut Ctx<'_>, in_gq: bool) -> Vec<Node> {
             });
             out.push(sentinel());
             ctx.cut = true;
-            break;
+            record_omitted(n, &mut ctx.image_regions.omitted);
+            continue;
         }
         if is_signature(e) {
+            record_omitted(n, &mut ctx.image_regions.omitted);
             let text = el_text(e);
             ctx.sig_text.push_str(&text);
             ctx.sig_text.push('\n');
@@ -308,6 +337,7 @@ fn transform(nodes: &[Node], ctx: &mut Ctx<'_>, in_gq: bool) -> Vec<Node> {
             continue;
         }
         if is_gmail_forward(e) {
+            record_omitted(n, &mut ctx.image_regions.omitted);
             let mut raw_html = String::new();
             serialize(&e.children, false, &mut raw_html);
             let rendered_fwd = render(&raw_html);
@@ -343,6 +373,7 @@ fn transform(nodes: &[Node], ctx: &mut Ctx<'_>, in_gq: bool) -> Vec<Node> {
                 signals.push("parent_match".into());
             }
             if signals.len() >= 2 && !disagrees {
+                record_omitted(n, &mut ctx.image_regions.omitted);
                 ctx.removed.push(Removal {
                     kind: "quote".into(),
                     signals,
@@ -367,6 +398,13 @@ fn transform(nodes: &[Node], ctx: &mut Ctx<'_>, in_gq: bool) -> Vec<Node> {
                 out.push(Node::El(kept));
             }
             continue;
+        }
+        if let Some(id) = image_id(e) {
+            if ctx.in_container == 0 {
+                ctx.image_regions.authored.insert(id);
+            } else {
+                ctx.image_regions.uncertain.insert(id);
+            }
         }
         let mut kept = e.clone();
         let gq = in_gq || (e.name == "div" && e.has_class("gmail_quote"));
@@ -476,8 +514,22 @@ pub fn render(html: &str) -> String {
     out
 }
 
+/// RFC 2392 uses URL escaping for the message-local Content-ID. Other URLs are
+/// never resolved. The ID itself can be case sensitive.
+fn cid_url_id(url: &str) -> Option<String> {
+    let (scheme, value) = url.trim().split_once(':')?;
+    if !scheme.eq_ignore_ascii_case("cid") || value.is_empty() {
+        return None;
+    }
+    String::from_utf8(crate::headers::percent_decoded(value)?).ok()
+}
+
 #[must_use]
-pub fn read(html: &str, parent: Option<&str>) -> HtmlRead {
+pub(crate) fn image_regions(html: &str) -> ImageRegions {
+    transform_body(html, None).1.image_regions
+}
+
+fn transform_body<'a>(html: &str, parent: Option<&'a str>) -> (Vec<Node>, Ctx<'a>) {
     let root = parse(html);
     let mut ctx = Ctx {
         parent,
@@ -487,10 +539,17 @@ pub fn read(html: &str, parent: Option<&str>) -> HtmlRead {
         sig_text: String::new(),
         novel_text: String::new(),
         forwarded: Vec::new(),
+        image_regions: ImageRegions::default(),
         in_container: 0,
         cut: false,
     };
     let kept = transform(&root.children, &mut ctx, false);
+    (kept, ctx)
+}
+
+#[must_use]
+pub fn read(html: &str, parent: Option<&str>) -> HtmlRead {
+    let (kept, ctx) = transform_body(html, parent);
     let mut out = String::new();
     serialize(&kept, false, &mut out);
     let rendered = render(&out);

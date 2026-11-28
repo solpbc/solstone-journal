@@ -33,6 +33,8 @@ use axum::{
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use solstone_core_email::attachment_sync;
+use solstone_core_email::choice::{AttachmentScope, Choice, range_cutoff_ms};
 use solstone_core_email::error::EmailError;
 use solstone_core_email::imap::{
     DEFAULT_RECONNECT_BACKOFF, DEFAULT_RECONNECT_RETRIES, GmailImap, ImapSource,
@@ -45,6 +47,7 @@ use solstone_core_email::sync::{
     run_live_message_count, run_live_segments,
 };
 use solstone_core_import::publish::{CreatedSegment, PublicationInput, PublicationStatus, publish};
+use solstone_core_journal_io::whole_journal_restore::{TargetUse, TargetUseOwner};
 use solstone_core_removals::{Action, Page, Surface, Unit};
 use solstone_core_segment::{ImportSource, Kind as SegmentKind, StreamHints};
 
@@ -61,19 +64,33 @@ pub(crate) type ImapOpener = Arc<
 
 #[derive(Clone)]
 pub(crate) struct EmailService {
+    target_use: TargetUseOwner,
     root: PathBuf,
     busy: Arc<AtomicBool>,
     opener: ImapOpener,
+    reader: solstone_core_email::attachment_prepare::SharedAttachmentReader,
     reconnect_backoff: Duration,
 }
 
 impl EmailService {
     pub(crate) fn live(root: PathBuf) -> Self {
+        let reader = solstone_core_import_sources::attachment::installed_reader(root.clone());
+        let target_use = TargetUseOwner::new(&root);
+        Self::live_with_reader(root, reader, target_use)
+    }
+
+    pub(crate) fn live_with_reader(
+        root: PathBuf,
+        reader: solstone_core_email::attachment_prepare::SharedAttachmentReader,
+        target_use: TargetUseOwner,
+    ) -> Self {
         let opener: ImapOpener = Arc::new(|account, app_password| {
             let client = GmailImap::connect_gmail(account, app_password)?;
             Ok(Box::new(client))
         });
         Self {
+            target_use,
+            reader,
             root,
             busy: Arc::new(AtomicBool::new(false)),
             opener,
@@ -84,6 +101,8 @@ impl EmailService {
     #[cfg(test)]
     pub(crate) fn with_opener(root: PathBuf, opener: ImapOpener) -> Self {
         Self {
+            target_use: TargetUseOwner::new(&root),
+            reader: solstone_core_import_sources::attachment::installed_reader(root.clone()),
             root,
             busy: Arc::new(AtomicBool::new(false)),
             opener,
@@ -91,16 +110,31 @@ impl EmailService {
         }
     }
 
+    fn begin_background(&self) -> Result<Option<BusyGuard>, EmailError> {
+        let target = self.target_use.begin().map_err(|_| EmailError::Cancelled)?;
+        if self.busy.swap(true, Ordering::SeqCst) {
+            return Ok(None);
+        }
+        Ok(Some(BusyGuard {
+            busy: Arc::clone(&self.busy),
+            _target: target,
+        }))
+    }
+
     pub(crate) fn is_busy(&self) -> bool {
         self.busy.load(Ordering::SeqCst)
     }
 }
 
-struct BusyGuard(Arc<AtomicBool>);
+struct BusyGuard {
+    busy: Arc<AtomicBool>,
+    // A detached scan or sync can outlive the HTTP request's target lease.
+    _target: TargetUse,
+}
 
 impl Drop for BusyGuard {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.busy.store(false, Ordering::SeqCst);
     }
 }
 
@@ -119,6 +153,7 @@ pub(crate) fn routes_with_service(svc: EmailService) -> Router {
     let s_resume = svc.clone();
     let s_cancel = svc.clone();
     let s_choice = svc.clone();
+    let s_attachment = svc.clone();
     let s_sync = svc.clone();
     let s_password = svc.clone();
     let s_run_preview = svc.clone();
@@ -145,6 +180,10 @@ pub(crate) fn routes_with_service(svc: EmailService) -> Router {
         .route(
             "/app/sources/api/email/scan/cancel",
             post(move || cancel_scan(s_cancel.clone())),
+        )
+        .route(
+            "/app/sources/api/email/attachment",
+            post(move |body| select_attachment(s_attachment.clone(), body)),
         )
         .route(
             "/app/sources/api/email/choice",
@@ -215,7 +254,11 @@ fn publish_email_batch(root: &Path, run_id: &str, created: &[CreatedEmailSegment
             },
         })
         .collect();
-    let files: Vec<PathBuf> = created.iter().map(|seg| seg.file.clone()).collect();
+    let files: Vec<PathBuf> = created
+        .iter()
+        .flat_map(|seg| std::iter::once(&seg.file).chain(&seg.attachment_files))
+        .cloned()
+        .collect();
     match publish(PublicationInput {
         journal: root,
         import_dir: None,
@@ -285,13 +328,12 @@ fn spawn_background_scan_with_source(
     source: Box<dyn ImapSource + Send>,
     account: String,
     app_password: String,
-) -> bool {
-    if svc.busy.swap(true, Ordering::SeqCst) {
+) -> Result<bool, EmailError> {
+    let Some(guard) = svc.begin_background()? else {
         let mut src = source;
         let _ = src.logout();
-        return false;
-    }
-    let guard = BusyGuard(Arc::clone(&svc.busy));
+        return Ok(false);
+    };
     let root = svc.root.clone();
     let opener = Arc::clone(&svc.opener);
     let backoff = svc.reconnect_backoff;
@@ -312,17 +354,16 @@ fn spawn_background_scan_with_source(
         }
         let _ = reconnecting.logout();
     });
-    true
+    Ok(true)
 }
 
 fn spawn_background_scan(svc: &EmailService) -> Result<bool, EmailError> {
     let Some(creds) = store::read_credentials(&svc.root)? else {
         return Err(EmailError::NotConnected);
     };
-    if svc.busy.swap(true, Ordering::SeqCst) {
+    let Some(guard) = svc.begin_background()? else {
         return Ok(false);
-    }
-    let guard = BusyGuard(Arc::clone(&svc.busy));
+    };
     let root = svc.root.clone();
     let opener = Arc::clone(&svc.opener);
     let backoff = svc.reconnect_backoff;
@@ -369,15 +410,15 @@ fn spawn_background_sync_with_optional_source(
         }
         return Err(EmailError::NotConnected);
     };
-    if svc.busy.swap(true, Ordering::SeqCst) {
+    let Some(guard) = svc.begin_background()? else {
         if let Some(mut s) = preopened {
             let _ = s.logout();
         }
         return Ok(false);
-    }
-    let guard = BusyGuard(Arc::clone(&svc.busy));
+    };
     let root = svc.root.clone();
     let opener = Arc::clone(&svc.opener);
+    let reader = svc.reader.clone();
     let backoff = svc.reconnect_backoff;
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
@@ -401,13 +442,17 @@ fn spawn_background_sync_with_optional_source(
                 let publisher = |run_id: &str, batch: &[CreatedEmailSegment]| {
                     publish_email_batch(&root, run_id, batch);
                 };
-                if let Err(err) = sync::run_sync_with_publisher(
+                if let Err(err) = sync::run_sync_with_attachments(
                     &root,
                     &mut reconnecting,
                     now,
                     &zone,
-                    SyncOptions::default(),
+                    SyncOptions {
+                        attachment_pdf_unavailable: reader.pdf_unavailable,
+                        ..Default::default()
+                    },
                     Some(&publisher),
+                    Some(reader.read.as_ref()),
                 ) && !matches!(err, EmailError::Cancelled)
                 {
                     log::warn!("email sync stopped: {err}");
@@ -480,6 +525,7 @@ async fn get_choice_preview(
         }
     };
 
+    let pdf_reader_available = !svc.reader.pdf_unavailable;
     let root = svc.root.clone();
     match tokio::task::spawn_blocking(move || -> Result<Value, EmailError> {
         let zone = store::journal_timezone(&root);
@@ -494,6 +540,31 @@ async fn get_choice_preview(
         let mut val =
             serde_json::to_value(preview).map_err(|e| EmailError::Storage(e.to_string()))?;
         if let Some(obj) = val.as_object_mut() {
+            let file_choice = Choice {
+                attachments: AttachmentScope::Names,
+                keep_originals: false,
+                range,
+                types: types.clone(),
+                since_ms: existing_choice
+                    .as_ref()
+                    .filter(|c| c.range == range)
+                    .and_then(|c| c.since_ms)
+                    .or_else(|| range_cutoff_ms(range, now, &zone)),
+                confirmed_at_ms: existing_choice
+                    .as_ref()
+                    .map_or(now.as_millisecond(), |c| c.confirmed_at_ms),
+                updated_at: now.to_string(),
+            };
+            let counts = attachment_sync::preview(
+                &root,
+                &file_choice,
+                &store::read_decisions(&root)?,
+                pdf_reader_available,
+            )?;
+            obj.insert(
+                "files".into(),
+                serde_json::to_value(counts).map_err(|e| EmailError::Storage(e.to_string()))?,
+            );
             obj.insert(
                 "covered_ranges".to_owned(),
                 serde_json::to_value(covered_ranges).unwrap_or(Value::Array(Vec::new())),
@@ -572,7 +643,8 @@ async fn connect_email(svc: EmailService, body: Bytes) -> Response {
             let _ = source.logout();
             return Err(err);
         }
-        let started = spawn_background_scan_with_source(&svc_bg, source, norm_email, norm_password);
+        let started =
+            spawn_background_scan_with_source(&svc_bg, source, norm_email, norm_password)?;
         let status = snapshot_value(&svc_bg)?;
         Ok(json!({
             "success": true,
@@ -690,11 +762,44 @@ async fn save_choice_route(svc: EmailService, body: Bytes) -> Response {
         );
     }
 
+    let attachments: Option<AttachmentScope> = match value
+        .get("attachments")
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_input",
+                "invalid attachment choice",
+            );
+        }
+    };
+    let keep_originals = match value.get("keep_originals") {
+        None => None,
+        Some(Value::Bool(v)) => Some(*v),
+        _ => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_input",
+                "invalid keep originals choice",
+            );
+        }
+    };
     let svc_bg = svc.clone();
     match tokio::task::spawn_blocking(move || -> Result<Value, EmailError> {
         let zone = store::journal_timezone(&svc_bg.root);
         let now = Timestamp::now();
-        let choice = sync::save_choice(&svc_bg.root, range, types, now, &zone)?;
+        let choice = sync::save_choice_with_files(
+            &svc_bg.root,
+            range,
+            types,
+            now,
+            &zone,
+            attachments,
+            keep_originals,
+        )?;
         update_email_schedule(&svc_bg.root, true)?;
         let started = spawn_background_sync_with_optional_source(&svc_bg, None)?;
         let status = snapshot_value(&svc_bg)?;
@@ -713,6 +818,42 @@ async fn save_choice_route(svc: EmailService, body: Bytes) -> Response {
             StatusCode::INTERNAL_SERVER_ERROR,
             "storage",
             "failed to save email choice",
+        ),
+    }
+}
+
+async fn select_attachment(svc: EmailService, body: Bytes) -> Response {
+    let JsonBody::Value(value) = json_body(body) else {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            "expected a JSON body",
+        );
+    };
+    match tokio::task::spawn_blocking(move || -> Result<Value, EmailError> {
+        let field = |key: &str| {
+            value
+                .get(key)
+                .and_then(Value::as_str)
+                .ok_or_else(|| EmailError::InvalidInput("missing file address".into()))
+        };
+        attachment_sync::queue_item(
+            &svc.root,
+            field("day")?,
+            field("segment")?,
+            field("item_id")?,
+        )?;
+        let started = spawn_background_sync_with_optional_source(&svc, None)?;
+        Ok(json!({"success":true,"sync_started":started}))
+    })
+    .await
+    {
+        Ok(Ok(val)) => json_response(val),
+        Ok(Err(err)) => map_email_error(&err),
+        Err(_) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "storage",
+            "could not select file",
         ),
     }
 }
@@ -783,7 +924,7 @@ async fn replace_password(svc: EmailService, body: Bytes) -> Response {
             update_email_schedule(&svc_bg.root, true)?;
             let _ = spawn_background_sync_with_optional_source(&svc_bg, Some(source))?;
         } else {
-            let _ = spawn_background_scan_with_source(&svc_bg, source, account, norm_password);
+            let _ = spawn_background_scan_with_source(&svc_bg, source, account, norm_password)?;
         }
         let status = snapshot_value(&svc_bg)?;
         Ok(json!({
@@ -1109,6 +1250,7 @@ mod tests {
         in_reply_to: Option<&str>,
     ) -> Header {
         Header {
+            attachment_names_checked: true,
             key: format!("gmail:{gm_msgid}"),
             location: Location {
                 mailbox: "[Gmail]/All Mail".to_owned(),
@@ -1165,6 +1307,65 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(15)).await;
         }
         panic!("email background task did not settle in time");
+    }
+
+    #[tokio::test]
+    async fn background_email_sync_holds_its_original_target_until_retirement() {
+        use solstone_core_journal_io::whole_journal_restore::{
+            hold_target_for_restore, release_target_for_restore, wait_for_target_use_to_end,
+        };
+        use std::sync::mpsc;
+        let directory = tempfile::tempdir().unwrap();
+        let journal = directory.path().join("journal");
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(journal.join("config/journal.json"), "{}").unwrap();
+        store::write_credentials(
+            &journal,
+            Some(&store::Credentials {
+                provider: "gmail".into(),
+                account: "owner@example.invalid".into(),
+                app_password: "fixture".into(),
+            }),
+        )
+        .unwrap();
+        let (entered, opening) = mpsc::channel();
+        let (release, blocked) = mpsc::channel();
+        let blocked = Mutex::new(blocked);
+        let svc = EmailService::with_opener(
+            journal.clone(),
+            Arc::new(move |_, _| {
+                entered.send(()).unwrap();
+                blocked
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+                Err(EmailError::Cancelled)
+            }),
+        );
+        assert!(spawn_background_sync_with_optional_source(&svc, None).unwrap());
+        opening.recv_timeout(Duration::from_secs(5)).unwrap();
+        hold_target_for_restore(&journal);
+        assert!(store::is_cancel_requested(&journal));
+        assert!(matches!(svc.begin_background(), Err(EmailError::Cancelled)));
+        let (started, waiting) = mpsc::channel();
+        let (drained, finished) = mpsc::channel();
+        let target = journal.clone();
+        let waiter = std::thread::spawn(move || {
+            started.send(()).unwrap();
+            wait_for_target_use_to_end(&target);
+            drained.send(()).unwrap();
+        });
+        waiting.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(finished.recv_timeout(Duration::from_millis(75)).is_err());
+        release.send(()).unwrap();
+        finished.recv_timeout(Duration::from_secs(5)).unwrap();
+        waiter.join().unwrap();
+        release_target_for_restore(&journal);
+        assert!(!svc.is_busy());
+        std::fs::rename(&journal, directory.path().join("retired")).unwrap();
+        std::fs::create_dir(&journal).unwrap();
+        assert!(matches!(svc.begin_background(), Err(EmailError::Cancelled)));
     }
 
     #[tokio::test]

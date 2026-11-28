@@ -32,7 +32,10 @@ pub use decode::{
     resize_for_vlm, resize_for_vlm_png,
 };
 pub use hash::format_dhash;
-pub use screen_ocr::{MobileOcrGap, OcrFailure, OcrWorker, OcrWorkerFactory, RawOccurrence};
+pub use screen_ocr::{
+    MobileOcrGap, OcrFailure, OcrWorker, OcrWorkerFactory, RawOccurrence, installed_ocr_worker,
+    read_still_ocr_text,
+};
 pub use settings::{DescribeSettings, read_config, read_config_in};
 
 use solstone_core_cli_copy::manual_log_locale as terminal_locale;

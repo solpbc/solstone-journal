@@ -5938,6 +5938,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-system",
  "thiserror 2.0.21",
  "webpki-roots 1.0.10",
 ]
@@ -6329,6 +6330,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-cli-copy",
  "solstone-core-depict",
+ "solstone-core-describe",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -7242,6 +7244,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-import",
+ "solstone-core-import-sources",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",

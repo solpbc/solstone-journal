@@ -45,6 +45,15 @@ pub fn routes(journal_root: PathBuf) -> Router {
     routes_with_lock_options(journal_root, LockOptions::default())
 }
 
+pub fn routes_with_attachment_reader(
+    journal_root: PathBuf,
+    reader: solstone_core_email::attachment_prepare::SharedAttachmentReader,
+    target_use: solstone_core_journal_io::whole_journal_restore::TargetUseOwner,
+) -> Router {
+    let service = email::EmailService::live_with_reader(journal_root.clone(), reader, target_use);
+    routes_with_email_service(journal_root, LockOptions::default(), service)
+}
+
 pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: LockOptions) -> Router {
     let email_service = email::EmailService::live(journal_root.clone());
     routes_with_email_service(journal_root, config_lock_options, email_service)

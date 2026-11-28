@@ -643,7 +643,11 @@ fn end_to_end_read_only_scan_choice_sync_widen_tombstone_delete_and_rebuild() {
             );
             assert_eq!(projected["attachments"][0]["name"], "agenda.pdf");
             assert_eq!(projected["attachments"][1]["name"], "site-photo.jpg");
-            assert_eq!(projected["attachments"][1]["inline"], true);
+            assert_eq!(row["attachments"][1]["inline"], true);
+            assert_eq!(
+                projected["attachments"][1],
+                serde_json::json!({"name":"site-photo.jpg"})
+            );
             assert!(indexed.contains("Thursday afternoon"));
             assert!(indexed.contains("Yes, the afternoon works."));
         }
@@ -1688,4 +1692,455 @@ fn steady_noop_scan_skips_decision_rewrite_until_rules_or_uid_changes() {
         store::read_state(root).unwrap().last_rules_version,
         crate::select::RULES_VERSION
     );
+}
+
+#[test]
+fn upgrading_recovers_selected_mixed_calendar_mail_and_legacy_opaque_filenames_without_body_reads()
+{
+    let d = TempDir::new().unwrap();
+    let root = d.path();
+    let mut mail = sample_mailbox_messages();
+    let mixed = concat!(
+        r#"(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 40 1 NIL NIL NIL)"#,
+        r#"("TEXT" "CALENDAR" ( "NAME" "event.ics") NIL NIL "7BIT" 90 4 NIL ("ATTACHMENT" ("FILENAME" "event.ics")) NIL)"#,
+        r#"("APPLICATION" "OCTET-STREAM" NIL NIL NIL "BASE64" 40 NIL ("ATTACHMENT" ("FILENAME*" "utf-8''caf%C3%A9.pdf")) NIL) "MIXED" NIL NIL NIL)"#
+    );
+    // The fixture's owner note was rejected by the old presence-of-ICS rule.
+    mail.iter_mut().find(|m| m.uid == 6).unwrap().bodystructure = mixed.into();
+    let (stream, handle) = mock_server(mail).spawn();
+    let mut client =
+        GmailImap::from_stream(stream, "maya@example.com", "abcd1234efgh5678").unwrap();
+    sync::connect_and_verify(
+        root,
+        "maya@example.com",
+        "abcd1234efgh5678",
+        &mut client,
+        now_ts(),
+    )
+    .unwrap();
+    sync::run_header_scan(root, &mut client, now_ts(), &denver_tz(), false).unwrap();
+
+    let db = rusqlite::Connection::open(store::header_cache_path(root)).unwrap();
+    db.execute("UPDATE messages SET json=json_remove(json_set(json,'$.tree.children[2].filename',null),'$.attachment_names_checked') WHERE key='gm:1006'", []).unwrap();
+    let mut previous = store::read_decisions(root).unwrap();
+    let item = previous.iter_mut().find(|d| d.key == "gm:1006").unwrap();
+    item.rules_version = 2;
+    item.outcome = "left_out".into();
+    item.reason = Some("calendar_part".into());
+    item.left_out_bucket = Some(LeftOutBucket::CalendarResponses);
+    item.message_type = None;
+    store::write_decisions(root, &previous).unwrap();
+    let mut state = store::read_state(root).unwrap();
+    state.last_rules_version = 2;
+    store::write_state(root, &state).unwrap();
+
+    let prior = client.wire_audit();
+    sync::run_header_scan(root, &mut client, now_ts(), &denver_tz(), false).unwrap();
+    let corrected = client.wire_audit();
+    assert_eq!(corrected.body_section_requests, 0);
+    assert_eq!(corrected.header_requests, prior.header_requests + 1);
+    let h = crate::cache::HeaderCache::open(&store::header_cache_path(root))
+        .unwrap()
+        .get("gm:1006")
+        .unwrap()
+        .unwrap();
+    assert_eq!(h.tree.children[2].filename.as_deref(), Some("café.pdf"));
+    assert!(h.attachment_names_checked);
+    assert_eq!(
+        store::read_decisions(root)
+            .unwrap()
+            .iter()
+            .find(|d| d.key == "gm:1006")
+            .unwrap()
+            .outcome,
+        "selected"
+    );
+    sync::run_header_scan(root, &mut client, now_ts(), &denver_tz(), false).unwrap();
+    assert_eq!(
+        client.wire_audit().header_requests,
+        corrected.header_requests
+    );
+    client.logout().unwrap();
+    let log = handle.join().unwrap();
+    assert!(
+        log.iter()
+            .any(|line| line.contains("UID FETCH 6 (") && line.contains("BODYSTRUCTURE"))
+    );
+}
+
+#[test]
+fn attachment_choice_enriches_existing_exchanges_and_retries_one_occurrence() {
+    use crate::attachment_prepare::{PrepareFailure, PreparedAttachment};
+    use crate::choice::AttachmentScope;
+    use crate::error::Result;
+    use crate::imap::{MailboxInfo, WireAudit};
+    use crate::model::{Addr, Header, Location, Part};
+
+    struct Mail {
+        headers: Vec<Header>,
+        downloads: Vec<(String, Vec<u32>)>,
+        damaged: bool,
+    }
+    impl ImapSource for Mail {
+        fn mailbox_info(&mut self) -> Result<MailboxInfo> {
+            Ok(MailboxInfo {
+                name: "All Mail".into(),
+                uid_validity: 1,
+                uid_next: self.headers.len() as u32 + 1,
+                exists: self.headers.len() as u32,
+            })
+        }
+        fn scan_page(&mut self, _: &MailboxInfo, lo: u32, hi: u32) -> Result<Vec<Header>> {
+            Ok(self
+                .headers
+                .iter()
+                .filter(|h| (lo..=hi).contains(&h.location.uid))
+                .cloned()
+                .collect())
+        }
+        fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>> {
+            Ok(reqs.iter().map(|_|Some(r#"<p>Here it is <img src="cid:sketch"></p><div class="gmail_signature"><img src="cid:logo"></div>"#.into())).collect())
+        }
+        fn fetch_attachment(
+            &mut self,
+            h: &Header,
+            p: &Part,
+            encoded: usize,
+            decoded: usize,
+        ) -> Result<Option<Vec<u8>>> {
+            assert!(p.size <= encoded as u64);
+            assert!(decoded <= crate::attachment_parts::HARD_LIMIT);
+            self.downloads.push((h.key.clone(), p.path.clone()));
+            if self.damaged && p.filename.as_deref() == Some("retry.pdf") {
+                return Err(crate::error::EmailError::Unreachable(
+                    "temporary read failure".into(),
+                ));
+            }
+            Ok(Some(
+                format!("contents for {} {:?}", h.key, p.path).into_bytes(),
+            ))
+        }
+        fn wire_audit(&self) -> WireAudit {
+            WireAudit::default()
+        }
+        fn logout(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+    let base = Timestamp::now();
+    let zone = TimeZone::UTC;
+    let part = |n, mime: &str, name: Option<&str>, cid: Option<&str>| Part {
+        path: vec![n],
+        mime: mime.into(),
+        size: 42,
+        filename: name.map(str::to_owned),
+        content_id: cid.map(str::to_owned),
+        disposition: name.map(|_| "attachment".into()),
+        ..Default::default()
+    };
+    let message = |uid: u32, owner: bool, parent: Option<&str>, children| {
+        let sender = if owner {
+            "maya@example.com"
+        } else {
+            "casey@example.com"
+        };
+        Header {
+            key: format!("gm:{uid}"),
+            gm_msgid: Some(uid.to_string()),
+            message_id: Some(format!("m{uid}@example.com")),
+            from: vec![Addr {
+                address: Some(sender.into()),
+                name: None,
+            }],
+            labels: if owner { vec!["\\Sent".into()] } else { vec![] },
+            in_reply_to: parent.into_iter().map(str::to_owned).collect(),
+            date_ms: Some(base.as_millisecond() - 3 * 86_400_000 - (4 - i64::from(uid)) * 600_000),
+            tree: Part {
+                mime: "multipart/mixed".into(),
+                children,
+                ..Default::default()
+            },
+            attachment_names_checked: true,
+            location: Location {
+                mailbox: "All Mail".into(),
+                uid_validity: 1,
+                uid,
+            },
+            ..Default::default()
+        }
+    };
+    let body = part(1, "text/html", None, None);
+    let parent = message(
+        1,
+        false,
+        None,
+        vec![
+            body.clone(),
+            part(2, "application/pdf", Some("parent.pdf"), None),
+        ],
+    );
+    let sent = message(
+        2,
+        true,
+        Some("m1@example.com"),
+        vec![
+            body.clone(),
+            part(2, "application/pdf", Some("match.pdf"), None),
+            part(3, "application/pdf", Some("match.pdf"), None),
+            part(4, "image/png", None, Some("sketch")),
+            part(5, "image/png", None, Some("logo")),
+            part(6, "application/pdf", Some("retry.pdf"), None),
+            part(7, "text/calendar", Some("invite.ics"), None),
+            Part {
+                size: crate::attachment_parts::AUTO_ENCODED_LIMIT as u64 + 1,
+                ..part(8, "application/pdf", Some("large.pdf"), None)
+            },
+            Part {
+                size: crate::attachment_parts::HARD_LIMIT as u64 + 1,
+                ..part(9, "application/pdf", Some("oversize.pdf"), None)
+            },
+        ],
+    );
+    let reply = message(3, true, Some("m1@example.com"), vec![body]);
+    let mut mail = Mail {
+        headers: vec![parent, sent, reply],
+        damaged: true,
+        downloads: vec![],
+    };
+    let prepare = |_: &str,
+                   mime: &str,
+                   bytes: &[u8]|
+     -> std::result::Result<PreparedAttachment, PrepareFailure> {
+        let image = mime == "image/png";
+        Ok(PreparedAttachment {
+            kind: if image { "photos" } else { "documents" },
+            text: String::from_utf8(bytes.to_vec()).unwrap(),
+            partial: false,
+            thoughts: usize::from(image),
+            preview_jpeg: image.then(|| vec![1, 2, 3]),
+        })
+    };
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    sync::connect_and_verify(
+        root,
+        "maya@example.com",
+        "abcd1234efgh5678",
+        &mut mail,
+        base,
+    )
+    .unwrap();
+    sync::run_header_scan(root, &mut mail, base, &zone, false).unwrap();
+    let set = |scope, keep_originals| {
+        sync::save_choice_with_files(
+            root,
+            RangePreset::All,
+            MessageType::ALL.to_vec(),
+            base,
+            &zone,
+            Some(scope),
+            Some(keep_originals),
+        )
+        .unwrap()
+    };
+    let run = |mail: &mut Mail| {
+        sync::run_sync_with_attachments(
+            root,
+            mail,
+            base,
+            &zone,
+            Default::default(),
+            None,
+            Some(&prepare),
+        )
+        .unwrap()
+    };
+    set(AttachmentScope::Names, false);
+    assert_eq!(run(&mut mail).landed_messages, 2);
+    assert!(mail.downloads.is_empty());
+    let journal_config = root.join("config/journal.json");
+    let set_paused = |paused: bool| {
+        let mut config: Value =
+            serde_json::from_slice(&std::fs::read(&journal_config).unwrap()).unwrap();
+        config["timezone"] = "UTC".into();
+        config["processing"]["backfill_paused"] = paused.into();
+        std::fs::write(&journal_config, serde_json::to_vec(&config).unwrap()).unwrap();
+    };
+    set_paused(true);
+    set(AttachmentScope::Both, false);
+    let mut live = message(
+        4,
+        true,
+        None,
+        vec![
+            part(1, "text/html", None, None),
+            part(2, "image/png", Some("live.png"), None),
+        ],
+    );
+    live.date_ms = Some(base.as_millisecond());
+    mail.headers.push(live);
+    assert_eq!(run(&mut mail).landed_messages, 1);
+    assert_eq!(mail.downloads, vec![("gm:4".into(), vec![2])]);
+    assert_eq!(store::read_state(root).unwrap().file_history_done, 0);
+    set_paused(false);
+    let mut inventory = solstone_core_system::work_inventory::WorkInventory::default();
+    inventory.bands[0].eligible = 1;
+    inventory.publish(root).unwrap();
+    run(&mut mail);
+    assert_eq!(
+        mail.downloads.len(),
+        1,
+        "higher-priority live work waits ahead of historical attachments"
+    );
+    inventory.bands[0].eligible = 0;
+    inventory.publish(root).unwrap();
+    let limited = sync::run_sync_with_attachments(
+        root,
+        &mut mail,
+        base,
+        &zone,
+        SyncOptions {
+            attachment_pdf_unavailable: true,
+            ..Default::default()
+        },
+        None,
+        Some(&prepare),
+    )
+    .unwrap();
+    assert_eq!(limited.landed_messages, 0);
+    assert!(
+        mail.downloads
+            .iter()
+            .all(|(k, p)| k == "gm:4" || (k == "gm:2" && p == &[4]))
+    );
+    let landed = store::read_landed(root).unwrap();
+    let rec = landed.iter().find(|r| r.key == "gm:2").unwrap();
+    let segment = root.join("chronicle").join(&rec.segment_rel);
+    let read_turn = || {
+        let lines = std::fs::read_to_string(segment.join("conversation_transcript.jsonl")).unwrap();
+        serde_json::from_str::<Value>(lines.lines().nth(1).unwrap()).unwrap()
+    };
+    let limited_turn = read_turn();
+    assert_eq!(
+        limited_turn["attachments"][0]["state"],
+        "reader_unavailable"
+    );
+    assert_eq!(limited_turn["attachments"][2]["state"], "ready");
+    assert_eq!(run(&mut mail).landed_messages, 0);
+    let row = read_turn();
+    let list = row["attachments"].as_array().unwrap();
+    assert_eq!(list[0]["name"], list[1]["name"]);
+    assert_ne!(list[0]["item_ref"], list[1]["item_ref"]);
+    for (index, section) in [(0, 2), (1, 3)] {
+        let dir = segment
+            .join("items")
+            .join(list[index]["item_ref"].as_str().unwrap());
+        assert!(
+            std::fs::read_to_string(dir.join("document_transcript.md"))
+                .unwrap()
+                .contains(&format!("gm:2 [{section}]"))
+        );
+        assert!(!dir.join("original.bin").exists());
+    }
+    assert_eq!(list[2]["state"], "ready");
+    assert_eq!(list[3]["state"], "decorative");
+    assert_eq!(list[4]["state"], "failed");
+    assert_eq!(list[5]["state"], "unsupported");
+    assert_eq!(list[6]["state"], "too_large");
+    assert_eq!(list[7]["state"], "over_limit");
+    assert!(
+        crate::attachment_sync::queue_item(
+            root,
+            &rec.day,
+            &rec.segment,
+            list[7]["attachment_id"].as_str().unwrap()
+        )
+        .is_err()
+    );
+    assert!(!mail.downloads.iter().any(|(_, p)| p == &[8] || p == &[9]));
+    assert_eq!(
+        row["reply_to"]["attachments"][0]["sender"],
+        "casey@example.com"
+    );
+    assert_eq!(
+        mail.downloads.iter().filter(|(k, _)| k == "gm:1").count(),
+        1
+    );
+    assert!(!mail.downloads.iter().any(|(_, p)| p == &[5] || p == &[7]));
+    let progress = sync::status_snapshot(root, &zone)
+        .unwrap()
+        .file_progress
+        .unwrap();
+    assert_eq!(
+        (progress.estimated_thoughts, progress.actual_thoughts),
+        (2, 1),
+        "the live photograph arrived after the estimate and belongs outside its comparison"
+    );
+    assert_eq!(progress.exchanges_done, progress.exchanges_total);
+    // Power loss after recording a staged item but before publishing the directory and turn.
+    let staged_id = list[0]["item_ref"].as_str().unwrap();
+    let item_dir = segment.join("items").join(staged_id);
+    std::fs::rename(
+        &item_dir,
+        segment.join("items").join(format!(".{staged_id}.tmp")),
+    )
+    .unwrap();
+    let recovery_db =
+        rusqlite::Connection::open(store::config_dir(root).join("attachment-state.sqlite"))
+            .unwrap();
+    recovery_db
+        .execute("UPDATE items SET installing=1 WHERE id=?1", [staged_id])
+        .unwrap();
+    recovery_db
+        .execute("DELETE FROM checked WHERE key=?1", [&rec.key])
+        .unwrap();
+    drop(recovery_db);
+    let before = mail.downloads.len();
+    run(&mut mail);
+    assert_eq!(mail.downloads.len(), before);
+    assert!(item_dir.join("document_transcript.md").is_file());
+    set_paused(true);
+    crate::attachment_sync::queue_item(
+        root,
+        &rec.day,
+        &rec.segment,
+        list[6]["attachment_id"].as_str().unwrap(),
+    )
+    .unwrap();
+    run(&mut mail);
+    assert_eq!(mail.downloads.last().unwrap(), &("gm:2".into(), vec![8]));
+    assert_eq!(read_turn()["attachments"][6]["state"], "ready");
+    assert_eq!(mail.downloads.len(), before + 1);
+    set_paused(false);
+    set(AttachmentScope::Both, true);
+    mail.damaged = false;
+    crate::attachment_sync::queue_item(
+        root,
+        &rec.day,
+        &rec.segment,
+        list[4]["attachment_id"].as_str().unwrap(),
+    )
+    .unwrap();
+    run(&mut mail);
+    assert_eq!(mail.downloads.len(), before + 2);
+    assert_eq!(read_turn()["attachments"][4]["state"], "ready");
+    let file_dir = segment
+        .join("items")
+        .join(list[1]["item_ref"].as_str().unwrap());
+    std::fs::remove_dir_all(&file_dir).unwrap();
+    set(AttachmentScope::Sent, false);
+    run(&mut mail);
+    assert!(!file_dir.exists());
+    assert_eq!(read_turn()["attachments"][1]["state"], "removed");
+    assert_eq!(store::read_landed(root).unwrap().len(), 3);
+    let retrieved = segment
+        .join("items")
+        .join(list[4]["attachment_id"].as_str().unwrap());
+    mail.headers.clear();
+    sync::disconnect(root, base).unwrap();
+    assert_eq!(
+        std::fs::read(retrieved.join("original.bin")).unwrap(),
+        b"contents for gm:2 [6]"
+    );
+    assert!(retrieved.join("document_transcript.md").is_file());
 }

@@ -211,6 +211,22 @@ pub trait OcrWorker {
     fn recognize(&mut self, png: &[u8]) -> Result<Vec<RawOccurrence>, OcrFailure>;
 }
 
+/// Open the installed local reader for still-image callers outside a screen segment.
+pub fn installed_ocr_worker() -> Result<Option<Box<dyn OcrWorker>>, OcrFailure> {
+    ResolvedWorkerFactory::new(&InstalledHelperResolver).create()
+}
+
+/// Native text in the order reported by the local OCR reader.
+pub fn read_still_ocr_text(worker: &mut dyn OcrWorker, png: &[u8]) -> Result<String, OcrFailure> {
+    let mut words = worker.recognize(png)?;
+    words.sort_by_key(|r| r.line_order);
+    Ok(words
+        .into_iter()
+        .map(|line| line.text)
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
 pub trait OcrWorkerFactory {
     fn recipe_id(&mut self) -> String;
     fn create(&mut self) -> Result<Option<Box<dyn OcrWorker>>, OcrFailure>;

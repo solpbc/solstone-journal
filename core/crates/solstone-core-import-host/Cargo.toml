@@ -47,7 +47,7 @@ solstone-core-format = { workspace = true }
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
 solstone-core-import.workspace = true
-solstone-core-import-sources.workspace = true
+solstone-core-import-sources = { workspace = true, features = ["local-attachment-ocr"] }
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true

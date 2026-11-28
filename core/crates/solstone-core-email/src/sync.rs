@@ -15,7 +15,9 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::atomic::{AtomicWriteOptions, atomic_replace};
 
+use crate::attachment_prepare::AttachmentPreparer;
 use crate::cache::HeaderCache;
+use crate::choice::AttachmentScope;
 use crate::choice::{
     Accounting, Choice, ChoicePreview, compute_accounting, detect_folder_cap, earliest_sent_month,
     preview_choice, range_cutoff_ms,
@@ -64,6 +66,8 @@ pub struct CreatedEmailSegment {
     pub day: String,
     pub segment: String,
     pub file: PathBuf,
+    #[serde(default)]
+    pub attachment_files: Vec<PathBuf>,
 }
 
 /// Summary returned by [`run_sync`].
@@ -83,6 +87,8 @@ pub struct SyncReport {
 /// Options for [`run_sync`].
 #[derive(Clone, Debug, Default)]
 pub struct SyncOptions {
+    /// The host has no bounded PDF reader; keep candidates in the mailbox.
+    pub attachment_pdf_unavailable: bool,
     /// Stop after landing at most this many exchanges (used by tests to
     /// exercise interrupted-sync resume cleanly).
     pub max_messages: Option<usize>,
@@ -108,6 +114,8 @@ pub struct StatusSnapshot {
     pub connected: bool,
     pub syncing: bool,
     pub scan: ScanSnapshot,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_progress: Option<crate::attachment_sync::FileProgress>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choice: Option<ChoiceSnapshot>,
     pub sync: SyncSnapshot,
@@ -132,6 +140,10 @@ pub struct ScanSnapshot {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChoiceSnapshot {
+    #[serde(default)]
+    pub attachments: AttachmentScope,
+    #[serde(default)]
+    pub keep_originals: bool,
     pub range: RangePreset,
     pub types: Vec<MessageType>,
     pub covered_ranges: Vec<RangePreset>,
@@ -540,7 +552,7 @@ fn run_header_scan_inner(
     }
 
     // Recompute owner aliases and selection decisions across the full header index.
-    let all_headers = cache.all()?;
+    let mut all_headers = cache.all()?;
     let mut aliases = learn_owner_aliases(&account.account, &all_headers);
     for prev in &account.owner_aliases {
         if !aliases.iter().any(|a| a.eq_ignore_ascii_case(prev)) {
@@ -566,6 +578,9 @@ fn run_header_scan_inner(
         rules_version,
         stale_before_version,
     );
+    cache.refresh_attachment_names(source, &mb, &mut all_headers, &decisions, || {
+        store::is_cancel_requested(root)
+    })?;
     store::write_decisions(root, &decisions)?;
 
     let eligible_sent = decisions.iter().filter(|d| d.outcome == "selected").count();
@@ -618,6 +633,19 @@ pub fn save_choice(
     now: Timestamp,
     zone: &TimeZone,
 ) -> Result<(Choice, ChoicePreview)> {
+    save_choice_with_files(root, range, types, now, zone, None, None)
+}
+
+pub fn save_choice_with_files(
+    root: &Path,
+    range: RangePreset,
+    types: Vec<MessageType>,
+    now: Timestamp,
+    zone: &TimeZone,
+    attachments: Option<AttachmentScope>,
+    keep_originals: Option<bool>,
+) -> Result<(Choice, ChoicePreview)> {
+    let _lock = store::hold_sync_lock(root)?;
     if types.is_empty() {
         return Err(EmailError::InvalidInput(
             "choose at least one type of message.".into(),
@@ -649,6 +677,11 @@ pub fn save_choice(
         .map_or_else(|| now.as_millisecond(), |p| p.confirmed_at_ms);
 
     let choice = Choice {
+        attachments: attachments
+            .or_else(|| prev.as_ref().map(|p| p.attachments))
+            .unwrap_or_default(),
+        keep_originals: keep_originals
+            .unwrap_or_else(|| prev.as_ref().is_some_and(|p| p.keep_originals)),
         range,
         types: deduped.clone(),
         since_ms,
@@ -658,6 +691,9 @@ pub fn save_choice(
     store::write_choice(root, &choice)?;
 
     let decisions = store::read_decisions(root)?;
+    if let Some(account) = store::read_account(root)? {
+        crate::attachment_sync::record_estimate(root, &account.account, &choice, &decisions)?;
+    }
     let landed = store::read_landed(root)?;
     let landed_keys = store::landed_key_set(&landed);
     let state = store::read_state(root)?;
@@ -758,6 +794,18 @@ pub fn run_sync_with_publisher(
     opts: SyncOptions,
     on_batch: Option<BatchPublishHook<'_>>,
 ) -> Result<SyncReport> {
+    run_sync_with_attachments(root, source, now, zone, opts, on_batch, None)
+}
+
+pub fn run_sync_with_attachments(
+    root: &Path,
+    source: &mut dyn ImapSource,
+    now: Timestamp,
+    zone: &TimeZone,
+    opts: SyncOptions,
+    on_batch: Option<BatchPublishHook<'_>>,
+    prepare: Option<&AttachmentPreparer<'_>>,
+) -> Result<SyncReport> {
     let _lock = if opts.lock_held {
         None
     } else {
@@ -791,15 +839,15 @@ pub fn run_sync_with_publisher(
 
     let mut skipped_already_landed = 0usize;
     let mut pending: Vec<Decision> = Vec::new();
-    for d in decisions {
-        if !choice.includes_decision(&d) {
+    for d in &decisions {
+        if !choice.includes_decision(d) {
             continue;
         }
         if landed_keys.contains(&d.key) {
             skipped_already_landed += 1;
             continue;
         }
-        pending.push(d);
+        pending.push(d.clone());
     }
     // Newest first so recent days land before older history.
     pending.sort_by(|a, b| b.sent_ms.cmp(&a.sent_ms).then_with(|| a.key.cmp(&b.key)));
@@ -808,6 +856,19 @@ pub fn run_sync_with_publisher(
     }
 
     if pending.is_empty() {
+        if let Some(prepare) = prepare {
+            crate::attachment_sync::enrich(
+                root,
+                source,
+                &account.account,
+                &choice,
+                &decisions,
+                &landed,
+                prepare,
+                opts.attachment_pdf_unavailable,
+                on_batch,
+            )?;
+        }
         let mut state = store::read_state(root)?;
         state.fetching_active = false;
         state.fetch_done = 0;
@@ -1072,7 +1133,25 @@ pub fn run_sync_with_publisher(
 
             let mut batch_landed = Vec::new();
             for ex in &exchanges {
-                let row = build_turn_row(ex, start_ts, &account.provider);
+                let mut row = build_turn_row(ex, start_ts, &account.provider);
+                if prepare.is_some() {
+                    crate::attachment_sync::remember_inline(
+                        &mut row,
+                        &account.account,
+                        &ex.owner_hdr,
+                        bodies.get(&ex.decision.key).and_then(|b| b.html.as_deref()),
+                    );
+                    if let Some(pk) = ex.decision.parent.parent_key.as_deref()
+                        && let (Some(reply), Some(&ph)) = (row.get_mut("reply_to"), by_key.get(pk))
+                    {
+                        crate::attachment_sync::remember_inline(
+                            reply,
+                            &account.account,
+                            ph,
+                            bodies.get(pk).and_then(|b| b.html.as_deref()),
+                        );
+                    }
+                }
                 let row_str = row.to_string();
                 let digest = hex_sha256(row_str.as_bytes());
                 jsonl.push_str(&row_str);
@@ -1107,6 +1186,7 @@ pub fn run_sync_with_publisher(
                 day,
                 segment: seg_key,
                 file: transcript_path,
+                attachment_files: Vec::new(),
             });
             total_segments += 1;
         }
@@ -1135,6 +1215,19 @@ pub fn run_sync_with_publisher(
     state.last_checked_at = Some(now.to_string());
     store::write_state(root, &state)?;
 
+    if let Some(prepare) = prepare {
+        crate::attachment_sync::enrich(
+            root,
+            source,
+            &account.account,
+            &choice,
+            &decisions,
+            &landed,
+            prepare,
+            opts.attachment_pdf_unavailable,
+            on_batch,
+        )?;
+    }
     Ok(SyncReport {
         run_id: (total_landed > 0).then_some(run_id),
         scanned: scan.checked,
@@ -1269,6 +1362,11 @@ pub fn status_snapshot_with_activity(
         provider: account
             .as_ref()
             .map_or_else(|| PROVIDER_GMAIL.to_owned(), |a| a.provider.clone()),
+        file_progress: account
+            .as_ref()
+            .map(|a| crate::attachment_sync::progress(root, &a.account))
+            .transpose()?
+            .flatten(),
         account: account.map(|a| a.account),
         attention_reason: if connected {
             state.attention_reason
@@ -1293,6 +1391,8 @@ pub fn status_snapshot_with_activity(
             folder_cap_warning: state.folder_cap_warning,
         },
         choice: choice.map(|c| ChoiceSnapshot {
+            attachments: c.attachments,
+            keep_originals: c.keep_originals,
             covered_ranges: covered_ranges_for(c.range),
             range: c.range,
             types: c.types,
@@ -1651,6 +1751,17 @@ pub fn sync_live_gmail_with_publisher(
     scan_only: bool,
     on_batch: Option<BatchPublishHook<'_>>,
 ) -> Result<SyncReport> {
+    sync_live_gmail_with_attachments(root, scheduled, scan_only, on_batch, None, false)
+}
+
+pub fn sync_live_gmail_with_attachments(
+    root: &Path,
+    scheduled: bool,
+    scan_only: bool,
+    on_batch: Option<BatchPublishHook<'_>>,
+    prepare: Option<&AttachmentPreparer<'_>>,
+    attachment_pdf_unavailable: bool,
+) -> Result<SyncReport> {
     let Some(creds) = store::read_credentials(root)? else {
         return Err(EmailError::NotConnected);
     };
@@ -1702,13 +1813,17 @@ pub fn sync_live_gmail_with_publisher(
             created_segments: Vec::new(),
         })
     } else {
-        run_sync_with_publisher(
+        run_sync_with_attachments(
             root,
             &mut client,
             now,
             &zone,
-            SyncOptions::default(),
+            SyncOptions {
+                attachment_pdf_unavailable,
+                ..Default::default()
+            },
             on_batch,
+            prepare,
         )
     };
     let _ = client.logout();

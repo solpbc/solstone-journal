@@ -75,6 +75,87 @@ fn open_import_fixture_with_rebuild(
     Ok(host)
 }
 
+#[test]
+fn settings_and_scheduled_email_use_the_mobile_attachment_reader() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let root = fixture_directory();
+    let host = Arc::new(
+        open_import_fixture(
+            root.path(),
+            Arc::new(|context| {
+                let seams =
+                    context.seams_with_pdf(Box::new(solstone_core_import_sources::NullPdfWorker));
+                Ok(PreparedImport::new(context.arguments().to_vec(), seams))
+            }),
+        )
+        .unwrap(),
+    );
+    let route = solstone_core_import_web::ImportRouteSlot::new();
+    route
+        .install(Arc::new(crate::import_route::ForegroundImportRoute::new(
+            Arc::clone(&host),
+        )))
+        .unwrap();
+    let stop = WorkStop::new();
+    let prepared = host
+        .import_request(
+            owned(&["--sync", "email", "--save"]),
+            stop.clone(),
+            Default::default(),
+        )
+        .unwrap()
+        .prepare()
+        .unwrap();
+    let scheduled = prepared.seams.email_attachment.as_ref().unwrap();
+    assert!(scheduled.pdf_unavailable);
+    let settings = |name: &str, mime: &str, bytes: &[u8]| route.read_attachment(name, mime, bytes);
+    for reader in [
+        scheduled.read.as_ref() as &dyn Fn(&str, &str, &[u8]) -> _,
+        &settings,
+    ] {
+        let file = reader("owner.txt", "text/plain", b"Ordinary synthetic note").unwrap();
+        assert_eq!(file.text, "Ordinary synthetic note");
+        assert_eq!(file.thoughts, 0);
+        assert_eq!(
+            reader("file.pdf", "application/pdf", b"%PDF-synthetic"),
+            Err(PrepareFailure::Unavailable)
+        );
+    }
+    stop.request();
+    assert_eq!(
+        (scheduled.read)("note.txt", "text/plain", b"Stopped"),
+        Err(PrepareFailure::Unavailable)
+    );
+}
+
+#[cfg(feature = "screen-ocr-native")]
+#[test]
+fn mobile_attachment_reads_a_screenshot_with_the_pinned_local_models() {
+    struct NoGenerate;
+    impl GenerateExecutor for NoGenerate {
+        fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            panic!("the screenshot must use local OCR");
+        }
+    }
+    let directory = fixture_directory();
+    let reader = mobile_attachment_reader(
+        directory.path().join("payload"),
+        ImportGenerate {
+            root: Arc::new(JournalRoot::open(directory.path()).unwrap()),
+            executor: Arc::new(NoGenerate),
+            stop: WorkStop::new(),
+        },
+    );
+    let source =
+        std::env::var_os("SOLSTONE_SCREEN_OCR_TEXT_PNG").expect("SOLSTONE_SCREEN_OCR_TEXT_PNG");
+    let image = std::fs::read(source).unwrap();
+    let file = (reader.read)("screenshot_deadbeef_screen.png", "image/png", &image).unwrap();
+    assert_eq!(file.kind, "screenshots");
+    assert!(file.text.contains("alpha beta"), "{}", file.text);
+    assert_eq!(file.thoughts, 0);
+    assert!(file.preview_jpeg.is_some());
+}
+
 fn owned(args: &[&str]) -> Vec<String> {
     args.iter().map(|arg| (*arg).to_owned()).collect()
 }

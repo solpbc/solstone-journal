@@ -17,6 +17,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 
+use solstone_core_format::attachment::{PrepareFailure, PreparedAttachment};
 use solstone_core_import::WorkStop;
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_journal_config::work_priority::{WorkBand, WorkPriority};
@@ -42,6 +43,15 @@ pub trait CapturedImport: Send + Sync {
 /// `prepare` does not copy, relocate, write metadata, or admit a native attempt.
 /// `bind` does not admit one either.
 pub trait ImportAdmission: Send + Sync {
+    /// Read inside this owner's existing target-use lease.
+    fn read_attachment(
+        &self,
+        _name: &str,
+        _mime: &str,
+        _bytes: &[u8],
+    ) -> Result<PreparedAttachment, PrepareFailure> {
+        Err(PrepareFailure::Unavailable)
+    }
     fn checkpoint(&self) -> Result<(), String>;
     fn bind(self: Arc<Self>, args: Vec<String>) -> Result<Arc<dyn CapturedImport>, String>;
 }
@@ -215,6 +225,17 @@ impl ImportRouteSlot {
                 source_time,
             },
         )
+    }
+
+    /// Read a file in place for a source that already owns its segment.
+    pub fn read_attachment(
+        &self,
+        name: &str,
+        mime: &str,
+        bytes: &[u8],
+    ) -> Result<PreparedAttachment, PrepareFailure> {
+        let admission = self.prepare(0).map_err(|_| PrepareFailure::Unavailable)?;
+        admission.read_attachment(name, mime, bytes)
     }
 
     /// Strip the launcher prefix and bind. No native attempt.

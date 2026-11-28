@@ -598,7 +598,7 @@ fn dispatch_parsed(
             if dispatch.embedded() && matches!(backend.as_str(), "oura" | "garmin") {
                 return rendered(embedded_body_refused());
             }
-            rendered(run_sync(&backend, &options, journal_path))
+            rendered(run_sync(&backend, &options, journal_path, dispatch.seams()))
         }
         ParsedCommand::AudioArchive(options) => rendered(crate::audio_archive::run_audio_archive(
             options,
@@ -737,7 +737,12 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
+fn run_sync(
+    backend: &str,
+    options: &Options,
+    journal_path: &Path,
+    seams: Option<&crate::call::ImportSeams>,
+) -> CliRun {
     match backend {
         "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
         "garmin" => crate::body_commands::sync_garmin(&body_command(options), journal_path),
@@ -759,6 +764,7 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
             options.save,
             options.dry_run,
             options.scheduled,
+            seams.and_then(|seams| seams.email_attachment.as_ref()),
         ),
         _ => {
             let locale = solstone_core_cli_copy::cli_locale();

@@ -888,6 +888,9 @@ async function createEnvironment(
       return Promise.resolve({ ok: reply.status < 400, status: reply.status, json: async () => reply.body });
     }
 
+    if (urlStr.includes('/import.email/') && urlStr.endsWith('/text') && urlStr.includes('/items/')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ text: 'literal <example> attachment', preview: false, original: true }) });
+    }
     if (urlStr === '/app/entities/api/journal') {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ entities: options.journalPeople || [] }) });
     }
@@ -4175,7 +4178,8 @@ test('also at this time links timed overlapping items, and never an item with no
   assert.ok(env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('>00:00:02<'), 'a cue clock shows seconds');
 });
 
-test('a selected email renders cc, subject, folded reply_to, attachments, forwarded text, possible_quote, and singular message delete copy', async () => {
+for (const linkedFile of ['sent', 'answered']) test(`a selected email opens its ${linkedFile} attachment from search and returns to the exchange`, async () => {
+  const linkedId = (linkedFile === 'answered' ? 'c' : 'a').repeat(64);
   const emailSeg = {
     key: '101600_300',
     stream: 'import.email',
@@ -4198,7 +4202,7 @@ test('a selected email renders cc, subject, folded reply_to, attachments, forwar
   const qStart = Buffer.byteLength('Yes, the afternoon works.\n\n');
   const qEnd = Buffer.byteLength(body);
   const env = await conversationEnvironment(
-    'https://journal.example/app/transcripts/20200115?stream=import.email#101600_300/transcript',
+    `https://journal.example/app/transcripts/20200115?stream=import.email&item=${linkedId}&ref=keep#101600_300/transcript`,
     [emailSeg]
   );
   await env.releasePendingSegmentGets('analyzed', {
@@ -4237,11 +4241,12 @@ test('a selected email renders cc, subject, folded reply_to, attachments, forwar
           truncated: true,
           cut_chars: 1200,
           blocks: [{ kind: 'paragraph', start: 0, end: Buffer.byteLength('Could we meet on Thursday afternoon?') }],
-          attachments: [{ name: 'floorplan.png', inline: true }],
+          attachments: [{ name: 'floorplan.png', inline: true, item_ref: 'c'.repeat(64) }],
         },
         attachments: [
-          { name: 'agenda.pdf', item_ref: 'fixture-document-01' },
-          { name: 'site-photo.jpg' },
+          { name: 'agenda.pdf', item_ref: 'a'.repeat(64), mailbox_reference: { account: 'owner@example.test', gm_thrid: '2748' } },
+          { name: 'site-photo.jpg', state: 'ambiguous', attachment_id: 'b'.repeat(64) },
+          { name: 'scan.pdf', state: 'reader_unavailable', attachment_id: 'd'.repeat(64) },
         ],
       },
     }],
@@ -4274,15 +4279,43 @@ test('a selected email renders cc, subject, folded reply_to, attachments, forwar
   assert.ok(fwd.querySelector('.tr-msg-cut'), 'truncated forwarded block shows cut count');
   const reply = entry.querySelector('.tr-msg-reply');
   assert.ok(reply, 'reply_to renders inside a collapsed disclosure');
-  assert.strictEqual(reply.hasAttribute('open'), false, 'reply_to is folded by default');
+  assert.strictEqual(reply.open === true, linkedFile === 'answered', 'a search link into the quoted message opens its fold');
   assert.ok(reply.querySelector('summary').textContent.includes('Casey'));
   assert.ok(reply.textContent.includes('Could we meet on Thursday afternoon?'));
   assert.ok(reply.querySelector('.tr-msg-cut'), 'truncated reply_to shows cut count');
   const docLinks = entry.querySelectorAll('.tr-msg-doc-link');
-  assert.strictEqual(docLinks.length, 1, 'only attachments with item_ref get an open-document link');
-  assert.strictEqual(docLinks[0].dataset.itemRef, 'fixture-document-01');
+  assert.strictEqual(docLinks.length, 2, 'the sent and answered files each have their own link');
+  const fileButton = docLinks.find(button => button.dataset.itemRef === linkedId);
+  assert.ok(entry.querySelectorAll('a').some(link => link.getAttribute('href') === 'https://mail.google.com/mail/?authuser=owner%40example.test#all/abc'));
   assert.ok(entry.textContent.includes('agenda.pdf'));
   assert.ok(entry.textContent.includes('site-photo.jpg'));
+  await new Promise(resolve => setImmediate(resolve));
+  const opened = fileButton.closest('li').querySelector('.tr-msg-item');
+  assert.strictEqual(fileButton.getAttribute('aria-expanded'), 'true');
+  assert.strictEqual(fileButton.textContent, env.window.JournalI18n.render('journal.window.sources.selective.action.hide'));
+  assert.strictEqual(opened.querySelector('pre').textContent, 'literal <example> attachment');
+  assert.ok(opened.querySelector('a').href.endsWith('/original'));
+  assert.strictEqual(opened.querySelector('a').textContent, env.window.JournalI18n.render('journal.window.sources.email.file.action.download'));
+  const historyLength = env.history.length;
+  const close = linkedFile === 'answered' ? fileButton : opened.querySelector('button');
+  close.dispatchEvent({ type: 'click' });
+  assert.strictEqual(fileButton.getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(fileButton.textContent, env.window.JournalI18n.render('journal.window.transcripts.show.label'));
+  assert.strictEqual(env.doc.activeElement, fileButton);
+  assert.strictEqual(env.history.length, historyLength);
+  assert.strictEqual(env.window.location.search, '?stream=import.email&ref=keep');
+  assert.strictEqual(env.window.location.hash, '#101600_300/transcript');
+  assert.strictEqual(entry.querySelector('.tr-msg-item'), null);
+  const deferredPdf = entry.querySelectorAll('li').find(row => row.textContent.includes('scan.pdf'));
+  assert.ok(deferredPdf.textContent.includes(env.window.JournalI18n.renderHtml('journal.window.sources.email.file.state.reader.unavailable')));
+  assert.strictEqual(deferredPdf.querySelector('button'), null);
+  const importButton = entry.querySelector('.tr-msg-import');
+  assert.strictEqual(importButton.textContent, env.window.JournalI18n.render('journal.window.sources.email.file.action.bring.in'));
+  importButton.dispatchEvent({ type: 'click' });
+  await new Promise(resolve => setImmediate(resolve));
+  const imported = env.posts.find(record => record.url === '/app/sources/api/email/attachment');
+  assert.deepStrictEqual(imported.body, { day: '20200115', segment: '101600_300', item_id: 'b'.repeat(64) });
+  assert.ok(!env.requested.some(url => url.startsWith('https://mail.google.com/')));
   // Single-turn email delete confirm names singular message, and never adds file-import text.
   env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
   const parts = env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').map(li => li.textContent);

@@ -995,11 +995,15 @@
     const backfill = work?.backfill;
     const number = value => Math.max(0, Number(value) || 0);
     const paused = backfill?.paused === true;
-    const total = number(backfill?.landed_segments);
-    const done = Math.min(number(backfill?.interpreted_segments), total);
+    const emailPending = number(backfill?.email_exchanges_done) < number(backfill?.email_exchanges_total);
+    const emailTotal = emailPending ? number(backfill.email_exchanges_total) : 0;
+    const emailDone = emailPending ? number(backfill.email_exchanges_done) : 0;
+    const segmentTotal = number(backfill?.landed_segments);
+    const total = segmentTotal + emailTotal;
+    const done = Math.min(number(backfill?.interpreted_segments), segmentTotal) + emailDone;
     // Shown while items are left or while paused, so the owner can resume.
     // Day outputs or activities left with no items stay in the band list.
-    const shown = Boolean(backfill) && (paused || number(backfill.owed_segments) > 0);
+    const shown = Boolean(backfill) && (paused || number(backfill.owed_segments) > 0 || emailPending);
     block.hidden = !shown;
     if (!shown) return false;
     block.classList.toggle('is-paused', paused);

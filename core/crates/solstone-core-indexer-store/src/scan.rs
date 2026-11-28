@@ -3280,6 +3280,26 @@ fn index_file(
                 [("rel", &(rel)), ("error", &(error))],
             )
         })?
+    } else if solstone_core_format::content::segment_items::coordinate(rel).is_some() {
+        let file = path
+            .strip_prefix(journal)
+            .ok()
+            .and_then(Path::to_str)
+            .and_then(|relative| {
+                solstone_core_format::content::segment_items::read_file(
+                    journal,
+                    relative,
+                    32 * 1024 * 1024,
+                )
+            })
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+        file.filter(|_| solstone_core_format::content::segment_items::is_published_path(path, rel))
+            .ok_or_else(|| {
+                solstone_core_cli_copy::MessageDetail::message(
+                    "journal.cli.journal.indexer.files.content.read",
+                    [("rel", &rel), ("error", &"unavailable item")],
+                )
+            })?
     } else {
         fs::read_to_string(path).map_err(|error| {
             solstone_core_cli_copy::MessageDetail::message(

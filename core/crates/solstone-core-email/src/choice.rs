@@ -25,9 +25,22 @@ pub fn detect_folder_cap(exists_count: u64) -> Option<u64> {
         .then_some(exists_count)
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentScope {
+    #[default]
+    Names,
+    Sent,
+    Both,
+}
+
 /// Owner's confirmed selective-sync choice (`config/email/choice.json`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Choice {
+    #[serde(default)]
+    pub attachments: AttachmentScope,
+    #[serde(default)]
+    pub keep_originals: bool,
     pub range: RangePreset,
     pub types: Vec<MessageType>,
     /// Start of the historical window in Unix ms (fixed when range is confirmed

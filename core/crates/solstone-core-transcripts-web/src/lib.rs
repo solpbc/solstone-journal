@@ -29,6 +29,7 @@ mod location;
 mod media_removal;
 mod reprocess;
 mod segment;
+mod segment_item;
 mod segment_media;
 mod segment_speakers;
 mod serve_file;
@@ -132,6 +133,10 @@ fn router_with_dependencies(
         .route(
             "/app/transcripts/api/segment/{day}/{stream}/{segment_key}/reprocess",
             post(reprocess::reprocess_segment),
+        )
+        .route(
+            "/app/transcripts/api/segment/{day}/import.email/{segment_key}/items/{id}/{part}",
+            get(segment_item::get),
         )
         .route(
             "/app/transcripts/api/segment/{day}/{stream}/{segment_key}",
