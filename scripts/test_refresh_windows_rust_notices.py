@@ -312,12 +312,15 @@ class GitPinVendorDelta(unittest.TestCase):
         with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
             refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
 
-    def substitutions(self, fresh_digest_manifest, removed_prefixes, prior_ignore=False):
+    def substitutions(self, fresh_digest_manifest, removed_prefixes, prior_ignore=False,
+                      git_files=(".gitignore",), vouched=True):
         """Run build_git_substitutions over a tiny prior archive and vendor tree.
 
         The prior archive carries the moved git package, a removed registry
         package and a surviving registry package whose checksum manifest was
-        written in the licence-identical upgrade's sorted-key form.
+        written in the licence-identical upgrade's sorted-key form. With
+        `prior_ignore`, it also carries `git_files`, which cargo vendor omits,
+        listed in that manifest only when `vouched`.
         """
         moved = "vendor/spl-core-0.1.0/"
         prior = {
@@ -332,10 +335,12 @@ class GitPinVendorDelta(unittest.TestCase):
         if prior_ignore:
             manifest = "vendor/digest-1.0.0/.cargo-checksum.json"
             checksum = json.loads(prior[manifest])
-            ignored = b"/target\n"
-            checksum["files"][".gitignore"] = refresh.sha256_bytes(ignored)
+            for git_file in git_files:
+                ignored = b"/target\n" if git_file == ".gitignore" else b"*.bin binary\n"
+                if vouched:
+                    checksum["files"][git_file] = refresh.sha256_bytes(ignored)
+                prior["vendor/digest-1.0.0/" + git_file] = ignored
             prior[manifest] = json.dumps(checksum).encode()
-            prior["vendor/digest-1.0.0/.gitignore"] = ignored
         del fresh["vendor/p256-0.13.2/src/lib.rs"]
         fresh[moved + "src/lib.rs"] = b"new\n"
         fresh["vendor/digest-1.0.0/.cargo-checksum.json"] = fresh_digest_manifest
@@ -390,6 +395,22 @@ class GitPinVendorDelta(unittest.TestCase):
         )
         with self.assertRaisesRegex(refresh.RefreshError, "outside the packages whose pin moved"):
             self.substitutions(self.compact("e" * 64), removed, prior_ignore=True)
+
+    def test_registry_gitattributes_omitted_by_vendor_stays_in_the_prior_archive(self):
+        # zip 9.0.5, acquired from its .crate by a licence-identical upgrade,
+        # carries .gitattributes beside .gitignore; cargo vendor omits both.
+        removed = ("vendor/p256-0.13.2/",)
+        both = (".gitattributes", ".gitignore")
+        self.assertEqual(
+            self.substitutions(self.compact("d" * 64), removed, prior_ignore=True, git_files=both),
+            {"vendor/spl-core-0.1.0/src/lib.rs": b"new\n"},
+        )
+        with self.assertRaisesRegex(refresh.RefreshError, "outside the packages whose pin moved"):
+            self.substitutions(self.compact("e" * 64), removed, prior_ignore=True, git_files=both)
+        # Carried only when the prior checksum manifest vouches for it.
+        with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
+            self.substitutions(self.compact("d" * 64), removed, prior_ignore=True,
+                               git_files=(".gitattributes",), vouched=False)
 
 
 class SourceOfferArchive(unittest.TestCase):
