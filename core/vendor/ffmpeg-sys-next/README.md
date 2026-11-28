@@ -41,7 +41,7 @@ In addition to feature flags declared in `Cargo.toml`, this crate performs vario
 
 ## Committed bindings
 
-The files in `bindings/` are generated from FFmpeg n9.0.2 headers at commit `946fcce0` and include FFmpeg documentation comments. FFmpeg is copyright its contributors and is licensed under LGPL-2.1-or-later. The licence text is in `core/distribution/licenses/ffmpeg-source/COPYING.LGPLv2.1`, alongside `LICENSE.md`.
+The files in `bindings/` are generated from FFmpeg n9.0.3 headers at commit `76c070aa` and include FFmpeg documentation comments. FFmpeg is copyright its contributors and is licensed under LGPL-2.1-or-later. The licence text is in `core/distribution/licenses/ffmpeg-source/COPYING.LGPLv2.1`, alongside `LICENSE.md`.
 
 With `default-features = false` and the `build` feature, this vendored copy builds FFmpeg from the pinned source in `core/distribution/builder-inputs.toml` and does not run bindgen on Linux or macOS. It installs the file in `bindings/` for the target triple instead, so those builds need neither bindgen nor libclang. Each file's first line records its target and the SHA-256 of the FFmpeg source archive it was generated from, and the build refuses a file that does not match the current pin.
 
