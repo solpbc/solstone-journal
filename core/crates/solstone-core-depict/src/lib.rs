@@ -6,6 +6,8 @@
 //! `journal depict` reaches this handler through the explicit native process
 //! table.
 
+pub mod screen_ocr_helper;
+
 use std::env;
 use std::ffi::OsString;
 use std::fs;

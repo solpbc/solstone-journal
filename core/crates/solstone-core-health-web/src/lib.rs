@@ -217,12 +217,11 @@ async fn state(root: PathBuf, clock: Clock, locale: &'static str) -> Response {
         let index_pending = search_index.index.pending as u64;
         let mut backfill_view =
             work_view::backfill_summary(work_ok.as_ref(), backfill_paused, index_pending);
-        if let Ok(bytes)=std::fs::read(root.join("config/email/state.json"))
-            && let Ok(email)=serde_json::from_slice::<serde_json::Value>(&bytes)
-            && email["phase"]!="disconnected"
+        if let Ok(Some(email)) = solstone_core_email::store::read_state_optional(&root)
+            && email.phase != "disconnected"
         {
-            backfill_view["email_exchanges_done"]=email["file_history_done"].clone();
-            backfill_view["email_exchanges_total"]=email["file_history_total"].clone();
+            backfill_view["email_exchanges_done"] = json!(email.file_history_done);
+            backfill_view["email_exchanges_total"] = json!(email.file_history_total);
         }
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();

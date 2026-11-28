@@ -31,7 +31,6 @@ path = "tests/source_planning_contracts.rs"
 unsafe_code = "deny"
 
 [dependencies]
-solstone-core-describe = { path = "../solstone-core-describe", optional = true }
 solstone-core-cli-copy.workspace = true
 base64 = "0.22.1"
 getrandom.workspace = true
@@ -84,5 +83,5 @@ rusqlite.workspace = true
 nix = { workspace = true, features = ["process", "signal"] }
 
 [features]
-local-attachment-ocr = ["dep:solstone-core-describe"]
+local-attachment-ocr = []
 full-tests = []

@@ -39,7 +39,7 @@ solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-installed-payload.workspace = true
 solstone-core-indexer-todo.workspace = true
-toml_edit = { workspace = true, features = ["serde"] }
+solstone-core-depict.workspace = true
 
 [features]
 test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]

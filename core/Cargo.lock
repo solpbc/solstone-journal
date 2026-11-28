@@ -5155,6 +5155,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-cli-copy",
  "solstone-core-generate",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-local",
@@ -5164,6 +5165,7 @@ dependencies = [
  "solstone-core-time",
  "temp-env",
  "tempfile",
+ "toml_edit",
 ]
 
 [[package]]
@@ -5208,7 +5210,6 @@ dependencies = [
  "solstone-core-window-catalog",
  "temp-env",
  "tempfile",
- "toml_edit",
  "unicode-normalization",
 ]
 
@@ -5581,6 +5582,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
+ "solstone-core-email",
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
@@ -5777,7 +5779,6 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-cli-copy",
  "solstone-core-depict",
- "solstone-core-describe",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",

@@ -5797,9 +5797,11 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "solstone-core-assets",
  "solstone-core-cli-copy",
  "solstone-core-generate",
+ "solstone-core-installed-payload",
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-local",
@@ -5807,6 +5809,7 @@ dependencies = [
  "solstone-core-segment",
  "solstone-core-system",
  "solstone-core-time",
+ "toml_edit",
 ]
 
 [[package]]
@@ -5828,6 +5831,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-callosum",
  "solstone-core-cli-copy",
+ "solstone-core-depict",
  "solstone-core-describe-categories",
  "solstone-core-format",
  "solstone-core-generate",
@@ -5845,7 +5849,6 @@ dependencies = [
  "solstone-core-time",
  "solstone-core-transcribe",
  "solstone-core-window-catalog",
- "toml_edit",
  "unicode-normalization",
 ]
 
@@ -6169,6 +6172,7 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-email",
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
@@ -6339,7 +6343,6 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-cli-copy",
  "solstone-core-depict",
- "solstone-core-describe",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",

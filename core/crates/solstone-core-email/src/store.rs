@@ -334,6 +334,10 @@ pub fn read_state(root: &Path) -> Result<SourceState> {
     Ok(read_json_optional(root, STATE_REL)?.unwrap_or_default())
 }
 
+pub fn read_state_optional(root: &Path) -> Result<Option<SourceState>> {
+    read_json_optional(root, STATE_REL)
+}
+
 pub fn write_state(root: &Path, state: &SourceState) -> Result<()> {
     write_private_json(root, STATE_REL, state)
 }

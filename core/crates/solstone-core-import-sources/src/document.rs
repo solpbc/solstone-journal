@@ -254,7 +254,8 @@ pub trait PdfPageOcr {
 #[derive(Default)]
 pub struct InstalledLocalPdfOcr {
     #[cfg(feature = "local-attachment-ocr")]
-    worker: Option<Result<Option<Box<dyn solstone_core_describe::OcrWorker>>, String>>,
+    worker:
+        Option<Result<Option<Box<dyn solstone_core_depict::screen_ocr_helper::OcrWorker>>, String>>,
 }
 
 impl PdfPageOcr for InstalledLocalPdfOcr {
@@ -263,14 +264,17 @@ impl PdfPageOcr for InstalledLocalPdfOcr {
         {
             if self.worker.is_none() {
                 self.worker = Some(
-                    solstone_core_describe::installed_ocr_worker()
+                    solstone_core_depict::screen_ocr_helper::installed_ocr_worker()
                         .map_err(|err| format!("local OCR worker failed ({})", err.code())),
                 );
             }
             let result = match self.worker.as_mut() {
                 Some(Ok(Some(worker))) => {
-                    solstone_core_describe::read_still_ocr_text(worker.as_mut(), png)
-                        .map_err(|err| format!("local OCR failed ({})", err.code()))
+                    solstone_core_depict::screen_ocr_helper::read_still_ocr_text(
+                        worker.as_mut(),
+                        png,
+                    )
+                    .map_err(|err| format!("local OCR failed ({})", err.code()))
                 }
                 Some(Ok(None)) => return Err(PdfPageOcrError::NotInstalled),
                 Some(Err(reason)) => return Err(PdfPageOcrError::Failed(reason.clone())),
