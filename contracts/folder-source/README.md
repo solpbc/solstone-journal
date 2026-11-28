@@ -46,16 +46,23 @@ Clients send watched-folder requests only to a journal whose
 - **Content routing (`kind_hint` + triage)**: When a companion content part
   carries a known `kind_hint` (`notes`, `documents`, `transcripts`,
   `screenshots`, `photos`, `screen_text`), the journal honors it; absent or
-  unrecognized hints fall back to deterministic triage (`ruleset_version = 8`).
+  unrecognized hints fall back to journal triage.
+  `GET /app/devices/ingest/folder/supported` reports its ruleset version.
 - **Per-file checking**: Broken companion files are refused by name in
   `refused_files` while valid activity events and files in the same window land
   (`200 OK`). If every item in the upload is refused, the journal returns `400`
-  with `reason_code: "folder_file_invalid"` and `refused_files`.
+  with `reason_code: "folder_file_invalid"` and `refused_files`. In either case,
+  send the activity for each refused file in a selected kind again, even when
+  other files are off. Omit `part`, `content_hash` and the companion bytes.
+  Retry the bytes only if the file changes.
 - **Erase-surviving received ledger**: Stored per `meta.folder.id` under
   `config/folders/<hash>/received/` and read fail-closed (`503 retryable` when
   unreadable). Re-sending an already-received event, screenshot, photo, or
-  document revision — including after segment erase or re-pairing — returns
-  `200 OK` with `status: "duplicate"`.
+  document revision returns `200 OK` with `status: "duplicate"`.
+- **Erased versions.** The journal suppresses erased versions across folders
+  and devices. It matches file contents by hash. If the erased record held
+  only details, the journal matches its relative path, size and modification
+  time even when a later upload includes the bytes.
 - **Owner-chosen facet**: Optional `meta.folder.facet` is applied to every
   segment of that folder. Content processing may add other facets and never
   removes the owner's. Without an owner-chosen facet, activity-only segments

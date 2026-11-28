@@ -269,8 +269,8 @@
             "capability_rule": "Send only to a journal whose `GET /api/system/status` lists `folder` in `capabilities`. Below that, hold folder uploads on the device until the paired journal lists it.",
             "window_grid": "One segment per watched folder per 5-minute window (`HHMMSS_300` on the 300-second grid in each event's own offset). Each folder binds its own internal stream keyed by `meta.folder.id` so concurrent folders never collide.",
             "files": "Exactly one `folder_<64 lowercase hex sha256>.jsonl` activity file whose filename hash equals SHA-256 of its UTF-8 bytes (<= 8 MiB, <= 5,000 lines, trailing newline), plus 0..63 companion content parts referenced by `part` fields on lines in that file. Companion part names must not use reserved journal names.",
-            "per_file_checking": "Broken companion files (hash mismatch, undecodable or oversized image, corrupt or encrypted PDF, invalid UTF-8 note, unsupported binary format) are refused by name in `refused_files` while valid activity events and companion files in the same window land (`200 OK`). When every item in an upload fails per-file checking and nothing lands, the journal answers `400` with `reason_code: folder_file_invalid` and `refused_files`.",
-            "deleted": "Each folder keeps a fail-closed received ledger keyed by `meta.folder.id` that outlives segment erase. Re-sending an already-received event, screenshot, photo, or document revision — including after the owner erased the segment or re-paired the device — answers `duplicate` without resurrecting deleted memories. An unreadable ledger answers `503 retryable`.",
+            "per_file_checking": "Broken companion files (hash mismatch, undecodable or oversized image, corrupt or encrypted PDF, undecodable note, unsupported binary format) are refused by name in `refused_files` while valid activity events and companion files in the same window land (`200 OK`). When every item in an upload fails per-file checking and nothing lands, the journal answers `400` with `reason_code: folder_file_invalid` and `refused_files`.",
+            "deleted": "The journal tracks received files per folder. After the owner erases a segment, the journal suppresses its file versions across all folders and devices. It matches content by its hash. For a file erased with details only, it matches the relative path, size and modification time, even if a later upload includes the bytes. An unreadable ledger returns `503 retryable`.",
             "meta_schema": {
               "type": "object",
               "required": [
@@ -326,12 +326,12 @@
                 "http_status": 200,
                 "status": "ok",
                 "meaning": "Accepted into the folder's 5-minute segment. Check optional `refused_files` for any individual broken companion files.",
-                "client_action": "Mark landed items delivered. Any path listed in `refused_files` reached a terminal per-file refusal unless the file changes on disk."
+                "client_action": "Mark accepted items delivered. For each refused file in a selected kind, send its activity again, even when other files are off. Omit `part`, `content_hash` and the companion bytes. Retry the bytes only if the file changes."
               },
               {
                 "http_status": 200,
                 "status": "duplicate",
-                "meaning": "Every event and file in this upload was already received for this folder (including items the owner later erased).",
+                "meaning": "Each item was already received for this folder or matches a version the owner erased from the journal.",
                 "client_action": "Mark delivered and do not resend."
               },
               {
@@ -344,7 +344,7 @@
                 "http_status": 400,
                 "reason_code": "folder_file_invalid",
                 "meaning": "Every item in the upload failed per-file checking (`refused_files` names each file and reason).",
-                "client_action": "Mark each named file refused until its bytes change."
+                "client_action": "For each refused file in a selected kind, send its activity again, even when other files are off. Omit `part`, `content_hash` and the companion bytes. Retry the bytes only if the file changes."
               },
               {
                 "http_status": 409,
