@@ -274,7 +274,7 @@
         "additionalProperties": false,
         "properties": {
           "detail": {
-            "description": "Nonblank if present, at most 256 UTF-8 bytes, without control characters.",
+            "description": "Nonblank if present, at most 256 UTF-8 bytes, without control characters. For source \"folder\", carries the stable client-assigned folder ID (meta.folder.id), never the display name.",
             "type": [
               "string",
               "null"
@@ -348,7 +348,7 @@
   "info": {
     "description": "Generated from client_description_contract_authority.json. Covers client descriptions, labels and shared source awareness.",
     "title": "Linked-device client description contract",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "x-disclaimer": "reported-device-metadata / owner-label-precedence",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
@@ -491,7 +491,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "description": "Complete replacement in any order. Each source/detail pair must be unique. An empty array clears the list.",
+                "description": "Complete replacement in any order. Each source/detail pair must be unique. An empty array clears the list. Omit off and setting_up sources. When a device has more than 64 active sources, include all non-folder sources first and fill remaining slots with folders ordered by needs_attention, paused, then on, tie-broken by folder_id ascending.",
                 "items": {
                   "$ref": "#/components/schemas/SourceDeclaration"
                 },

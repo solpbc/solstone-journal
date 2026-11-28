@@ -19,6 +19,39 @@
       }
     },
     {
+      "id": "sources.declare.folders",
+      "kind": "declared",
+      "payload": [
+        {
+          "detail": "Notes",
+          "source": "obsidian",
+          "state": "on"
+        },
+        {
+          "detail": "downloads-a1b2c3d4",
+          "source": "folder",
+          "state": "on"
+        },
+        {
+          "detail": "desktop-b2c3d4e5",
+          "source": "folder",
+          "state": "paused"
+        },
+        {
+          "detail": "work-c3d4e5f6",
+          "source": "folder",
+          "state": "needs_attention"
+        }
+      ],
+      "provenance": {
+        "http_status": 204,
+        "vocabulary": "shared_sources"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
       "id": "sources.clear",
       "kind": "declared",
       "payload": [],

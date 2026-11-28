@@ -817,20 +817,57 @@ async fn supported_facets_estimate_segments_listing_and_future_day_guard() {
     assert_eq!(s_seg, StatusCode::OK, "{segs}");
     assert_eq!(segs["total"], 2, "{segs}");
 
-    // 5. Known sources surfaces both watched folders.
+    // 5. Known sources surfaces both watched folders keyed by folder_id,
+    //    and joins declared folder state with observed last_synced_at.
     let snap = crate::known_sources::snapshot(dir.path(), Some(LAPTOP.to_owned())).unwrap();
     let snap_val = serde_json::to_value(&snap).unwrap();
     let sources = snap_val["devices"][0]["sources"].as_array().unwrap();
     assert!(
         sources
             .iter()
-            .any(|s| s["source"] == "folder" && s["detail"] == "Downloads")
+            .any(|s| s["source"] == "folder" && s["detail"] == "folder-a")
     );
     assert!(
         sources
             .iter()
-            .any(|s| s["source"] == "folder" && s["detail"] == "Desktop")
+            .any(|s| s["source"] == "folder" && s["detail"] == "folder-b")
     );
+    solstone_core_sol_link::source_declarations::replace(
+        dir.path(),
+        LAPTOP,
+        vec![
+            solstone_core_sol_link::source_declarations::Source {
+                source: "folder".to_owned(),
+                state: solstone_core_sol_link::source_declarations::State::Paused,
+                detail: Some("folder-a".to_owned()),
+            },
+            solstone_core_sol_link::source_declarations::Source {
+                source: "folder".to_owned(),
+                state: solstone_core_sol_link::source_declarations::State::NeedsAttention,
+                detail: Some("folder-b".to_owned()),
+            },
+        ],
+        "2026-11-27T15:05:00Z".to_owned(),
+    )
+    .unwrap();
+    let declared_snap =
+        crate::known_sources::snapshot(dir.path(), Some(LAPTOP.to_owned())).unwrap();
+    let declared_val = serde_json::to_value(&declared_snap).unwrap();
+    let declared_sources = declared_val["devices"][0]["sources"].as_array().unwrap();
+    let row_a = declared_sources
+        .iter()
+        .find(|s| s["source"] == "folder" && s["detail"] == "folder-a")
+        .expect("declared folder-a");
+    assert_eq!(row_a["origin"], "declared");
+    assert_eq!(row_a["state"], "paused");
+    assert!(row_a["last_synced_at"].is_string());
+    let row_b = declared_sources
+        .iter()
+        .find(|s| s["source"] == "folder" && s["detail"] == "folder-b")
+        .expect("declared folder-b");
+    assert_eq!(row_b["origin"], "declared");
+    assert_eq!(row_b["state"], "needs_attention");
+    assert!(row_b["last_synced_at"].is_string());
 
     // 6. Future day refused with 409 folder_ahead.
     let (s_ahead, b_ahead) = post_folder(

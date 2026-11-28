@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "1.2.0";
+const BUNDLE_SEMVER: &str = "1.3.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-description-contract";
 const AUTHORITY_PATH: &str = "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json";
 /// The client description OpenAPI authority is `client_description_contract_authority.json`, colocated with this
@@ -319,6 +319,7 @@ fn wire_behavior() -> Value {
     json!({
         "fixtures": [
             {"id": "sources.declare", "kind": "declared", "payload": [{"source": "obsidian", "state": "on", "detail": "Notes"}], "provenance": {"http_status": 204, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
+            {"id": "sources.declare.folders", "kind": "declared", "payload": [{"source": "obsidian", "state": "on", "detail": "Notes"}, {"source": "folder", "state": "on", "detail": "downloads-a1b2c3d4"}, {"source": "folder", "state": "paused", "detail": "desktop-b2c3d4e5"}, {"source": "folder", "state": "needs_attention", "detail": "work-c3d4e5f6"}], "provenance": {"http_status": 204, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
             {"id": "sources.clear", "kind": "declared", "payload": [], "provenance": {"http_status": 204, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
             {"id": "sources.snapshot", "kind": "declared", "payload": {"self_cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sources_rev": "1d9038", "devices": [{"cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "display_label": "Desk", "platform": "linux", "device_type": "desktop", "device_last_seen_at": "2026-11-20T12:00:00Z", "sources": [{"source": "obsidian", "state": "on", "detail": "Notes", "origin": "declared", "declared_at": "2026-11-20T12:00:00Z", "last_synced_at": null}]}, {"cid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "display_label": "Laptop", "platform": "linux", "device_type": "desktop", "device_last_seen_at": "2026-11-20T12:00:00Z", "sources": [{"source": "terminal", "detail": null, "state": null, "origin": "observed", "last_synced_at": "2026-11-20T12:00:00Z", "declared_at": null}]}]}, "provenance": {"http_status": 200, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},
             {"id": "sources.invalid", "kind": "declared", "payload": {"error": "Bad Request", "reason_code": "invalid_sources", "detail": "Send each source and detail combination once."}, "provenance": {"http_status": 400, "vocabulary": "shared_sources"}, "schema_validation": {"valid": true}},

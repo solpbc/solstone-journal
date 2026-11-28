@@ -62,3 +62,25 @@ Clients send watched-folder requests only to a journal whose
   are visible only to whole-journal connections.
 - **Historical backfill**: Folder days older than today (`day < today`) schedule
   in Band 4 (`WorkBand::Import`) alongside other syncing sources.
+
+## Per-Folder State Declaration
+
+Paired clients report each active or faulted folder's state through the existing
+linked-device source declaration route (`PUT /app/network/api/clients/self/sources`,
+`docs/openapi/client-description-contract/` `1.3.0`):
+
+- Each folder entry uses the existing `{ "source": "folder", "state": "on" | "paused" | "needs_attention", "detail": "<folder_id>" }`
+  shape with no extra fields or state words, preserving full compatibility with
+  older journals.
+- `detail` carries the stable `meta.folder.id` (`1..=64` ASCII chars), never the
+  display name, so two folders with the same name never collide on `(source, detail)`.
+- Folders in `off` or `setting_up` are omitted from the declaration array. When
+  a paired device has a non-saturated declaration (`< 64` entries) newer than or
+  equal to the folder's last sync time that omits `folder_id`, or when the device
+  is no longer paired, `GET /app/sources/api/folders` reports `state: "off"`.
+- Clients cap declarations at 64 entries: all non-folder sources come first,
+  followed by folders ordered `needs_attention`, `paused`, then `on`, tie-broken
+  by `folder_id` ascending. When a device's declaration is at the 64-entry cap,
+  omitted synced folders are not inferred as `off`.
+- Declared states do not age out on an arbitrary staleness timer; unpairing a
+  device moves its folders to `off` immediately.

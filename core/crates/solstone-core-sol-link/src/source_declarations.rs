@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
 
 const FILE: &str = "link/source-declarations.json";
+pub const MAX_ENTRIES: usize = 64;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -46,7 +47,7 @@ pub enum DeclarationError {
 
 pub fn validate(mut sources: Vec<Source>) -> Result<Vec<Source>, DeclarationError> {
     use DeclarationError::Invalid;
-    if sources.len() > 64 {
+    if sources.len() > MAX_ENTRIES {
         return Err(Invalid("Send at most 64 sources."));
     }
     let mut seen = BTreeSet::new();

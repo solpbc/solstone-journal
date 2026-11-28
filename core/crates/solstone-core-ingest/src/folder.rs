@@ -2165,9 +2165,9 @@ fn classify_estimate_kind(item: &EstimateItem) -> &'static str {
     }
 }
 
-/// Synced folders grouped by device `cid` → folder `name` → `last_synced_at`,
-/// used by `known_sources` so `/app/network/api/sources` reflects watched
-/// folders alongside Obsidian vaults.
+/// Synced folders grouped by device `cid` → `folder_id` → `last_synced_at`,
+/// used by `known_sources` so `/app/network/api/sources` joins observed folder
+/// history with declared `("folder", Some(folder_id))` entries.
 pub(crate) fn synced_folders(
     journal: &Path,
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
@@ -2193,11 +2193,15 @@ pub(crate) fn synced_folders(
             continue;
         };
         for (device, last_synced_at) in &held.devices {
-            if last_synced_at.parse::<jiff::Timestamp>().is_ok() {
-                folders
-                    .entry(device.clone())
-                    .or_default()
-                    .insert(held.name.clone(), last_synced_at.clone());
+            if let Ok(ts) = last_synced_at.parse::<jiff::Timestamp>() {
+                let per_device = folders.entry(device.clone()).or_default();
+                let replace = per_device
+                    .get(&held.id)
+                    .and_then(|old| old.parse::<jiff::Timestamp>().ok())
+                    .is_none_or(|old| ts > old);
+                if replace {
+                    per_device.insert(held.id.clone(), last_synced_at.clone());
+                }
             }
         }
     }

@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Linked-device client description contract",
-    "version": "1.2.0",
-    "description": "Linked-device client description and owner labeling contract. Covers GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+    "version": "1.3.0",
+    "description": "Linked-device client description and owner labeling contract. Covers GET/PUT /app/network/api/clients/self, PATCH /app/network/api/clients/{cid}/label, and shared source declarations.",
     "x-disclaimer": "reported-device-metadata / owner-label-precedence"
   },
   "paths": {
@@ -182,7 +182,7 @@
                   "$ref": "#/components/schemas/SourceDeclaration"
                 },
                 "maxItems": 64,
-                "description": "Complete replacement in any order. Each source/detail pair must be unique. An empty array clears the list."
+                "description": "Complete replacement in any order. Each source/detail pair must be unique. An empty array clears the list. Omit off and setting_up sources. When a device has more than 64 active sources, include all non-folder sources first and fill remaining slots with folders ordered by needs_attention, paused, then on, tie-broken by folder_id ascending."
               }
             }
           }
@@ -502,7 +502,7 @@
               "string",
               "null"
             ],
-            "description": "Nonblank if present, at most 256 UTF-8 bytes, without control characters."
+            "description": "Nonblank if present, at most 256 UTF-8 bytes, without control characters. For source \"folder\", carries the stable client-assigned folder ID (meta.folder.id), never the display name."
           },
           "state": {
             "type": "string",
