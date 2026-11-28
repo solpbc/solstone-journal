@@ -313,14 +313,15 @@ class GitPinVendorDelta(unittest.TestCase):
             refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
 
     def substitutions(self, fresh_digest_manifest, removed_prefixes, prior_ignore=False,
-                      git_files=(".gitignore",), vouched=True):
+                      git_files=(".gitignore",), vouched=True, registry=True):
         """Run build_git_substitutions over a tiny prior archive and vendor tree.
 
         The prior archive carries the moved git package, a removed registry
         package and a surviving registry package whose checksum manifest was
         written in the licence-identical upgrade's sorted-key form. With
         `prior_ignore`, it also carries `git_files`, which cargo vendor omits,
-        listed in that manifest only when `vouched`.
+        listed in that manifest only when `vouched`. Without `registry`, the
+        vouching manifest is a git package's (`"package": null`).
         """
         moved = "vendor/spl-core-0.1.0/"
         prior = {
@@ -340,6 +341,8 @@ class GitPinVendorDelta(unittest.TestCase):
                 if vouched:
                     checksum["files"][git_file] = refresh.sha256_bytes(ignored)
                 prior["vendor/digest-1.0.0/" + git_file] = ignored
+            if not registry:
+                checksum["package"] = None
             prior[manifest] = json.dumps(checksum).encode()
         del fresh["vendor/p256-0.13.2/src/lib.rs"]
         fresh[moved + "src/lib.rs"] = b"new\n"
@@ -411,6 +414,11 @@ class GitPinVendorDelta(unittest.TestCase):
         with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
             self.substitutions(self.compact("d" * 64), removed, prior_ignore=True,
                                git_files=(".gitattributes",), vouched=False)
+        # And only for a registry package: a manifest with "package": null (a
+        # git package whose pin did not move) does not carry it.
+        with self.subTest(registry=False), self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
+            self.substitutions(self.compact("d" * 64), removed, prior_ignore=True,
+                               git_files=(".gitattributes",), registry=False)
 
 
 class SourceOfferArchive(unittest.TestCase):
