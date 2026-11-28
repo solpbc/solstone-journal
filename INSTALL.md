@@ -207,7 +207,7 @@ Your journal works alongside the solstone app: the app takes in what you share w
 
 **linux:** Follow `solstone-linux`'s own INSTALL guide. On the computer where your journal runs, the window's `journal` tab finds it, and one press connects. For a journal on another computer, paste a pairing link from that journal, and confirm its mark. From a terminal, installing the service and pairing it are two separate steps: `install-service` writes and starts the unit, and pairing reads a pair link.
 
-**tmux terminal sessions:** follow `solstone-tmux`'s own INSTALL guide, which also carries the steps for retiring a previous Python installation.
+**tmux terminal sessions:** part of the solstone app on mac and linux. Turn on terminal in the solstone app's settings and it takes in your tmux sessions, and all of it goes into your journal. Already have solstone for tmux? On a mac, or if you set it up by hand from its guide, add the solstone app and turn on terminal; it asks before moving it in. Otherwise, on linux, run `solstone update --lane release` and it asks before moving it into the solstone app.
 
 ## Moving from a pip, uv or pipx install on linux
 

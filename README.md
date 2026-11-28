@@ -43,10 +43,10 @@ solstone is two parts, and you own both.
 
 | part | what it is | where it runs |
 |------|-----------|---------------|
-| **the solstone app** | the software you install on each device. It takes in what you share with it: your screen, your audio, the files you import. All of it goes into your journal over your private network | mac, windows, linux, iphone and ipad, android, tmux |
+| **the solstone app** | the software you install on each device. It takes in what you share with it: your screen, your audio, the files you import. All of it goes into your journal over your private network | mac, windows, linux, iphone and ipad, android |
 | **the journal** (this repo) | the memory. Holds everything, processes it, indexes it, and serves the web interface and the API your agents use | a mac (Apple Silicon), a windows PC or a linux machine you own |
 
-The journal app for mac is built from this repository, in [`platforms/macos`](platforms/macos/README.md). Each other solstone app has its own repository. Start at the [family index](https://github.com/solpbc/solstone), or go straight to [solstone-macos](https://github.com/solpbc/solstone-macos) (the solstone app for mac), [solstone-windows](https://github.com/solpbc/solstone-windows), [solstone-linux](https://github.com/solpbc/solstone-linux), [solstone-swift](https://github.com/solpbc/solstone-swift) (iphone, ipad, watch), [solstone-android](https://github.com/solpbc/solstone-android), or [solstone-tmux](https://github.com/solpbc/solstone-tmux). Devices reach the journal directly on your network, or through the private network relay, a blind byte relay operated by sol pbc that cannot read what passes through it ([spl](https://github.com/solpbc/spl)).
+The journal app for mac is built from this repository, in [`platforms/macos`](platforms/macos/README.md). Each other solstone app has its own repository. Start at the [family index](https://github.com/solpbc/solstone), or go straight to [solstone-macos](https://github.com/solpbc/solstone-macos) (the solstone app for mac), [solstone-windows](https://github.com/solpbc/solstone-windows), [solstone-linux](https://github.com/solpbc/solstone-linux), [solstone-swift](https://github.com/solpbc/solstone-swift) (iphone, ipad, watch), or [solstone-android](https://github.com/solpbc/solstone-android). Devices reach the journal directly on your network, or through the private network relay, a blind byte relay operated by sol pbc that cannot read what passes through it ([spl](https://github.com/solpbc/spl)).
 
 ## Status
 
