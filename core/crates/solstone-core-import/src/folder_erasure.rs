@@ -144,7 +144,8 @@ pub(crate) fn remember_directories(
                 event.size,
                 event.modified_at_ms.unwrap_or(event.at_ms),
             );
-            if let Some(hash) = event.content_hash {
+            // Older clients could attach an unverified hash to a details-only event.
+            if let Some(hash) = event.kind.and(event.content_hash) {
                 keys.push(hash);
                 keys.push(format!("without-bytes:{details}"));
             } else {

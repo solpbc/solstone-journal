@@ -413,7 +413,7 @@ pub(crate) fn validate_folder_upload(
             "the folder source requires exactly one folder_<sha256>.jsonl activity file per upload",
         ));
     };
-    let lines = validate_folder_file(&activity.submitted, &activity.bytes, day, segment)
+    let mut lines = validate_folder_file(&activity.submitted, &activity.bytes, day, segment)
         .map_err(|error| invalid_envelope(error.to_string()))?;
 
     let mut parts = BTreeMap::new();
@@ -431,7 +431,7 @@ pub(crate) fn validate_folder_upload(
     }
 
     let mut referenced = BTreeSet::new();
-    for (idx, line) in lines.iter().enumerate() {
+    for (idx, line) in lines.iter_mut().enumerate() {
         if let Some(part) = &line.part {
             if !parts.contains_key(part) {
                 return Err(invalid_envelope(format!(
@@ -441,6 +441,9 @@ pub(crate) fn validate_folder_upload(
                 )));
             }
             referenced.insert(part.clone());
+        } else {
+            // Only a hash verified against a companion identifies content.
+            line.content_hash = None;
         }
     }
     for part in parts.keys() {

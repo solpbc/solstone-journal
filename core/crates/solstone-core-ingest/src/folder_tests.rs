@@ -1616,7 +1616,7 @@ async fn folder_erasure_follows_version_across_folder_ids_while_other_copies_and
         [
             json!({"v":1,"event":"added","path":"plan.md","at":"2026-11-27T12:01:00Z",
                "observed_at":"2026-11-27T12:02:00Z","content_hash":sha256(bytes),"kind_hint":"notes","part":"content.md"}),
-            json!({"v":1,"event":"added","path":"download.bin","at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:02:00Z","size":10}),
+            json!({"v":1,"event":"added","path":"download.bin","at":"2026-11-27T12:01:00Z","observed_at":"2026-11-27T12:02:00Z","size":10,"content_hash":sha256(b"stale hash")}),
         ]
     };
     let day = "20261127";
@@ -1636,6 +1636,19 @@ async fn folder_erasure_follows_version_across_folder_ids_while_other_copies_and
         "ok"
     );
     let original = find_segment_dir(&day_dir, key);
+    let persisted = original.join("talents/folder_activity.json");
+    let mut legacy_activity: Value =
+        serde_json::from_slice(&fs::read(&persisted).unwrap()).unwrap();
+    let details = legacy_activity["events"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["path"] == "download.bin")
+        .unwrap();
+    assert!(details["content_hash"].is_null());
+    // Exercise an older journal that persisted a client-supplied hash without bytes.
+    details["content_hash"] = json!(sha256(b"stale hash"));
+    fs::write(persisted, serde_json::to_vec(&legacy_activity).unwrap()).unwrap();
     let stream = original
         .parent()
         .unwrap()
