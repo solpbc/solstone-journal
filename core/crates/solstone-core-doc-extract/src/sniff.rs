@@ -47,6 +47,51 @@ pub(crate) fn sniff_container(
     Ok(SniffedContainer::Unknown)
 }
 
+/// Size-independent container check for triage classification. Ignores declared
+/// uncompressed part/package sizes so oversized or zip-bomb Office documents
+/// still route as documents rather than falling through to notes.
+pub(crate) fn is_supported_container(bytes: &[u8]) -> bool {
+    const TRIAGE_MAX_ZIP_ENTRIES: usize = 20_000;
+    const TRIAGE_MAX_CFB_ENTRIES: usize = 10_000;
+
+    if is_zip_magic(bytes) {
+        let Ok(archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
+            return false;
+        };
+        let count = archive.len().min(TRIAGE_MAX_ZIP_ENTRIES);
+        for idx in 0..count {
+            let Some(Ok(name)) = archive.name_for_index(idx) else {
+                continue;
+            };
+            let normalized = name
+                .replace('\\', "/")
+                .trim_start_matches('/')
+                .to_ascii_lowercase();
+            if matches!(
+                normalized.as_str(),
+                "word/document.xml"
+                    | "xl/workbook.bin"
+                    | "xl/workbook.xml"
+                    | "ppt/presentation.xml"
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if bytes.starts_with(CFB_MAGIC) {
+        let mut limits = ExtractLimits::desktop();
+        limits.max_package_entries = TRIAGE_MAX_CFB_ENTRIES;
+        return matches!(
+            sniff_cfb(bytes, &limits),
+            Ok(SniffedContainer::EncryptedOoxml | SniffedContainer::LegacyCfb(_))
+        );
+    }
+
+    false
+}
+
 fn is_zip_magic(bytes: &[u8]) -> bool {
     bytes.starts_with(ZIP_LOCAL_MAGIC)
         || bytes.starts_with(ZIP_EMPTY_MAGIC)
@@ -307,6 +352,7 @@ fn read_cfb_directory_names(
     }
 
     let entries_per_sector = sector_size / CFB_DIR_ENTRY_BYTES;
+    let max_total_slots = limits.max_package_entries.saturating_mul(4).max(16_384);
     let mut visited = HashSet::new();
     let mut current = first_dir_sector;
     let mut entries: Vec<Option<CfbDirEntry>> = Vec::new();
@@ -325,6 +371,11 @@ fn read_cfb_directory_names(
         };
 
         for slot in 0..entries_per_sector {
+            if entries.len() >= max_total_slots {
+                return Err(ExtractError::LimitExceeded(format!(
+                    "compound file directory exceeds total slot limit of {max_total_slots}"
+                )));
+            }
             let offset = slot * CFB_DIR_ENTRY_BYTES;
             let entry = &sec[offset..offset + CFB_DIR_ENTRY_BYTES];
             let obj_type = entry[0x42];

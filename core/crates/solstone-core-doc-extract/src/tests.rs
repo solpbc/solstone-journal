@@ -1391,3 +1391,49 @@ fn sniff_ignores_nested_ole_streams_and_normalizes_zip_backslashes() {
     assert_eq!(ppt.format, DocumentFormat::Ppt);
     assert!(ppt.plain_text.contains("Outer PowerPoint headline"));
 }
+
+#[test]
+fn public_helpers_and_size_independent_container_sniffing_work() {
+    use crate::{SUPPORTED_EXTENSIONS, is_supported_container, is_supported_extension};
+
+    assert_eq!(SUPPORTED_EXTENSIONS, DocumentFormat::supported_extensions());
+    for ext in SUPPORTED_EXTENSIONS {
+        assert!(is_supported_extension(ext));
+        assert!(is_supported_extension(&format!(".{}", ext.to_uppercase())));
+    }
+    assert!(!is_supported_extension("pdf"));
+    assert!(!is_supported_extension("zip"));
+    assert_eq!(DocumentFormat::Docx.to_string(), "docx");
+    assert_eq!(DocumentFormat::Xlsb.to_string(), "xlsb");
+    assert!(ExtractLimits::for_current_platform().max_input_bytes > 0);
+
+    // Every Office format + encrypted OOXML + oversized/bomb DOCX returns true.
+    let bomb_padding = "A".repeat(700 * 1024);
+    let big_docx = build_docx(
+        &format!("<w:p><w:r><w:t>{bomb_padding}</w:t></w:r></w:p>"),
+        None,
+    );
+    let xlsb = build_xlsb("Sheet", "Cell");
+    let enc_ooxml = build_encrypted_ooxml_cfb();
+    let legacy_doc = build_legacy_doc("Word", false);
+    let legacy_xls = build_legacy_xls("Sheet", "Val", false);
+    let legacy_ppt = build_legacy_ppt("Slide", false);
+    for sample in [
+        &big_docx,
+        &xlsb,
+        &enc_ooxml,
+        &legacy_doc,
+        &legacy_xls,
+        &legacy_ppt,
+    ] {
+        assert!(is_supported_container(sample));
+    }
+
+    // Negative twins: plain ZIP, non-Office CFB, PDF, plain text return false.
+    let plain_zip = build_zip(&[("conversations.json", b"[]")]);
+    let plain_cfb = build_cfb(&[("CustomStream", b"non-office")]);
+    assert!(!is_supported_container(&plain_zip));
+    assert!(!is_supported_container(&plain_cfb));
+    assert!(!is_supported_container(b"%PDF-1.7\n"));
+    assert!(!is_supported_container(b"hello world"));
+}

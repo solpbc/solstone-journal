@@ -1360,12 +1360,15 @@ fn is_processing_projection(path: &Path) -> bool {
 }
 
 fn is_sized_media(path: &Path) -> bool {
-    let extension = path
+    let raw_ext = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .map(|extension| format!(".{}", extension.to_ascii_lowercase()))
+        .map(str::to_ascii_lowercase)
         .unwrap_or_default();
-    MEDIA_EXTENSIONS.contains(&extension.as_str()) || PDF_EXTENSIONS.contains(&extension.as_str())
+    let dotted = format!(".{raw_ext}");
+    MEDIA_EXTENSIONS.contains(&dotted.as_str())
+        || PDF_EXTENSIONS.contains(&dotted.as_str())
+        || solstone_core_doc_extract::is_supported_extension(&raw_ext)
 }
 
 fn compact_ascii_entries(entries: &[(String, String)]) -> String {

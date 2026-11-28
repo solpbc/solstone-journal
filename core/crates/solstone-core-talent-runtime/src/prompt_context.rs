@@ -550,7 +550,7 @@ fn stream_content_description(
             "import.ics" => return "an imported calendar event".to_owned(),
             "import.obsidian" => return "an imported note from Obsidian".to_owned(),
             "import.evernote" => return "an imported note from Evernote".to_owned(),
-            "import.document" => return "an imported document (PDF)".to_owned(),
+            "import.document" => return "an imported document".to_owned(),
             "import.kindle" => return "imported Kindle reading highlights".to_owned(),
             _ => {
                 return format!("imported content from {}", &stream["import.".len()..]);

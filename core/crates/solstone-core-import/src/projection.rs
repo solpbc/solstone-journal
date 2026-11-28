@@ -862,26 +862,27 @@ fn derive_source_type(
             return hint.to_owned();
         }
         if let Some(mime) = meta.get("mime_type").and_then(Value::as_str) {
-            if mime.starts_with("image/") {
+            let base_mime = mime.split(';').next().unwrap_or(mime).trim();
+            if base_mime.starts_with("image/") {
                 return "image".to_owned();
             }
-            if mime == "application/pdf" {
+            if is_document_mime(base_mime) {
                 return "document".to_owned();
             }
         }
         if let Some(name) = meta.get("original_filename").and_then(Value::as_str) {
-            if name.ends_with(".png")
-                || name.ends_with(".jpg")
-                || name.ends_with(".jpeg")
-                || name.ends_with(".webp")
-                || name.ends_with(".gif")
-            {
+            let ext = Path::new(name)
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_default();
+            if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif") {
                 return "image".to_owned();
             }
-            if name.ends_with(".pdf") {
+            if ext == "pdf" || solstone_core_doc_extract::is_supported_extension(&ext) {
                 return "document".to_owned();
             }
-            if name.ends_with(".zip") {
+            if ext == "zip" {
                 return "archive".to_owned();
             }
         }
@@ -889,10 +890,22 @@ fn derive_source_type(
     "import".to_owned()
 }
 
+fn is_document_mime(mime: &str) -> bool {
+    let lower = mime.to_ascii_lowercase();
+    lower == "application/pdf"
+        || lower == "application/msword"
+        || lower == "application/vnd.ms-excel"
+        || lower == "application/vnd.ms-powerpoint"
+        || lower.starts_with("application/vnd.openxmlformats-officedocument.")
+        || lower.starts_with("application/vnd.ms-word.")
+        || lower.starts_with("application/vnd.ms-excel.")
+        || lower.starts_with("application/vnd.ms-powerpoint.")
+}
+
 fn derive_source_display(source_type: &str) -> String {
     match source_type {
         "image" => "Image".to_owned(),
-        "document" => "PDF Document".to_owned(),
+        "document" => "Document".to_owned(),
         "archive" => "Journal Archive".to_owned(),
         "chatgpt" => "ChatGPT".to_owned(),
         "claude" => "Claude".to_owned(),

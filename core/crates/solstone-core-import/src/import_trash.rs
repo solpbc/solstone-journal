@@ -91,7 +91,8 @@ pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
         .flat_map(|listing| listing.flatten())
         .filter(|entry| {
             entry.file_name().to_str().is_some_and(|name| {
-                name.starts_with("original.") || name.starts_with("imported_audio.")
+                (name.starts_with("original.") || name.starts_with("imported_audio."))
+                    && !name.ends_with(".lock")
             })
         })
         .count();

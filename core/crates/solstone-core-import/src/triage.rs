@@ -20,7 +20,7 @@ mod rules;
 pub(crate) use rules::{BIDI_MARKS, whatsapp_notice, whatsapp_row};
 use rules::{Evidence, RULES, Rule, Stage};
 
-pub const RULESET_VERSION: u32 = 8;
+pub const RULESET_VERSION: u32 = 9;
 pub use solstone_core_format::content::IMPORT_KIND_FILENAME as METADATA_FILENAME;
 
 /// Whether `verdict` recognizes a known structured export admitted for `extension`.
@@ -116,6 +116,7 @@ fn classify_with_rules<'a>(
     let format =
         FileFormat::from_reader(Cursor::new(bytes)).unwrap_or(FileFormat::ArbitraryBinaryData);
     let base = Evidence {
+        bytes,
         format,
         lines: &[],
         text: "",

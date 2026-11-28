@@ -173,16 +173,22 @@ pub fn packaged_import_factory(library: PathBuf) -> Arc<ImportSeamFactory> {
         } else {
             None
         };
-        if !library.is_file() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "packaged PDF runtime unavailable",
-            )
-            .to_string());
-        }
-        let seams = context.seams_with_pdf(Box::new(
-            solstone_core_import_host::pdf_in_process::InProcessPdfWorker::new(library.clone()),
-        ));
+        let pdf_worker: Box<dyn solstone_core_import_sources::document::PdfWorker + Send> =
+            if library.is_file() {
+                Box::new(
+                    solstone_core_import_host::pdf_in_process::InProcessPdfWorker::new(
+                        library.clone(),
+                    ),
+                )
+            } else {
+                let reason = std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "packaged PDF runtime unavailable",
+                )
+                .to_string();
+                Box::new(solstone_core_import_sources::document::UnavailablePdfWorker::new(reason))
+            };
+        let seams = context.seams_with_pdf(pdf_worker);
         Ok(PreparedImport::new(context.arguments().to_vec(), seams)
             .with_resources((library.clone(), active_plaud)))
     })

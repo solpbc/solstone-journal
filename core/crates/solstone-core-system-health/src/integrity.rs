@@ -1585,6 +1585,7 @@ fn is_raw_media_file(path: &Path) -> bool {
         media_kind(&lower),
         Some(MediaKind::Audio | MediaKind::Video | MediaKind::Image)
     ) || lower == "pdf"
+        || solstone_core_doc_extract::is_supported_extension(&lower)
 }
 
 fn is_owner_transcript_jsonl(name: &str) -> bool {

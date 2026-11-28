@@ -448,7 +448,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "041279e5983db1fa353652617a3756e3a8e87d748bbfc52f7a59994d3518b911",
+        "body_sha256": "6aa9ae1bf029e1b29dafc6df8edf8633bfb58c0be2775fce3e2cefdec4e5ef8f",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -1130,7 +1130,7 @@
               "upload_prompt": "upload an audio, video, or image file"
             },
             {
-              "accept": ".pdf",
+              "accept": ".pdf,.docx,.docm,.xlsx,.xlsm,.xlsb,.pptx,.pptm,.ppsx,.doc,.xls,.ppt",
               "description": "import a PDF document",
               "display_name": "document",
               "has_guide": false,
@@ -1499,7 +1499,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "041279e5983db1fa353652617a3756e3a8e87d748bbfc52f7a59994d3518b911",
+        "body_sha256": "6aa9ae1bf029e1b29dafc6df8edf8633bfb58c0be2775fce3e2cefdec4e5ef8f",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -2181,7 +2181,7 @@
               "upload_prompt": "upload an audio, video, or image file"
             },
             {
-              "accept": ".pdf",
+              "accept": ".pdf,.docx,.docm,.xlsx,.xlsm,.xlsb,.pptx,.pptm,.ppsx,.doc,.xls,.ppt",
               "description": "import a PDF document",
               "display_name": "document",
               "has_guide": false,

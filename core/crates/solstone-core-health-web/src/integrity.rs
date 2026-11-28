@@ -235,6 +235,7 @@ fn is_raw_media_leaf(name: &str) -> bool {
         media_kind(&lower),
         Some(MediaKind::Audio | MediaKind::Video | MediaKind::Image)
     ) || lower == "pdf"
+        || solstone_core_doc_extract::is_supported_extension(&lower)
 }
 
 /// Parse a journal-relative chronicle segment directory path:

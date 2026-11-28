@@ -275,7 +275,7 @@ where
             }
         }
     }
-    if selected.is_none() && has_extension(options.media, "pdf") {
+    if selected.is_none() && has_document_extension(options.media) {
         return Err(ResolutionError::PdfRequiresDocumentImporter {
             path: options.media.to_owned(),
         });
@@ -420,6 +420,12 @@ fn extension(path: &Path) -> Option<String> {
 }
 fn has_extension(path: &Path, expected: &str) -> bool {
     extension(path).as_deref() == Some(expected)
+}
+
+fn has_document_extension(path: &Path) -> bool {
+    extension(path)
+        .as_deref()
+        .is_some_and(|ext| ext == "pdf" || solstone_core_doc_extract::is_supported_extension(ext))
 }
 
 fn has_extension_in(path: &Path, expected: &[&str]) -> bool {

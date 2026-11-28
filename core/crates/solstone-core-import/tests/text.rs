@@ -511,7 +511,10 @@ fn an_unmarked_note_is_kept_complete_at_the_import_start() {
             .unwrap();
     assert_eq!(verdict["kind"], "notes");
     assert_eq!(verdict["reasons"], json!(["note_default"]));
-    assert_eq!(verdict["ruleset_version"], 8);
+    assert_eq!(
+        verdict["ruleset_version"],
+        solstone_core_import::triage::RULESET_VERSION
+    );
     assert_eq!(verdict["topics"], "roadmap, imports");
 }
 
@@ -596,7 +599,7 @@ fn header_keeps_caller_and_model_setting_slots_distinct() {
         json!({
             "imported": {
                 "id": "id", "facet": "work", "setting": "caller-setting",
-                "triage": {"kind": "transcripts", "ruleset_version": 8, "reasons": ["webvtt_cues"]}
+                "triage": {"kind": "transcripts", "ruleset_version": solstone_core_import::triage::RULESET_VERSION, "reasons": ["webvtt_cues"]}
             },
             "raw": "../../../imports/id/t.txt",
             "topics": "planning",
@@ -1657,7 +1660,8 @@ fn recognised_structured_exports_import_as_conversations_and_unrecognised_ones_f
             "{name}"
         );
         assert_eq!(
-            saved[0]["imported"]["triage"]["ruleset_version"], 8,
+            saved[0]["imported"]["triage"]["ruleset_version"],
+            solstone_core_import::triage::RULESET_VERSION,
             "{name}"
         );
         assert_eq!(
@@ -1667,7 +1671,7 @@ fn recognised_structured_exports_import_as_conversations_and_unrecognised_ones_f
         );
     }
 
-    // Existing txt imports keep their exact medium at ruleset_version 8.
+    // Existing txt imports keep their exact medium at current RULESET_VERSION.
     let (_tmp, txt_source, txt_day) = setup(
         "zoom.txt",
         "10:07:10 From Mira : Hold it.\n10:07:12 From Theo to Everyone : Holding.\n",
@@ -1679,7 +1683,10 @@ fn recognised_structured_exports_import_as_conversations_and_unrecognised_ones_f
         &RecordingWire::always(wire_down),
     );
     let txt_header = &rows(&txt_created[0].path)[0];
-    assert_eq!(txt_header["imported"]["triage"]["ruleset_version"], 8);
+    assert_eq!(
+        txt_header["imported"]["triage"]["ruleset_version"],
+        solstone_core_import::triage::RULESET_VERSION
+    );
     assert_eq!(imported_text_medium(txt_header, None), Written);
 
     // Non-export structured files and mismatched extensions are refused cleanly with zero writes.

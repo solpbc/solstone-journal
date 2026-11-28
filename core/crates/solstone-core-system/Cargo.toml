@@ -44,6 +44,7 @@ solstone-core-segment.workspace = true
 solstone-core-processing-record = { workspace = true }
 solstone-core-time.workspace = true
 solstone-core-format = { workspace = true }
+solstone-core-doc-extract.workspace = true
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }
 log = { workspace = true }

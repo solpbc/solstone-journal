@@ -534,7 +534,7 @@ fn source_for(filename: &str, content_type: Option<&str>) -> &'static str {
         .to_ascii_lowercase();
     let source = if solstone_core_import_sources::image::is_image_extension(&extension) {
         SavedSource::Image
-    } else if matches!(extension.as_str(), "pdf" | "doc" | "docx") {
+    } else if extension == "pdf" || solstone_core_doc_extract::is_supported_extension(&extension) {
         SavedSource::Document
     } else if content_type
         .is_some_and(|value| value.starts_with("audio/") || value.starts_with("video/"))
@@ -3222,6 +3222,7 @@ pub(crate) fn detect_inprocess_source(
     } else if source_hint.as_deref() == Some("document")
         || source.as_deref() == Some("document")
         || extension == "pdf"
+        || solstone_core_doc_extract::is_supported_extension(&extension)
     {
         Some(solstone_core_import::RegistrySource::Document)
     } else {
@@ -3402,6 +3403,18 @@ fn run_inprocess_import(
     );
 
     let res = match source {
+        solstone_core_import::RegistrySource::Document
+            if !solstone_core_import_sources::document::has_pdf(source_path) =>
+        {
+            let null_worker = solstone_core_import_sources::NullPdfWorker;
+            solstone_core_import_sources::run_native_producer(
+                req,
+                &wire,
+                &null_worker,
+                &solstone_core_import_sources::NullDocumentModelClient,
+                &publication,
+            )
+        }
         solstone_core_import::RegistrySource::Document => {
             let timeout = Duration::from_secs(90);
             #[cfg(not(windows))]
@@ -3640,6 +3653,16 @@ mod tests {
         assert_eq!(source_for("notes.txt", Some("text/plain")), "text");
         assert_eq!(source_for("scan.pdf", Some("application/pdf")), "document");
         assert_eq!(source_for("photo.png", Some("image/png")), "image");
+        for ext in solstone_core_doc_extract::SUPPORTED_EXTENSIONS {
+            let name = format!("report.{ext}");
+            assert_eq!(source_for(&name, None), "document", "{name}");
+            let empty_meta = ImportMetadata::new();
+            assert_eq!(
+                super::detect_inprocess_source(&empty_meta, &name),
+                Some(solstone_core_import::RegistrySource::Document),
+                "{name}"
+            );
+        }
     }
 
     fn save_tmp_entries(root: &std::path::Path) -> Vec<std::path::PathBuf> {

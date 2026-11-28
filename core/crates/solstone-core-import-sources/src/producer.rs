@@ -369,6 +369,7 @@ pub fn run_native_producer(
                         force: request.force,
                         now: SystemTime::now(),
                         owner_timestamp: request.owner_timestamp,
+                        fallback_timestamp: request.fallback_timestamp,
                     };
                     let prep = document::prepare_document_import(&doc_req, pdf_worker, doc_model);
                     if prep.items.is_empty() && !prep.hard_failures.is_empty() {
@@ -692,6 +693,7 @@ pub fn run_native_producer(
                         force: request.force,
                         now: SystemTime::now(),
                         owner_timestamp: request.owner_timestamp,
+                        fallback_timestamp: request.fallback_timestamp,
                     };
                     let may_write = || {
                         read_provenance(request.journal_root, request.import_id)
@@ -796,7 +798,7 @@ pub fn run_native_producer(
                                         .unwrap_or_default(),
                                     stream,
                                     source_type: Some("document".to_owned()),
-                                    source_display: Some("PDF Document".to_owned()),
+                                    source_display: Some("Document".to_owned()),
                                     entries_written: proj
                                         .entries_written
                                         .unwrap_or(import_res.entries_written),

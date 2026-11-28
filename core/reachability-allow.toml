@@ -13,4 +13,3 @@ solstone-core-origin = "repository origin-artifact verify/mirror tooling; no shi
 solstone-core-talents = "talent-layout and run-log migration library; no shipped path calls it (talent-runtime and talent-cli are separate crates)"
 solstone-core-social-memory = "social memory: shares an activity into an atproto space on the owner's own host and keeps received ones apart; its sign-in and share command reaches solstone-core only through the development-only social-memory-dev feature, which no shipped feature list names, until the beta run passes"
 solstone-core-dns = "system-resolver DNS lookups shared by the owner-agent endpoint and social memory; reached only through those two allowlisted crates"
-solstone-core-doc-extract = "pure-Rust Microsoft Office document text extraction library; tested standalone before ingest and import callers depend on it"

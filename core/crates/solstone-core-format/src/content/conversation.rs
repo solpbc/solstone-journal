@@ -750,7 +750,7 @@ fn verdict_medium(verdict: &Value) -> ConversationMedium {
 /// A WhatsApp notice counts only when parsed as a senderless exporter event.
 pub fn verdict_medium_with_notice(verdict: &Value, whatsapp_notice: bool) -> ConversationMedium {
     use ConversationMedium::{Spoken, Unresolved, Written};
-    let Some(version @ 1..=8) = verdict["ruleset_version"].as_u64() else {
+    let Some(version @ 1..=9) = verdict["ruleset_version"].as_u64() else {
         return Unresolved;
     };
     let Some(reasons) = verdict["reasons"].as_array() else {
@@ -1036,7 +1036,7 @@ mod tests {
         sidecar["import_id"] = json!("neighbor");
         assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
         sidecar["import_id"] = json!("first");
-        sidecar["ruleset_version"] = json!(9);
+        sidecar["ruleset_version"] = json!(10);
         assert_eq!(imported_text_medium(&header, Some(&sidecar)), Unresolved);
         assert_eq!(imported_text_medium(&header, None), Unresolved);
     }
@@ -1076,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn raising_ruleset_version_to_8_preserves_existing_text_import_mediums() {
+    fn raising_ruleset_version_to_9_preserves_existing_text_import_mediums() {
         for (reason, expected) in [
             ("zoom_chat", Written),
             ("slack_text", Written),
@@ -1088,7 +1088,7 @@ mod tests {
             ("otter_export", Spoken),
             ("macwhisper_stacked", Spoken),
         ] {
-            for version in [7, 8] {
+            for version in [7, 8, 9] {
                 let header = json!({"imported":{"id":"one","triage":{"ruleset_version":version,"kind":"transcripts","reasons":[reason]}}});
                 assert_eq!(
                     imported_text_medium(&header, None),
@@ -1096,6 +1096,17 @@ mod tests {
                     "{reason}@v{version}"
                 );
             }
+        }
+        for (reason, expected) in [
+            ("macwhisper_json", Spoken),
+            ("podcast_transcript_json", Spoken),
+            ("fireflies_csv", Spoken),
+            ("telegram_json", Written),
+            ("telegram_html", Written),
+            ("slack_json", Written),
+        ] {
+            let header = json!({"imported":{"id":"one","triage":{"ruleset_version":9,"kind":"transcripts","reasons":[reason]}}});
+            assert_eq!(imported_text_medium(&header, None), expected, "{reason}@v9");
         }
     }
 

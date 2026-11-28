@@ -19,14 +19,34 @@ mod sniff;
 #[cfg(test)]
 mod tests;
 
+use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
 use crate::sniff::SniffedContainer;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &[
+/// All lowercase file extensions (without leading dots) accepted by this crate.
+pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "docx", "docm", "xlsx", "xlsm", "xlsb", "pptx", "pptm", "ppsx", "doc", "xls", "ppt",
 ];
+
+/// Whether `ext` (with or without a leading dot, case-insensitive) is a
+/// document extension supported by this crate.
+#[must_use]
+pub fn is_supported_extension(ext: &str) -> bool {
+    DocumentFormat::from_extension(ext).is_some()
+}
+
+/// Fast, size-independent container-marker check for triage classification.
+///
+/// Inspects ZIP central-directory entry names or MS-CFB top-level directory
+/// names without decompressing payload streams or enforcing output/part-size
+/// limits, so oversized or bomb Office files still classify as documents
+/// rather than falling through to plain-text notes.
+#[must_use]
+pub fn is_supported_container(bytes: &[u8]) -> bool {
+    sniff::is_supported_container(bytes)
+}
 
 /// Document formats supported by this extractor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -94,6 +114,12 @@ impl DocumentFormat {
     }
 }
 
+impl fmt::Display for DocumentFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.extension())
+    }
+}
+
 /// Resource bounds enforced for a single document extraction.
 ///
 /// Every field on this struct is actively enforced against the input bytes,
@@ -151,6 +177,20 @@ impl ExtractLimits {
             max_memory_bytes: 24 * 1024 * 1024,
             max_expanded_text_chars: 1_500_000,
             max_output_chars: 256_000,
+        }
+    }
+
+    /// Default bounds for the compilation target (`mobile()` on iOS/Android,
+    /// `desktop()` elsewhere).
+    #[must_use]
+    pub const fn for_current_platform() -> Self {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            Self::mobile()
+        }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            Self::desktop()
         }
     }
 }

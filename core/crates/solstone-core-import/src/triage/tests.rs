@@ -20,7 +20,7 @@ fn expected(name: &str, bytes: impl AsRef<[u8]>, kind: Kind, reasons: &[&str]) {
     let found = verdict(name, bytes.as_ref());
     assert_eq!(found.kind, kind, "{name}: {:?}", found.reasons);
     assert_eq!(found.reasons, reasons, "{name}");
-    assert_eq!(found.ruleset_version, 8);
+    assert_eq!(found.ruleset_version, RULESET_VERSION);
     let shuffled = RULES
         .iter()
         .rev()
@@ -455,6 +455,131 @@ fn formats_bytes_take_precedence_over_names() {
 fn container_members_identify_office_bytes_without_a_docx_extension() {
     let office = include_bytes!("../../../../../tests/fixtures/triage-generic-office.zip");
     expected("attachment", office, Kind::Documents, &["document_format"]);
+
+    // Minimal uncompressed stored-ZIP helper so triage tests cover XLSB and
+    // negative non-Office ZIPs without extra dev-dependencies.
+    fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut local = Vec::new();
+        let mut central = Vec::new();
+        for (name, data) in entries {
+            let offset = local.len() as u32;
+            let name_bytes = name.as_bytes();
+            let size = data.len() as u32;
+            // Local file header
+            local.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+            local.extend_from_slice(&20u16.to_le_bytes()); // version needed
+            local.extend_from_slice(&0u16.to_le_bytes()); // flags
+            local.extend_from_slice(&0u16.to_le_bytes()); // method: stored
+            local.extend_from_slice(&0u16.to_le_bytes()); // mod time
+            local.extend_from_slice(&0u16.to_le_bytes()); // mod date
+            local.extend_from_slice(&0u32.to_le_bytes()); // crc32 (unused by name scan)
+            local.extend_from_slice(&size.to_le_bytes());
+            local.extend_from_slice(&size.to_le_bytes());
+            local.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+            local.extend_from_slice(&0u16.to_le_bytes());
+            local.extend_from_slice(name_bytes);
+            local.extend_from_slice(data);
+
+            // Central directory header
+            central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u32.to_le_bytes());
+            central.extend_from_slice(&size.to_le_bytes());
+            central.extend_from_slice(&size.to_le_bytes());
+            central.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u32.to_le_bytes());
+            central.extend_from_slice(&offset.to_le_bytes());
+            central.extend_from_slice(name_bytes);
+        }
+        let cd_offset = local.len() as u32;
+        let cd_size = central.len() as u32;
+        let count = entries.len() as u16;
+        let mut out = local;
+        out.extend_from_slice(&central);
+        // EOCD
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&count.to_le_bytes());
+        out.extend_from_slice(&count.to_le_bytes());
+        out.extend_from_slice(&cd_size.to_le_bytes());
+        out.extend_from_slice(&cd_offset.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out
+    }
+
+    // XLSB (xl/workbook.bin) and encrypted OOXML CFB classify as Documents unhinted.
+    let xlsb = stored_zip(&[("xl/workbook.bin", b"\x00\x01\x02")]);
+    expected(
+        "workbook.xlsb",
+        &xlsb,
+        Kind::Documents,
+        &["document_format"],
+    );
+
+    // Minimal MS-CFB v3 holding EncryptionInfo + EncryptedPackage.
+    let mut enc_cfb = vec![0u8; 512 * 3];
+    enc_cfb[0..8].copy_from_slice(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+    enc_cfb[0x1A..0x1C].copy_from_slice(&3u16.to_le_bytes());
+    enc_cfb[0x1E..0x20].copy_from_slice(&9u16.to_le_bytes());
+    enc_cfb[0x2C..0x30].copy_from_slice(&1u32.to_le_bytes());
+    enc_cfb[0x30..0x34].copy_from_slice(&1u32.to_le_bytes());
+    enc_cfb[0x44..0x48].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    enc_cfb[0x4C..0x50].copy_from_slice(&0u32.to_le_bytes());
+    for i in 1..109 {
+        enc_cfb[0x4C + i * 4..0x50 + i * 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    }
+    enc_cfb[512..516].copy_from_slice(&0xFFFF_FFFDu32.to_le_bytes());
+    enc_cfb[516..520].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    for i in 2..128 {
+        enc_cfb[512 + i * 4..512 + i * 4 + 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    }
+    let write_entry = |buf: &mut [u8], name: &str, kind: u8, right: u32, child: u32| {
+        let units: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        for (i, u) in units.iter().enumerate() {
+            buf[i * 2..i * 2 + 2].copy_from_slice(&u.to_le_bytes());
+        }
+        buf[0x40..0x42].copy_from_slice(&((units.len() * 2) as u16).to_le_bytes());
+        buf[0x42] = kind;
+        buf[0x44..0x48].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        buf[0x48..0x4C].copy_from_slice(&right.to_le_bytes());
+        buf[0x4C..0x50].copy_from_slice(&child.to_le_bytes());
+    };
+    write_entry(&mut enc_cfb[1024..1152], "Root Entry", 5, 0xFFFF_FFFF, 1);
+    write_entry(
+        &mut enc_cfb[1152..1280],
+        "EncryptionInfo",
+        2,
+        2,
+        0xFFFF_FFFF,
+    );
+    write_entry(
+        &mut enc_cfb[1280..1408],
+        "EncryptedPackage",
+        2,
+        0xFFFF_FFFF,
+        0xFFFF_FFFF,
+    );
+    expected(
+        "secret.docx",
+        &enc_cfb,
+        Kind::Documents,
+        &["document_format"],
+    );
+
+    // Negative twin: non-Office ZIP must NOT classify as Documents.
+    let plain_zip = stored_zip(&[("conversations.json", b"[]")]);
+    let found = verdict("export.zip", &plain_zip);
+    assert_ne!(found.kind, Kind::Documents);
 }
 
 #[test]

@@ -262,6 +262,7 @@ fn pdf_items(source: &Path) -> u64 {
             now: SystemTime::UNIX_EPOCH,
             zone: TimeZone::UTC,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &NullPdfWorker,
     )

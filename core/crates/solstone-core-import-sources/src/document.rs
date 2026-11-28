@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native PDF document import source.
+//! Native document import source (PDF and Microsoft Office documents).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
@@ -25,7 +25,9 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, ZonedDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use solstone_core_depict::resize_for_vlm;
+use solstone_core_doc_extract::{ExtractError, ExtractLimits, ExtractOutcome, ExtractedDocument};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GenerateSessionAdapter,
     RefusalReason,
@@ -184,6 +186,36 @@ pub trait PdfWorker {
     }
 
     fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure>;
+}
+
+/// PDF worker stub that defers an unavailability error until a PDF is actually
+/// prepared or executed, allowing pure-Rust document formats to run without a
+/// PDF runtime installed.
+pub struct UnavailablePdfWorker {
+    reason: String,
+}
+
+impl UnavailablePdfWorker {
+    #[must_use]
+    pub fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+        }
+    }
+}
+
+impl PdfWorker for UnavailablePdfWorker {
+    fn prepare(&self) -> Result<(), String> {
+        Err(self.reason.clone())
+    }
+
+    fn execute(&self, _request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
+        Err(WorkerFailure::Process {
+            exit_code: Some(1),
+            error: "PDF worker unavailable".to_owned(),
+            detail: Some(self.reason.clone()),
+        })
+    }
 }
 
 /// Runtime `solstone-core-pdf` worker. The owning executable resolves its path.
@@ -1108,6 +1140,7 @@ pub struct DocumentPreviewRequest<'a> {
     /// The owner zone the preview's days are read in.
     pub zone: TimeZone,
     pub owner_timestamp: Option<&'a str>,
+    pub fallback_timestamp: Option<&'a str>,
 }
 
 pub struct DocumentImportRequest<'a> {
@@ -1120,6 +1153,7 @@ pub struct DocumentImportRequest<'a> {
     pub force: bool,
     pub now: SystemTime,
     pub owner_timestamp: Option<&'a str>,
+    pub fallback_timestamp: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1134,6 +1168,14 @@ pub enum DocumentFailure {
         detail: String,
     },
     PasswordRequired,
+    EncryptedDocument,
+    EmptyDocument,
+    LimitExceeded {
+        detail: String,
+    },
+    UnreadableDocument {
+        detail: String,
+    },
     Corrupt {
         detail: String,
     },
@@ -1161,6 +1203,19 @@ impl fmt::Display for DocumentFailure {
                 write!(formatter, "PDF import configuration error ({detail})")
             }
             Self::PasswordRequired => formatter.write_str("encrypted PDF requires a password"),
+            Self::EncryptedDocument => {
+                formatter.write_str("password-protected document cannot be imported")
+            }
+            Self::EmptyDocument => formatter.write_str("document contains no extractable text"),
+            Self::LimitExceeded { detail } => {
+                write!(
+                    formatter,
+                    "document exceeds size or safety limits ({detail})"
+                )
+            }
+            Self::UnreadableDocument { detail } => {
+                write!(formatter, "corrupt or unreadable document ({detail})")
+            }
             Self::Corrupt { detail } => write!(formatter, "corrupt or unreadable PDF ({detail})"),
             Self::RenderIo { detail } => write!(formatter, "PDF render output failed ({detail})"),
             Self::TimedOut { timeout } => write!(
@@ -1168,21 +1223,30 @@ impl fmt::Display for DocumentFailure {
                 "PDF worker timed out after {}s",
                 timeout.as_secs_f64()
             ),
-            Self::Cancelled => formatter.write_str("PDF extraction cancelled"),
+            Self::Cancelled => formatter.write_str("document extraction cancelled"),
         }
     }
 }
 
-/// Whether a path is a PDF file or a directory containing one.
+/// Whether a path is a supported document file or a directory containing one.
 #[must_use]
 pub fn detect(path: &Path) -> bool {
-    !find_pdfs(path).is_empty()
+    !find_documents(path).is_empty()
+}
+
+/// Whether `path` is a PDF file or a directory containing at least one PDF.
+///
+/// Callers use this to avoid preparing PDFium or a vision model when importing
+/// pure-Rust document formats such as Microsoft Office files.
+#[must_use]
+pub fn has_pdf(path: &Path) -> bool {
+    find_documents(path).iter().any(|entry| is_pdf(entry))
 }
 
 pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> ImportPreview {
     let locale = solstone_core_cli_copy::cli_locale();
-    let pdfs = find_pdfs(request.source);
-    if pdfs.is_empty() {
+    let docs = find_documents(request.source);
+    if docs.is_empty() {
         return ImportPreview {
             date_range: (String::new(), String::new()),
             item_count: 0,
@@ -1195,31 +1259,53 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
         };
     }
     let single_file = !request.source.is_dir();
+    let limits = ExtractLimits::for_current_platform();
     let mut dates = Vec::new();
     let mut page_count = 0usize;
     let mut failures = Vec::new();
-    for source in &pdfs {
-        match worker.execute(&worker_request(
-            PdfCommand::Inspect,
-            source,
-            request.password,
-            None,
-        )) {
-            Ok(payload) => {
-                dates.push(
-                    claim_timestamp(
-                        &payload,
-                        source,
-                        request.now,
-                        &request.zone,
-                        request.owner_timestamp,
-                        single_file,
-                    )
-                    .timestamp,
-                );
-                page_count += payload.page_count;
+    for source in &docs {
+        if is_pdf(source) {
+            match worker.execute(&worker_request(
+                PdfCommand::Inspect,
+                source,
+                request.password,
+                None,
+            )) {
+                Ok(payload) => {
+                    dates.push(
+                        claim_timestamp(
+                            &payload,
+                            source,
+                            request.now,
+                            &request.zone,
+                            request.owner_timestamp,
+                            request.fallback_timestamp,
+                            single_file,
+                        )
+                        .timestamp,
+                    );
+                    page_count += payload.page_count;
+                }
+                Err(failure) => failures.push(owner_message(source, &failure)),
             }
-            Err(failure) => failures.push(owner_message(source, &failure)),
+        } else {
+            match extract_office_file(source, &limits) {
+                Ok(extracted) => {
+                    dates.push(
+                        claim_timestamp_extracted(
+                            source,
+                            extracted.read.modified,
+                            request.now,
+                            &request.zone,
+                            request.owner_timestamp,
+                            request.fallback_timestamp,
+                            single_file,
+                        )
+                        .timestamp,
+                    );
+                }
+                Err(failure) => failures.push(format!("{}: {failure}", display_name(source))),
+            }
         }
     }
     let mut days = dates
@@ -1230,7 +1316,7 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
     let documents = crate::save::cardinal_count(
         locale,
         "journal.cli.importer.count.pdf.document",
-        pdfs.len() as u64,
+        docs.len() as u64,
     );
     let pages = crate::save::cardinal_count(
         locale,
@@ -1262,13 +1348,13 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
             (Some(first), Some(last)) => (first.clone(), last.clone()),
             _ => (String::new(), String::new()),
         },
-        item_count: u64::try_from(pdfs.len()).expect("PDF count fits u64"),
+        item_count: u64::try_from(docs.len()).expect("document count fits u64"),
         entity_count: 0,
         summary,
     }
 }
 
-/// Destination-aware PDF plan. The same extraction and collision rules run at publication.
+/// Destination-aware document plan. The same extraction and collision rules run at publication.
 pub fn preview_size(
     request: DocumentPreviewRequest<'_>,
     journal: &Path,
@@ -1276,46 +1362,71 @@ pub fn preview_size(
     worker: &dyn PdfWorker,
 ) -> Result<solstone_core_import::size::ImportSize, String> {
     validate_owner_time(request.source, request.owner_timestamp, &request.zone)?;
-    let pdfs = find_pdfs(request.source);
-    if pdfs.is_empty() {
-        return Err("no PDF documents found".to_owned());
+    let docs = find_documents(request.source);
+    if docs.is_empty() {
+        return Err("no documents found".to_owned());
     }
+    let single_file = !request.source.is_dir();
+    let limits = ExtractLimits::for_current_platform();
     let mut result = solstone_core_import::size::ImportSize::default();
     let mut occupied = HashMap::new();
     let mut failures = Vec::new();
-    for source in pdfs {
-        let payload = match worker.execute(&worker_request(
-            PdfCommand::Extract,
-            &source,
-            request.password,
-            None,
-        )) {
-            Ok(payload) => payload,
-            Err(error) => {
-                failures.push(owner_message(&source, &error));
-                result.skipped += 1;
-                continue;
-            }
-        };
-        let source_hash = hash_source(&source).map_err(|error| error.to_string())?;
-        let hash = if payload.sha256.is_empty() {
-            source_hash.as_str()
+    for source in docs {
+        let (hash, timestamp) = if is_pdf(&source) {
+            let payload = match worker.execute(&worker_request(
+                PdfCommand::Extract,
+                &source,
+                request.password,
+                None,
+            )) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    failures.push(owner_message(&source, &error));
+                    result.skipped += 1;
+                    continue;
+                }
+            };
+            let source_hash = hash_source(&source).map_err(|error| error.to_string())?;
+            let hash = if payload.sha256.is_empty() {
+                source_hash.into_inner()
+            } else {
+                payload.sha256.clone()
+            };
+            let timestamp = claim_timestamp(
+                &payload,
+                &source,
+                request.now,
+                &request.zone,
+                request.owner_timestamp,
+                request.fallback_timestamp,
+                single_file,
+            );
+            (hash, timestamp)
         } else {
-            &payload.sha256
+            let extracted = match extract_office_file(&source, &limits) {
+                Ok(extracted) => extracted,
+                Err(failure) => {
+                    failures.push(format!("{}: {failure}", display_name(&source)));
+                    result.skipped += 1;
+                    continue;
+                }
+            };
+            let timestamp = claim_timestamp_extracted(
+                &source,
+                extracted.read.modified,
+                request.now,
+                &request.zone,
+                request.owner_timestamp,
+                request.fallback_timestamp,
+                single_file,
+            );
+            (extracted.read.sha256, timestamp)
         };
-        let timestamp = claim_timestamp(
-            &payload,
-            &source,
-            request.now,
-            &request.zone,
-            request.owner_timestamp,
-            !request.source.is_dir(),
-        );
         let claim = allocate_segment(
             journal,
             &request.zone,
             timestamp.timestamp,
-            hash,
+            &hash,
             &mut occupied,
             force,
             false,
@@ -1342,6 +1453,7 @@ pub fn preview_size(
 pub struct PreparedDocumentItem {
     pub input_index: usize,
     pub source: PathBuf,
+    pub original_name: String,
     pub source_hash: String,
     pub container_reference: Option<(String, String)>,
     pub segment_dir: PathBuf,
@@ -1350,6 +1462,8 @@ pub struct PreparedDocumentItem {
     pub page_count: usize,
     pub engine: String,
     pub timestamp_source: String,
+    verified_bytes: Option<Vec<u8>>,
+    source_modified: Option<SystemTime>,
 }
 
 pub struct PreparedDocumentImport {
@@ -1392,8 +1506,8 @@ pub fn prepare_document_import_with_ocr(
             _render_dirs: Vec::new(),
         };
     }
-    let pdfs = find_pdfs(request.source);
-    if pdfs.is_empty() {
+    let docs = find_documents(request.source);
+    if docs.is_empty() {
         return PreparedDocumentImport {
             items: Vec::new(),
             errors: Vec::new(),
@@ -1402,6 +1516,8 @@ pub fn prepare_document_import_with_ocr(
             _render_dirs: Vec::new(),
         };
     }
+    let single_file = !request.source.is_dir();
+    let limits = ExtractLimits::for_current_platform();
     let mut items = Vec::new();
     let mut errors = Vec::new();
     let mut hard_failures = Vec::new();
@@ -1410,12 +1526,121 @@ pub fn prepare_document_import_with_ocr(
     let mut render_dirs = Vec::new();
     let mut occupied = HashMap::new();
 
-    for (input_index, source) in pdfs.iter().enumerate() {
+    for (input_index, source) in docs.iter().enumerate() {
         if !solstone_core_import::work_continues() {
             let message = format!("{}: {}", display_name(source), DocumentFailure::Cancelled);
             errors.push(message.clone());
             hard_failures.push(message);
             break;
+        }
+        let original_name = original_filename_for(source);
+        if !is_pdf(source) {
+            let extracted = match extract_office_file(source, &limits) {
+                Ok(extracted) => extracted,
+                Err(failure) => {
+                    let message = format!("{}: {failure}", display_name(source));
+                    errors.push(message.clone());
+                    hard_failures.push(message);
+                    continue;
+                }
+            };
+            let source_hash = extracted.read.sha256;
+            let timestamp = claim_timestamp_extracted(
+                source,
+                extracted.read.modified,
+                request.now,
+                &zone,
+                request.owner_timestamp,
+                request.fallback_timestamp,
+                single_file,
+            );
+            let mut reserve = |force| {
+                claim_segment(
+                    request.journal_root,
+                    &zone,
+                    timestamp.timestamp,
+                    &source_hash,
+                    &mut occupied,
+                    force,
+                )
+            };
+            let claim = reserve(request.force).and_then(|claim| {
+                if claim.already_imported {
+                    let directory = request
+                        .journal_root
+                        .join("chronicle")
+                        .join(&claim.day)
+                        .join(STREAM)
+                        .join(&claim.segment);
+                    if let Some(reference) = document_source_reference(&directory)
+                        && reference["import_id"].as_str() == Some(request.import_id)
+                        && (request.source.is_dir()
+                            || reference["extraction_complete"].as_bool() == Some(false)
+                            || reference["container_import_id"].as_str() == Some(request.import_id))
+                    {
+                        return reserve(true);
+                    }
+                }
+                Ok(claim)
+            });
+            let claim = match claim {
+                Ok(claim) => claim,
+                Err(error) => {
+                    let message = error.to_string();
+                    errors.push(message.clone());
+                    match error {
+                        DocumentSegmentError::Io { .. } => hard_failures.push(message),
+                        DocumentSegmentError::DayOverflow { .. }
+                        | DocumentSegmentError::Collision { .. } => {
+                            claim_failures.push(message);
+                        }
+                    }
+                    continue;
+                }
+            };
+            if claim.already_imported {
+                errors.push(format!(
+                    "{}: skipped (already imported; use --force to regenerate)",
+                    display_name(source)
+                ));
+                continue;
+            }
+            let segment_dir = request
+                .journal_root
+                .join("chronicle")
+                .join(&claim.day)
+                .join(STREAM)
+                .join(&claim.segment);
+            let prepared = render_extracted_document(
+                source,
+                &extracted.doc,
+                &timestamp,
+                claim.timestamp,
+                &zone,
+            );
+            errors.extend(
+                prepared
+                    .warnings
+                    .iter()
+                    .map(|warning| format!("{}: {warning}", display_name(source))),
+            );
+            timestamps.push(claim.timestamp);
+            items.push(PreparedDocumentItem {
+                input_index,
+                source: source.clone(),
+                original_name,
+                source_hash,
+                container_reference: None,
+                segment_dir,
+                prepared,
+                claim,
+                page_count: 0,
+                engine: "doc-extract".to_owned(),
+                timestamp_source: timestamp.source.to_string(),
+                verified_bytes: Some(extracted.read.bytes),
+                source_modified: extracted.read.modified,
+            });
+            continue;
         }
         let first = match worker.execute(&worker_request(
             PdfCommand::Extract,
@@ -1459,7 +1684,8 @@ pub fn prepare_document_import_with_ocr(
             request.now,
             &zone,
             request.owner_timestamp,
-            !request.source.is_dir(),
+            request.fallback_timestamp,
+            single_file,
         );
         let mut reserve = |force| {
             claim_segment(
@@ -1598,6 +1824,7 @@ pub fn prepare_document_import_with_ocr(
         items.push(PreparedDocumentItem {
             input_index,
             source: source.clone(),
+            original_name,
             source_hash,
             container_reference: None,
             segment_dir,
@@ -1606,6 +1833,8 @@ pub fn prepare_document_import_with_ocr(
             page_count: first.page_count,
             engine: first.engine,
             timestamp_source: timestamp.source.to_string(),
+            verified_bytes: None,
+            source_modified: None,
         });
     }
     if items.is_empty() {
@@ -1668,7 +1897,7 @@ pub fn install_and_publish_document(
         && prepared_import.hard_failures.is_empty()
         && prepared_import.errors.is_empty()
     {
-        return empty_result("No PDF documents found to import");
+        return empty_result("No documents found to import");
     }
     let mut files_created = Vec::new();
     let mut errors = prepared_import.errors.clone();
@@ -1871,29 +2100,175 @@ pub(crate) fn worker_request(
     }
 }
 
-fn find_pdfs(path: &Path) -> Vec<PathBuf> {
-    if path.is_file() {
-        return if is_pdf(path) {
+fn is_regular_non_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .is_ok_and(|metadata| !metadata.file_type().is_symlink() && metadata.is_file())
+}
+
+fn find_documents(path: &Path) -> Vec<PathBuf> {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return Vec::new();
+    };
+    if meta.file_type().is_symlink() {
+        return Vec::new();
+    }
+    if meta.is_file() {
+        return if is_supported_document(path) {
             vec![path.to_path_buf()]
         } else {
             Vec::new()
         };
     }
+    if !meta.is_dir() {
+        return Vec::new();
+    }
     let Ok(entries) = fs::read_dir(path) else {
         return Vec::new();
     };
-    let mut pdfs = entries
+    let mut docs = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|entry| entry.is_file() && is_pdf(entry))
+        .filter(|entry| is_regular_non_symlink(entry) && is_supported_document(entry))
         .collect::<Vec<_>>();
-    pdfs.sort();
-    pdfs
+    docs.sort();
+    docs
 }
 
 fn is_pdf(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+}
+
+fn is_extracted_document(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(solstone_core_doc_extract::is_supported_extension)
+}
+
+fn is_supported_document(path: &Path) -> bool {
+    is_pdf(path) || is_extracted_document(path)
+}
+
+fn original_filename_for(path: &Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|ext| ext == "pdf" || solstone_core_doc_extract::is_supported_extension(ext));
+    match ext {
+        Some(ext) => format!("original.{ext}"),
+        None => ORIGINAL.to_owned(),
+    }
+}
+
+fn is_supported_original_name(name: &str) -> bool {
+    let Some(ext) = name.strip_prefix("original.") else {
+        return false;
+    };
+    !ext.is_empty()
+        && !ext.contains('.')
+        && (ext.eq_ignore_ascii_case("pdf")
+            || solstone_core_doc_extract::is_supported_extension(ext))
+}
+
+struct ReadDocumentBytes {
+    bytes: Vec<u8>,
+    sha256: String,
+    modified: Option<SystemTime>,
+}
+
+struct ExtractedOfficeFile {
+    read: ReadDocumentBytes,
+    doc: ExtractedDocument,
+}
+
+fn read_bounded_document_bytes(
+    path: &Path,
+    max_bytes: u64,
+) -> Result<ReadDocumentBytes, DocumentFailure> {
+    let link_meta =
+        fs::symlink_metadata(path).map_err(|error| DocumentFailure::UnreadableDocument {
+            detail: collapse_line(&error.to_string()),
+        })?;
+    if link_meta.file_type().is_symlink() || !link_meta.is_file() {
+        return Err(DocumentFailure::UnreadableDocument {
+            detail: "document source must be a regular file".to_owned(),
+        });
+    }
+    let file = fs::File::open(path).map_err(|error| DocumentFailure::UnreadableDocument {
+        detail: collapse_line(&error.to_string()),
+    })?;
+    let fd_meta = file
+        .metadata()
+        .map_err(|error| DocumentFailure::UnreadableDocument {
+            detail: collapse_line(&error.to_string()),
+        })?;
+    if !fd_meta.is_file() {
+        return Err(DocumentFailure::UnreadableDocument {
+            detail: "document source is not a regular file".to_owned(),
+        });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if link_meta.dev() != fd_meta.dev() || link_meta.ino() != fd_meta.ino() {
+            return Err(DocumentFailure::UnreadableDocument {
+                detail: "document source changed during open".to_owned(),
+            });
+        }
+    }
+    if fd_meta.len() > max_bytes {
+        return Err(DocumentFailure::LimitExceeded {
+            detail: format!(
+                "input size {} bytes exceeds limit of {} bytes",
+                fd_meta.len(),
+                max_bytes
+            ),
+        });
+    }
+    let modified = fd_meta.modified().ok();
+    let mut bytes =
+        Vec::with_capacity(usize::try_from(fd_meta.len()).unwrap_or(0).min(1024 * 1024));
+    file.take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| DocumentFailure::UnreadableDocument {
+            detail: collapse_line(&error.to_string()),
+        })?;
+    if (bytes.len() as u64) > max_bytes {
+        return Err(DocumentFailure::LimitExceeded {
+            detail: format!("input exceeds limit of {max_bytes} bytes"),
+        });
+    }
+    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    Ok(ReadDocumentBytes {
+        bytes,
+        sha256,
+        modified,
+    })
+}
+
+fn extract_office_file(
+    path: &Path,
+    limits: &ExtractLimits,
+) -> Result<ExtractedOfficeFile, DocumentFailure> {
+    let read = read_bounded_document_bytes(path, limits.max_input_bytes)?;
+    let hint = path.file_name().and_then(|name| name.to_str());
+    match solstone_core_doc_extract::extract_bytes(&read.bytes, hint, limits) {
+        Ok(ExtractOutcome::Extracted(doc)) => Ok(ExtractedOfficeFile { read, doc }),
+        Ok(ExtractOutcome::Encrypted) => Err(DocumentFailure::EncryptedDocument),
+        Ok(ExtractOutcome::Empty { .. }) => Err(DocumentFailure::EmptyDocument),
+        Ok(ExtractOutcome::Unsupported) => Err(DocumentFailure::UnreadableDocument {
+            detail: "unsupported document format".to_owned(),
+        }),
+        Err(ExtractError::LimitExceeded(detail)) => Err(DocumentFailure::LimitExceeded {
+            detail: collapse_line(&detail),
+        }),
+        Err(ExtractError::Invalid(detail) | ExtractError::Internal(detail)) => {
+            Err(DocumentFailure::UnreadableDocument {
+                detail: collapse_line(&detail),
+            })
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1940,6 +2315,7 @@ fn claim_timestamp(
     now: SystemTime,
     zone: &TimeZone,
     owner_timestamp: Option<&str>,
+    fallback_timestamp: Option<&str>,
     single_file: bool,
 ) -> TimestampChoice {
     if single_file
@@ -2002,6 +2378,69 @@ fn claim_timestamp(
         return TimestampChoice {
             timestamp,
             source: "file-mtime",
+        };
+    }
+    if single_file
+        && let Some(fallback) = fallback_timestamp
+        && let Ok(ts) = solstone_core_import::validate_timestamp(fallback)
+        && let Some(timestamp) = owner_wall_to_system_time(ts.as_str(), zone)
+    {
+        return TimestampChoice {
+            timestamp,
+            source: "fallback",
+        };
+    }
+    TimestampChoice {
+        timestamp: now,
+        source: "import-time",
+    }
+}
+
+fn claim_timestamp_extracted(
+    source: &Path,
+    modified: Option<SystemTime>,
+    now: SystemTime,
+    zone: &TimeZone,
+    owner_timestamp: Option<&str>,
+    fallback_timestamp: Option<&str>,
+    single_file: bool,
+) -> TimestampChoice {
+    if single_file
+        && let Some(owner) = owner_timestamp
+        && let Ok(ts) = solstone_core_import::validate_timestamp(owner)
+        && let Some(timestamp) = owner_wall_to_system_time(ts.as_str(), zone)
+    {
+        return TimestampChoice {
+            timestamp,
+            source: "owner",
+        };
+    }
+    let filename = source.file_name().and_then(|name| name.to_str());
+    if single_file
+        && let Some(filename_stamp) = solstone_core_import::detect_creation(source, filename, zone)
+        && let Some(timestamp) = owner_wall_to_system_time(filename_stamp.as_str(), zone)
+    {
+        return TimestampChoice {
+            timestamp,
+            source: "filename",
+        };
+    }
+    if let Some(timestamp) = modified
+        && timestamp_in_window(timestamp, now)
+    {
+        return TimestampChoice {
+            timestamp,
+            source: "file-mtime",
+        };
+    }
+    if single_file
+        && let Some(fallback) = fallback_timestamp
+        && let Ok(ts) = solstone_core_import::validate_timestamp(fallback)
+        && let Some(timestamp) = owner_wall_to_system_time(ts.as_str(), zone)
+    {
+        return TimestampChoice {
+            timestamp,
+            source: "fallback",
         };
     }
     TimestampChoice {
@@ -2370,7 +2809,10 @@ fn reusable_original(candidate: &Path, sha256: &str) -> Result<bool, DocumentSeg
             == Some(sha256));
     }
     if originals.len() != 1
-        || originals[0].file_name().and_then(|name| name.to_str()) != Some(ORIGINAL)
+        || !originals[0]
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_supported_original_name)
     {
         return Ok(false);
     }
@@ -2474,15 +2916,24 @@ struct RenderedPage {
     body: RenderedPageBody,
 }
 
+enum DocumentBody {
+    Pdf {
+        engine: Option<String>,
+        page_count: usize,
+        stats: RenderStats,
+        pages: Vec<RenderedPage>,
+    },
+    Extracted {
+        markdown: String,
+    },
+}
+
 struct DocumentTranscriptModel {
     title: String,
-    engine: Option<String>,
-    page_count: usize,
     date: String,
     timestamp_source: String,
-    stats: RenderStats,
     warnings: Vec<String>,
-    pages: Vec<RenderedPage>,
+    body: DocumentBody,
 }
 
 impl DocumentTranscriptModel {
@@ -2498,98 +2949,122 @@ impl DocumentTranscriptModel {
         let mut doc = Document::plain(format!("# {}\n\n", self.title));
         doc.push_imported(Copy::DocumentType);
         doc.push_str("\n");
-        doc.push_imported(Copy::DocumentPages {
-            count: self.page_count,
-        });
-        doc.push_str("\n");
-        doc.push_imported(Copy::DocumentDate {
-            date: self.date.clone(),
-            source: self.timestamp_source.clone(),
-        });
-        doc.push_str("\n");
-        doc.push_imported(Copy::DocumentExtraction {
-            engine: self.engine.clone(),
-            text_layer: self.stats.text_layer_pages,
-            model_extracted: self.stats.model_extracted_pages,
-            unavailable: self.stats.unavailable_pages,
-            pages: self.page_count,
-            image_described: self.stats.image_described_pages,
-            model_calls: self.stats.model_calls,
-        });
-        if !self.warnings.is_empty() {
-            doc.push_str("\n\n");
-            doc.push_imported(Copy::DocumentWorkerWarnings);
-            for warning in &self.warnings {
-                doc.push_str(&format!("\n- {warning}"));
-            }
-        }
-        doc.push_str("\n\n---\n\n");
+        match &self.body {
+            DocumentBody::Pdf {
+                engine,
+                page_count,
+                stats,
+                pages,
+            } => {
+                doc.push_imported(Copy::DocumentPages { count: *page_count });
+                doc.push_str("\n");
+                doc.push_imported(Copy::DocumentDate {
+                    date: self.date.clone(),
+                    source: self.timestamp_source.clone(),
+                });
+                doc.push_str("\n");
+                doc.push_imported(Copy::DocumentExtraction {
+                    engine: engine.clone(),
+                    text_layer: stats.text_layer_pages,
+                    model_extracted: stats.model_extracted_pages,
+                    unavailable: stats.unavailable_pages,
+                    pages: *page_count,
+                    image_described: stats.image_described_pages,
+                    model_calls: stats.model_calls,
+                });
+                if !self.warnings.is_empty() {
+                    doc.push_str("\n\n");
+                    doc.push_imported(Copy::DocumentWorkerWarnings);
+                    for warning in &self.warnings {
+                        doc.push_str(&format!("\n- {warning}"));
+                    }
+                }
+                doc.push_str("\n\n---\n\n");
 
-        for (pos, page) in self.pages.iter().enumerate() {
-            if pos > 0 {
-                doc.push_str("\n\n");
-            }
-            doc.push_imported(Copy::DocumentPageHeading { page: page.index });
-            doc.push_str("\n\n");
-            match &page.body {
-                RenderedPageBody::TextLayer { text, image } => {
-                    doc.push_str(text);
-                    if !text.ends_with('\n') {
-                        doc.push_str("\n");
+                for (pos, page) in pages.iter().enumerate() {
+                    if pos > 0 {
+                        doc.push_str("\n\n");
                     }
-                    if let Some(image) = image {
-                        doc.push_str("\n");
-                        match image {
-                            RenderedPageImage::Described(description) => {
-                                doc.push_imported(Copy::DocumentImageDescription {
-                                    page: page.index,
-                                    keep_raster: keep_rasters,
-                                });
-                                push_quoted_lines(&mut doc, description);
+                    doc.push_imported(Copy::DocumentPageHeading { page: page.index });
+                    doc.push_str("\n\n");
+                    match &page.body {
+                        RenderedPageBody::TextLayer { text, image } => {
+                            doc.push_str(text);
+                            if !text.ends_with('\n') {
+                                doc.push_str("\n");
                             }
-                            RenderedPageImage::Unavailable { reason, has_raster } => {
-                                let raster = if *has_raster {
-                                    if keep_rasters {
-                                        RasterNote::Preserved { page: page.index }
-                                    } else {
-                                        RasterNote::Stripped
+                            if let Some(image) = image {
+                                doc.push_str("\n");
+                                match image {
+                                    RenderedPageImage::Described(description) => {
+                                        doc.push_imported(Copy::DocumentImageDescription {
+                                            page: page.index,
+                                            keep_raster: keep_rasters,
+                                        });
+                                        push_quoted_lines(&mut doc, description);
                                     }
-                                } else {
-                                    RasterNote::NoneProduced
-                                };
-                                doc.push_imported(Copy::DocumentImageDescriptionUnavailable {
-                                    reason: reason.clone(),
-                                    raster,
-                                });
+                                    RenderedPageImage::Unavailable { reason, has_raster } => {
+                                        let raster = if *has_raster {
+                                            if keep_rasters {
+                                                RasterNote::Preserved { page: page.index }
+                                            } else {
+                                                RasterNote::Stripped
+                                            }
+                                        } else {
+                                            RasterNote::NoneProduced
+                                        };
+                                        doc.push_imported(
+                                            Copy::DocumentImageDescriptionUnavailable {
+                                                reason: reason.clone(),
+                                                raster,
+                                            },
+                                        );
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                RenderedPageBody::ModelExtracted(text) => {
-                    doc.push_imported(Copy::DocumentModelExtracted {
-                        page: page.index,
-                        keep_raster: keep_rasters,
-                    });
-                    push_quoted_lines(&mut doc, text);
-                }
-                RenderedPageBody::Unavailable { reason, has_raster } => {
-                    let raster = if *has_raster {
-                        if keep_rasters {
-                            RasterNote::Preserved { page: page.index }
-                        } else {
-                            RasterNote::Stripped
+                        RenderedPageBody::ModelExtracted(text) => {
+                            doc.push_imported(Copy::DocumentModelExtracted {
+                                page: page.index,
+                                keep_raster: keep_rasters,
+                            });
+                            push_quoted_lines(&mut doc, text);
                         }
-                    } else {
-                        RasterNote::NoneProduced
-                    };
-                    doc.push_imported(Copy::DocumentPageTextUnavailable {
-                        reason: reason.clone(),
-                        raster,
-                    });
+                        RenderedPageBody::Unavailable { reason, has_raster } => {
+                            let raster = if *has_raster {
+                                if keep_rasters {
+                                    RasterNote::Preserved { page: page.index }
+                                } else {
+                                    RasterNote::Stripped
+                                }
+                            } else {
+                                RasterNote::NoneProduced
+                            };
+                            doc.push_imported(Copy::DocumentPageTextUnavailable {
+                                reason: reason.clone(),
+                                raster,
+                            });
+                        }
+                    }
+                    let trimmed_len = doc.trim_end_matches('\n').len();
+                    doc.truncate(trimmed_len);
                 }
             }
-            let trimmed_len = doc.trim_end_matches('\n').len();
-            doc.truncate(trimmed_len);
+            DocumentBody::Extracted { markdown } => {
+                doc.push_imported(Copy::DocumentDate {
+                    date: self.date.clone(),
+                    source: self.timestamp_source.clone(),
+                });
+                if !self.warnings.is_empty() {
+                    doc.push_str("\n\n");
+                    doc.push_imported(Copy::DocumentWorkerWarnings);
+                    for warning in &self.warnings {
+                        doc.push_str(&format!("\n- {warning}"));
+                    }
+                }
+                doc.push_str("\n\n---\n\n");
+                doc.push_str(markdown.trim_end());
+            }
         }
         doc.push_str("\n");
         doc
@@ -2667,13 +3142,15 @@ fn render_document(
         .into_owned();
     let doc_model = DocumentTranscriptModel {
         title,
-        engine: (!input.payload.engine.is_empty()).then(|| input.payload.engine.clone()),
-        page_count: input.payload.page_count,
         date: day_for(input.claim_timestamp, input.zone),
         timestamp_source: input.timestamp.source.to_owned(),
-        stats: stats.clone(),
         warnings: input.warnings.to_vec(),
-        pages: rendered_pages,
+        body: DocumentBody::Pdf {
+            engine: (!input.payload.engine.is_empty()).then(|| input.payload.engine.clone()),
+            page_count: input.payload.page_count,
+            stats: stats.clone(),
+            pages: rendered_pages,
+        },
     };
     let transcript = doc_model.build_document(true).into_text();
     PreparedDocument {
@@ -2681,6 +3158,56 @@ fn render_document(
         rasters: input.rasters.clone(),
         warnings: input.warnings.to_vec(),
         stats,
+        doc_model,
+    }
+}
+
+fn sanitize_inline_line(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn render_extracted_document(
+    source: &Path,
+    extracted: &ExtractedDocument,
+    timestamp: &TimestampChoice,
+    claim_timestamp: SystemTime,
+    zone: &TimeZone,
+) -> PreparedDocument {
+    let title = extracted
+        .title
+        .as_deref()
+        .map(sanitize_inline_line)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            sanitize_inline_line(&source.file_stem().unwrap_or_default().to_string_lossy())
+        });
+    let warnings = extracted
+        .warnings
+        .iter()
+        .map(|warning| sanitize_inline_line(warning))
+        .filter(|warning| !warning.is_empty())
+        .collect::<Vec<_>>();
+    let doc_model = DocumentTranscriptModel {
+        title,
+        date: day_for(claim_timestamp, zone),
+        timestamp_source: timestamp.source.to_owned(),
+        warnings: warnings.clone(),
+        body: DocumentBody::Extracted {
+            markdown: extracted.markdown.clone(),
+        },
+    };
+    let transcript = doc_model.build_document(false).into_text();
+    PreparedDocument {
+        transcript,
+        rasters: std::collections::BTreeMap::new(),
+        warnings,
+        stats: RenderStats::default(),
         doc_model,
     }
 }
@@ -2897,7 +3424,11 @@ fn page_failure_reason(
 #[derive(Debug)]
 enum ArtifactInstallError {
     Write(String),
-    StreamMarker { day: String, detail: String },
+    StreamMarker {
+        kind: &'static str,
+        day: String,
+        detail: String,
+    },
 }
 
 impl ArtifactInstallError {
@@ -2910,9 +3441,9 @@ impl fmt::Display for ArtifactInstallError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Write(detail) => formatter.write_str(detail),
-            Self::StreamMarker { day, detail } => write!(
+            Self::StreamMarker { kind, day, detail } => write!(
                 formatter,
-                "original PDF for {day} remains installed, but could not advance its stream marker: {detail}"
+                "{kind} for {day} remains installed, but could not advance its stream marker: {detail}"
             ),
         }
     }
@@ -2930,9 +3461,10 @@ fn install_artifacts(
     let source = &item.source;
     let segment_dir = &item.segment_dir;
     let prepared = &item.prepared;
+    let original_path = segment_dir.join(&item.original_name);
     let claims = solstone_core_segment::output_attempt::OutputClaims::acquire(
         [
-            segment_dir.join(ORIGINAL).with_extension("jsonl"),
+            original_path.with_extension("jsonl"),
             segment_dir.join(TRANSCRIPT).with_extension("jsonl"),
         ],
         solstone_core_journal_io::LockOptions::default(),
@@ -2950,15 +3482,43 @@ fn install_artifacts(
         .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
     drop(commit);
     if keep_original {
-        install_original_pdf(
-            &claims,
-            segment_dir,
-            source,
-            &segment_dir.join(ORIGINAL),
-            journal_root,
-            day,
-            publication,
-        )?;
+        if let Some(bytes) = item.verified_bytes.as_deref() {
+            install_original_bytes(
+                &claims,
+                segment_dir,
+                bytes,
+                item.source_modified,
+                &original_path,
+                journal_root,
+                day,
+                publication,
+            )?;
+        } else {
+            install_original_pdf(
+                &claims,
+                segment_dir,
+                source,
+                &original_path,
+                journal_root,
+                day,
+                publication,
+            )?;
+        }
+        // Clean up any stale sibling `original.<old_ext>` left by an earlier import
+        // of identical bytes under a different extension (e.g. `--force` .docx -> .docm).
+        if let Ok(entries) = fs::read_dir(segment_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                if let Some(name_str) = name.to_str()
+                    && name_str != item.original_name
+                    && is_supported_original_name(name_str)
+                    && fs::symlink_metadata(entry.path())
+                        .is_ok_and(|m| !m.file_type().is_symlink() && m.is_file())
+                {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
     }
     if keep_rasters && !prepared.rasters.is_empty() {
         create_document_artifact_directories(segment_dir, &pages_dir)
@@ -3030,10 +3590,66 @@ fn install_original_pdf(
     publication
         .touch_stream_health_marker(journal_root, day)
         .map_err(|detail| ArtifactInstallError::StreamMarker {
+            kind: "original PDF",
             day: day.to_owned(),
             detail,
         })?;
     set_installed_modified_time(destination, modified).map_err(ArtifactInstallError::Write)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_original_bytes(
+    claims: &solstone_core_segment::output_attempt::OutputClaims,
+    segment: &Path,
+    bytes: &[u8],
+    modified: Option<SystemTime>,
+    destination: &Path,
+    journal_root: &Path,
+    day: &str,
+    publication: &dyn PublicationOperations,
+) -> Result<(), ArtifactInstallError> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| ArtifactInstallError::Write("destination has no parent".to_owned()))?;
+    let admitted_parent = solstone_core_journal_io::JournalRoot::open(parent)
+        .map_err(|error| ArtifactInstallError::Write(error.to_string()))?;
+    let temporary = create_temporary_file(parent, destination.file_name().unwrap_or_default());
+    if let Err(error) = fs::write(&temporary, bytes) {
+        let _ = fs::remove_file(&temporary);
+        return Err(ArtifactInstallError::Write(error.to_string()));
+    }
+    let _commit = match claims.commit(segment) {
+        Ok(commit) => commit,
+        Err(error) => {
+            let _ = fs::remove_file(&temporary);
+            return Err(ArtifactInstallError::Write(error.to_string()));
+        }
+    };
+    if let Err(error) = admitted_parent.revalidate_canonical_binding() {
+        let _ = fs::remove_file(&temporary);
+        return Err(ArtifactInstallError::Write(error.to_string()));
+    }
+    if let Err(error) = install_file(
+        &temporary,
+        destination,
+        AtomicWriteOptions {
+            mode: Some(FILE_MODE),
+        },
+    ) {
+        let _ = fs::remove_file(&temporary);
+        return Err(ArtifactInstallError::Write(error.to_string()));
+    }
+    publication
+        .touch_stream_health_marker(journal_root, day)
+        .map_err(|detail| ArtifactInstallError::StreamMarker {
+            kind: "original document",
+            day: day.to_owned(),
+            detail,
+        })?;
+    if let Some(modified) = modified {
+        set_installed_modified_time(destination, modified).map_err(ArtifactInstallError::Write)?;
+    }
+    Ok(())
 }
 
 fn install_page_raster(

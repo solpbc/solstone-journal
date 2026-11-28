@@ -85,6 +85,7 @@ fn ac1_document_text_layer_imports_verbatim_with_zero_model_calls() {
             now: SystemTime::now(),
             zone: solstone_core_journal_config::owner_zone(tree.journal()),
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         tree.journal(),
         false,
@@ -910,6 +911,7 @@ fn document_rejects_invalid_worker_protocol_before_artifact_writes() {
             force: false,
             now: SystemTime::now(),
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -1003,6 +1005,7 @@ fn two_same_time_pdfs_claim_distinct_segments_and_keep_both_originals() {
             force: false,
             now: when,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -1075,6 +1078,7 @@ fn mixed_batch_keeps_the_installed_sibling_when_the_next_claim_crosses_the_day()
             force: false,
             now: when,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -1144,6 +1148,7 @@ fn document_import_refuses_a_full_probe_and_an_occupied_day_boundary() {
             force: false,
             now: when,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -1187,6 +1192,7 @@ fn document_import_refuses_a_full_probe_and_an_occupied_day_boundary() {
             force: true,
             now: end,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -1253,6 +1259,7 @@ fn run_import<'a>(
             force: false,
             now,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         worker,
         model,
@@ -1692,6 +1699,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             now,
             zone: jiff::tz::TimeZone::UTC,
             owner_timestamp: Some("20260301_153000"),
+            fallback_timestamp: None,
         },
         &worker1,
     );
@@ -1705,6 +1713,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             now,
             zone: jiff::tz::TimeZone::UTC,
             owner_timestamp: Some("20260301_153000"),
+            fallback_timestamp: None,
         },
         tree.journal(),
         false,
@@ -1724,6 +1733,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             force: false,
             now,
             owner_timestamp: Some("20260301_153000"),
+            fallback_timestamp: None,
         },
         &worker1,
         &model,
@@ -1758,6 +1768,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             force: false,
             now,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker2,
         &model,
@@ -1794,6 +1805,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             force: false,
             now,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker3,
         &model,
@@ -1829,6 +1841,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             force: false,
             now,
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker4,
         &model,
@@ -1879,6 +1892,7 @@ fn pdf_twins_timestamp_resolution_ladder_and_directory_boundary() {
             force: false,
             now,
             owner_timestamp: Some("20260301_153000"),
+            fallback_timestamp: None,
         },
         &worker5,
         &model,
@@ -1919,6 +1933,7 @@ fn a_pdf_owner_time_in_a_dst_gap_is_refused_before_extraction_or_writes() {
             now,
             zone: solstone_core_time::zone("America/New_York").unwrap(),
             owner_timestamp: Some("20260308_023000"),
+            fallback_timestamp: None,
         },
         tree.journal(),
         false,
@@ -1936,6 +1951,7 @@ fn a_pdf_owner_time_in_a_dst_gap_is_refused_before_extraction_or_writes() {
             force: false,
             now,
             owner_timestamp: Some("20260308_023000"),
+            fallback_timestamp: None,
         },
         &worker,
         &FakeModel::generated([]),
@@ -1990,6 +2006,7 @@ fn scanned_pdf_import_defaults_to_local_ocr_with_zero_model_calls() {
             force: false,
             now: SystemTime::now(),
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -2037,6 +2054,7 @@ fn wordless_image_page_falls_back_to_model_when_local_ocr_is_empty() {
             force: false,
             now: SystemTime::now(),
             owner_timestamp: None,
+            fallback_timestamp: None,
         },
         &worker,
         &model,
@@ -2126,5 +2144,429 @@ fn extract_pdf_bytes_with_local_ocr_reads_mixed_typed_and_scanned_pages() {
     assert_eq!(
         result.payload.pages[2].text.as_deref(),
         Some("Page 3\nFull scanned receipt body.")
+    );
+}
+
+fn build_test_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
+
+    let mut buf = Cursor::new(Vec::new());
+    {
+        let mut writer = zip::ZipWriter::new(&mut buf);
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for (name, data) in entries {
+            writer.start_file(*name, opts).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    buf.into_inner()
+}
+
+fn build_test_docx(body_xml: &str, title: Option<&str>) -> Vec<u8> {
+    let mut entries: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "[Content_Types].xml",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+</Types>"#
+                .to_vec(),
+        ),
+        (
+            "_rels/.rels",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+</Relationships>"#
+                .to_vec(),
+        ),
+        (
+            "word/document.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>{body_xml}</w:body>
+</w:document>"#
+            )
+            .into_bytes(),
+        ),
+    ];
+    if let Some(title) = title {
+        entries.push((
+            "docProps/core.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <dc:title>{title}</dc:title>
+</cp:coreProperties>"#
+            )
+            .into_bytes(),
+        ));
+    }
+    let refs: Vec<(&str, &[u8])> = entries.iter().map(|(k, v)| (*k, v.as_slice())).collect();
+    build_test_zip(&refs)
+}
+
+fn build_test_encrypted_ooxml() -> Vec<u8> {
+    let mut file = vec![0u8; 512 * 3];
+    file[0..8].copy_from_slice(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+    file[0x1A..0x1C].copy_from_slice(&3u16.to_le_bytes());
+    file[0x1E..0x20].copy_from_slice(&9u16.to_le_bytes());
+    file[0x2C..0x30].copy_from_slice(&1u32.to_le_bytes());
+    file[0x30..0x34].copy_from_slice(&1u32.to_le_bytes());
+    file[0x44..0x48].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    file[0x4C..0x50].copy_from_slice(&0u32.to_le_bytes());
+    for i in 1..109 {
+        file[0x4C + i * 4..0x50 + i * 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    }
+    file[512..516].copy_from_slice(&0xFFFF_FFFDu32.to_le_bytes());
+    file[516..520].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    for i in 2..128 {
+        file[512 + i * 4..512 + i * 4 + 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    }
+    let write_entry = |buf: &mut [u8], name: &str, kind: u8, right: u32, child: u32| {
+        let units: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        for (i, u) in units.iter().enumerate() {
+            buf[i * 2..i * 2 + 2].copy_from_slice(&u.to_le_bytes());
+        }
+        buf[0x40..0x42].copy_from_slice(&((units.len() * 2) as u16).to_le_bytes());
+        buf[0x42] = kind;
+        buf[0x44..0x48].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        buf[0x48..0x4C].copy_from_slice(&right.to_le_bytes());
+        buf[0x4C..0x50].copy_from_slice(&child.to_le_bytes());
+    };
+    write_entry(&mut file[1024..1152], "Root Entry", 5, 0xFFFF_FFFF, 1);
+    write_entry(&mut file[1152..1280], "EncryptionInfo", 2, 2, 0xFFFF_FFFF);
+    write_entry(
+        &mut file[1280..1408],
+        "EncryptedPackage",
+        2,
+        0xFFFF_FFFF,
+        0xFFFF_FFFF,
+    );
+    file
+}
+
+struct PanickingPdfWorker;
+impl PdfWorker for PanickingPdfWorker {
+    fn prepare(&self) -> Result<(), String> {
+        Err("PDF worker unavailable".to_owned())
+    }
+    fn execute(&self, _request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
+        panic!("Office documents must never invoke PdfWorker");
+    }
+}
+
+struct PanickingModel;
+impl DocumentModelClient for PanickingModel {
+    fn prepare(&self) -> Result<(), String> {
+        Err("Model client unavailable".to_owned())
+    }
+    fn execute(&self, _request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        panic!("Office documents must never invoke DocumentModelClient");
+    }
+}
+
+#[test]
+fn office_documents_import_without_pdf_or_model_with_parity_dedupe_and_refusals() {
+    let tree = TestTree::new();
+    let docx_bytes = build_test_docx(
+        r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Project Brief</w:t></w:r></w:p>
+           <w:p><w:r><w:t>Pure Rust extraction works without PDFium.</w:t></w:r></w:p>"#,
+        Some("Project Brief Title"),
+    );
+    let source = tree.pdf("brief.docx", &docx_bytes);
+    // Future-skewed mtime (> 24h ahead of `now`) forces fallback_timestamp path,
+    // proving preview_size and prepare_document_import match coordinates even at
+    // different `now` instants.
+    let now_preview = UNIX_EPOCH + Duration::from_secs(1_776_000_000);
+    let now_import = now_preview + Duration::from_secs(120);
+    File::options()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(now_preview + Duration::from_secs(172_800)))
+        .unwrap();
+
+    assert!(solstone_core_import_sources::document::detect(&source));
+    assert!(!solstone_core_import_sources::document::has_pdf(&source));
+
+    let zone = solstone_core_journal_config::owner_zone(tree.journal());
+    let prev = preview(
+        DocumentPreviewRequest {
+            source: &source,
+            password: None,
+            now: now_preview,
+            zone: zone.clone(),
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_093000"),
+        },
+        &PanickingPdfWorker,
+    );
+    assert_eq!(prev.item_count, 1);
+    assert_eq!(
+        prev.date_range,
+        ("20260410".to_owned(), "20260410".to_owned())
+    );
+
+    let size = preview_size(
+        DocumentPreviewRequest {
+            source: &source,
+            password: None,
+            now: now_preview,
+            zone: zone.clone(),
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_093000"),
+        },
+        tree.journal(),
+        false,
+        &PanickingPdfWorker,
+    )
+    .expect("preview_size succeeds without PDFium");
+    assert_eq!(size.recordings.len(), 1);
+    let planned = size.recordings.first().unwrap();
+    assert_eq!(planned.day, "20260410");
+    assert_eq!(planned.segment, "093000_0");
+
+    let publication = FakePublication::default();
+    let result = import(
+        DocumentImportRequest {
+            source: &source,
+            journal_root: tree.journal(),
+            import_dir: &tree.journal().join("imports/20260410_093000"),
+            import_id: "20260410_093000",
+            revision: None,
+            password: None,
+            force: false,
+            now: now_import,
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_093000"),
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+        &publication,
+    );
+    assert_eq!(result.entries_written, 1, "{:?}", result.errors);
+    let (day, seg) = &result.segments.as_ref().unwrap()[0];
+    assert_eq!(day, &planned.day);
+    assert_eq!(seg, &planned.segment);
+
+    let seg_dir = segment_dir(&tree, &result);
+    assert_eq!(fs::read(seg_dir.join("original.docx")).unwrap(), docx_bytes);
+    // import_trash recognizes original.docx inside the segment just like original.pdf.
+    let things =
+        solstone_core_import::import_trash::import_things(tree.journal(), "20260410_093000")
+            .expect("import_things finds published office import");
+    let uploads = solstone_core_import::import_trash::kept_uploads(tree.journal(), &things);
+    assert_eq!(
+        solstone_core_import::import_trash::kept_originals(tree.journal(), &things) - uploads,
+        1
+    );
+    let transcript = fs::read_to_string(seg_dir.join("document_transcript.md")).unwrap();
+    assert!(transcript.contains("# Project Brief Title"), "{transcript}");
+    assert!(transcript.contains("**Type:** Document"), "{transcript}");
+    assert!(
+        transcript.contains("Pure Rust extraction works without PDFium."),
+        "{transcript}"
+    );
+    assert!(!transcript.contains("**Pages:**"), "{transcript}");
+
+    // Re-importing identical bytes (even renamed to .docm) skips as already_imported.
+    let renamed = tree.pdf("brief-copy.docm", &docx_bytes);
+    File::options()
+        .write(true)
+        .open(&renamed)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(now_preview + Duration::from_secs(172_800)))
+        .unwrap();
+    let dedup = preview_size(
+        DocumentPreviewRequest {
+            source: &renamed,
+            password: None,
+            now: now_import,
+            zone: zone.clone(),
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_093000"),
+        },
+        tree.journal(),
+        false,
+        &PanickingPdfWorker,
+    )
+    .unwrap();
+    assert_eq!(dedup.recordings.len(), 0);
+    assert_eq!(dedup.skipped, 1);
+
+    // keep_original = false writes document_source.json without original.*, and still deduplicates.
+    let no_orig_tree = TestTree::new();
+    let no_orig_src = no_orig_tree.pdf("no-orig.docx", &docx_bytes);
+    File::options()
+        .write(true)
+        .open(&no_orig_src)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(now_preview + Duration::from_secs(172_800)))
+        .unwrap();
+    let no_orig_import_dir = no_orig_tree.journal().join("imports/20260410_094500");
+    fs::create_dir_all(&no_orig_import_dir).unwrap();
+    let mut no_orig_meta = solstone_core_import::ImportMetadata::new();
+    no_orig_meta.insert("source".to_owned(), serde_json::json!("document"));
+    solstone_core_import::originals::record_new_import(&mut no_orig_meta);
+    fs::write(
+        no_orig_import_dir.join("import.json"),
+        serde_json::to_vec(&no_orig_meta).unwrap(),
+    )
+    .unwrap();
+    solstone_core_import::originals::set_preference(no_orig_tree.journal(), "document", false)
+        .unwrap();
+    solstone_core_import::originals::capture_choice(
+        no_orig_tree.journal(),
+        "20260410_094500",
+        "document",
+    )
+    .unwrap();
+    let no_orig_res = import(
+        DocumentImportRequest {
+            source: &no_orig_src,
+            journal_root: no_orig_tree.journal(),
+            import_dir: &no_orig_import_dir,
+            import_id: "20260410_094500",
+            revision: None,
+            password: None,
+            force: false,
+            now: now_import,
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_094500"),
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+        &FakePublication::default(),
+    );
+    assert_eq!(no_orig_res.entries_written, 1, "{:?}", no_orig_res.errors);
+    let no_orig_seg = segment_dir(&no_orig_tree, &no_orig_res);
+    assert!(!no_orig_seg.join("original.docx").exists());
+    assert!(no_orig_seg.join("document_source.json").is_file());
+    let no_orig_dedup = preview_size(
+        DocumentPreviewRequest {
+            source: &no_orig_src,
+            password: None,
+            now: now_import,
+            zone: solstone_core_journal_config::owner_zone(no_orig_tree.journal()),
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_094500"),
+        },
+        no_orig_tree.journal(),
+        false,
+        &PanickingPdfWorker,
+    )
+    .unwrap();
+    assert_eq!(no_orig_dedup.recordings.len(), 0);
+    assert_eq!(no_orig_dedup.skipped, 1);
+
+    // Encrypted and blank Office docs refuse honestly without invoking PDFium.
+    let encrypted = tree.pdf("locked.xlsx", &build_test_encrypted_ooxml());
+    let enc_prep = prepare_document_import(
+        &DocumentImportRequest {
+            source: &encrypted,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "office-enc",
+            revision: None,
+            password: None,
+            force: false,
+            now: now_import,
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_093500"),
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+    );
+    assert!(enc_prep.items.is_empty());
+    assert!(
+        enc_prep
+            .hard_failures
+            .iter()
+            .any(|msg| msg.contains("password-protected document cannot be imported")),
+        "{:?}",
+        enc_prep.hard_failures
+    );
+
+    let blank = tree.pdf("blank.docx", &build_test_docx("", None));
+    let blank_prep = prepare_document_import(
+        &DocumentImportRequest {
+            source: &blank,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "office-blank",
+            revision: None,
+            password: None,
+            force: false,
+            now: now_import,
+            owner_timestamp: None,
+            fallback_timestamp: Some("20260410_093600"),
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+    );
+    assert!(blank_prep.items.is_empty());
+    assert!(
+        blank_prep
+            .hard_failures
+            .iter()
+            .any(|msg| msg.contains("no extractable text")),
+        "{:?}",
+        blank_prep.hard_failures
+    );
+
+    // Mixed directory (PDF + DOCX): has_pdf is true, PDF uses worker, DOCX uses doc-extract.
+    let mixed = tree.root().join("mixed-docs");
+    fs::create_dir_all(&mixed).unwrap();
+    fs::write(mixed.join("a.pdf"), b"%PDF-1.4 mixed").unwrap();
+    fs::write(mixed.join("b.docx"), &docx_bytes).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&source, mixed.join("c-link.docx")).unwrap();
+    assert!(solstone_core_import_sources::document::has_pdf(&mixed));
+    let worker = FakeWorker::new(vec![Ok(payload(vec![page(
+        1,
+        80,
+        0.0,
+        Some("PDF text inside mixed directory with plenty of characters.\n"),
+    )]))]);
+    let mixed_prep = prepare_document_import(
+        &DocumentImportRequest {
+            source: &mixed,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "office-mixed",
+            revision: None,
+            password: None,
+            force: false,
+            now: now_import,
+            owner_timestamp: None,
+            fallback_timestamp: None,
+        },
+        &worker,
+        &PanickingModel,
+    );
+    // Symlinked c-link.docx is ignored; a.pdf and b.docx both prepare cleanly.
+    assert_eq!(mixed_prep.items.len(), 2, "{:?}", mixed_prep.errors);
+    assert_eq!(worker.requests().len(), 1);
+    assert!(
+        mixed_prep
+            .items
+            .iter()
+            .any(|i| i.original_name == "original.pdf")
+    );
+    assert!(
+        mixed_prep
+            .items
+            .iter()
+            .any(|i| i.original_name == "original.docx")
     );
 }

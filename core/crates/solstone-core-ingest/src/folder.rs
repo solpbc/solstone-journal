@@ -828,6 +828,58 @@ pub(crate) fn write_folder(
                             );
                         }
                     }
+                } else if solstone_core_doc_extract::is_supported_extension(&ext)
+                    || solstone_core_doc_extract::is_supported_container(bytes)
+                {
+                    let limits = solstone_core_doc_extract::ExtractLimits::for_current_platform();
+                    match solstone_core_doc_extract::extract_bytes(bytes, Some(basename), &limits) {
+                        Ok(solstone_core_doc_extract::ExtractOutcome::Extracted(doc)) => {
+                            render_extracted_document_markdown(&line.path, &doc)
+                        }
+                        Ok(solstone_core_doc_extract::ExtractOutcome::Encrypted) => {
+                            refused_files.push(RefusedFile {
+                                path: line.path.clone(),
+                                part: Some(part_name.to_owned()),
+                                reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
+                                detail: "document is password-protected and could not be read"
+                                    .to_owned(),
+                            });
+                            continue;
+                        }
+                        Ok(solstone_core_doc_extract::ExtractOutcome::Empty { .. }) => {
+                            refused_files.push(RefusedFile {
+                                path: line.path.clone(),
+                                part: Some(part_name.to_owned()),
+                                reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
+                                detail: "document contains no extractable text".to_owned(),
+                            });
+                            continue;
+                        }
+                        Ok(solstone_core_doc_extract::ExtractOutcome::Unsupported) => {
+                            refused_files.push(RefusedFile {
+                                path: line.path.clone(),
+                                part: Some(part_name.to_owned()),
+                                reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
+                                detail: format!(
+                                    "unsupported document format '.{ext}'; send metadata only"
+                                ),
+                            });
+                            continue;
+                        }
+                        Err(
+                            solstone_core_doc_extract::ExtractError::Invalid(detail)
+                            | solstone_core_doc_extract::ExtractError::LimitExceeded(detail)
+                            | solstone_core_doc_extract::ExtractError::Internal(detail),
+                        ) => {
+                            refused_files.push(RefusedFile {
+                                path: line.path.clone(),
+                                part: Some(part_name.to_owned()),
+                                reason_code: ReasonCode::FolderFileInvalid.as_str().to_owned(),
+                                detail: format!("document could not be read ({detail})"),
+                            });
+                            continue;
+                        }
+                    }
                 } else if matches!(ext.as_str(), "md" | "markdown" | "txt" | "log") {
                     if bytes.contains(&0) {
                         refused_files.push(RefusedFile {
@@ -1641,6 +1693,45 @@ fn render_pdf_markdown(path: &str, payload: &PdfPayload) -> Result<String, Strin
     Ok(out)
 }
 
+fn sanitize_inline_text(raw: &str) -> String {
+    raw.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn render_extracted_document_markdown(
+    path: &str,
+    doc: &solstone_core_doc_extract::ExtractedDocument,
+) -> String {
+    let sanitized_title = doc
+        .title
+        .as_deref()
+        .map(sanitize_inline_text)
+        .filter(|t| !t.is_empty());
+    let sanitized_path = sanitize_inline_text(path);
+    let title = sanitized_title.as_deref().unwrap_or(&sanitized_path);
+    let mut out = format!(
+        "# {title}\n\n**Type:** Document\n**Format:** {}\n**Source:** {sanitized_path}\n",
+        doc.format
+    );
+    if !doc.warnings.is_empty() {
+        out.push_str("\n**Warnings:**\n");
+        for warning in &doc.warnings {
+            let clean = sanitize_inline_text(warning);
+            if !clean.is_empty() {
+                out.push_str(&format!("- {clean}\n"));
+            }
+        }
+    }
+    out.push_str("\n---\n\n");
+    out.push_str(doc.markdown.trim_end());
+    out.push('\n');
+    out
+}
+
 fn load_note(
     journal: &Path,
     folder_id: &str,
@@ -1842,6 +1933,9 @@ fn note_status(message: Message) -> Document {
 /// Published supported-file list for `GET /app/devices/ingest/folder/supported`.
 #[must_use]
 pub fn supported_payload() -> Value {
+    let mut document_extensions: Vec<&'static str> = vec!["pdf"];
+    document_extensions.extend_from_slice(solstone_core_doc_extract::SUPPORTED_EXTENSIONS);
+    document_extensions.extend_from_slice(&["md", "markdown", "txt", "log"]);
     json!({
         "version": 1,
         "ruleset_version": triage::RULESET_VERSION,
@@ -1856,7 +1950,7 @@ pub fn supported_payload() -> Value {
                 "mode": "first_sight_and_net_change"
             },
             "documents": {
-                "extensions": ["pdf", "md", "markdown", "txt", "log"],
+                "extensions": document_extensions,
                 "mode": "each_revision",
                 "thresholds": {
                     "structured_prose_min_words": 1500,
@@ -2166,6 +2260,7 @@ fn classify_estimate_kind(item: &EstimateItem) -> &'static str {
         .unwrap_or_default();
     match ext.as_str() {
         "pdf" => "documents",
+        other if solstone_core_doc_extract::is_supported_extension(other) => "documents",
         "md" | "markdown" | "txt" | "log" => "notes",
         "png" | "jpg" | "jpeg" | "webp" | "heic" | "heif" | "tif" | "tiff" | "gif" | "bmp" => {
             "photos"

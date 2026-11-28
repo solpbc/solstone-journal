@@ -481,6 +481,7 @@ fn oracle_13_one_child_and_same_branches() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let pub_ops = FakePublication;
     let doc_result = import_document(doc_req, &worker, &doc_model, &pub_ops);
@@ -543,6 +544,7 @@ fn oracle_13_one_child_and_same_branches() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let doc_result_oneshot = import_document(
         doc_req_oneshot,
@@ -595,6 +597,7 @@ fn oracle_13_one_child_and_same_branches() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let doc_res_missing = import_document(
         doc_req_missing,
@@ -653,6 +656,7 @@ fn oracle_13_one_child_and_same_branches() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let doc_res_refused = import_document(
         doc_req_refused,
@@ -856,6 +860,7 @@ fn oracle_14_resubmit_once() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let pub_ops = FakePublication;
     let doc_result = import_document(doc_req, &worker, &doc_model, &pub_ops);
@@ -939,6 +944,7 @@ fn oracle_14_resubmit_once() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let doc_res_always =
         import_document(doc_req_always, &worker_always, &doc_model_always, &pub_ops);
@@ -1007,6 +1013,7 @@ fn oracle_14_resubmit_once() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let doc_res_ref = import_document(doc_req_ref, &worker_ref, &doc_model_ref, &pub_ops);
     let doc_reqs_ref_log = read_request_log(&doc_reqs_ref);
@@ -1155,6 +1162,7 @@ fn oracle_15_child_death_respawns_later() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let pub_ops = FakePublication;
     let _ = import_document(doc_req1, &worker1, &doc_model, &pub_ops);
@@ -1194,6 +1202,7 @@ fn oracle_15_child_death_respawns_later() {
         force: false,
         now: SystemTime::now(),
         owner_timestamp: None,
+        fallback_timestamp: None,
     };
     let doc_res2 = import_document(doc_req2, &worker2, &doc_model, &pub_ops);
     assert_eq!(doc_res2.entries_written, 1);

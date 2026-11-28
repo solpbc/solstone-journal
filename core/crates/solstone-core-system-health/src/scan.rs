@@ -838,7 +838,10 @@ fn is_body_content_file(path: &Path) -> bool {
 fn has_pdf_extension(path: &Path) -> bool {
     extension(path)
         .map(|value| value.to_ascii_lowercase())
-        .is_some_and(|value| PDF_EXTENSIONS.contains(&value.as_str()))
+        .is_some_and(|value| {
+            PDF_EXTENSIONS.contains(&value.as_str())
+                || solstone_core_doc_extract::is_supported_extension(&value)
+        })
 }
 
 fn media_kind_for(path: &Path) -> Option<MediaKind> {

@@ -378,6 +378,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi_simd"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3cdb3708a128e559a30fb830e8a77a5022ee6902806925c216658652b452a44"
+dependencies = [
+ "debug_unsafe",
+ "rustversion",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1276,6 +1286,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "debug_unsafe"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eed2c4702fa172d1ce21078faa7c5203e69f5394d48cc436d25928394a867a2"
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,6 +1687,12 @@ dependencies = [
  "regex-automata",
  "regex-syntax",
 ]
+
+[[package]]
+name = "fast-float2"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6e8948ce679d00a02a94739ea185595dca7118ed04feb991127e443bd3d761f"
 
 [[package]]
 name = "fastrand"
@@ -3768,6 +3790,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "office_oxide"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1985d384db629099807a236b6aa07f7cc8f7d0b4e821e02b8aea7175de4e164"
+dependencies = [
+ "atoi_simd",
+ "encoding_rs",
+ "fast-float2",
+ "flate2",
+ "log",
+ "memchr",
+ "quick-xml 0.42.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "zip",
+]
+
+[[package]]
 name = "oid-registry"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4172,7 +4213,7 @@ checksum = "7da1d65da6dd5d1e44199ac0f58712d241c0f439f80adea8924d832384087f85"
 dependencies = [
  "base64 0.22.1",
  "indexmap",
- "quick-xml",
+ "quick-xml 0.41.0",
  "serde",
  "time",
 ]
@@ -4366,6 +4407,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -5446,7 +5497,7 @@ dependencies = [
  "md5",
  "nix 0.30.1",
  "plist",
- "quick-xml",
+ "quick-xml 0.41.0",
  "rustix",
  "serde",
  "serde_json",
@@ -5874,7 +5925,7 @@ dependencies = [
  "flate2",
  "lzma-rs",
  "minisign",
- "quick-xml",
+ "quick-xml 0.41.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5897,6 +5948,15 @@ version = "2.0.93"
 dependencies = [
  "hickory-resolver",
  "ipconfig",
+]
+
+[[package]]
+name = "solstone-core-doc-extract"
+version = "2.0.93"
+dependencies = [
+ "office_oxide",
+ "thiserror 2.0.20",
+ "zip",
 ]
 
 [[package]]
@@ -6178,6 +6238,7 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-doc-extract",
  "solstone-core-email",
  "solstone-core-entity",
  "solstone-core-facets",
@@ -6262,7 +6323,7 @@ dependencies = [
  "jiff 1.0.0",
  "kamadak-exif",
  "log",
- "quick-xml",
+ "quick-xml 0.41.0",
  "regex",
  "rusqlite",
  "serde",
@@ -6271,6 +6332,7 @@ dependencies = [
  "solstone-core-auth-flow",
  "solstone-core-callosum",
  "solstone-core-cli-copy",
+ "solstone-core-doc-extract",
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
@@ -6343,12 +6405,13 @@ dependencies = [
  "jiff 1.0.0",
  "md5",
  "nix 0.30.1",
- "quick-xml",
+ "quick-xml 0.41.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-cli-copy",
  "solstone-core-depict",
+ "solstone-core-doc-extract",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -6380,6 +6443,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-doc-extract",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
@@ -6486,6 +6550,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-doc-extract",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-import",
@@ -7227,7 +7292,7 @@ name = "solstone-core-service-unit"
 version = "2.0.93"
 dependencies = [
  "plist",
- "quick-xml",
+ "quick-xml 0.41.0",
  "serde",
  "serde_json",
  "solstone-core-installation-identity",
@@ -7567,6 +7632,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-cli-copy",
  "solstone-core-distribution",
+ "solstone-core-doc-extract",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-indexer",
@@ -7601,6 +7667,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-cli-copy",
+ "solstone-core-doc-extract",
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",

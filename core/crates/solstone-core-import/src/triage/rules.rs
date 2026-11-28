@@ -21,6 +21,7 @@ pub(super) enum Stage {
 }
 
 pub(super) struct Evidence<'a> {
+    pub bytes: &'a [u8],
     pub format: FileFormat,
     pub lines: &'a [&'a str],
     pub text: &'a str,
@@ -122,8 +123,8 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "document_format",
             Container,
             Documents,
-            "file-format: PDF and office document/container signatures",
-            |e| is_document(e.format)
+            "file-format and container markers: PDF and office document signatures",
+            |e| is_document(e.format) || solstone_core_doc_extract::is_supported_container(e.bytes)
         ),
         rule!(
             20,

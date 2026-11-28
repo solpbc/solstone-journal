@@ -739,7 +739,9 @@ async fn supported_facets_estimate_segments_listing_and_future_day_guard() {
         .filter_map(Value::as_str)
         .collect();
     assert!(doc_exts.contains(&"pdf"));
-    assert!(!doc_exts.contains(&"docx"));
+    for ext in solstone_core_doc_extract::SUPPORTED_EXTENSIONS {
+        assert!(doc_exts.contains(ext), "missing Office ext {ext}");
+    }
     let tr_exts: Vec<&str> = sup["kinds"]["transcripts"]["extensions"]
         .as_array()
         .unwrap()
@@ -1233,4 +1235,328 @@ async fn scanned_and_mixed_folder_pdfs_read_text_via_local_ocr_and_retry_on_ocr_
     .await;
     assert_eq!(fail_status, StatusCode::SERVICE_UNAVAILABLE, "{fail_body}");
     assert_eq!(fail_body["status"], "retryable", "{fail_body}");
+}
+
+fn stored_zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut local = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in entries {
+        let offset = local.len() as u32;
+        let name_bytes = name.as_bytes();
+        let size = data.len() as u32;
+        // Minimal CRC32 (IEEE 802.3) so zip crate accepts stored entries.
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for &b in *data {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if (crc & 1) != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        crc = !crc;
+        local.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        local.extend_from_slice(&20u16.to_le_bytes());
+        local.extend_from_slice(&0u16.to_le_bytes());
+        local.extend_from_slice(&0u16.to_le_bytes());
+        local.extend_from_slice(&0u16.to_le_bytes());
+        local.extend_from_slice(&0u16.to_le_bytes());
+        local.extend_from_slice(&crc.to_le_bytes());
+        local.extend_from_slice(&size.to_le_bytes());
+        local.extend_from_slice(&size.to_le_bytes());
+        local.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        local.extend_from_slice(&0u16.to_le_bytes());
+        local.extend_from_slice(name_bytes);
+        local.extend_from_slice(data);
+
+        central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name_bytes);
+    }
+    let cd_offset = local.len() as u32;
+    let cd_size = central.len() as u32;
+    let count = entries.len() as u16;
+    let mut out = local;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&cd_size.to_le_bytes());
+    out.extend_from_slice(&cd_offset.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out
+}
+
+fn synthetic_docx(body_xml: &str, title: Option<&str>) -> Vec<u8> {
+    let mut entries: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "[Content_Types].xml",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+</Types>"#
+                .to_vec(),
+        ),
+        (
+            "_rels/.rels",
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+</Relationships>"#
+                .to_vec(),
+        ),
+        (
+            "word/document.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>{body_xml}</w:body>
+</w:document>"#
+            )
+            .into_bytes(),
+        ),
+    ];
+    if let Some(title) = title {
+        entries.push((
+            "docProps/core.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <dc:title>{title}</dc:title>
+</cp:coreProperties>"#
+            )
+            .into_bytes(),
+        ));
+    }
+    let refs: Vec<(&str, &[u8])> = entries.iter().map(|(k, v)| (*k, v.as_slice())).collect();
+    stored_zip_bytes(&refs)
+}
+
+fn synthetic_encrypted_ooxml() -> Vec<u8> {
+    let mut file = vec![0u8; 512 * 3];
+    file[0..8].copy_from_slice(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+    file[0x1A..0x1C].copy_from_slice(&3u16.to_le_bytes());
+    file[0x1E..0x20].copy_from_slice(&9u16.to_le_bytes());
+    file[0x2C..0x30].copy_from_slice(&1u32.to_le_bytes());
+    file[0x30..0x34].copy_from_slice(&1u32.to_le_bytes());
+    file[0x44..0x48].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    file[0x4C..0x50].copy_from_slice(&0u32.to_le_bytes());
+    for i in 1..109 {
+        file[0x4C + i * 4..0x50 + i * 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    }
+    file[512..516].copy_from_slice(&0xFFFF_FFFDu32.to_le_bytes());
+    file[516..520].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    for i in 2..128 {
+        file[512 + i * 4..512 + i * 4 + 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    }
+    let write_entry = |buf: &mut [u8], name: &str, kind: u8, right: u32, child: u32| {
+        let units: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        for (i, u) in units.iter().enumerate() {
+            buf[i * 2..i * 2 + 2].copy_from_slice(&u.to_le_bytes());
+        }
+        buf[0x40..0x42].copy_from_slice(&((units.len() * 2) as u16).to_le_bytes());
+        buf[0x42] = kind;
+        buf[0x44..0x48].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        buf[0x48..0x4C].copy_from_slice(&right.to_le_bytes());
+        buf[0x4C..0x50].copy_from_slice(&child.to_le_bytes());
+    };
+    write_entry(&mut file[1024..1152], "Root Entry", 5, 0xFFFF_FFFF, 1);
+    write_entry(&mut file[1152..1280], "EncryptionInfo", 2, 2, 0xFFFF_FFFF);
+    write_entry(
+        &mut file[1280..1408],
+        "EncryptedPackage",
+        2,
+        0xFFFF_FFFF,
+        0xFFFF_FFFF,
+    );
+    file
+}
+
+#[tokio::test]
+async fn office_documents_land_in_folder_ingest_dedupe_estimate_and_isolate_failures() {
+    let dir = journal();
+    let notifier = Arc::new(RecordingNotifier::default());
+    // Unavailable PDF reader proves Office folder ingest never invokes PDFium.
+    let app = test_app(dir.path(), notifier.clone(), FakePdfReader::unavailable());
+
+    let valid_docx = synthetic_docx(
+        r#"<w:p><w:r><w:t>Board meeting agenda and quarterly budget.</w:t></w:r></w:p>"#,
+        Some("Q4 Agenda"),
+    );
+    let empty_docx = synthetic_docx("", None);
+    let encrypted_xlsx = synthetic_encrypted_ooxml();
+
+    let folder_meta = json!({
+        "v": 1,
+        "id": "office-folder",
+        "name": "Work Docs",
+        "facet": "work",
+        "kinds": ["documents"]
+    });
+
+    // 1. Mixed window (unhinted): valid DOCX lands while encrypted XLSX and empty DOCX
+    //    are refused per-file without failing the upload or returning 503.
+    let (status, body) = post_folder(
+        &app,
+        "20261127",
+        "100000_300",
+        folder_meta.clone(),
+        &[
+            json!({
+                "v": 1,
+                "event": "added",
+                "path": "reports/agenda.docx",
+                "at": "2026-11-27T10:01:00-07:00",
+                "observed_at": "2026-11-27T10:01:02-07:00",
+                "content_hash": sha256(&valid_docx),
+                "part": "c_01.docx"
+            }),
+            json!({
+                "v": 1,
+                "event": "added",
+                "path": "reports/locked.xlsx",
+                "at": "2026-11-27T10:02:00-07:00",
+                "observed_at": "2026-11-27T10:02:02-07:00",
+                "content_hash": sha256(&encrypted_xlsx),
+                "part": "c_02.xlsx"
+            }),
+            json!({
+                "v": 1,
+                "event": "added",
+                "path": "reports/blank.docx",
+                "at": "2026-11-27T10:03:00-07:00",
+                "observed_at": "2026-11-27T10:03:02-07:00",
+                "content_hash": sha256(&empty_docx),
+                "part": "c_03.docx"
+            }),
+        ],
+        &[
+            ("c_01.docx", valid_docx.as_slice()),
+            ("c_02.xlsx", encrypted_xlsx.as_slice()),
+            ("c_03.docx", empty_docx.as_slice()),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "ok", "{body}");
+    let refused = body["refused_files"].as_array().expect("refused_files");
+    assert_eq!(refused.len(), 2, "{body}");
+    assert!(refused.iter().any(|r| {
+        r["path"] == "reports/locked.xlsx"
+            && r["detail"]
+                .as_str()
+                .is_some_and(|d| d.contains("password-protected"))
+    }));
+    assert!(refused.iter().any(|r| {
+        r["path"] == "reports/blank.docx"
+            && r["detail"]
+                .as_str()
+                .is_some_and(|d| d.contains("no extractable text"))
+    }));
+
+    let seg_dir = find_segment_dir(&dir.path().join("chronicle/20261127"), "100000_300");
+    let transcript = fs::read_to_string(seg_dir.join("document_transcript.md"))
+        .expect("document_transcript.md written");
+    assert!(transcript.contains("# Q4 Agenda"), "{transcript}");
+    assert!(transcript.contains("**Format:** docx"), "{transcript}");
+    assert!(
+        transcript.contains("Board meeting agenda and quarterly budget."),
+        "{transcript}"
+    );
+
+    // 2. Duplicate valid DOCX upload returns duplicate.
+    let (s_dup, b_dup) = post_folder(
+        &app,
+        "20261127",
+        "100000_300",
+        folder_meta.clone(),
+        &[json!({
+            "v": 1,
+            "event": "added",
+            "path": "reports/agenda.docx",
+            "at": "2026-11-27T10:01:00-07:00",
+            "observed_at": "2026-11-27T10:01:02-07:00",
+            "content_hash": sha256(&valid_docx),
+            "part": "c_01.docx"
+        })],
+        &[("c_01.docx", valid_docx.as_slice())],
+    )
+    .await;
+    assert_eq!(s_dup, StatusCode::OK, "{b_dup}");
+    assert_eq!(b_dup["status"], "duplicate", "{b_dup}");
+
+    // 3. Estimate counts Office docs without kind_hint as documents and deduplicates
+    //    the already-received DOCX via folder_id + content_hash.
+    let (s_est, est) = call_json(
+        &app,
+        Method::POST,
+        "/app/devices/ingest/folder/estimate",
+        Some(json!({
+            "folder_id": "office-folder",
+            "items": [
+                {
+                    "path": "reports/agenda.docx",
+                    "at": "2026-11-27T10:01:00-07:00",
+                    "file_type": "docx",
+                    "content_hash": sha256(&valid_docx),
+                    "has_content": true
+                },
+                {
+                    "path": "reports/new-deck.pptx",
+                    "at": "2026-11-27T11:00:00-07:00",
+                    "file_type": "pptx",
+                    "has_content": true
+                }
+            ]
+        })),
+    )
+    .await;
+    assert_eq!(s_est, StatusCode::OK, "{est}");
+    assert_eq!(est["already_in_journal"], 1, "{est}");
+    assert_eq!(est["counts_by_kind"]["documents"], 1, "{est}");
+
+    // 4. Refused-only window returns 400 BAD_REQUEST with folder_file_invalid (never 503).
+    let (s_bad, b_bad) = post_folder(
+        &app,
+        "20261127",
+        "100500_300",
+        folder_meta,
+        &[json!({
+            "v": 1,
+            "event": "added",
+            "path": "reports/only-locked.xlsx",
+            "at": "2026-11-27T10:06:00-07:00",
+            "observed_at": "2026-11-27T10:06:02-07:00",
+            "content_hash": sha256(&encrypted_xlsx),
+            "part": "c_01.xlsx"
+        })],
+        &[("c_01.xlsx", encrypted_xlsx.as_slice())],
+    )
+    .await;
+    assert_eq!(s_bad, StatusCode::BAD_REQUEST, "{b_bad}");
+    assert_eq!(b_bad["reason_code"], "folder_file_invalid", "{b_bad}");
 }

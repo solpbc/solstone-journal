@@ -161,7 +161,9 @@ fn preview_size(
                 .map_err(|error| error.to_string())
         }
         RegistrySource::Document => {
-            seams.pdf.prepare()?;
+            if document::has_pdf(&dispatch.media) {
+                seams.pdf.prepare()?;
+            }
             document::preview_size(
                 document::DocumentPreviewRequest {
                     source: &dispatch.media,
@@ -169,6 +171,7 @@ fn preview_size(
                     now: SystemTime::now(),
                     zone,
                     owner_timestamp: dispatch.owner_timestamp.as_deref(),
+                    fallback_timestamp: dispatch.fallback_timestamp.as_deref(),
                 },
                 journal,
                 dispatch.force,
@@ -1000,6 +1003,7 @@ fn install_evernote_attachments(
             force: false,
             now: SystemTime::now(),
             owner_timestamp: Some(&pdf.owner_timestamp),
+            fallback_timestamp: None,
         };
         let mut prepared = document::prepare_document_import(&request, seams.pdf, seams.model);
         if !prepared.hard_failures.is_empty() {
@@ -1097,11 +1101,14 @@ fn run_document(
     selected: &mut Option<String>,
     seams: &SourceSeams<'_>,
 ) -> CliRun {
-    if let Err(error) = seams.pdf.prepare() {
-        return failure(format!("{error}\n"));
-    }
-    if let Err(error) = seams.model.prepare() {
-        return source_failed(dispatch.source.name(), &error);
+    let needs_pdf = document::has_pdf(&dispatch.media);
+    if needs_pdf {
+        if let Err(error) = seams.pdf.prepare() {
+            return failure(format!("{error}\n"));
+        }
+        if let Err(error) = seams.model.prepare() {
+            return source_failed(dispatch.source.name(), &error);
+        }
     }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
         return source_failed(dispatch.source.name(), &error);
@@ -6337,5 +6344,97 @@ mod tests {
                     solstone_core_import::publish::SegmentBindingOutcome::Bound { .. }
                 )
         }));
+    }
+
+    #[test]
+    fn office_document_preview_and_import_succeed_when_pdf_and_model_seams_fail_prepare() {
+        use std::io::{Cursor, Write};
+        use zip::CompressionMethod;
+        use zip::write::SimpleFileOptions;
+
+        struct BrokenModel;
+        impl document::DocumentModelClient for BrokenModel {
+            fn prepare(&self) -> Result<(), String> {
+                Err("no model binary".to_owned())
+            }
+            fn execute(
+                &self,
+                _request: &solstone_core_generate::GenerateRequest,
+            ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError>
+            {
+                panic!("Office document import must not call model");
+            }
+        }
+
+        let mut buf = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut buf);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for (name, data) in [
+                (
+                    "[Content_Types].xml",
+                    &br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#[..],
+                ),
+                (
+                    "_rels/.rels",
+                    &br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#[..],
+                ),
+                (
+                    "word/document.xml",
+                    &br#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Registry Office import without PDFium.</w:t></w:r></w:p></w:body></w:document>"#[..],
+                ),
+            ] {
+                writer.start_file(name, opts).unwrap();
+                writer.write_all(data).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let journal = tempfile::tempdir().unwrap();
+        let docx_path = journal.path().join("memo.docx");
+        fs::write(&docx_path, buf.into_inner()).unwrap();
+
+        let dispatch = RegistryDispatch {
+            source: RegistrySource::Document,
+            media: docx_path,
+            timestamp: "20260812_100000".to_owned(),
+            dry_run: false,
+            json: false,
+            owner_timestamp: Some("20260812_100000".to_owned()),
+            fallback_timestamp: None,
+            force: false,
+            facet: crate::cli_argv::ImportFacet::None,
+            listed_moves_shown: None,
+        };
+        let pdf = document::UnavailablePdfWorker::new("missing solstone-core-pdf");
+        let model = BrokenModel;
+        let reindex = IndexScan {
+            journal: journal.path().to_path_buf(),
+        };
+        let seams = SourceSeams {
+            pdf: &pdf,
+            model: &model,
+            image: &solstone_core_import_sources::NullWireClient,
+            reindex: &reindex,
+        };
+        let planned = preview_size(&dispatch, journal.path(), &seams)
+            .expect("preview_size for .docx must not require PDFium");
+        assert_eq!(planned.recordings.len(), 1);
+
+        let mut selected = None;
+        let cli = run_document(dispatch, journal.path(), &mut selected, &seams);
+        assert_eq!(
+            cli.exit_code, 0,
+            "stderr={} stdout={}",
+            cli.stderr, cli.stdout
+        );
+        let seg_dir = journal
+            .path()
+            .join("chronicle/20260812/import.document/100000_0");
+        assert!(seg_dir.join("document_transcript.md").is_file());
+        assert!(
+            fs::read_to_string(seg_dir.join("document_transcript.md"))
+                .unwrap()
+                .contains("Registry Office import without PDFium.")
+        );
     }
 }
