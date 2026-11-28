@@ -606,7 +606,7 @@ impl MadeFrom for MadeFromIt {
         &self,
         journal: &Path,
         item: &Item,
-        segments: &[Target],
+        _segments: &[Target],
     ) -> Result<(), String> {
         let Some(before) = item.trashed_at() else {
             return Ok(());
