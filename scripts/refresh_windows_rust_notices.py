@@ -115,7 +115,7 @@ both sides. Only the upgraded .crate archives are acquired; every other
 vendored member is copied unchanged. The declared permissive expression,
 licence/notice files and indexed notice texts must all remain identical,
 and rendering the NOTICES must reproduce its bytes. No closure promotion or
-removal, git pin move, or other external addition/removal may accompany it.
+removal, git pin move, or other external removal may accompany it.
 An unchanged `WITH LLVM-exception` is admitted only on this upgrade path;
 the additions policy is unchanged. Changed texts or expressions still require
 acquisition and licence review.
@@ -125,6 +125,18 @@ version. The member must be indexed in the prior acquired source and absent
 from the new crate, and none of its indexed texts may survive elsewhere in
 that crate. Retained licence texts, headers and copyright statements remain
 checked. Only texts left unreferenced by every noticed package leave NOTICES.
+
+An upgrade may ride with **registry additions**, the shape of an upgraded
+crate pulling in new dependencies (the worked case is zip 9.0.5 to 9.9.0
+bringing constant_time_eq and zeroize_derive). Each upgraded crate name must
+still pair exactly one removed version with exactly one added one; every other
+added row is an addition, a new version beside a surviving older one included,
+and no addition may share a removed crate's name. Each half is then proven as
+if it were alone: the upgrades by every upgrade check above, the additions by
+every addition check in the third and fourth cases, and the closure, with each
+upgraded version compared as its predecessor, must grow by exactly the named
+additions. NOTICES moves only as each half would move it alone: the upgraded
+packages' texts stay identical, and only the named additions' texts join it.
 
 The same shapes may come with a **new workspace crate**, such as a new Windows
 inventory binary root. It is admitted only when `core/Cargo.toml` declares it
@@ -383,13 +395,20 @@ def split_registry_upgrades(
     old: list[dict[str, Any]], new: list[dict[str, Any]],
     allow_disjoint: bool = False,
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Pair an upgrade-only crates.io delta; leave other shapes to the old checks.
+    """Pair the crates.io upgrades in a delta; leave other shapes to the old checks.
+
+    Every removed version must pair with exactly one added version of the same
+    crate. An added row whose crate name nothing removed is a registry
+    addition, not half of an upgrade (a new version beside a surviving older
+    one included): it is not paired, and stays in the delta for the addition
+    checks. A removal with no added counterpart, or a removed name added more
+    than once, still refuses here, so a removal cannot ride with an upgrade.
 
     With `allow_disjoint` (a reviewed move naming both its in-closure additions
     and removals), a delta whose added and removed crate names share no name
     is not an upgrade at all: it returns no pairs and is left to the removal
-    and addition checks. A shared name still refuses here, so an upgrade can
-    never pass as a removal plus an addition."""
+    and addition checks. A shared name beside an unshared one still refuses
+    here, so an upgrade can never pass as a removal plus an addition."""
     key = lambda row: (row["name"], row["version"])
     before = {key(row): row for row in old}
     after = {key(row): row for row in new}
@@ -400,11 +419,12 @@ def split_registry_upgrades(
     if not removed or not added:
         return []
     names = {row["name"] for row in removed}
-    if allow_disjoint and not names & {row["name"] for row in added}:
+    added_names = [row["name"] for row in added]
+    if allow_disjoint and not names & set(added_names):
         return []
-    if (len(names) != len(removed) or len(added) != len(removed)
-            or {row["name"] for row in added} != names):
-        raise RefreshError("registry upgrades cannot mix additions, removals or ambiguous version pairs")
+    if (len(names) != len(removed) or any(added_names.count(name) != 1 for name in names)
+            or allow_disjoint and not set(added_names) <= names):
+        raise RefreshError("registry upgrades cannot mix removals or ambiguous version pairs")
     pairs = []
     for left in sorted(removed, key=key):
         right = next(row for row in added if row["name"] == left["name"])
@@ -2386,9 +2406,11 @@ def refresh(
         surviving_external,
         [row for row in new_external if (row["name"], row["version"]) not in upgrade_new],
     )
-    if upgrades and (moved_git or added_external or removed_external or admissions
-                     or promotions or standard_apache or removals):
-        raise RefreshError("registry upgrades cannot mix git moves, additions, removals or closure reviews")
+    # Registry additions may ride with upgrades: the upgrades still pass every
+    # upgrade check, the additions every addition check, and the closure check
+    # below compares each upgraded version as its predecessor.
+    if upgrades and (moved_git or removed_external or promotions or standard_apache or removals):
+        raise RefreshError("registry upgrades cannot mix git moves, removals, promotions or closure removals")
     if removed_external and promotions:
         raise RefreshError(
             "the lock removes registry packages and also promotes a package; "
