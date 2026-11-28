@@ -1165,8 +1165,10 @@ def build_git_substitutions(
     byte-for-byte unchanged. Removals, and additions outside the moved prefixes,
     still refuse, except the `vendor/<name>-<version>/` prefixes of registry
     packages the lock removes alongside the move: the caller drops those
-    members and proves exactly they went. Registry .gitignore files omitted
-    by cargo vendor are carried from the prior checksum-bound archive.
+    members and proves exactly they went. Registry `.gitignore` and
+    `.gitattributes` files, which cargo vendor omits but a crate acquired
+    from its .crate keeps, are carried from the prior archive when its
+    checksum manifest vouches for them.
     """
     with tempfile.TemporaryDirectory(prefix="windows-rust-notice-vendor-") as scratch:
         if vendor_dir is None:
@@ -1200,7 +1202,7 @@ def build_git_substitutions(
         carried: set[str] = set()
         carried_by_manifest: dict[str, dict[str, str]] = {}
         for name in prior_vendor.keys() - fresh_vendor.keys():
-            if not name.endswith("/.gitignore"):
+            if not name.endswith(("/.gitignore", "/.gitattributes")):
                 continue
             crate, _, relative = name.removeprefix("vendor/").partition("/")
             manifest = f"vendor/{crate}/.cargo-checksum.json"
