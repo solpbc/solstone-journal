@@ -126,6 +126,7 @@ members = [
     "crates/solstone-core-think-cli",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
+    "crates/solstone-core-doc-extract",
     "crates/solstone-core-email",
     "crates/solstone-core-import-host",
     "crates/solstone-core-import-sources",
@@ -447,6 +448,14 @@ serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtr
 # cargo-deny bans/licenses/sources all pass
 # except a pre-existing, unrelated bans failure on solstone-core-journal-io's
 # wrapper list (present at 883a67394, before this dependency existed).
+# Pure-Rust Microsoft Office document extraction (OOXML + legacy binary).
+# Release-rail lenses: pure-Rust dependency graph, no build.rs/cc/cmake native
+# step (static musl x86_64/aarch64, Windows ARM64, iOS and Android unaffected);
+# package MSRV 1.88 holds under workspace MSRV 1.95 and pinned 1.97.1; license
+# MIT OR Apache-2.0; optional features (mmap, parallel, python, wasm,
+# default-password) disabled; cargo-deny bans/licenses/sources/advisories pass.
+office_oxide = { version = "=0.1.17", default-features = false }
+solstone-core-doc-extract = { path = "crates/solstone-core-doc-extract" }
 jsonschema = { version = "0.49.8", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_yaml_ng = "0.10.0"

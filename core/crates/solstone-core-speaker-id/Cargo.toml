@@ -23,7 +23,7 @@ sha2 = { workspace = true }
 solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-speakers.workspace = true
-zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
+zip = { version = "=9.9.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3.24.0"

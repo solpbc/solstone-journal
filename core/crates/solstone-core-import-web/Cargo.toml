@@ -47,7 +47,7 @@ solstone-core-callosum = { workspace = true, features = ["test-fixtures"] }
 solstone-core-convey-shell.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt"] }
 tower.workspace = true
-zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
+zip = { version = "=9.9.0", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["process", "signal"] }

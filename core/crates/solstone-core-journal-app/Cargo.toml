@@ -50,7 +50,7 @@ spl-core.workspace = true
 jsonschema.workspace = true
 getrandom.workspace = true
 semver = "=1.0.28"
-zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
+zip = { version = "=9.9.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 minisign.workspace = true

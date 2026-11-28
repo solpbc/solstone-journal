@@ -830,6 +830,17 @@ default_full = true
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-doc-extract"
+package = "solstone-core-doc-extract"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-import"
 package = "solstone-core-import"
 set = "component"

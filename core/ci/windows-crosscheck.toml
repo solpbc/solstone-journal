@@ -59,8 +59,12 @@ target = "x86_64-pc-windows-msvc"
 # over rustls/ring, rusqlite, mail-parser, html2text, html5ever, similar,
 # jiff, and journal-io with no cfg(target_os) gate; because it depends on ring
 # and rusqlite, the Linux cross-check leaves it to native Windows CI.
-workspace_packages = 150
-library_packages = 143
+# Re-derived on 2026-11-27 with the same metadata join:
+# solstone-core-doc-extract adds one member and one library (150/143 -> 151/144).
+# It is pure cross-platform Rust over office_oxide and zip with no cfg(target_os)
+# gate and does not depend on ring, libsqlite3-sys, or ffmpeg-sys-next.
+workspace_packages = 151
+library_packages = 144
 
 [[exclusions]]
 package = "ring"
