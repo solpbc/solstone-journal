@@ -240,9 +240,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         focus(FocusGroup::Runs, 7),
         "journal.window.view.export.description",
         "journal.window.view.export.source",
-        &[
-            "export", "takeout", "zip", "download", "move", "portable", "copy",
-        ],
+        &["export", "zip", "download", "move", "portable", "copy"],
         None,
         0,
         None,
