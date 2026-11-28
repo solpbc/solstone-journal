@@ -1606,7 +1606,6 @@ impl TestTree {
     fn sources(&self) -> &Path {
         &self.sources
     }
-    #[cfg(unix)]
     fn root(&self) -> &Path {
         &self.root
     }
