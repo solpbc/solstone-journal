@@ -2138,23 +2138,37 @@ fn compute_estimate(
         let kind_bucket = classify_estimate_kind(item);
 
         // If folder_id and content_hash were provided, check whether this item
-        // is already recorded in the folder's received ledger.
+        // is already recorded in the folder's received ledger. Unhinted
+        // ambiguous structured text files (.csv/.tsv/.html/.htm) can land in
+        // either "documents" or "transcripts" depending on content signatures,
+        // so check both buckets.
         if let (Some(folder_id), Some(hash)) =
             (request.folder_id.as_deref(), item.content_hash.as_deref())
         {
-            let check_key = match kind_bucket {
-                "screenshots" | "photos" => Some(once_content_key(kind_bucket, hash)),
-                "documents" | "transcripts" => item
-                    .path
-                    .as_deref()
-                    .map(|p| revision_content_key(kind_bucket, p, hash)),
-                _ => None,
+            let check_keys: Vec<String> = match kind_bucket {
+                "screenshots" | "photos" => vec![once_content_key(kind_bucket, hash)],
+                "documents" | "transcripts" => {
+                    if let Some(p) = item.path.as_deref() {
+                        if item.kind_hint.is_none() && is_ambiguous_structured_ext(item) {
+                            vec![
+                                revision_content_key("documents", p, hash),
+                                revision_content_key("transcripts", p, hash),
+                            ]
+                        } else {
+                            vec![revision_content_key(kind_bucket, p, hash)]
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                }
+                _ => Vec::new(),
             };
-            if let Some(key) = check_key {
+            let mut found = false;
+            for key in check_keys {
                 match lookup_received(journal, folder_id, &key) {
                     Ok(Some(_)) => {
-                        already_in_journal += 1;
-                        continue;
+                        found = true;
+                        break;
                     }
                     Ok(None) => {}
                     Err(_) => {
@@ -2165,6 +2179,10 @@ fn compute_estimate(
                         ));
                     }
                 }
+            }
+            if found {
+                already_in_journal += 1;
+                continue;
             }
         }
 
@@ -2234,6 +2252,25 @@ fn compute_estimate(
     }))
 }
 
+fn estimate_item_ext(item: &EstimateItem) -> String {
+    item.file_type
+        .as_deref()
+        .or_else(|| {
+            item.path
+                .as_deref()
+                .and_then(|p| Path::new(p).extension().and_then(|e| e.to_str()))
+        })
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default()
+}
+
+fn is_ambiguous_structured_ext(item: &EstimateItem) -> bool {
+    matches!(
+        estimate_item_ext(item).as_str(),
+        "csv" | "tsv" | "html" | "htm"
+    )
+}
+
 fn classify_estimate_kind(item: &EstimateItem) -> &'static str {
     if !item.has_content {
         return "activity_only";
@@ -2248,24 +2285,15 @@ fn classify_estimate_kind(item: &EstimateItem) -> &'static str {
             _ => {}
         }
     }
-    let ext = item
-        .file_type
-        .as_deref()
-        .or_else(|| {
-            item.path
-                .as_deref()
-                .and_then(|p| Path::new(p).extension().and_then(|e| e.to_str()))
-        })
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_default();
+    let ext = estimate_item_ext(item);
     match ext.as_str() {
         "pdf" => "documents",
-        other if solstone_core_doc_extract::is_supported_extension(other) => "documents",
+        other if solstone_core_doc_extract::is_unambiguous_document_extension(other) => "documents",
         "md" | "markdown" | "txt" | "log" => "notes",
         "png" | "jpg" | "jpeg" | "webp" | "heic" | "heif" | "tif" | "tiff" | "gif" | "bmp" => {
             "photos"
         }
-        "vtt" | "srt" | "json" | "csv" | "tsv" | "html" => "transcripts",
+        "vtt" | "srt" | "json" | "csv" | "tsv" | "html" | "htm" => "transcripts",
         _ => "activity_only",
     }
 }

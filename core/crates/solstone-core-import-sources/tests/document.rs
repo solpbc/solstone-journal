@@ -2570,3 +2570,133 @@ fn office_documents_import_without_pdf_or_model_with_parity_dedupe_and_refusals(
             .any(|i| i.original_name == "original.docx")
     );
 }
+
+#[test]
+fn epub_odf_eml_auto_detect_while_strava_and_ambiguous_structured_files_require_explicit_source() {
+    let tree = TestTree::new();
+    let now = UNIX_EPOCH + Duration::from_secs(1_776_000_000);
+
+    // 1. Strava single CSV, localized Strava CSV, Strava export directory (activities.csv + profile.csv),
+    //    Fireflies CSV, and unhinted table.csv / page.html / granola.csv must NOT auto-detect as Document.
+    let strava_dir = tree.journal().join("strava-export");
+    fs::create_dir_all(&strava_dir).unwrap();
+    let strava_en = strava_dir.join("activities.csv");
+    fs::write(
+        &strava_en,
+        "Activity ID,Activity Date,Activity Name,Activity Type\n1,2026-04-01,Morning Run,Run\n",
+    )
+    .unwrap();
+    fs::write(
+        strava_dir.join("profile.csv"),
+        "Athlete ID,First Name\n1,Alex\n",
+    )
+    .unwrap();
+    assert!(!solstone_core_import_sources::document::detect(&strava_en));
+    assert!(!solstone_core_import_sources::document::detect(&strava_dir));
+
+    let strava_fr_dir = tree.journal().join("strava-fr");
+    fs::create_dir_all(&strava_fr_dir).unwrap();
+    let strava_fr = strava_fr_dir.join("activities.csv");
+    fs::write(&strava_fr, "ID de l'activité,Date\n1,2026-04-01\n").unwrap();
+    assert!(!solstone_core_import_sources::document::detect(&strava_fr));
+    assert!(!solstone_core_import_sources::document::detect(
+        &strava_fr_dir
+    ));
+
+    for (name, body) in [
+        (
+            "fireflies.csv",
+            "Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:03,Hi\n",
+        ),
+        ("table.csv", "item,qty\nbolts,12\n"),
+        ("table.tsv", "item\tqty\nbolts\t12\n"),
+        (
+            "page.html",
+            "<!DOCTYPE html><html><body><p>Hi</p></body></html>",
+        ),
+        (
+            "granola.csv",
+            "id,title,summary,notes,transcript\n1,Sync,S,N,Hi\n",
+        ),
+    ] {
+        let p = tree.pdf(name, body.as_bytes());
+        assert!(
+            !solstone_core_import_sources::document::detect(&p),
+            "{name} must not auto-detect as Document"
+        );
+    }
+
+    // 2. EPUB, ODT, and EML auto-detect and import cleanly without PDFium or model calls.
+    let epub_bytes = build_test_zip(&[
+        ("mimetype", b"application/epub+zip"),
+        (
+            "META-INF/container.xml",
+            br#"<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#,
+        ),
+        (
+            "content.opf",
+            br#"<?xml version="1.0"?><package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Book Title</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>"#,
+        ),
+        (
+            "c1.xhtml",
+            b"<html><body><p>Chapter text inside manual EPUB import.</p></body></html>",
+        ),
+    ]);
+    let epub_path = tree.pdf("book.epub", &epub_bytes);
+    assert!(solstone_core_import_sources::document::detect(&epub_path));
+    assert!(!solstone_core_import_sources::document::has_pdf(&epub_path));
+
+    let epub_res = import(
+        DocumentImportRequest {
+            source: &epub_path,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "epub-manual",
+            revision: None,
+            password: None,
+            force: false,
+            now,
+            owner_timestamp: Some("20260501_100000"),
+            fallback_timestamp: None,
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+        &FakePublication::default(),
+    );
+    assert_eq!(epub_res.entries_written, 1, "{:?}", epub_res.errors);
+    let epub_seg = segment_dir(&tree, &epub_res);
+    assert!(
+        fs::read_to_string(epub_seg.join("document_transcript.md"))
+            .unwrap()
+            .contains("Chapter text inside manual EPUB import.")
+    );
+    assert!(epub_seg.join("original.epub").is_file());
+
+    // 3. Explicit Document import accepts general .csv cleanly without PDFium/model.
+    let csv_path = tree.pdf("budget.csv", b"Category,Amount\nHosting,420\n");
+    let csv_tree = TestTree::new();
+    let csv_res = import(
+        DocumentImportRequest {
+            source: &csv_path,
+            journal_root: csv_tree.journal(),
+            import_dir: csv_tree.import_dir(),
+            import_id: "csv-manual",
+            revision: None,
+            password: None,
+            force: false,
+            now,
+            owner_timestamp: Some("20260502_110000"),
+            fallback_timestamp: None,
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+        &FakePublication::default(),
+    );
+    assert_eq!(csv_res.entries_written, 1, "{:?}", csv_res.errors);
+    let csv_seg = segment_dir(&csv_tree, &csv_res);
+    assert!(
+        fs::read_to_string(csv_seg.join("document_transcript.md"))
+            .unwrap()
+            .contains("| Hosting | 420 |")
+    );
+}

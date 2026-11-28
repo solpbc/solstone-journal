@@ -106,7 +106,9 @@ pub fn backfill_retained_import_manifests(
                 {
                     "m4a" => "apple",
                     "txt" | "md" | "pdf" => "text",
-                    ext if solstone_core_doc_extract::is_supported_extension(ext) => "document",
+                    ext if solstone_core_doc_extract::is_unambiguous_document_extension(ext) => {
+                        "document"
+                    }
                     _ => "audio",
                 }
             });

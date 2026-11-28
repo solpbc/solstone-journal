@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Bounded container sniffing for ZIP/OOXML and MS-CFB (OLE2) containers.
-//!
-//! Inspects archive directory entries without decompressing payload streams so
-//! misnamed files, unhinted byte buffers, `.xlsb` binary workbooks, and
-//! password-protected OOXML packages route deterministically before parsing.
+//! Bounded container sniffing and safe ZIP member reading for ZIP-backed
+//! documents (OOXML, EPUB, OpenDocument) and MS-CFB (OLE2) containers.
 
 use std::collections::HashSet;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
+
+use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
+use zip::result::ZipError;
 
 use crate::{DocumentFormat, ExtractError, ExtractLimits};
 
@@ -24,14 +25,149 @@ const CFB_DIFSECT: u32 = 0xFFFF_FFFC;
 const CFB_MAX_REG_SECT: u32 = 0xFFFF_FFFA;
 const CFB_DIR_ENTRY_BYTES: usize = 128;
 
+const MIMETYPE_MAX_BYTES: u64 = 256;
+const MANIFEST_SNIFF_MAX_BYTES: u64 = 64 * 1024;
+const RATIO_CHECK_MIN_BYTES: u64 = 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SniffedContainer {
     Ooxml(DocumentFormat),
+    Epub,
+    Odf(DocumentFormat),
     EncryptedOoxml,
     LegacyCfb(DocumentFormat),
-    NonOfficeZip,
+    NonDocumentZip,
     NonOfficeCfb,
     Unknown,
+}
+
+pub(crate) enum ZipReadOutcome {
+    Bytes(Vec<u8>),
+    Encrypted,
+}
+
+/// Cumulative actual-inflated-byte budget for safe ZIP member reads.
+///
+/// Never trusts central-directory `entry.size()` alone; every read is bounded
+/// via `Read::take` and checked against per-part, cumulative, and inflate-ratio
+/// ceilings to defeat forged-header zip bombs.
+pub(crate) struct ZipBudget {
+    total_inflated: u64,
+}
+
+impl ZipBudget {
+    pub(crate) fn new() -> Self {
+        Self { total_inflated: 0 }
+    }
+
+    pub(crate) fn read_entry_bounded(
+        &mut self,
+        archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+        idx: usize,
+        limits: &ExtractLimits,
+    ) -> Result<ZipReadOutcome, ExtractError> {
+        let remaining_total = limits
+            .max_uncompressed_bytes
+            .saturating_sub(self.total_inflated);
+        let max_for_entry = limits.max_part_bytes.min(remaining_total);
+
+        let entry = match archive.by_index(idx) {
+            Ok(entry) => entry,
+            Err(ZipError::UnsupportedArchive(msg))
+                if msg == ZipError::PASSWORD_REQUIRED
+                    || msg.to_ascii_lowercase().contains("password")
+                    || msg.to_ascii_lowercase().contains("encrypt") =>
+            {
+                return Ok(ZipReadOutcome::Encrypted);
+            }
+            Err(err) => {
+                return Err(ExtractError::Invalid(format!(
+                    "failed to open ZIP entry: {err}"
+                )));
+            }
+        };
+
+        let compressed_size = entry.compressed_size();
+        let mut buf = Vec::with_capacity(
+            usize::try_from(entry.size().min(max_for_entry).min(1024 * 1024)).unwrap_or(0),
+        );
+        let read_res = entry
+            .take(max_for_entry.saturating_add(1))
+            .read_to_end(&mut buf);
+
+        let inflated = buf.len() as u64;
+        if inflated > max_for_entry {
+            return Err(ExtractError::LimitExceeded(format!(
+                "ZIP entry inflated beyond limit of {max_for_entry} bytes"
+            )));
+        }
+        read_res
+            .map_err(|err| ExtractError::Invalid(format!("failed to read ZIP entry: {err}")))?;
+        if inflated > RATIO_CHECK_MIN_BYTES
+            && inflated
+                > compressed_size
+                    .max(1)
+                    .saturating_mul(limits.max_inflate_ratio)
+        {
+            return Err(ExtractError::LimitExceeded(format!(
+                "ZIP entry inflate ratio exceeded limit of {}x",
+                limits.max_inflate_ratio
+            )));
+        }
+
+        self.total_inflated = self.total_inflated.saturating_add(inflated);
+        Ok(ZipReadOutcome::Bytes(buf))
+    }
+}
+
+pub(crate) fn normalize_zip_path(name: &str) -> String {
+    name.replace('\\', "/").trim_start_matches('/').to_owned()
+}
+
+pub(crate) fn find_zip_entry_case_insensitive(
+    archive: &zip::ZipArchive<Cursor<&[u8]>>,
+    target_lower: &str,
+) -> Option<usize> {
+    for idx in 0..archive.len() {
+        let Some(Ok(name)) = archive.name_for_index(idx) else {
+            continue;
+        };
+        if normalize_zip_path(&name).to_ascii_lowercase() == target_lower {
+            return Some(idx);
+        }
+    }
+    None
+}
+
+pub(crate) fn find_all_zip_entries_case_insensitive(
+    archive: &zip::ZipArchive<Cursor<&[u8]>>,
+    target_lower: &str,
+) -> Vec<usize> {
+    let mut matches = Vec::new();
+    for idx in 0..archive.len() {
+        let Some(Ok(name)) = archive.name_for_index(idx) else {
+            continue;
+        };
+        if normalize_zip_path(&name).to_ascii_lowercase() == target_lower {
+            matches.push(idx);
+        }
+    }
+    matches
+}
+
+pub(crate) fn find_exact_zip_entry(
+    archive: &zip::ZipArchive<Cursor<&[u8]>>,
+    target_exact: &str,
+) -> Option<usize> {
+    for idx in 0..archive.len() {
+        let Some(Ok(name)) = archive.name_for_index(idx) else {
+            continue;
+        };
+        if normalize_zip_path(&name) == target_exact {
+            return Some(idx);
+        }
+    }
+    None
 }
 
 pub(crate) fn sniff_container(
@@ -48,34 +184,52 @@ pub(crate) fn sniff_container(
 }
 
 /// Size-independent container check for triage classification. Ignores declared
-/// uncompressed part/package sizes so oversized or zip-bomb Office documents
-/// still route as documents rather than falling through to notes.
+/// uncompressed part/package sizes so oversized or zip-bomb documents still
+/// route as documents rather than falling through to notes. Bounded reads are
+/// still enforced on `mimetype` (<= 256 bytes) and `META-INF/manifest.xml`
+/// (<= 64 KiB) so deflated metadata bombs cannot OOM triage.
 pub(crate) fn is_supported_container(bytes: &[u8]) -> bool {
     const TRIAGE_MAX_ZIP_ENTRIES: usize = 20_000;
     const TRIAGE_MAX_CFB_ENTRIES: usize = 10_000;
 
     if is_zip_magic(bytes) {
-        let Ok(archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
+        let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
             return false;
         };
         let count = archive.len().min(TRIAGE_MAX_ZIP_ENTRIES);
+        let mut mimetype_idx: Option<usize> = None;
+        let mut manifest_idx: Option<usize> = None;
+        let mut has_epub_container = false;
+
         for idx in 0..count {
             let Some(Ok(name)) = archive.name_for_index(idx) else {
                 continue;
             };
-            let normalized = name
-                .replace('\\', "/")
-                .trim_start_matches('/')
-                .to_ascii_lowercase();
-            if matches!(
-                normalized.as_str(),
+            let normalized = normalize_zip_path(&name).to_ascii_lowercase();
+            match normalized.as_str() {
                 "word/document.xml"
-                    | "xl/workbook.bin"
-                    | "xl/workbook.xml"
-                    | "ppt/presentation.xml"
-            ) {
-                return true;
+                | "xl/workbook.bin"
+                | "xl/workbook.xml"
+                | "ppt/presentation.xml" => return true,
+                "meta-inf/container.xml" => has_epub_container = true,
+                "mimetype" if mimetype_idx.is_none() => mimetype_idx = Some(idx),
+                "meta-inf/manifest.xml" if manifest_idx.is_none() => manifest_idx = Some(idx),
+                _ => {}
             }
+        }
+
+        if let Some(idx) = mimetype_idx
+            && let Some(kind) = sniff_zip_mimetype(&mut archive, idx)
+        {
+            return matches!(kind, SniffedContainer::Epub | SniffedContainer::Odf(_));
+        }
+        if has_epub_container {
+            return true;
+        }
+        if let Some(idx) = manifest_idx
+            && sniff_odf_manifest_format(&mut archive, idx).is_some()
+        {
+            return true;
         }
         return false;
     }
@@ -98,6 +252,122 @@ fn is_zip_magic(bytes: &[u8]) -> bool {
         || bytes.starts_with(ZIP_SPANNED_MAGIC)
 }
 
+fn read_small_zip_entry(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    idx: usize,
+    cap: u64,
+) -> Option<Vec<u8>> {
+    let entry = archive.by_index(idx).ok()?;
+    let mut buf = Vec::new();
+    entry
+        .take(cap.saturating_add(1))
+        .read_to_end(&mut buf)
+        .ok()?;
+    if (buf.len() as u64) > cap {
+        return None;
+    }
+    Some(buf)
+}
+
+fn classify_mimetype(raw: &[u8]) -> Option<SniffedContainer> {
+    let mime = std::str::from_utf8(raw).ok()?.trim().to_ascii_lowercase();
+    match mime.as_str() {
+        "application/epub+zip" => Some(SniffedContainer::Epub),
+        "application/vnd.oasis.opendocument.text"
+        | "application/vnd.oasis.opendocument.text-template" => {
+            Some(SniffedContainer::Odf(DocumentFormat::Odt))
+        }
+        "application/vnd.oasis.opendocument.spreadsheet"
+        | "application/vnd.oasis.opendocument.spreadsheet-template" => {
+            Some(SniffedContainer::Odf(DocumentFormat::Ods))
+        }
+        "application/vnd.oasis.opendocument.presentation"
+        | "application/vnd.oasis.opendocument.presentation-template" => {
+            Some(SniffedContainer::Odf(DocumentFormat::Odp))
+        }
+        _ => None,
+    }
+}
+
+fn sniff_zip_mimetype(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    idx: usize,
+) -> Option<SniffedContainer> {
+    let data = read_small_zip_entry(archive, idx, MIMETYPE_MAX_BYTES)?;
+    classify_mimetype(&data)
+}
+
+fn sniff_odf_manifest_format(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    idx: usize,
+) -> Option<DocumentFormat> {
+    let data = read_small_zip_entry(archive, idx, MANIFEST_SNIFF_MAX_BYTES)?;
+    let mut reader = Reader::from_reader(Cursor::new(&data));
+    let mut buf = Vec::new();
+    let mut depth = 0usize;
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                depth += 1;
+                if depth > 64 {
+                    return None;
+                }
+                if let Some(fmt) = check_manifest_root_entry(&e) {
+                    return Some(fmt);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                if let Some(fmt) = check_manifest_root_entry(&e) {
+                    return Some(fmt);
+                }
+            }
+            Ok(Event::End(_)) => depth = depth.saturating_sub(1),
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    None
+}
+
+fn check_manifest_root_entry(e: &BytesStart<'_>) -> Option<DocumentFormat> {
+    let name = e.name();
+    let local = match name.as_ref().iter().rposition(|&b| b == b':') {
+        Some(idx) => &name.as_ref()[idx + 1..],
+        None => name.as_ref(),
+    };
+    if !local.eq_ignore_ascii_case(b"file-entry") {
+        return None;
+    }
+    let mut full_path: Option<String> = None;
+    let mut media_type: Option<String> = None;
+    for attr in e.attributes().flatten() {
+        let key = attr.key.as_ref();
+        let attr_local = match key.iter().rposition(|&b| b == b':') {
+            Some(idx) => &key[idx + 1..],
+            None => key,
+        };
+        if attr_local.eq_ignore_ascii_case(b"full-path") {
+            full_path = attr
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(|v| v.into_owned());
+        } else if attr_local.eq_ignore_ascii_case(b"media-type") {
+            media_type = attr
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(|v| v.into_owned());
+        }
+    }
+    if full_path.as_deref() != Some("/") {
+        return None;
+    }
+    match classify_mimetype(media_type?.as_bytes()) {
+        Some(SniffedContainer::Odf(fmt)) => Some(fmt),
+        _ => None,
+    }
+}
+
 fn sniff_zip(bytes: &[u8], limits: &ExtractLimits) -> Result<SniffedContainer, ExtractError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|err| ExtractError::Invalid(format!("invalid ZIP container: {err}")))?;
@@ -114,42 +384,57 @@ fn sniff_zip(bytes: &[u8], limits: &ExtractLimits) -> Result<SniffedContainer, E
     let mut has_xlsx = false;
     let mut has_xlsb = false;
     let mut has_pptx = false;
+    let mut has_epub_container = false;
+    let mut mimetype_idx: Option<usize> = None;
+    let mut manifest_idx: Option<usize> = None;
 
     for idx in 0..entry_count {
         let Some(Ok(name)) = archive.name_for_index(idx) else {
             continue;
         };
-        let normalized = name
-            .replace('\\', "/")
-            .trim_start_matches('/')
-            .to_ascii_lowercase();
+        let normalized = normalize_zip_path(&name).to_ascii_lowercase();
         match normalized.as_str() {
             "word/document.xml" => has_word = true,
             "xl/workbook.bin" => has_xlsb = true,
             "xl/workbook.xml" => has_xlsx = true,
             "ppt/presentation.xml" => has_pptx = true,
+            "meta-inf/container.xml" => has_epub_container = true,
+            "mimetype" if mimetype_idx.is_none() => mimetype_idx = Some(idx),
+            "meta-inf/manifest.xml" if manifest_idx.is_none() => manifest_idx = Some(idx),
             _ => {}
         }
     }
 
     let detected = if has_word {
-        Some(DocumentFormat::Docx)
+        Some(SniffedContainer::Ooxml(DocumentFormat::Docx))
     } else if has_xlsb {
-        Some(DocumentFormat::Xlsb)
+        Some(SniffedContainer::Ooxml(DocumentFormat::Xlsb))
     } else if has_xlsx {
-        Some(DocumentFormat::Xlsx)
+        Some(SniffedContainer::Ooxml(DocumentFormat::Xlsx))
     } else if has_pptx {
-        Some(DocumentFormat::Pptx)
+        Some(SniffedContainer::Ooxml(DocumentFormat::Pptx))
+    } else if let Some(idx) = mimetype_idx
+        && let Some(kind) = sniff_zip_mimetype(&mut archive, idx)
+    {
+        Some(kind)
+    } else if has_epub_container {
+        Some(SniffedContainer::Epub)
+    } else if let Some(idx) = manifest_idx
+        && let Some(fmt) = sniff_odf_manifest_format(&mut archive, idx)
+    {
+        Some(SniffedContainer::Odf(fmt))
     } else {
         None
     };
 
-    let Some(format) = detected else {
-        return Ok(SniffedContainer::NonOfficeZip);
+    let Some(container) = detected else {
+        return Ok(SniffedContainer::NonDocumentZip);
     };
 
     // Inspect declared uncompressed sizes from central-directory headers so
-    // obvious zip bombs fail fast before entering any format reader.
+    // obvious zip bombs fail fast before entering any format reader. Actual
+    // inflated sizes are additionally enforced on every member read by
+    // ZipBudget / office_oxide.
     let mut total_declared: u64 = 0;
     for idx in 0..entry_count {
         if let Ok(entry) = archive.by_index_raw(idx) {
@@ -170,7 +455,7 @@ fn sniff_zip(bytes: &[u8], limits: &ExtractLimits) -> Result<SniffedContainer, E
         }
     }
 
-    Ok(SniffedContainer::Ooxml(format))
+    Ok(container)
 }
 
 /// Inspect MS-CFB (v3 / v4) directory entries safely without external crates
@@ -272,7 +557,6 @@ fn collect_fat_sectors(
         .min(max_possible_sectors);
     let mut fat_sectors = Vec::with_capacity(target.min(109));
 
-    // First 109 DIFAT entries live inside the 512-byte header at 0x4C..0x200.
     for i in 0..109 {
         let sector = read_u32_le(bytes, 0x4C + i * 4)?;
         if sector <= CFB_MAX_REG_SECT {
@@ -283,7 +567,6 @@ fn collect_fat_sectors(
         }
     }
 
-    // Follow optional DIFAT chain, bounded and cycle-checked.
     let entries_per_difat = (sector_size / 4).saturating_sub(1);
     let mut current = first_difat_sector;
     let mut visited = HashSet::new();
@@ -422,9 +705,6 @@ fn read_cfb_directory_names(
         }
     }
 
-    // Prefer walking only Root Entry's top-level red-black sibling tree so a
-    // nested OLE object (e.g., an embedded Word storage inside a PowerPoint
-    // deck) cannot shadow the outer document's top-level streams.
     if let Some(Some(root)) = entries.first()
         && root.kind == 5
         && root.child != CFB_FREESECT
@@ -457,7 +737,6 @@ fn read_cfb_directory_names(
         }
     }
 
-    // Fallback to flat directory scan if Root Entry's child tree is missing.
     Ok(entries
         .into_iter()
         .flatten()

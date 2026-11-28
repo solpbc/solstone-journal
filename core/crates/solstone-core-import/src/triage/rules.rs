@@ -13,6 +13,7 @@ use screenshot_names::{aosp_png_name, dated_name};
 pub(super) enum Stage {
     Container,
     Signature,
+    StructuredExtension,
     Turns,
     Structure,
     Image,
@@ -123,7 +124,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "document_format",
             Container,
             Documents,
-            "file-format and container markers: PDF and office document signatures",
+            "file-format and container markers: PDF, office, EPUB, and OpenDocument signatures",
             |e| is_document(e.format) || solstone_core_doc_extract::is_supported_container(e.bytes)
         ),
         rule!(
@@ -289,6 +290,14 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "Journal import: relative headings and two inline timed layouts",
             |e| crate::text::has_existing_timed_layout(e.text, e.lines)
                 && !only_reserved_inline_labels(e.lines)
+        ),
+        rule!(
+            40,
+            "structured_document_extension",
+            StructuredExtension,
+            Documents,
+            "general structured document extensions (.csv, .tsv, .html, .htm, .eml) after transcript signatures",
+            is_structured_document_extension
         ),
         rule!(
             42,
@@ -831,6 +840,24 @@ fn is_document(format: FileFormat) -> bool {
     matches!(format.kind(), FormatKind::Document | FormatKind::Spreadsheet | FormatKind::Presentation | FormatKind::Ebook)
         // These are text and must pass through text rules if they are routed here.
         && !matches!(format, FileFormat::RichTextFormat)
+}
+
+fn is_structured_document_extension(e: &Evidence<'_>) -> bool {
+    if matches!(
+        e.format.kind(),
+        FormatKind::Image | FormatKind::Audio | FormatKind::Video
+    ) {
+        return false;
+    }
+    Path::new(e.name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "csv" | "tsv" | "html" | "htm" | "eml"
+            )
+        })
 }
 
 fn nonblank<'a>(lines: &'a [&'a str]) -> impl Iterator<Item = &'a str> {

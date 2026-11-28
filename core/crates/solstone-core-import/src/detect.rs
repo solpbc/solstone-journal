@@ -423,9 +423,9 @@ fn has_extension(path: &Path, expected: &str) -> bool {
 }
 
 fn has_document_extension(path: &Path) -> bool {
-    extension(path)
-        .as_deref()
-        .is_some_and(|ext| ext == "pdf" || solstone_core_doc_extract::is_supported_extension(ext))
+    extension(path).as_deref().is_some_and(|ext| {
+        ext == "pdf" || solstone_core_doc_extract::is_unambiguous_document_extension(ext)
+    })
 }
 
 fn has_extension_in(path: &Path, expected: &[&str]) -> bool {

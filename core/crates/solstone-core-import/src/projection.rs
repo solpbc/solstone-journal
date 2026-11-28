@@ -879,7 +879,7 @@ fn derive_source_type(
             if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif") {
                 return "image".to_owned();
             }
-            if ext == "pdf" || solstone_core_doc_extract::is_supported_extension(&ext) {
+            if ext == "pdf" || solstone_core_doc_extract::is_unambiguous_document_extension(&ext) {
                 return "document".to_owned();
             }
             if ext == "zip" {
@@ -893,9 +893,12 @@ fn derive_source_type(
 fn is_document_mime(mime: &str) -> bool {
     let lower = mime.to_ascii_lowercase();
     lower == "application/pdf"
+        || lower == "application/epub+zip"
+        || lower == "message/rfc822"
         || lower == "application/msword"
         || lower == "application/vnd.ms-excel"
         || lower == "application/vnd.ms-powerpoint"
+        || lower.starts_with("application/vnd.oasis.opendocument.")
         || lower.starts_with("application/vnd.openxmlformats-officedocument.")
         || lower.starts_with("application/vnd.ms-word.")
         || lower.starts_with("application/vnd.ms-excel.")

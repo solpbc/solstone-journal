@@ -29,7 +29,7 @@ impl FormatBackend for OfficeBackend {
         format: DocumentFormat,
         limits: &ExtractLimits,
     ) -> Result<BackendOutcome, ExtractError> {
-        let oxide_format = to_oxide_format(format);
+        let oxide_format = to_oxide_format(format)?;
         let options = build_parse_options(limits);
 
         let doc =
@@ -97,19 +97,23 @@ impl FormatBackend for OfficeBackend {
             title,
             markdown,
             plain_text,
+            truncated: false,
             warnings,
         }))
     }
 }
 
-fn to_oxide_format(format: DocumentFormat) -> OxideFormat {
+fn to_oxide_format(format: DocumentFormat) -> Result<OxideFormat, ExtractError> {
     match format {
-        DocumentFormat::Docx => OxideFormat::Docx,
-        DocumentFormat::Xlsx | DocumentFormat::Xlsb => OxideFormat::Xlsx,
-        DocumentFormat::Pptx => OxideFormat::Pptx,
-        DocumentFormat::Doc => OxideFormat::Doc,
-        DocumentFormat::Xls => OxideFormat::Xls,
-        DocumentFormat::Ppt => OxideFormat::Ppt,
+        DocumentFormat::Docx => Ok(OxideFormat::Docx),
+        DocumentFormat::Xlsx | DocumentFormat::Xlsb => Ok(OxideFormat::Xlsx),
+        DocumentFormat::Pptx => Ok(OxideFormat::Pptx),
+        DocumentFormat::Doc => Ok(OxideFormat::Doc),
+        DocumentFormat::Xls => Ok(OxideFormat::Xls),
+        DocumentFormat::Ppt => Ok(OxideFormat::Ppt),
+        other => Err(ExtractError::Invalid(format!(
+            "format '{other}' is not a Microsoft Office document"
+        ))),
     }
 }
 

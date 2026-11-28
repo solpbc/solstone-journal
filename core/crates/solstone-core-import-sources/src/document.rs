@@ -1228,10 +1228,15 @@ impl fmt::Display for DocumentFailure {
     }
 }
 
-/// Whether a path is a supported document file or a directory containing one.
+/// Whether a path is an unambiguous document file or a directory containing
+/// one, excluding Strava export directories and ambiguous structured exports
+/// (`.csv`, `.tsv`, `.html`, `.htm`) that require explicit source selection.
 #[must_use]
 pub fn detect(path: &Path) -> bool {
-    !find_documents(path).is_empty()
+    if crate::strava::looks_like_strava_download(path, None) {
+        return false;
+    }
+    !find_documents_matching(path, is_unambiguous_document).is_empty()
 }
 
 /// Whether `path` is a PDF file or a directory containing at least one PDF.
@@ -2106,6 +2111,13 @@ fn is_regular_non_symlink(path: &Path) -> bool {
 }
 
 fn find_documents(path: &Path) -> Vec<PathBuf> {
+    if path.is_dir() && crate::strava::looks_like_strava_download(path, None) {
+        return Vec::new();
+    }
+    find_documents_matching(path, is_supported_document)
+}
+
+fn find_documents_matching(path: &Path, predicate: fn(&Path) -> bool) -> Vec<PathBuf> {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Vec::new();
     };
@@ -2113,7 +2125,7 @@ fn find_documents(path: &Path) -> Vec<PathBuf> {
         return Vec::new();
     }
     if meta.is_file() {
-        return if is_supported_document(path) {
+        return if predicate(path) {
             vec![path.to_path_buf()]
         } else {
             Vec::new()
@@ -2128,7 +2140,7 @@ fn find_documents(path: &Path) -> Vec<PathBuf> {
     let mut docs = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|entry| is_regular_non_symlink(entry) && is_supported_document(entry))
+        .filter(|entry| is_regular_non_symlink(entry) && predicate(entry))
         .collect::<Vec<_>>();
     docs.sort();
     docs
@@ -2137,6 +2149,16 @@ fn find_documents(path: &Path) -> Vec<PathBuf> {
 fn is_pdf(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+}
+
+fn is_unambiguous_extracted_document(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(solstone_core_doc_extract::is_unambiguous_document_extension)
+}
+
+fn is_unambiguous_document(path: &Path) -> bool {
+    is_pdf(path) || is_unambiguous_extracted_document(path)
 }
 
 fn is_extracted_document(path: &Path) -> bool {
