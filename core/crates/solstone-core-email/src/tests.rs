@@ -1968,6 +1968,18 @@ fn attachment_choice_enriches_existing_exchanges_and_retries_one_occurrence() {
     };
     set_paused(true);
     set(AttachmentScope::Both, false);
+    let preview = crate::attachment_sync::preview(
+        root,
+        &store::read_choice(root).unwrap().unwrap(),
+        &store::read_decisions(root).unwrap(),
+        false,
+    )
+    .unwrap();
+    assert_eq!(preview.sent.remaining_images, 2);
+    assert_eq!(
+        preview.sent.remaining_files, 2,
+        "inline images count before the message context is available"
+    );
     let mut live = message(
         4,
         true,

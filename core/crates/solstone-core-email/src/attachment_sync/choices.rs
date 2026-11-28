@@ -134,10 +134,7 @@ fn preview_counts(
                             counts.remaining_images += 1;
                             remaining_image(sent_by_owner, id);
                         }
-                        counts.remaining_files += usize::from(
-                            c.disposition == CandidateDisposition::Eligible
-                                && (!pdf || pdf_reader_available),
-                        );
+                        counts.remaining_files += usize::from(!pdf || pdf_reader_available);
                     }
                 }
             }
