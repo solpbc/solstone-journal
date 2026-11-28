@@ -1,0 +1,16 @@
+{
+  "description": "Activity verb badge for an added file.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "df95896f8e9c8589663a0bc5f48d39d5892287db26c65de289452923fc1088dc",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

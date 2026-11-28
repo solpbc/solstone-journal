@@ -1,0 +1,16 @@
+{
+  "description": "Activity verb badge for a revised document or transcript after cooldown.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "2d4ed3578bab587329ec30d2cec34cfb7564c94fd1aedcfbcbb9069bde24d09e",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

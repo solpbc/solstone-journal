@@ -1,0 +1,21 @@
+{
+  "description": "Segment meta summary for 2 or more files all with content.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "09cd016879225429d40eb8def38fdb79cae3b3f4607590073c2b002e1b43cc4f",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

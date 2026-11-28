@@ -1,0 +1,21 @@
+{
+  "description": "Download origin gloss when platform metadata carries an origin URL.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "domain",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "e857c3d6f6d1da3a6c7b09bc0fc9e0b6aef21a140395718a8b9d8c995aa9c115",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

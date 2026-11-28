@@ -1,0 +1,16 @@
+{
+  "description": "Delete dialog segmentParts entry for folder activity.",
+  "context": "Journal window, transcripts view, delete dialog.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f7d91264567ac1fe429ca565bf441f3d23682e541d7c41be7b03830c1120151",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

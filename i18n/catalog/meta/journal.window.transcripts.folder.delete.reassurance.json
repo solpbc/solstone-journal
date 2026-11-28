@@ -1,0 +1,16 @@
+{
+  "description": "Delete dialog reassurance line for folder segments.",
+  "context": "Journal window, transcripts view, delete dialog.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "8dc6926fcc60574b0131811d2023cdc5f19b89af370e94dd5619985229afb2a5",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

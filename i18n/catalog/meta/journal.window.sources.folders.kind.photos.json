@@ -1,0 +1,16 @@
+{
+  "description": "Kind tag on a folder row or segment card.",
+  "context": "Journal window, sources and transcripts views.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "84def6dfe44253e83d20a9d65236dd39317d78be94530ee00dc07af408799de2",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

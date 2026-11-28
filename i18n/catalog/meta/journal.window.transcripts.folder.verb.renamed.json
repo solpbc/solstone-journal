@@ -1,0 +1,16 @@
+{
+  "description": "Activity verb badge for a renamed file.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "98613620db323145d98acdf0c99a423ae18e1d17f32cee6e2c3b6f90472c32b4",
+  "max_length": 30,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

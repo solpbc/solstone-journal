@@ -1655,6 +1655,7 @@ mod tests {
             item: None,
             conversation_items: Vec::new(),
             processing_reason_code: BTreeMap::new(),
+            folder: None,
         };
         let value = serde_json::to_value(attach_visible_streams_to_ranges(
             &[("09:00".into(), "09:15".into())],
@@ -2118,6 +2119,7 @@ mod tests {
             item: None,
             conversation_items: Vec::new(),
             processing_reason_code: BTreeMap::new(),
+            folder: None,
         };
 
         let ranges = attach_visible_streams_to_ranges(

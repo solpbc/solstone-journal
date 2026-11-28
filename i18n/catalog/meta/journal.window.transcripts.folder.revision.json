@@ -1,0 +1,16 @@
+{
+  "description": "Tag on a document or transcript revision content card.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "9ae4ef878744299bf52fd7f09a0f0282f94b3b3ae5b7afa5f8ad12fc4d52bdf8",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

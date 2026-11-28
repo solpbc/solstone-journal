@@ -25443,3 +25443,71 @@ journal.window.settings.maintenance.time.label = daily maintenance time
 journal.window.settings.maintenance.time.zone = uses your journal’s time zone.
 
 journal.window.settings.maintenance.time.invalid = choose an hour and a minute.
+
+journal.window.sources.source.or.date.unit.label.folders = folders
+
+journal.window.sources.folders.heading = folders
+
+journal.window.sources.folders.lede = each folder is set up in the solstone app on its device.
+
+journal.window.sources.folders.items = {
+        $quantity ->
+        [one] 1 item
+       *[other] { $count } items
+    }
+
+journal.window.sources.folders.segments = {
+        $quantity ->
+        [one] 1 segment
+       *[other] { $count } segments
+    }
+
+journal.window.sources.folders.backfill.link = bringing in older files · follow on status
+
+journal.window.sources.folders.attention = open the solstone app on { $device } to fix this folder.
+
+journal.window.sources.folders.kind.notes = notes
+
+journal.window.sources.folders.kind.documents = documents
+
+journal.window.sources.folders.kind.transcripts = transcripts
+
+journal.window.sources.folders.kind.screenshots = screenshots
+
+journal.window.sources.folders.kind.photos = photos
+
+journal.window.sources.folders.kind.other = other files
+
+journal.window.transcripts.folder.activity.heading = folder activity
+
+journal.window.transcripts.folder.verb.added = added
+
+journal.window.transcripts.folder.verb.edited = edited
+
+journal.window.transcripts.folder.verb.revised = revised
+
+journal.window.transcripts.folder.verb.renamed = renamed
+
+journal.window.transcripts.folder.verb.removed = removed
+
+journal.window.transcripts.folder.origin = from { $domain }
+
+journal.window.transcripts.folder.details.only = details only
+
+journal.window.transcripts.folder.revision = revision
+
+journal.window.transcripts.folder.summary.one.content = 1 file · with content
+
+journal.window.transcripts.folder.summary.one.details = 1 file · details only
+
+journal.window.transcripts.folder.summary.all.content = { $count } files · all with content
+
+journal.window.transcripts.folder.summary.all.details = { $count } files · details only
+
+journal.window.transcripts.folder.summary.mixed = { $count } files · { $content } with content · { $details } details only
+
+journal.window.transcripts.folder.delete.part = folder activity
+
+journal.window.transcripts.folder.delete.reassurance = nothing changes in your folder.
+
+journal.window.transcripts.folder.rail.label = folder

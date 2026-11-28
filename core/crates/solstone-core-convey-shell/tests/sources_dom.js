@@ -485,6 +485,9 @@ test('try again replaces the error with the device it gets back', async () => {
       if (url === '/app/sources/photos/api/state') {
         return { status: 404, json: async () => ({ code: 'photos_library_disabled' }) };
       }
+      if (url === '/app/sources/api/folders') {
+        return { status: 200, json: async () => ({ folders: [] }) };
+      }
       clientAttempts += 1;
       if (clientAttempts === 1) return { status: 503, json: async () => ({ reason_code: 'authorization_ledger_unreadable' }) };
       return { status: 200, json: async () => ok([client('studio', { last_accepted_ingest_at: iso(NOW - 5 * MIN) })]).body };
@@ -502,6 +505,7 @@ test('try again replaces the error with the device it gets back', async () => {
     '/app/settings/api/garmin',
     '/app/sources/api/email',
     '/app/sources/photos/api/state',
+    '/app/sources/api/folders',
     '/app/network/api/clients',
   ]);
   assert.ok(calls.every((call) => call.method === 'GET'));
@@ -737,6 +741,12 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
           json: async () => ({ code: 'photos_library_disabled' }),
         };
       }
+      if (url === '/app/sources/api/folders') {
+        return {
+          status: 200,
+          json: async () => ({ folders: [] }),
+        };
+      }
       granolaAttempts += 1;
       if (granolaAttempts === 1) return { status: 400, json: async () => ({ error: 'storage', code: 'storage' }) };
       return {
@@ -778,6 +788,7 @@ test('sync endpoint failure isolates per tool, never claims unconfigured, and re
     '/app/settings/api/garmin',
     '/app/sources/api/email',
     '/app/sources/photos/api/state',
+    '/app/sources/api/folders',
     '/app/network/api/clients',
     '/app/settings/api/granola',
   ]);
@@ -1077,6 +1088,72 @@ test('photos sync row stays hidden when disabled (404) and renders every enabled
   const ipadStatus = capableIpad.querySelector('[data-sync="photos"]').textContent;
   assert.ok(ipadStatus.includes('ipad'), 'expected ready row to name capable ipad, got: ' + ipadStatus);
   assert.ok(!ipadStatus.includes('iphone'), 'expected ready row not to name old iphone, got: ' + ipadStatus);
+});
+
+test('folders band hides when empty or 404 and renders active, backfill, and attention rows', () => {
+  const empty = render({
+    clients: ok([client('work laptop', { source_delivery: { folder: { last_accepted_ingest_at: iso(NOW - 3 * MIN) } } })]),
+    folders: { status: 200, body: { folders: [] } },
+  });
+  assert.strictEqual(empty.querySelector('.sources-folders'), null);
+
+  const missing = render({
+    clients: ok([]),
+    folders: { status: 404, body: null },
+  });
+  assert.strictEqual(missing.querySelector('.sources-folders'), null);
+
+  const populated = render({
+    clients: ok([client('work laptop', { source_delivery: { folder: { last_accepted_ingest_at: iso(NOW - 3 * MIN) } } })]),
+    folders: {
+      status: 200,
+      body: {
+        folders: [
+          {
+            id: 'dl-1',
+            name: 'Downloads',
+            device_id: 'dev-1',
+            device_label: 'work laptop',
+            state: 'on',
+            facet: { name: 'work', title: 'Work', color: '#2E6F9E', icon: null, emoji: null },
+            kinds: ['notes', 'documents', 'other'],
+            items_count: 14,
+            segments_count: 3,
+            last_added_at: iso(NOW - 3 * MIN),
+            backfill_active: true,
+          },
+          {
+            id: 'docs-2',
+            name: 'Docs',
+            device_id: 'dev-1',
+            device_label: 'work laptop',
+            state: 'needs_attention',
+            facet: null,
+            kinds: ['documents'],
+            items_count: 1,
+            segments_count: 1,
+            last_added_at: null,
+            backfill_active: false,
+          },
+        ],
+      },
+    },
+  });
+  const band = populated.querySelector('.sources-folders');
+  assert.notStrictEqual(band, null);
+  const rows = band.querySelectorAll('.sources-folder-row');
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].querySelector('.sources-folder-name').textContent, 'Downloads');
+  assert.notStrictEqual(rows[0].querySelector('.fchip'), null);
+  assert.strictEqual(rows[0].querySelectorAll('.sources-folder-kind').length, 3);
+  const statusLink = rows[0].querySelector('.sources-folder-status');
+  assert.notStrictEqual(statusLink, null);
+  assert.strictEqual(statusLink.getAttribute('href'), '/app/health/');
+  assert.strictEqual(rows[0].querySelector('.sources-folder-attn'), null);
+
+  assert.ok(rows[1].className.includes('is-attention'));
+  assert.strictEqual(rows[1].querySelector('.sources-folder-status'), null);
+  assert.notStrictEqual(rows[1].querySelector('.sources-folder-attn'), null);
 });
 
 (async () => {

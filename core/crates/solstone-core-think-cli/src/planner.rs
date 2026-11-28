@@ -1178,7 +1178,10 @@ fn inspect_day(
     };
     let mut day_holds_note_history = false;
     for segment in &segments {
-        if is_mcp_audit_segment(Some(&segment.stream)) {
+        if is_mcp_audit_segment(Some(&segment.stream))
+            || (!solstone_core_system_health::segment_requires_processing(&segment.clone().into())
+                && segment.data_state.0.contains_key("folder_activity"))
+        {
             continue;
         }
         let seconds = solstone_core_system_health::segment_seconds(&segment.key);
@@ -6598,6 +6601,16 @@ mod tests {
         .unwrap();
 
         assert!(solstone_core_segment::is_activity_only_folder_dir(&seg_dir));
+        let (_, screen_ranges, scanned) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root.path(),
+            day,
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        assert_eq!(scanned.len(), 1);
+        assert_eq!(scanned[0].types, vec!["folder_activity"]);
+        assert!(!screen_ranges.is_empty());
         assert!(
             solstone_core_system::activity_state::active_facets(root.path(), day).is_empty(),
             "activity-only folder segments must not wake daily facet talents"

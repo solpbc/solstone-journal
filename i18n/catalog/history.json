@@ -160213,6 +160213,198 @@
       "selector": null
     },
     {
+      "id": "journal.window.sources.folders.attention",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e617474656e74696f6e",
+      "namespace": "journal.window.sources.folders",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "device",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.backfill.link",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6261636b66696c6c2e6c696e6b",
+      "namespace": "journal.window.sources.folders.backfill",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e68656164696e67",
+      "namespace": "journal.window.sources.folders",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.items",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6974656d73",
+      "namespace": "journal.window.sources.folders",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
+      "id": "journal.window.sources.folders.kind.documents",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6b696e642e646f63756d656e7473",
+      "namespace": "journal.window.sources.folders.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.kind.notes",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6b696e642e6e6f746573",
+      "namespace": "journal.window.sources.folders.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.kind.other",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6b696e642e6f74686572",
+      "namespace": "journal.window.sources.folders.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.kind.photos",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6b696e642e70686f746f73",
+      "namespace": "journal.window.sources.folders.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.kind.screenshots",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6b696e642e73637265656e73686f7473",
+      "namespace": "journal.window.sources.folders.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.kind.transcripts",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6b696e642e7472616e73637269707473",
+      "namespace": "journal.window.sources.folders.kind",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.lede",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e6c656465",
+      "namespace": "journal.window.sources.folders",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.folders.segments",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e666f6c646572732e7365676d656e7473",
+      "namespace": "journal.window.sources.folders",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "cardinal",
+      "arguments": [
+        {
+          "name": "quantity",
+          "type": "cardinal",
+          "numeric_style": "ungrouped",
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": {
+        "name": "quantity",
+        "type": "cardinal",
+        "enum_values": [],
+        "enum_default": null
+      }
+    },
+    {
       "id": "journal.window.sources.lede.when.your.devices.last.added.something",
       "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e6c6564652e7768656e2e796f75722e646576696365732e6c6173742e61646465642e736f6d657468696e67",
       "namespace": "journal.window.sources.lede.when.your.devices.last.added",
@@ -163668,6 +163860,18 @@
     {
       "id": "journal.window.sources.source.or.date.unit.label.camera",
       "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e63616d657261",
+      "namespace": "journal.window.sources.source.or.date.unit.label",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.sources.source.or.date.unit.label.folders",
+      "resource": "m6a6f75726e616c2e77696e646f772e736f75726365732e736f757263652e6f722e646174652e756e69742e6c6162656c2e666f6c64657273",
       "namespace": "journal.window.sources.source.or.date.unit.label",
       "owner": "journal",
       "tombstone": false,
@@ -197021,6 +197225,256 @@
       "id": "journal.window.transcripts.field.label.segments.in.this.range",
       "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e6669656c642e6c6162656c2e7365676d656e74732e696e2e746869732e72616e6765",
       "namespace": "journal.window.transcripts.field.label.segments.in.this",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.activity.heading",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e61637469766974792e68656164696e67",
+      "namespace": "journal.window.transcripts.folder.activity",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.delete.part",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e64656c6574652e70617274",
+      "namespace": "journal.window.transcripts.folder.delete",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.delete.reassurance",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e64656c6574652e72656173737572616e6365",
+      "namespace": "journal.window.transcripts.folder.delete",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.details.only",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e64657461696c732e6f6e6c79",
+      "namespace": "journal.window.transcripts.folder.details",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.origin",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e6f726967696e",
+      "namespace": "journal.window.transcripts.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "domain",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.rail.label",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e7261696c2e6c6162656c",
+      "namespace": "journal.window.transcripts.folder.rail",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.revision",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e7265766973696f6e",
+      "namespace": "journal.window.transcripts.folder",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.summary.all.content",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e73756d6d6172792e616c6c2e636f6e74656e74",
+      "namespace": "journal.window.transcripts.folder.summary.all",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.summary.all.details",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e73756d6d6172792e616c6c2e64657461696c73",
+      "namespace": "journal.window.transcripts.folder.summary.all",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.summary.mixed",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e73756d6d6172792e6d69786564",
+      "namespace": "journal.window.transcripts.folder.summary",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [
+        {
+          "name": "count",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        },
+        {
+          "name": "details",
+          "type": "string",
+          "numeric_style": null,
+          "min": null,
+          "max": null
+        }
+      ],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.summary.one.content",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e73756d6d6172792e6f6e652e636f6e74656e74",
+      "namespace": "journal.window.transcripts.folder.summary.one",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.summary.one.details",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e73756d6d6172792e6f6e652e64657461696c73",
+      "namespace": "journal.window.transcripts.folder.summary.one",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.verb.added",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e766572622e6164646564",
+      "namespace": "journal.window.transcripts.folder.verb",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.verb.edited",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e766572622e656469746564",
+      "namespace": "journal.window.transcripts.folder.verb",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.verb.removed",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e766572622e72656d6f766564",
+      "namespace": "journal.window.transcripts.folder.verb",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.verb.renamed",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e766572622e72656e616d6564",
+      "namespace": "journal.window.transcripts.folder.verb",
+      "owner": "journal",
+      "tombstone": false,
+      "replacement": null,
+      "format_intent": "text",
+      "arguments": [],
+      "protected_slots": [],
+      "selector": null
+    },
+    {
+      "id": "journal.window.transcripts.folder.verb.revised",
+      "resource": "m6a6f75726e616c2e77696e646f772e7472616e736372697074732e666f6c6465722e766572622e72657669736564",
+      "namespace": "journal.window.transcripts.folder.verb",
       "owner": "journal",
       "tombstone": false,
       "replacement": null,

@@ -138,6 +138,9 @@ pub struct StreamLabelRow {
     /// `owner_label` in `link/client-descriptions.json` rather than an
     /// auto-reported client name, ledger label, or unbound host stem.
     pub owner_named: bool,
+    /// Literal owner folder name (preserving case) for bound watched-folder
+    /// streams (`folder_<12 hex>`), loaded from `config/folders/*/folder.json`.
+    pub folder_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -183,15 +186,23 @@ pub fn load_stream_labels(journal: &Path) -> StreamLabelTable {
         }
     };
 
+    let folder_names = load_folder_names(journal);
+
     let mut rows = Vec::with_capacity(records.len());
     for (stem, record) in records {
         let (part, owner_named) =
             classify_record_with_origin(&stem, &record, &descriptions, &ledger_clients);
+        let folder_name = record
+            .source
+            .as_deref()
+            .filter(|src| solstone_core_format::folder::is_folder_source_name(src))
+            .and_then(|src| folder_names.get(src).cloned());
         rows.push(StreamLabelRow {
             name: stem,
             part,
             created_at: record.created_at,
             owner_named,
+            folder_name,
         });
     }
 
@@ -596,6 +607,43 @@ fn agent_short_key(stream: &str) -> Option<&str> {
 /// When a bound stream has no recognized device word (`device: None`) and the
 /// owner explicitly set `owner_label`, surface the owner's chosen label directly
 /// instead of wrapping it under generic `"your device"`.
+fn load_folder_names(journal: &Path) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    let root = journal.join("config/folders");
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return map;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with('.'))
+        {
+            continue;
+        }
+        let Ok(raw) = std::fs::read(entry.path().join("folder.json")) else {
+            continue;
+        };
+        let Ok(val) = serde_json::from_slice::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(id) = val.get("id").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Some(name) = val
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+        let source_key = solstone_core_format::folder::folder_stream_source(id);
+        map.insert(source_key, name.to_owned());
+    }
+    map
+}
+
 fn render_row_label(row: &StreamLabelRow, parenthetical: Option<&str>) -> String {
     if row.owner_named
         && let ProvenancePart::Bound {
@@ -605,11 +653,18 @@ fn render_row_label(row: &StreamLabelRow, parenthetical: Option<&str>) -> String
     {
         let mut label = owner_label.to_owned();
         if let Some(what) = what {
-            label.push_str(&format!(" · {}", what.as_str()));
+            let suffix = row.folder_name.as_deref().unwrap_or(what.as_str());
+            label.push_str(&format!(" · {suffix}"));
         }
         return label;
     }
-    provenance_label(&row.part, parenthetical)
+    let rendered = provenance_label(&row.part, parenthetical);
+    if let Some(folder_name) = row.folder_name.as_deref()
+        && let Some(prefix) = rendered.strip_suffix(" · folder")
+    {
+        return format!("{prefix} · {folder_name}");
+    }
+    rendered
 }
 
 pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<String, String>> {
@@ -1368,6 +1423,7 @@ mod tests {
             part: ProvenancePart::Agent,
             created_at: 1,
             owner_named: false,
+            folder_name: None,
         };
         let table = StreamLabelTable {
             status: LabelTableStatus::Complete,
@@ -2602,5 +2658,39 @@ mod tests {
         let agent = agent_stream_labels(&load_stream_labels(root.path()));
         assert_eq!(agent["a"], "studio mic (1)");
         assert_eq!(agent["b"], "studio mic (2)");
+    }
+
+    #[test]
+    fn folder_stream_renders_device_and_literal_folder_name_while_says_keeps_folder() {
+        let root = make_journal();
+        let source = solstone_core_format::folder::folder_stream_source("downloads-1");
+        write_file(
+            root.path(),
+            "config/folders/0123456789abcdef0123456789abcdef/folder.json",
+            r#"{"v":1,"id":"downloads-1","name":"Downloads","kinds":["other"]}"#,
+        );
+        write_stream(
+            root.path(),
+            "laptop_downloads",
+            "observer",
+            Some("sha256:1"),
+            Some(&source),
+            None,
+        );
+        describe_with_owner(
+            root.path(),
+            &[("sha256:1", Some("work laptop"), None, None, None)],
+        );
+        let table = load_stream_labels(root.path());
+        let labels = rendered_stream_labels(&table).unwrap();
+        assert_eq!(labels["laptop_downloads"], "work laptop · Downloads");
+        let says = rendered_stream_says(&table).unwrap();
+        assert_eq!(
+            says["laptop_downloads"],
+            StreamLabelSays {
+                what: Some("folder"),
+                imported: false,
+            }
+        );
     }
 }

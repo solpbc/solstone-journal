@@ -215,7 +215,7 @@ pub(crate) fn markdown_files(dir: &Path) -> Vec<PathBuf> {
 pub(crate) fn audio_url(day: &str, stream: &str, key: &str, raw: &str) -> String {
     url(day, stream, key, raw)
 }
-fn url(day: &str, stream: &str, key: &str, raw: &str) -> String {
+pub(crate) fn url(day: &str, stream: &str, key: &str, raw: &str) -> String {
     format!(
         "/app/transcripts/api/serve_file/{}/{raw}",
         segment_rel(day, stream, key)

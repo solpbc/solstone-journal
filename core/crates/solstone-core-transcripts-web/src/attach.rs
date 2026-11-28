@@ -16,6 +16,28 @@ use solstone_core_system_health::{
 use crate::TranscriptError;
 
 #[derive(Clone, Serialize)]
+pub(crate) struct FolderFacetBadge {
+    pub(crate) name: String,
+    pub(crate) title: String,
+    pub(crate) color: Option<String>,
+    pub(crate) icon: Option<String>,
+    pub(crate) emoji: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct FolderSegmentSummary {
+    pub(crate) folder_id: String,
+    pub(crate) folder_name: String,
+    pub(crate) file_count: usize,
+    pub(crate) content_count: usize,
+    pub(crate) details_only_count: usize,
+    pub(crate) activity_only: bool,
+    pub(crate) kinds: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) facet: Option<FolderFacetBadge>,
+}
+
+#[derive(Clone, Serialize)]
 pub(crate) struct TranscriptSegment {
     pub(crate) key: String,
     pub(crate) stream: String,
@@ -33,6 +55,8 @@ pub(crate) struct TranscriptSegment {
     /// by modality, as the segment detail's `processing_reason_code` says it.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) processing_reason_code: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) folder: Option<FolderSegmentSummary>,
 }
 
 #[derive(Serialize)]
@@ -256,6 +280,107 @@ pub(crate) fn attach_visible_streams_to_ranges(
         .collect()
 }
 
+pub(crate) fn read_folder_facet_badge(journal_root: &Path, slug: &str) -> Option<FolderFacetBadge> {
+    let declaration = solstone_core_facets::observe_facet_declaration(journal_root, slug)
+        .ok()
+        .flatten()?;
+    let obj = declaration.value().as_object()?;
+    if obj.contains_key("id")
+        && !obj
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(solstone_core_facets::is_well_formed_facet_id)
+    {
+        return None;
+    }
+    let title = obj
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| slug.to_owned());
+    let color = obj
+        .get("color")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    let icon = obj
+        .get("icon")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    let emoji = obj
+        .get("emoji")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    Some(FolderFacetBadge {
+        name: slug.to_owned(),
+        title,
+        color,
+        icon,
+        emoji,
+    })
+}
+
+pub(crate) fn attach_folder_summaries(
+    journal_root: &Path,
+    day: &str,
+    segments: &mut [TranscriptSegment],
+) {
+    const KIND_ORDER: [&str; 5] = ["notes", "documents", "transcripts", "screenshots", "photos"];
+    for segment in segments {
+        let directory = crate::segment_media::physical_segment_dir(
+            journal_root,
+            day,
+            &segment.stream,
+            &segment.key,
+        );
+        let activity_path = directory
+            .join("talents")
+            .join(solstone_core_format::folder::FOLDER_ACTIVITY_FILE);
+        let Ok(raw) = std::fs::read(&activity_path) else {
+            continue;
+        };
+        let Ok(activity) =
+            serde_json::from_slice::<solstone_core_format::folder::StoredFolderActivity>(&raw)
+        else {
+            continue;
+        };
+        let file_count = activity.events.len();
+        let content_count = activity
+            .events
+            .iter()
+            .filter(|ev| ev.landed_file.is_some())
+            .count();
+        let details_only_count = file_count.saturating_sub(content_count);
+        let mut kind_set: BTreeSet<&str> = BTreeSet::new();
+        for ev in &activity.events {
+            if ev.landed_file.is_some()
+                && let Some(kind) = ev.kind.as_deref()
+            {
+                kind_set.insert(kind);
+            }
+        }
+        let kinds = KIND_ORDER
+            .iter()
+            .filter(|k| kind_set.contains(**k))
+            .map(|k| (*k).to_owned())
+            .collect();
+        let facet = activity
+            .owner_facet
+            .as_deref()
+            .and_then(|slug| read_folder_facet_badge(journal_root, slug));
+        let activity_only = solstone_core_segment::is_activity_only_folder_dir(&directory);
+        segment.folder = Some(FolderSegmentSummary {
+            folder_id: activity.folder_id,
+            folder_name: activity.folder_name,
+            file_count,
+            content_count,
+            details_only_count,
+            activity_only,
+            kinds,
+            facet,
+        });
+    }
+}
+
 fn attach_streams_to_ranges(
     ranges: &[TimeRange],
     segments: &[TranscriptSegment],
@@ -268,15 +393,19 @@ fn attach_streams_to_ranges(
             let mut state = "pending";
             let mut think = None;
             for segment in segments.iter().filter(|segment| {
-                segment.types.iter().any(|kind| kind == content_type)
-                    && overlaps(&segment.start, &segment.end, start, end)
+                segment.types.iter().any(|kind| {
+                    kind == content_type || (content_type == "screen" && kind == "folder_activity")
+                }) && overlaps(&segment.start, &segment.end, start, end)
             }) {
                 streams.insert(segment.stream.clone());
-                if segment.data_state.get(content_type).map(String::as_str) == Some("analyzed") {
+                let seg_state = segment.data_state.get(content_type).or_else(|| {
+                    (content_type == "screen")
+                        .then(|| segment.data_state.get("folder_activity"))
+                        .flatten()
+                });
+                if seg_state.map(String::as_str) == Some("analyzed") {
                     state = "analyzed";
-                } else if state == "pending"
-                    && segment.data_state.get(content_type).map(String::as_str) == Some("analyzing")
-                {
+                } else if state == "pending" && seg_state.map(String::as_str) == Some("analyzing") {
                     state = "analyzing";
                 }
                 if segment.think.as_deref() == Some("awaiting") {

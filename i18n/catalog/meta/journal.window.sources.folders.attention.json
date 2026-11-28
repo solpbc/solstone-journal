@@ -1,0 +1,21 @@
+{
+  "description": "Recovery hint when a paired device reports a folder needs attention.",
+  "context": "Journal window, sources view, folders band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "device",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "83eb416cdf69878b4024c8f152c8bc798c5f3a7e63afbbd5aa3ad8fcf80cdffb",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

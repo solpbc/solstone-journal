@@ -175,8 +175,15 @@
         message: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.messages.message'),
         messages: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.messages.messages'),
         conversation: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.conversation.conversation'),
+        folderActivity: window.JournalI18n.render('journal.window.transcripts.folder.delete.part'),
+        notes: window.JournalI18n.render('journal.window.sources.folders.kind.notes'),
+        documents: window.JournalI18n.render('journal.window.sources.folders.kind.documents'),
+        transcripts: window.JournalI18n.render('journal.window.sources.folders.kind.transcripts'),
+        screenshots: window.JournalI18n.render('journal.window.sources.folders.kind.screenshots'),
+        photos: window.JournalI18n.render('journal.window.sources.folders.kind.photos'),
       },
       photoLibraryStays: window.JournalI18n.render('journal.window.transcripts.consent.trash.photo.library.stays'),
+      folderStays: window.JournalI18n.render('journal.window.transcripts.folder.delete.reassurance'),
       buttons: {
         eraseNow: window.JournalI18n.render('journal.window.transcripts.consent.trash.copy.erasenow.erase.now'),
         cancel: window.JournalI18n.render('journal.window.transcripts.trash.copy.cancel.cancel'),
@@ -631,13 +638,23 @@
       uploadFallback: window.JournalI18n.render('journal.window.transcripts.photo.copy.uploadfallback.no.date.in.photo.placed.at'),
     });
     const PHOTO_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20.5 16l-4.5-4.5-6.5 6.5"/></svg>';
+    const FOLDER_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
 
     const screenshotStreamKind = 'screenshots';
     const photosStreamKind = 'photos';
+    const folderStreamKind = 'folder';
 
     // A screenshots stream, by what its label says.
     function isScreenshotsStream(stream) {
       return Boolean(stream) && window.JournalFormat.streamSays(stream).what === screenshotStreamKind;
+    }
+
+    function isFolderStream(stream) {
+      return Boolean(stream) && window.JournalFormat.streamSays(stream).what === folderStreamKind;
+    }
+
+    function isFolderSegment(seg) {
+      return Boolean(seg) && (isFolderStream(seg.stream) || Boolean(seg.folder) || (seg.types || []).includes('folder_activity'));
     }
 
     function isPhotosLibraryStream(stream) {
@@ -1991,6 +2008,7 @@
       ['location', window.JournalI18n.render('journal.window.transcripts.kind.location')],
       ['photo', PHOTO_COPY.label],
       ['desktop activity', window.JournalI18n.render('journal.window.transcripts.kind.desktop.activity')],
+      ['folder', window.JournalI18n.render('journal.window.transcripts.folder.rail.label')],
       ['audio + screen', window.JournalI18n.render('journal.window.transcripts.kind.audio.plus.screen')]
     ]);
 
@@ -2419,6 +2437,7 @@
     // the key above the rails use the same names, so a kind has one colour
     // wherever it is drawn.
     function pillKind(seg) {
+      if (isFolderSegment(seg)) return 'screen';
       const types = seg.types || [];
       const hasAudio = types.includes('audio');
       const hasScreen = types.includes('screen');
@@ -2552,8 +2571,9 @@
         const hasBrowser = seg.types.includes('browser');
         const hasImage = seg.types.includes('image');
         const isWritten = isWrittenOrUnplaced(seg) && !hasAudio && !hasScreen;
-        const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
+        const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !isFolderSegment(seg);
         const isShotOnly = seg.item?.kind === 'screen_text' || isScreenshotsStream(seg.stream);
+        const isFolderSeg = isFolderSegment(seg);
         const isActivityOnly = seg.types.includes('desktop_activity') && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !hasImage;
         const timelineState = segmentTimelineState(seg);
         pill.classList.add('tr-zoom-pill-' + pillKind(seg));
@@ -2577,6 +2597,9 @@
         } else if (isPhotoOnly) {
           pill.classList.add('tr-zoom-pill-photo');
           pill.innerHTML = PHOTO_GLYPH;
+        } else if (isFolderSeg) {
+          pill.classList.add('tr-zoom-pill-folder');
+          pill.innerHTML = FOLDER_GLYPH;
         }
 
         // In select mode the ring marks what is chosen, not what is open.
@@ -2589,9 +2612,9 @@
         }
 
         pill.style.top = zoomY(visStart) + 'px';
-        pill.style.height = Math.max(isMoment ? 18 : 4, zoomY(visEnd) - zoomY(visStart)) + 'px';
+        pill.style.height = Math.max(isMoment ? 18 : isFolderSeg ? 18 : 4, zoomY(visEnd) - zoomY(visStart)) + 'px';
         const duration = Math.round(visEnd - visStart);
-        const typeDesc = isShotOnly ? screenshotStreamKind : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : (hasMarkdown || isWritten) ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photo' : isActivityOnly ? 'desktop activity' : 'screen';
+        const typeDesc = isFolderSeg ? folderStreamKind : isShotOnly ? screenshotStreamKind : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : (hasMarkdown || isWritten) ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photo' : isActivityOnly ? 'desktop activity' : 'screen';
         const typeLabel = hasAudio && hasScreen && !isShotOnly
           ? window.JournalI18n.render('journal.window.transcripts.kind.audio.and.screen') : segmentTypeLabel(typeDesc);
         const segmentStatusLabel = timelineState.label;
@@ -2997,6 +3020,17 @@
         tabsContainer.classList.remove('visible');
         return;
       }
+      const isActivityOnlyFolder = Boolean(data.folder_activity && data.folder_activity.activity_only)
+        && !dataState.audio
+        && !dataState.screen
+        && !dataState.image
+        && !dataState.browser
+        && (data.signals?.events || []).length === 0
+        && Object.keys(data.md_files || {}).every(stem => stem === 'screen_text');
+      if (isActivityOnlyFolder) {
+        tabsContainer.classList.remove('visible');
+        return;
+      }
       const readsAsItem = isDateOnlyImport(selectedSegment) || isWrittenOrUnplaced(selectedSegment);
       addTab('transcript', readsAsItem ? importItemLabel(selectedSegment) : window.JournalI18n.render('journal.window.transcripts.tab.transcript'));
       // A Granola meeting brings words, not sound: there is no audio to show.
@@ -3065,7 +3099,13 @@
           }
           // Messages and an unplaced conversation keep their turns even
           // when they read by date; a note or document is filed text.
-          if (isDateOnlyImport(selectedSegment) && !isWrittenOrUnplaced(selectedSegment)) {
+          if (segmentData.folder_activity) {
+            if (!tabsContainer.classList.contains('visible')) {
+              pane.removeAttribute('role');
+              pane.removeAttribute('aria-labelledby');
+            }
+            renderFolderSegment(segmentData, pane);
+          } else if (isDateOnlyImport(selectedSegment) && !isWrittenOrUnplaced(selectedSegment)) {
             renderFiledText(segmentData, pane);
           } else {
             renderSegmentTimeline(segmentData, true, true, pane, true, true);
@@ -3348,6 +3388,222 @@
         return;
       }
       target.innerHTML = `<div class="tr-md-content">${parts.join('')}</div>`;
+    }
+
+    const FOLDER_VERB_KEYS = {
+      added: 'journal.window.transcripts.folder.verb.added',
+      edited: 'journal.window.transcripts.folder.verb.edited',
+      revised: 'journal.window.transcripts.folder.verb.revised',
+      renamed: 'journal.window.transcripts.folder.verb.renamed',
+      removed: 'journal.window.transcripts.folder.verb.removed',
+    };
+
+    const FOLDER_KIND_LABELS = {
+      notes: 'journal.window.sources.folders.kind.notes',
+      documents: 'journal.window.sources.folders.kind.documents',
+      transcripts: 'journal.window.sources.folders.kind.transcripts',
+      screenshots: 'journal.window.sources.folders.kind.screenshots',
+      photos: 'journal.window.sources.folders.kind.photos',
+    };
+
+    function formatFolderSummary(fa) {
+      const total = Number(fa.file_count || 0);
+      const content = Number(fa.content_count || 0);
+      const details = Number(fa.details_only_count || 0);
+      if (total <= 0) return '';
+      if (total === 1) {
+        return content > 0
+          ? window.JournalI18n.render('journal.window.transcripts.folder.summary.one.content')
+          : window.JournalI18n.render('journal.window.transcripts.folder.summary.one.details');
+      }
+      if (details === 0) {
+        return window.JournalI18n.render('journal.window.transcripts.folder.summary.all.content', [['count', String(total)]]);
+      }
+      if (content === 0) {
+        return window.JournalI18n.render('journal.window.transcripts.folder.summary.all.details', [['count', String(total)]]);
+      }
+      return window.JournalI18n.render('journal.window.transcripts.folder.summary.mixed', [
+        ['count', String(total)],
+        ['content', String(content)],
+        ['details', String(details)],
+      ]);
+    }
+
+    function renderFolderSegment(data, target) {
+      const fa = data.folder_activity;
+      target.textContent = '';
+      if (!fa) return;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tr-folder-view';
+      wrap.dataset.folderActivityOnly = fa.activity_only ? 'true' : 'false';
+
+      // Segment summary & optional facet chip
+      const summaryText = formatFolderSummary(fa);
+      if (fa.facet || summaryText) {
+        const metaRow = document.createElement('div');
+        metaRow.className = 'tr-folder-meta';
+        if (fa.facet && fa.facet.title) {
+          const chip = document.createElement('span');
+          chip.className = 'fchip';
+          if (window.ConveyFacetMark && typeof window.ConveyFacetMark.node === 'function') {
+            const mark = window.ConveyFacetMark.node(fa.facet, 'sm');
+            if (mark) chip.appendChild(mark);
+          }
+          const chipLabel = document.createElement('span');
+          chipLabel.textContent = String(fa.facet.title);
+          chip.appendChild(chipLabel);
+          metaRow.appendChild(chip);
+        }
+        if (summaryText) {
+          const sumEl = document.createElement('span');
+          sumEl.className = 'tr-folder-summary';
+          sumEl.textContent = summaryText;
+          metaRow.appendChild(sumEl);
+        }
+        wrap.appendChild(metaRow);
+      }
+
+      // Deterministic chronological folder activity card
+      const card = document.createElement('section');
+      card.className = 'tr-folder-card tr-folder-activity-card';
+      const head = document.createElement('div');
+      head.className = 'tr-folder-card-head';
+      const heading = document.createElement('h4');
+      heading.className = 'tr-folder-card-title';
+      heading.textContent = window.JournalI18n.render('journal.window.transcripts.folder.activity.heading');
+      head.appendChild(heading);
+      card.appendChild(head);
+
+      const list = document.createElement('ul');
+      list.className = 'tr-folder-events';
+      const events = Array.isArray(fa.events) ? fa.events : [];
+      events.forEach(ev => {
+        const li = document.createElement('li');
+        li.className = 'tr-folder-event';
+
+        const timeEl = document.createElement('span');
+        timeEl.className = 'tr-folder-ev-time';
+        timeEl.textContent = window.JournalFormat && typeof window.JournalFormat.timeOfDay === 'function'
+          ? window.JournalFormat.timeOfDay(ev.at)
+          : String(ev.at || '');
+        li.appendChild(timeEl);
+
+        const verbKey = Object.prototype.hasOwnProperty.call(FOLDER_VERB_KEYS, ev.verb)
+          ? ev.verb
+          : 'added';
+        const verbEl = document.createElement('span');
+        verbEl.className = 'tr-folder-verb is-' + verbKey;
+        verbEl.textContent = window.JournalI18n.render(FOLDER_VERB_KEYS[verbKey]);
+        li.appendChild(verbEl);
+
+        const body = document.createElement('div');
+        body.className = 'tr-folder-ev-body';
+        const pathEl = document.createElement('span');
+        pathEl.className = 'tr-folder-ev-path';
+        pathEl.textContent = ev.verb === 'renamed' && ev.previous_path
+          ? `${ev.previous_path} \u2192 ${ev.path}`
+          : String(ev.path || '');
+        body.appendChild(pathEl);
+
+        if (typeof ev.size === 'number' && Number.isFinite(ev.size)) {
+          const sizeEl = document.createElement('span');
+          sizeEl.className = 'tr-folder-ev-meta';
+          sizeEl.textContent = formatSize(ev.size);
+          body.appendChild(sizeEl);
+        }
+        if (ev.origin_domain) {
+          const originEl = document.createElement('span');
+          originEl.className = 'tr-folder-ev-meta';
+          originEl.textContent = window.JournalI18n.render('journal.window.transcripts.folder.origin', [['domain', String(ev.origin_domain)]]);
+          body.appendChild(originEl);
+        }
+        if (ev.details_only === true) {
+          const detailsEl = document.createElement('span');
+          detailsEl.className = 'tr-folder-ev-details';
+          detailsEl.textContent = window.JournalI18n.render('journal.window.transcripts.folder.details.only');
+          body.appendChild(detailsEl);
+        }
+
+        li.appendChild(body);
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+      wrap.appendChild(card);
+
+      // Chronological inline content cards directly below folder activity
+      const inlineCards = Array.isArray(fa.inline_cards) ? fa.inline_cards : [];
+      inlineCards.forEach(item => {
+        const c = document.createElement('section');
+        c.className = 'tr-folder-card tr-folder-inline-card';
+        c.dataset.folderKind = String(item.kind || '');
+
+        const chead = document.createElement('div');
+        chead.className = 'tr-folder-card-head';
+        const ctitle = document.createElement('h4');
+        ctitle.className = 'tr-folder-card-title';
+        ctitle.textContent = String(item.path || '');
+        chead.appendChild(ctitle);
+
+        const pills = document.createElement('div');
+        pills.className = 'tr-folder-pills';
+        if (Object.prototype.hasOwnProperty.call(FOLDER_KIND_LABELS, item.kind)) {
+          const kindPill = document.createElement('span');
+          kindPill.className = 'tr-folder-pill';
+          const baseLabel = window.JournalI18n.render(FOLDER_KIND_LABELS[item.kind]);
+          kindPill.textContent = item.kind === 'documents' && item.file_type
+            ? `${baseLabel} \u00b7 ${String(item.file_type).toUpperCase()}`
+            : baseLabel;
+          pills.appendChild(kindPill);
+        }
+        if (item.is_revision === true) {
+          const revPill = document.createElement('span');
+          revPill.className = 'tr-folder-pill is-revision';
+          revPill.textContent = window.JournalI18n.render('journal.window.transcripts.folder.revision');
+          pills.appendChild(revPill);
+        }
+        chead.appendChild(pills);
+        c.appendChild(chead);
+
+        if ((item.kind === 'notes' || item.kind === 'documents') && item.markdown) {
+          const mdDiv = document.createElement('div');
+          mdDiv.className = 'tr-folder-inline-body tr-md-content';
+          if (window.AppServices && typeof window.AppServices.renderMarkdown === 'function') {
+            mdDiv.innerHTML = window.AppServices.renderMarkdown(item.markdown);
+          } else {
+            mdDiv.textContent = String(item.markdown);
+          }
+          c.appendChild(mdDiv);
+        } else if (item.kind === 'transcripts' && Array.isArray(item.lines)) {
+          const trDiv = document.createElement('div');
+          trDiv.className = 'tr-folder-transcript';
+          item.lines.forEach(line => {
+            const p = document.createElement('p');
+            p.className = 'tr-folder-turn';
+            if (line.speaker) {
+              const sp = document.createElement('strong');
+              sp.textContent = String(line.speaker);
+              p.appendChild(sp);
+            }
+            p.appendChild(document.createTextNode(String(line.text || '')));
+            trDiv.appendChild(p);
+          });
+          c.appendChild(trDiv);
+        } else if ((item.kind === 'screenshots' || item.kind === 'photos') && item.file) {
+          const url = currentImageFiles[item.file];
+          if (url) {
+            const img = document.createElement('img');
+            img.className = 'tr-folder-inline-img';
+            img.src = url;
+            img.alt = String(item.path || '');
+            img.loading = 'lazy';
+            c.appendChild(img);
+          }
+        }
+        wrap.appendChild(c);
+      });
+
+      target.appendChild(wrap);
     }
 
     function renderLoadedSegmentData(data, requestedTabId = null) {
@@ -6870,6 +7126,20 @@
     // Where the page knows a segment's kinds it lists only what it holds, and a
     // photo's is its photo; otherwise audio, screen frames and a transcript.
     function segmentKinds(seg) {
+      if (isFolderSegment(seg)) {
+        const result = { folderActivity: true };
+        const fKinds = Array.isArray(seg.folder?.kinds) ? seg.folder.kinds : [];
+        fKinds.forEach((k) => {
+          if (k === 'notes' || k === 'documents' || k === 'transcripts' || k === 'screenshots' || k === 'photos') {
+            result[k] = true;
+          }
+        });
+        const activityOnly = seg.folder
+          ? seg.folder.activity_only === true
+          : (Array.isArray(seg.types) && seg.types.length === 1 && seg.types[0] === 'folder_activity');
+        if (activityOnly) result.folderActivityOnly = true;
+        return result;
+      }
       if (isScreenshotsStream(seg.stream)) return { screenshot: true };
       const types = Array.isArray(seg.types) ? seg.types : null;
       if (!types) return null;
@@ -6900,7 +7170,14 @@
       const messageCount = kinds.filter((held) => held.message).length;
       const hasMessages = any('messages') || messageCount > 1;
       const hasSingleMessage = !hasMessages && messageCount === 1;
+      const allFolderActivityOnly = kinds.length > 0 && kinds.every((held) => held.folderActivityOnly === true);
       return [
+        ...(any('folderActivity') ? ['folderActivity'] : []),
+        ...(any('notes') ? ['notes'] : []),
+        ...(any('documents') ? ['documents'] : []),
+        ...(any('transcripts') ? ['transcripts'] : []),
+        ...(any('screenshots') ? ['screenshots'] : []),
+        ...(any('photos') ? ['photos'] : []),
         ...(any('audio') ? ['audio'] : []),
         ...(any('screen') ? ['screen'] : []),
         ...(any('photo') ? ['photo'] : []),
@@ -6909,7 +7186,7 @@
         ...(hasSingleMessage ? ['message'] : []),
         ...(hasMessages ? ['messages'] : []),
         ...(any('conversation') ? ['conversation'] : []),
-        'analysis',
+        ...(allFolderActivityOnly ? [] : ['analysis']),
         ...(holdsLoc ? ['location'] : []),
       ];
     }
@@ -7052,6 +7329,9 @@
         deleteDialogElement('p', 'tr-delete-found', copy.found),
         ...(isPhotosLibraryStream(seg.stream)
           ? [deleteDialogElement('p', 'tr-delete-photo-library', TRASH_COPY.photoLibraryStays)]
+          : []),
+        ...(isFolderSegment(seg)
+          ? [deleteDialogElement('p', 'tr-delete-folder-stays', TRASH_COPY.folderStays)]
           : []),
       );
       const totalBytes = (ownData?.media_sizes?.audio || 0) + (ownData?.media_sizes?.screen || 0);
@@ -8042,6 +8322,9 @@
         deleteDialogElement('p', 'tr-delete-found', erasing ? copy.eraseFound : copy.moveFound),
         ...(segs.some((seg) => isPhotosLibraryStream(seg.stream))
           ? [deleteDialogElement('p', 'tr-delete-photo-library', TRASH_COPY.photoLibraryStays)]
+          : []),
+        ...(segs.some((seg) => isFolderSegment(seg))
+          ? [deleteDialogElement('p', 'tr-delete-folder-stays', TRASH_COPY.folderStays)]
           : []),
       );
       const sizes = segs.map(knownSegmentBytes);

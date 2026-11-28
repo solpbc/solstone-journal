@@ -1,0 +1,16 @@
+{
+  "description": "Kind tag on a folder row for metadata-only files.",
+  "context": "Journal window, sources view, folders band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "e4f339fb6f1a351b70aa05df9a3bc9fd84a5ccd4e6c9463db62f108b82da3d6c",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

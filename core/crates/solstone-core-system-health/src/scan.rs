@@ -92,6 +92,7 @@ fn timeline_types(data_state: &DataStateMap) -> Vec<String> {
         "markdown",
         "browser",
         "desktop_activity",
+        "folder_activity",
     ]
     .into_iter()
     .filter(|modality| data_state.0.contains_key(*modality))
@@ -215,7 +216,10 @@ pub fn scan_day<S: SegmentSource>(
         if types.iter().any(|kind| kind == "audio") {
             audio_slots.insert(slot);
         }
-        if types.iter().any(|kind| kind == "screen") {
+        if types
+            .iter()
+            .any(|kind| kind == "screen" || kind == "folder_activity")
+        {
             screen_slots.insert(slot);
         }
         segments.push(DaySegment {
@@ -313,6 +317,15 @@ pub(crate) fn detect_data_state_in(
         return Ok((
             DataStateMap(BTreeMap::from([(
                 "markdown".to_owned(),
+                DataState::Analyzed.as_str().to_owned(),
+            )])),
+            BTreeMap::new(),
+        ));
+    }
+    if solstone_core_segment::is_activity_only_folder_dir(segment_path) {
+        return Ok((
+            DataStateMap(BTreeMap::from([(
+                "folder_activity".to_owned(),
                 DataState::Analyzed.as_str().to_owned(),
             )])),
             BTreeMap::new(),

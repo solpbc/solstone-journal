@@ -22,7 +22,8 @@ const GRANOLA = '/app/settings/api/granola';
 const GARMIN = '/app/settings/api/garmin';
 const EMAIL = '/app/sources/api/email';
 const PHOTOS = '/app/sources/photos/api/state';
-const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN, EMAIL, PHOTOS];
+const FOLDERS = '/app/sources/api/folders';
+const FIRST_READS = [CLIENTS, PLAUD, GRANOLA, GARMIN, EMAIL, PHOTOS, FOLDERS];
 
 let cases = 0;
 async function test(name, fn) {
@@ -304,12 +305,14 @@ function makePage(env, { wide = true, withApi = false } = {}) {
       garmin = [200, { available: true, connected: false, syncing: false }],
       email = [200, { source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }],
       photos = [404, { code: 'photos_library_disabled' }],
+      folders = [200, { folders: [] }],
     } = {}) {
       calls.filter((c) => c.url === PLAUD && !c.settled).forEach((c) => c.answer(plaud[0], plaud[1]));
       calls.filter((c) => c.url === GRANOLA && !c.settled).forEach((c) => c.answer(granola[0], granola[1]));
       calls.filter((c) => c.url === GARMIN && !c.settled).forEach((c) => c.answer(garmin[0], garmin[1]));
       calls.filter((c) => c.url === EMAIL && !c.settled).forEach((c) => c.answer(email[0], email[1]));
       calls.filter((c) => c.url === PHOTOS && !c.settled).forEach((c) => c.answer(photos[0], photos[1]));
+      calls.filter((c) => c.url === FOLDERS && !c.settled).forEach((c) => c.answer(folders[0], folders[1]));
     },
     last: () => calls.filter((c) => c.url === CLIENTS && c.method === 'GET').slice(-1)[0],
     leave() {
@@ -534,13 +537,14 @@ module.exports = async function sourcesContractCases(manifestDir) {
         [ORIGIN + GARMIN]: mkEarly({ available: true, connected: false, syncing: false }),
         [ORIGIN + EMAIL]: mkEarly({ source: 'email', state: 'ready_to_set_up', phase: 'not_connected', connected: false, syncing: false }),
         [ORIGIN + PHOTOS]: mkEarly({ source: 'photos', state: 'ready_to_set_up', substate: 'never_set_up', devices: [], scan: {}, ranges: {}, left_out: { total: 0, reasons: {} }, progress: {} }),
+        [ORIGIN + FOLDERS]: mkEarly({ folders: [] }),
       },
     };
     p.loadScript();
     p.place();
     await p.mount();
-    assert.strictEqual(p.calls.length, 0, 'the first load takes all six early reads and asks nothing');
-    assert.strictEqual(p.window.__solEarly.stats.adopted, 6, 'adopted all six');
+    assert.strictEqual(p.calls.length, 0, 'the first load takes all early reads and asks nothing');
+    assert.strictEqual(p.window.__solEarly.stats.adopted, FIRST_READS.length, 'adopted all early reads');
     assert.deepStrictEqual(Object.keys(p.window.__solEarly.reads), [], 'all early reads are taken');
     assert.deepStrictEqual(p.ready, ['error'], 'it drew the unreadable device as the error state');
     p.root().querySelector('.sources-retry').click();

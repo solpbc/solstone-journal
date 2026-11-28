@@ -1,0 +1,16 @@
+{
+  "description": "Section heading for the folders band on /app/sources/.",
+  "context": "Journal window, sources view, folders band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "c7beae075ebd340fbe1649b9a37361ed2a5743b8f21533e98d9c3654789daea1",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

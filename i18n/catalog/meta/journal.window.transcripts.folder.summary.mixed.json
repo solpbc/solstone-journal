@@ -1,0 +1,29 @@
+{
+  "description": "Segment meta summary for mixed content and details-only files.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [
+    {
+      "name": "count",
+      "type": "string"
+    },
+    {
+      "name": "content",
+      "type": "string"
+    },
+    {
+      "name": "details",
+      "type": "string"
+    }
+  ],
+  "format_intent": "text",
+  "source_revision": "4e2a9b2120a8a57ae395971fb1bb6277c9e445b4d5315afec9f11835c1061e4a",
+  "max_length": 140,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

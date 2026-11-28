@@ -1,0 +1,16 @@
+{
+  "description": "Link to /app/health/ while older days for a folder are queued in Band 4.",
+  "context": "Journal window, sources view, folders band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "1896336d83fc45f0aa90066d057219e8ec3b33750cdbed8c60c1906b092cef70",
+  "max_length": 100,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

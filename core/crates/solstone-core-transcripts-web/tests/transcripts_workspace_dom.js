@@ -1029,6 +1029,8 @@ async function createEnvironment(
                 chunks: payloadOverride?.chunks ?? [],
                 audio_file: payloadOverride?.audio_file,
                 image_files: payloadOverride?.image_files,
+                md_files: payloadOverride?.md_files,
+                folder_activity: payloadOverride?.folder_activity,
                 data_state: dataState,
                 holds_location: payloadOverride?.holds_location,
                 media_sizes: payloadOverride?.media_sizes,
@@ -5120,4 +5122,156 @@ test('library photo: shows device label, pending slot, 512 px lightbox cap class
   trashBtn.dispatchEvent({ type: 'click', bubbles: true });
   const libraryLine = env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-photo-library');
   assert.ok(libraryLine && libraryLine.textContent.trim().length > 0, 'delete dialog includes library-stays boundary line');
+});
+
+test('folder segments render chronological activity, inline cards, hide tab strip when activity-only, and carry folder delete reassurance', async () => {
+  const env = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115',
+    'analyzed',
+    false,
+    [
+      {
+        key: '104000_300',
+        stream: 'laptop_folder_0123456789ab',
+        start: '10:40',
+        end: '10:45',
+        types: ['folder_activity'],
+        data_state: { folder_activity: 'analyzed' },
+        folder: {
+          folder_id: 'dl-1',
+          folder_name: 'Downloads',
+          file_count: 1,
+          content_count: 0,
+          details_only_count: 1,
+          activity_only: true,
+          kinds: [],
+          facet: { name: 'work', title: 'Work', color: '#2E6F9E', icon: null, emoji: null },
+        },
+      },
+      {
+        key: '110000_300',
+        stream: 'laptop_folder_0123456789ab',
+        start: '11:00',
+        end: '11:05',
+        types: ['audio'],
+        data_state: { audio: 'analyzed' },
+        folder: {
+          folder_id: 'dl-1',
+          folder_name: 'Downloads',
+          file_count: 2,
+          content_count: 1,
+          details_only_count: 1,
+          activity_only: false,
+          kinds: ['documents'],
+          facet: null,
+        },
+      },
+    ],
+  );
+  const pills = getZoomPills(env.doc);
+  assert.strictEqual(pills.length, 2);
+  assert.ok(pills[0].classList.contains('tr-zoom-pill-folder'));
+
+  // 1. Activity-only folder segment hides tab bar and omits analysis in delete dialog.
+  pills[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: { folder_activity: 'analyzed' },
+    md_files: { screen_text: '## 00:00 · Folder: Downloads\n- Added installer\\.dmg\n' },
+    folder_activity: {
+      folder_id: 'dl-1',
+      folder_name: 'Downloads',
+      activity_only: true,
+      facet: { name: 'work', title: 'Work', color: '#2E6F9E', icon: null, emoji: null },
+      file_count: 1,
+      content_count: 0,
+      details_only_count: 1,
+      kinds: [],
+      events: [
+        {
+          key: 'ev1',
+          event: 'added',
+          verb: 'added',
+          path: 'installer.dmg',
+          previous_path: null,
+          at: '2020-01-15T10:42:00Z',
+          offset_ms: 120000,
+          size: 58000000,
+          origin_domain: 'mozilla.org',
+          details_only: true,
+          kind: null,
+          landed_file: null,
+        },
+      ],
+      inline_cards: [],
+    },
+  });
+  assert.ok(!env.doc.querySelector('#trTabs').classList.contains('visible'), 'activity-only folder hides tab strip');
+  assert.ok(env.doc.querySelector('#trPanel .tr-folder-activity-card'), 'renders folder activity card');
+  assert.ok(env.doc.querySelector('#trPanel .tr-folder-ev-details'), 'renders details-only pill');
+  assert.strictEqual(env.doc.querySelectorAll('#trPanel .tr-folder-inline-card').length, 0);
+
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click', bubbles: true });
+  const actParts = Array.from(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li'));
+  assert.strictEqual(actParts.length, 1, 'activity-only folder delete lists folder activity only (no analysis)');
+  assert.ok(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-folder-stays'), 'delete dialog shows folder stays reassurance');
+  env.doc.querySelector('#trDeleteSegmentModalCancel').dispatchEvent({ type: 'click', bubbles: true });
+
+  // 2. Content-bearing folder segment renders inline revision card directly below activity card.
+  pills[1].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    data_state: { audio: 'analyzed' },
+    md_files: { screen_text: '## 00:00 · Folder: Downloads\n- Changed report\\.pdf\n' },
+    folder_activity: {
+      folder_id: 'dl-1',
+      folder_name: 'Downloads',
+      activity_only: false,
+      facet: null,
+      file_count: 2,
+      content_count: 1,
+      details_only_count: 1,
+      kinds: ['documents'],
+      events: [
+        {
+          key: 'ev2',
+          event: 'changed',
+          verb: 'revised',
+          path: 'report.pdf',
+          previous_path: null,
+          at: '2020-01-15T11:01:00Z',
+          offset_ms: 60000,
+          size: 420000,
+          origin_domain: null,
+          details_only: false,
+          kind: 'documents',
+          landed_file: 'document_transcript.md',
+        },
+        {
+          key: 'ev3',
+          event: 'renamed',
+          verb: 'renamed',
+          path: 'notes/new.txt',
+          previous_path: 'notes/old.txt',
+          at: '2020-01-15T11:02:00Z',
+          offset_ms: 120000,
+          size: 120,
+          origin_domain: null,
+          details_only: true,
+          kind: null,
+          landed_file: null,
+        },
+      ],
+      inline_cards: [
+        {
+          kind: 'documents',
+          path: 'report.pdf',
+          file_type: 'pdf',
+          at: '2020-01-15T11:01:00Z',
+          is_revision: true,
+          markdown: '# report.pdf\n\nUpdated body.',
+        },
+      ],
+    },
+  });
+  assert.strictEqual(env.doc.querySelectorAll('#trPanel .tr-folder-inline-card').length, 1);
+  assert.ok(env.doc.querySelector('#trPanel .tr-folder-pill.is-revision'), 'renders revision badge');
 });

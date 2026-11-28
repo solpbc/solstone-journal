@@ -1,4 +1,4 @@
-<!-- first-read: /app/sources/ -> /app/network/api/clients /app/settings/api/plaud /app/settings/api/granola /app/settings/api/garmin /app/sources/api/email /app/sources/photos/api/state -->
+<!-- first-read: /app/sources/ -> /app/network/api/clients /app/settings/api/plaud /app/settings/api/granola /app/settings/api/garmin /app/sources/api/email /app/sources/photos/api/state /app/sources/api/folders -->
 <!-- first-read: /app/sources/email -> /app/sources/api/email -->
 <!-- first-read: /app/sources/email/ -> /app/sources/api/email -->
 <!-- first-read: /app/sources/photos -> /app/sources/photos/api/state -->
@@ -1093,9 +1093,142 @@
     min-height: 32px;
     align-self: flex-start;
   }
+  .sources-folders {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sources-folders-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sources-folders-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .sources-folders-lede {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    line-height: 1.45;
+  }
+  .sources-folder-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sources-folder-row {
+    background: var(--cream);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sources-folder-row.is-attention {
+    border-color: var(--danger);
+    background: var(--danger-wash);
+  }
+  .sources-folder-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .sources-folder-id {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .sources-folder-icon {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    color: var(--ink-soft);
+  }
+  .sources-folder-name {
+    font-weight: 700;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .sources-folder-device {
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+  .sources-folder-row .fchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--paper);
+    font-size: 0.78rem;
+    color: var(--ink);
+  }
+  .sources-folder-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .sources-folder-kind {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--paper);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .sources-folder-counts {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .sources-folder-status {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    min-height: 44px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--orange-text-aa);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .sources-folder-status:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .sources-folder-attn {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--danger);
+    line-height: 1.45;
+  }
   @media (max-width: 768px) {
     .sources-page { padding: 1rem; }
-    .sources-devices-band, .sources-syncs, .sources-detail-card { padding: 16px; }
+    .sources-devices-band, .sources-folders, .sources-syncs, .sources-detail-card { padding: 16px; }
     .ss-input-grid, .ss-stat-row, .ss-est-units { grid-template-columns: 1fr; }
     dl.ss-facts-dl > div { grid-template-columns: 1fr; gap: 2px; }
     .ph-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

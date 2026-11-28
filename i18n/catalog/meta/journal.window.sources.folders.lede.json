@@ -1,0 +1,16 @@
+{
+  "description": "Quiet helper text beside or under the folders band heading.",
+  "context": "Journal window, sources view, folders band.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "64416fdc9f14c7b1310fafcad8c80f3877b5921bd46d97339f0e86f664620492",
+  "max_length": 120,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

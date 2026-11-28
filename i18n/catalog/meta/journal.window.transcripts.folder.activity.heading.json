@@ -1,0 +1,16 @@
+{
+  "description": "Heading for the chronological activity block in a folder segment.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5f7d91264567ac1fe429ca565bf441f3d23682e541d7c41be7b03830c1120151",
+  "max_length": 60,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

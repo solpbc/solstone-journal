@@ -1,0 +1,16 @@
+{
+  "description": "Quiet tag on a metadata-only file line.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "098b1003222140bf0cb718ebb432d812d92629e5f2e716f5ce3461aeb3dec234",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

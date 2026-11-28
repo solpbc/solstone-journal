@@ -1,0 +1,16 @@
+{
+  "description": "Segment meta summary for 1 details-only file.",
+  "context": "Journal window, transcripts view, folder segment.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "5abebaa2b1cc129fb4598d5037a67e0ac5b80721384fdd5fda52123ef4681c64",
+  "max_length": 80,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

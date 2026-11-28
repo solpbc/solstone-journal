@@ -1,0 +1,16 @@
+{
+  "description": "Screen-reader and tooltip label for a folder segment pill on the day rail.",
+  "context": "Journal window, transcripts view, day timeline.",
+  "bundles": [
+    "journal-window"
+  ],
+  "arguments": [],
+  "format_intent": "text",
+  "source_revision": "610ae6938b15c65d59773ea080bdb0bfbb4d0e3a0945fb9e1bdde82f96c506a2",
+  "max_length": 40,
+  "risk": "routine",
+  "auto_merge": true,
+  "surfaces": [
+    "journal-window"
+  ]
+}

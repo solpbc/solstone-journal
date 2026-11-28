@@ -56,10 +56,12 @@
   const GARMIN = '/app/settings/api/garmin';
   const EMAIL = '/app/sources/api/email';
   const PHOTOS = '/app/sources/photos/api/state';
+  const FOLDERS = '/app/sources/api/folders';
 
   const DEFAULT_SYNC = { status: 200, body: { connected: false, syncing: false } };
   const DEFAULT_GARMIN_SYNC = { status: 200, body: { available: false, connected: false, syncing: false } };
   const DEFAULT_PHOTOS_SYNC = { status: 404, body: { code: 'photos_library_disabled' } };
+  const DEFAULT_FOLDERS = { status: 200, body: { folders: [] } };
   const DEFAULT_EMAIL_SYNC = {
     status: 200,
     body: {
@@ -96,6 +98,7 @@
     // S1 / J4 in the design system's screenshots copy file.
     { label: t('journal.window.sources.source.or.date.unit.label.screenshots'), keys: ['screenshots'] },
     { label: t('journal.window.sources.source.or.date.unit.label.photos'), keys: ['photos'] },
+    { label: t('journal.window.sources.source.or.date.unit.label.folders'), keys: ['folder', 'folders'] },
     { label: t('journal.window.sources.source.or.date.unit.label.watch'), keys: ['watch', 'watch-audio'] },
   ];
 
@@ -297,6 +300,7 @@
         garmin: payload.garmin || DEFAULT_GARMIN_SYNC,
         email: payload.email || DEFAULT_EMAIL_SYNC,
         photos: payload.photos || DEFAULT_PHOTOS_SYNC,
+        folders: payload.folders || DEFAULT_FOLDERS,
       };
     }
     return {
@@ -306,6 +310,7 @@
       garmin: (payload && payload.garmin) || DEFAULT_GARMIN_SYNC,
       email: (payload && payload.email) || DEFAULT_EMAIL_SYNC,
       photos: (payload && payload.photos) || DEFAULT_PHOTOS_SYNC,
+      folders: (payload && payload.folders) || DEFAULT_FOLDERS,
     };
   }
 
@@ -1007,6 +1012,148 @@
     return section;
   }
 
+  const FOLDER_KIND_KEYS = {
+    notes: 'journal.window.sources.folders.kind.notes',
+    documents: 'journal.window.sources.folders.kind.documents',
+    transcripts: 'journal.window.sources.folders.kind.transcripts',
+    screenshots: 'journal.window.sources.folders.kind.screenshots',
+    photos: 'journal.window.sources.folders.kind.photos',
+    other: 'journal.window.sources.folders.kind.other',
+  };
+
+  const FOLDER_STATES = {
+    on: true,
+    paused: true,
+    setting_up: true,
+    needs_attention: true,
+    off: true,
+  };
+
+  function folderIconSvg(doc) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = typeof doc.createElementNS === 'function'
+      ? doc.createElementNS(ns, 'svg')
+      : doc.createElement('svg');
+    svg.setAttribute('class', 'sources-folder-icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = typeof doc.createElementNS === 'function'
+      ? doc.createElementNS(ns, 'path')
+      : doc.createElement('path');
+    path.setAttribute('d', 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function folderRowsFrom(entry) {
+    if (!entry || entry.status !== 200 || !entry.body || !Array.isArray(entry.body.folders)) {
+      return [];
+    }
+    return entry.body.folders.filter((row) => row && typeof row === 'object');
+  }
+
+  function paintFolders(doc, foldersEntry, opts) {
+    const rows = folderRowsFrom(foldersEntry);
+    if (rows.length === 0) return null;
+
+    const section = el(doc, 'section', 'sources-folders');
+    section.setAttribute('aria-labelledby', 'sources-folders-title');
+
+    const head = el(doc, 'div', 'sources-folders-head');
+    const title = text(doc, 'h2', 'sources-folders-title', t('journal.window.sources.folders.heading'));
+    title.id = 'sources-folders-title';
+    head.appendChild(title);
+    head.appendChild(text(doc, 'p', 'sources-folders-lede', t('journal.window.sources.folders.lede')));
+    section.appendChild(head);
+
+    const f = frame || global.SolSelectiveSync;
+    const list = el(doc, 'ul', 'sources-folder-list');
+    rows.forEach((folder) => {
+      const state = Object.prototype.hasOwnProperty.call(FOLDER_STATES, folder.state) ? folder.state : 'on';
+      const item = el(doc, 'li', state === 'needs_attention' ? 'sources-folder-row is-attention' : 'sources-folder-row');
+      if (folder.id) item.setAttribute('data-folder-id', String(folder.id));
+
+      const top = el(doc, 'div', 'sources-folder-top');
+      const idGroup = el(doc, 'div', 'sources-folder-id');
+      idGroup.appendChild(folderIconSvg(doc));
+      idGroup.appendChild(text(doc, 'strong', 'sources-folder-name', String(folder.name || '')));
+      const deviceLabel = String(folder.device_label || '').trim();
+      if (deviceLabel !== '') {
+        idGroup.appendChild(text(doc, 'span', 'sources-folder-device', '\u00b7 ' + deviceLabel));
+      }
+      if (folder.facet && typeof folder.facet === 'object' && folder.facet.title) {
+        const chip = el(doc, 'span', 'fchip');
+        if (global.ConveyFacetMark && typeof global.ConveyFacetMark.node === 'function') {
+          const mark = global.ConveyFacetMark.node(folder.facet, 'sm');
+          if (mark) chip.appendChild(mark);
+        }
+        chip.appendChild(text(doc, 'span', '', String(folder.facet.title)));
+        idGroup.appendChild(chip);
+      }
+      top.appendChild(idGroup);
+      if (f && typeof f.renderStatePill === 'function') {
+        const pill = f.renderStatePill(doc, state);
+        pill.className = (pill.className ? pill.className + ' ' : '') + 'sources-folder-state';
+        top.appendChild(pill);
+      }
+      item.appendChild(top);
+
+      const kinds = Array.isArray(folder.kinds) ? folder.kinds : [];
+      if (kinds.length > 0) {
+        const kindRow = el(doc, 'div', 'sources-folder-kinds');
+        let kindCount = 0;
+        kinds.forEach((k) => {
+          if (Object.prototype.hasOwnProperty.call(FOLDER_KIND_KEYS, k)) {
+            kindRow.appendChild(text(doc, 'span', 'sources-folder-kind', t(FOLDER_KIND_KEYS[k])));
+            kindCount += 1;
+          }
+        });
+        if (kindCount > 0) item.appendChild(kindRow);
+      }
+
+      const itemsCount = Number(folder.items_count || 0);
+      const segmentsCount = Number(folder.segments_count || 0);
+      const addedMs = parseTime(folder.last_added_at);
+      let countLine;
+      if (itemsCount === 0 && addedMs === null) {
+        countLine = COPY.nothing;
+      } else {
+        const parts = [
+          t('journal.window.sources.folders.items', [
+            ['quantity', itemsCount],
+            ['count', f && typeof f.formatCount === 'function' ? f.formatCount(itemsCount) : String(itemsCount)],
+          ]),
+          t('journal.window.sources.folders.segments', [
+            ['quantity', segmentsCount],
+            ['count', f && typeof f.formatCount === 'function' ? f.formatCount(segmentsCount) : String(segmentsCount)],
+          ]),
+        ];
+        if (addedMs !== null) {
+          parts.push(t('journal.window.sources.syncs.last.added', [['when', relative(addedMs, opts.now, opts.timeZone)]]));
+        }
+        countLine = parts.join(' \u00b7 ');
+      }
+      item.appendChild(text(doc, 'p', 'sources-folder-counts', countLine));
+
+      if (folder.backfill_active === true) {
+        item.appendChild(link(doc, 'sources-folder-status', t('journal.window.sources.folders.backfill.link'), HEALTH_HREF));
+      }
+
+      if (state === 'needs_attention') {
+        item.appendChild(text(doc, 'p', 'sources-folder-attn', t('journal.window.sources.folders.attention', [['device', deviceLabel || 'this device']])));
+      }
+
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
   // The controls a draw makes. A redraw takes out whichever one held focus,
   // so focus goes to the same control drawn again, or else to the view's
   // root, which ships with the page and is never redrawn.
@@ -1016,6 +1163,7 @@
     'sources-pair',
     'sources-current',
     'sources-import',
+    'sources-folder-status',
     'sources-syncs-manage',
     'sources-sync-action-photos',
     'sources-sync-unavailable-photos',
@@ -1057,6 +1205,8 @@
     const hasPairedDevices = clientsOk && clientsEntry.body.clients.length > 0;
     root.appendChild(paintSwitcher(doc, hasPairedDevices));
     root.appendChild(paintDevices(doc, root, clientsEntry, opts));
+    const foldersBand = paintFolders(doc, unpacked.folders, opts);
+    if (foldersBand) root.appendChild(foldersBand);
     root.appendChild(paintSyncs(doc, unpacked.plaud, unpacked.granola, unpacked.garmin, unpacked.email, unpacked.photos, clientsEntry, opts));
   }
 
@@ -1092,6 +1242,7 @@
     const needGarmin = !prev || !prev.garmin || (!garminHidden(prev.garmin) && syncFailed(prev.garmin));
     const needEmail = !prev || !prev.email || emailFailed(prev.email);
     const needPhotos = !prev || !prev.photos || (!photosHidden(prev.photos) && photosFailed(prev.photos));
+    const needFolders = !prev || !prev.folders || (prev.folders.status !== 200 && prev.folders.status !== 404);
     const results = await Promise.all([
       fetchEndpoint(opts.fetch, CLIENTS, ended),
       needPlaud ? fetchEndpoint(opts.fetch, PLAUD, ended) : Promise.resolve(prev.plaud),
@@ -1099,14 +1250,16 @@
       needGarmin ? fetchEndpoint(opts.fetch, GARMIN, ended) : Promise.resolve(prev.garmin),
       needEmail ? fetchEndpoint(opts.fetch, EMAIL, ended) : Promise.resolve(prev.email),
       needPhotos ? fetchEndpoint(opts.fetch, PHOTOS, ended) : Promise.resolve(prev.photos),
+      needFolders ? fetchEndpoint(opts.fetch, FOLDERS, ended) : Promise.resolve(prev.folders),
     ]);
-    if (ended() || !results[0] || !results[1] || !results[2] || !results[3] || !results[4] || !results[5]) return null;
+    if (ended() || !results[0] || !results[1] || !results[2] || !results[3] || !results[4] || !results[5] || !results[6]) return null;
     const clients = results[0];
     const plaud = results[1];
     const granola = results[2];
     const garmin = results[3];
     const email = results[4];
     const photos = results[5];
+    const folders = results[6];
     const payload = {
       status: clients.status,
       body: clients.body,
@@ -1116,6 +1269,7 @@
       garmin: garmin,
       email: email,
       photos: photos,
+      folders: folders,
     };
     opts.last = payload;
     render(doc, root, payload, opts);

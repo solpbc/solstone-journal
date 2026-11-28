@@ -767,7 +767,231 @@ fn prepare_segment_localized(
     {
         obj.insert("granola".to_owned(), note);
     }
+    if let Some(folder_activity) = build_folder_activity_payload(root, &dir)
+        && let Some(obj) = payload.as_object_mut()
+    {
+        if folder_activity
+            .get("activity_only")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            && let Some(ds) = obj.get_mut("data_state").and_then(Value::as_object_mut)
+        {
+            ds.insert(
+                "folder_activity".to_owned(),
+                Value::String("analyzed".to_owned()),
+            );
+        }
+        if let Some(cards) = folder_activity
+            .get("inline_cards")
+            .and_then(Value::as_array)
+            && let Some(images) = obj.get_mut("image_files").and_then(Value::as_object_mut)
+        {
+            for card in cards {
+                if let Some(file) = card.get("file").and_then(Value::as_str)
+                    && !file.contains(['/', '\\'])
+                    && dir.join(file).is_file()
+                {
+                    images.entry(file.to_owned()).or_insert_with(|| {
+                        Value::String(crate::segment_media::url(day, stream, key, file))
+                    });
+                }
+            }
+        }
+        obj.insert("folder_activity".to_owned(), folder_activity);
+    }
     Ok(payload)
+}
+
+fn folder_origin_domain(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let after_scheme = trimmed.split_once("://").map_or(trimmed, |(_, rest)| rest);
+    let authority = after_scheme.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = authority.rsplit_once('@').map_or(authority, |(_, hp)| hp);
+    let host = if host_port.starts_with('[') {
+        host_port
+            .split(']')
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('[')
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    (!host.is_empty()).then_some(host)
+}
+
+fn folder_event_verb(
+    event: solstone_core_format::folder::FolderEventKind,
+    kind: Option<&str>,
+) -> &'static str {
+    use solstone_core_format::folder::FolderEventKind;
+    match event {
+        FolderEventKind::Added => "added",
+        FolderEventKind::Renamed => "renamed",
+        FolderEventKind::Removed => "removed",
+        FolderEventKind::Changed => match kind {
+            Some("documents" | "transcripts") => "revised",
+            _ => "edited",
+        },
+    }
+}
+
+fn build_folder_activity_payload(root: &Path, seg_dir: &Path) -> Option<Value> {
+    let activity_path = seg_dir
+        .join("talents")
+        .join(solstone_core_format::folder::FOLDER_ACTIVITY_FILE);
+    let raw = fs::read(&activity_path).ok()?;
+    let mut activity: solstone_core_format::folder::StoredFolderActivity =
+        serde_json::from_slice(&raw).ok()?;
+    activity.events.sort_by(|a, b| {
+        a.offset_ms
+            .cmp(&b.offset_ms)
+            .then_with(|| a.at_ms.cmp(&b.at_ms))
+            .then_with(|| a.path.cmp(&b.path))
+            .then_with(|| a.key.cmp(&b.key))
+    });
+
+    let activity_only = solstone_core_segment::is_activity_only_folder_dir(seg_dir);
+    let facet = activity
+        .owner_facet
+        .as_deref()
+        .and_then(|slug| crate::attach::read_folder_facet_badge(root, slug));
+    let file_count = activity.events.len();
+    let content_count = activity
+        .events
+        .iter()
+        .filter(|ev| ev.landed_file.is_some())
+        .count();
+    let details_only_count = file_count.saturating_sub(content_count);
+
+    let mut kind_set = std::collections::BTreeSet::new();
+    let mut events_json = Vec::with_capacity(activity.events.len());
+    for ev in &activity.events {
+        let details_only = ev.landed_file.is_none();
+        if !details_only && let Some(k) = ev.kind.as_deref() {
+            kind_set.insert(k.to_owned());
+        }
+        let verb = folder_event_verb(ev.event, ev.kind.as_deref());
+        let origin_domain = ev.origin_url.as_deref().and_then(folder_origin_domain);
+        events_json.push(json!({
+            "key": ev.key,
+            "event": ev.event,
+            "verb": verb,
+            "path": ev.path,
+            "previous_path": ev.previous_path,
+            "at": ev.at,
+            "offset_ms": ev.offset_ms,
+            "size": ev.size,
+            "file_type": ev.file_type,
+            "origin_domain": origin_domain,
+            "details_only": details_only,
+            "kind": ev.kind,
+            "landed_file": ev.landed_file,
+        }));
+    }
+
+    let note_md = fs::read_to_string(seg_dir.join("note_transcript.md")).ok();
+    let doc_md =
+        fs::read_to_string(seg_dir.join(solstone_core_format::folder::DOCUMENT_TRANSCRIPT_FILE))
+            .ok();
+    let tr_lines: Vec<Value> =
+        fs::read_to_string(seg_dir.join(solstone_core_format::folder::FOLDER_TRANSCRIPT_FILE))
+            .ok()
+            .map(|raw_tr| {
+                raw_tr
+                    .lines()
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .filter(|v| v.get("text").and_then(Value::as_str).is_some())
+                    .map(|v| {
+                        json!({
+                            "speaker": v.get("speaker").and_then(Value::as_str),
+                            "text": v.get("text").and_then(Value::as_str).unwrap_or(""),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+    let mut inline_cards = Vec::new();
+    let mut emitted_notes = false;
+    let mut emitted_docs = false;
+    let mut emitted_transcripts = false;
+    for ev in &activity.events {
+        let Some(landed) = ev.landed_file.as_deref() else {
+            continue;
+        };
+        let kind = ev.kind.as_deref().unwrap_or("");
+        match kind {
+            "notes" => {
+                if !emitted_notes && let Some(md) = &note_md {
+                    emitted_notes = true;
+                    inline_cards.push(json!({
+                        "kind": "notes",
+                        "path": ev.path,
+                        "at": ev.at,
+                        "edited": ev.event == solstone_core_format::folder::FolderEventKind::Changed,
+                        "markdown": md,
+                    }));
+                }
+            }
+            "documents" => {
+                if !emitted_docs && let Some(md) = &doc_md {
+                    emitted_docs = true;
+                    inline_cards.push(json!({
+                        "kind": "documents",
+                        "path": ev.path,
+                        "file_type": ev.file_type,
+                        "at": ev.at,
+                        "is_revision": ev.event == solstone_core_format::folder::FolderEventKind::Changed,
+                        "markdown": md,
+                    }));
+                }
+            }
+            "transcripts" => {
+                if !emitted_transcripts && !tr_lines.is_empty() {
+                    emitted_transcripts = true;
+                    inline_cards.push(json!({
+                        "kind": "transcripts",
+                        "path": ev.path,
+                        "at": ev.at,
+                        "is_revision": ev.event == solstone_core_format::folder::FolderEventKind::Changed,
+                        "lines": tr_lines,
+                    }));
+                }
+            }
+            "screenshots" | "photos" => {
+                inline_cards.push(json!({
+                    "kind": kind,
+                    "path": ev.path,
+                    "at": ev.at,
+                    "file": landed,
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    let kinds: Vec<String> = ["notes", "documents", "transcripts", "screenshots", "photos"]
+        .into_iter()
+        .filter(|k| kind_set.contains(*k))
+        .map(str::to_owned)
+        .collect();
+
+    Some(json!({
+        "folder_id": activity.folder_id,
+        "folder_name": activity.folder_name,
+        "activity_only": activity_only,
+        "facet": facet,
+        "file_count": file_count,
+        "content_count": content_count,
+        "details_only_count": details_only_count,
+        "kinds": kinds,
+        "events": events_json,
+        "inline_cards": inline_cards,
+    }))
 }
 
 /// Preserve raw diagnostics from legacy or unrelated writers, including matching English.
@@ -4758,5 +4982,122 @@ mod tests {
         assert_eq!(chunks[0]["photo"]["description_state"], "pending");
         assert_eq!(chunks[0]["photo"]["width"], 512);
         assert_eq!(chunks[0]["photo"]["height"], 384);
+    }
+
+    #[test]
+    fn folder_segments_expose_day_summaries_and_structured_folder_activity_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        solstone_core_facets::create_facet(root, "work", "Work", "", "#2E6F9E", "", None).unwrap();
+        let stream = "laptop_folder_0123456789ab";
+        let day = "20261127";
+
+        // 1. Activity-only folder segment.
+        let act_seg = root.join(format!("chronicle/{day}/{stream}/104000_300"));
+        std::fs::create_dir_all(act_seg.join("talents")).unwrap();
+        std::fs::write(act_seg.join("events.jsonl"), "").unwrap();
+        std::fs::write(
+            act_seg.join("talents/screen_text.md"),
+            "## 02:00 · Folder: Downloads\n- Added installer\\.dmg\n",
+        )
+        .unwrap();
+        std::fs::write(
+            act_seg.join("talents/folder_activity.json"),
+            json!({
+                "v": 1,
+                "folder_id": "dl-1",
+                "folder_name": "Downloads",
+                "owner_facet": "work",
+                "events": [{
+                    "key": "ev1",
+                    "event": "added",
+                    "path": "installer.dmg",
+                    "at": "2026-11-27T10:42:00-07:00",
+                    "at_ms": 1795714920000_i64,
+                    "offset_ms": 120000,
+                    "size": 58000000,
+                    "origin_url": "https://mozilla.org/firefox?utm_source=test"
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // 2. Content-bearing folder segment with revised PDF + details-only rename.
+        let doc_seg = root.join(format!("chronicle/{day}/{stream}/110000_300"));
+        std::fs::create_dir_all(doc_seg.join("talents")).unwrap();
+        std::fs::write(
+            doc_seg.join("document_transcript.md"),
+            "# report.pdf\n\nUpdated Q4 numbers.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            doc_seg.join("talents/folder_activity.json"),
+            json!({
+                "v": 1,
+                "folder_id": "dl-1",
+                "folder_name": "Downloads",
+                "events": [
+                    {
+                        "key": "ev2",
+                        "event": "changed",
+                        "path": "report.pdf",
+                        "at": "2026-11-27T11:01:00-07:00",
+                        "at_ms": 1795716060000_i64,
+                        "offset_ms": 60000,
+                        "file_type": "pdf",
+                        "size": 420000,
+                        "kind": "documents",
+                        "landed_file": "document_transcript.md"
+                    },
+                    {
+                        "key": "ev3",
+                        "event": "renamed",
+                        "path": "notes/new.txt",
+                        "previous_path": "notes/old.txt",
+                        "at": "2026-11-27T11:02:00-07:00",
+                        "at_ms": 1795716120000_i64,
+                        "offset_ms": 120000,
+                        "size": 120
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let prepared_day = crate::day::prepare_day(root, day, jiff::Timestamp::now()).unwrap();
+        assert!(!prepared_day.screen.is_empty());
+        let act_day = prepared_day
+            .segments
+            .iter()
+            .find(|s| s.key == "104000_300")
+            .expect("activity-only folder segment listed on day");
+        assert_eq!(act_day.types, vec!["folder_activity"]);
+        assert_eq!(act_day.think, None);
+        let act_summary = act_day.folder.as_ref().expect("folder summary attached");
+        assert!(act_summary.activity_only);
+        assert_eq!(act_summary.file_count, 1);
+        assert_eq!(act_summary.details_only_count, 1);
+        assert_eq!(act_summary.facet.as_ref().unwrap().name, "work");
+
+        let act_detail =
+            super::prepare_segment(root, day, stream, "104000_300", jiff::Timestamp::now())
+                .unwrap();
+        let fa = &act_detail["folder_activity"];
+        assert_eq!(fa["activity_only"], true);
+        assert_eq!(fa["events"][0]["verb"], "added");
+        assert_eq!(fa["events"][0]["origin_domain"], "mozilla.org");
+        assert_eq!(fa["events"][0]["details_only"], true);
+        assert_eq!(fa["inline_cards"].as_array().unwrap().len(), 0);
+
+        let doc_detail =
+            super::prepare_segment(root, day, stream, "110000_300", jiff::Timestamp::now())
+                .unwrap();
+        let dfa = &doc_detail["folder_activity"];
+        assert_eq!(dfa["activity_only"], false);
+        assert_eq!(dfa["events"][0]["verb"], "revised");
+        assert_eq!(dfa["events"][1]["verb"], "renamed");
+        assert_eq!(dfa["inline_cards"][0]["is_revision"], true);
     }
 }
