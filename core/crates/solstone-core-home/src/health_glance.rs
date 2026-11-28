@@ -749,14 +749,19 @@ pub struct StatusBadgeSummary {
 }
 
 pub fn status_badge_summary(root: &std::path::Path) -> StatusBadgeSummary {
-    let context = crate::HomeContext::new(root, Timestamp::now());
-    status_badge_summary_at(&context)
+    status_badge_summary_at(&crate::HomeContext::new(root, Timestamp::now()))
 }
 
 pub fn status_badge_summary_at(context: &crate::HomeContext) -> StatusBadgeSummary {
+    status_badge_summary_with_search(context, search_index_issue(context).is_some())
+}
+
+/// Combine the last completed search check with the other live badge inputs.
+pub fn status_badge_summary_with_search(
+    context: &crate::HomeContext,
+    search_failing: bool,
+) -> StatusBadgeSummary {
     let capture_health = crate::readers::get_capture_health(context);
-    let last_observe = crate::readers::last_observe_relative_seconds(context)
-        .map(|seconds| crate::formatting::relative_time_ago(seconds as f64, context.locale()));
     let brain = crate::readers::build_brain_snapshot(context);
     let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
         .ok()
@@ -768,12 +773,12 @@ pub fn status_badge_summary_at(context: &crate::HomeContext) -> StatusBadgeSumma
                 context.locale(),
             )
         });
-    let index_issue = search_index_issue(context);
+    let index_issue = search_failing.then(|| json!({"severity": "amber"}));
     let backlog = crate::readers::load_backlog_source(context);
     let integrity = solstone_core_system_health::read_integrity_receipt(context.journal_root());
     let glance = build_health_glance_with_integrity_in(
         &capture_health,
-        last_observe.as_deref(),
+        None,
         &backlog,
         &brain,
         context.now_utc,
@@ -1619,12 +1624,14 @@ mod tests {
         std::fs::create_dir_all(root.join("reflections/weekly")).expect("weekly dir");
         std::fs::write(root.join("reflections/weekly/20260510.md"), b"hello").expect("weekly md");
         assert!(search_index_issue(&day0_ctx).is_none());
+        assert!(!solstone_core_system_health::search_index_failing(root, t0));
         assert_eq!(status_badge_summary_at(&day0_ctx).issues, 0);
 
         // Corrupt sqlite file triggers IndexHealthState::Failing -> amber issue on both glance and badge.
         std::fs::create_dir_all(root.join("indexer")).expect("indexer dir");
         std::fs::write(root.join("indexer/journal.sqlite"), b"corrupt sqlite bytes")
             .expect("write corrupt sqlite");
+        assert!(solstone_core_system_health::search_index_failing(root, t0));
         let idx_issue = search_index_issue(&day0_ctx).expect("failing search index issue");
         assert_eq!(idx_issue["severity"], "amber");
         assert_eq!(idx_issue["href"], "/app/health/#backlogVerdict");

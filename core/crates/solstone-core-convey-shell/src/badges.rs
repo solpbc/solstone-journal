@@ -5,7 +5,8 @@
 //! persistent navigation chrome (`home`, `curation`, and `import`).
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::extract::Extension;
 use axum::response::{IntoResponse, Response};
@@ -18,10 +19,66 @@ use solstone_core_import_web::ImportRouteSlot;
 
 use crate::JournalRoot;
 
+// One slot per router. A restore at the same path starts with a new verdict.
+#[derive(Default)]
+struct SearchBadge {
+    generation: u64,
+    failing: Option<bool>,
+    checked: Option<Instant>,
+    worker: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl SearchBadge {
+    fn read(
+        shared: &Arc<Mutex<Self>>,
+        generation: u64,
+        now: Instant,
+        check: impl FnOnce() -> Option<bool> + Send + 'static,
+        notify: impl FnOnce() + Send + 'static,
+    ) -> bool {
+        let mut slot = shared.lock().unwrap_or_else(|error| error.into_inner());
+        if slot.generation != generation {
+            slot.generation = generation;
+            slot.failing = None;
+            slot.checked = None;
+        }
+        let previous = slot.failing.unwrap_or(false);
+        if slot
+            .worker
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished())
+            || slot
+                .checked
+                .is_some_and(|at| now.saturating_duration_since(at) < Duration::from_secs(60))
+        {
+            return previous;
+        }
+        slot.checked = Some(now);
+        let weak = Arc::downgrade(shared);
+        slot.worker = Some(tokio::task::spawn_blocking(move || {
+            let Some(failing) = check() else { return };
+            let Some(shared) = weak.upgrade() else { return };
+            let changed = {
+                let mut slot = shared.lock().unwrap_or_else(|error| error.into_inner());
+                if slot.generation != generation {
+                    return;
+                }
+                slot.checked = Some(Instant::now());
+                slot.failing.replace(failing) != Some(failing)
+            };
+            if changed {
+                notify();
+            }
+        }));
+        previous
+    }
+}
+
 pub(crate) fn routes(
     backup_deps: BackupWebDeps,
     import_route: Option<Arc<ImportRouteSlot>>,
 ) -> Router {
+    let search = Arc::new(Mutex::new(SearchBadge::default()));
     Router::new().route(
         "/api/shell/badges",
         get(
@@ -29,7 +86,13 @@ pub(crate) fn routes(
                 Extension<solstone_core_convey_http::coalesce::ResponseLocale>,
             >,
                   journal: Extension<Arc<JournalRoot>>| {
-                get_badges(locale, journal, backup_deps.clone(), import_route.clone())
+                get_badges(
+                    locale,
+                    journal,
+                    backup_deps.clone(),
+                    import_route.clone(),
+                    Arc::clone(&search),
+                )
             },
         )
         .layer(solstone_core_convey_http::coalesce::layer()),
@@ -41,14 +104,47 @@ async fn get_badges(
     Extension(journal): Extension<Arc<JournalRoot>>,
     backup_deps: BackupWebDeps,
     import_route: Option<Arc<ImportRouteSlot>>,
+    search: Arc<Mutex<SearchBadge>>,
 ) -> Response {
     let locale = crate::window_catalog::response_locale(locale);
     spawn_blocking_response(OwnerReadRole::ShellBadges, move || {
+        let root = journal.0.clone();
+        let generation =
+            solstone_core_journal_io::whole_journal_restore::whole_journal_restore_generation(
+                &root,
+            );
+        let owner = backup_deps.target_use_owner();
+        let socket = root.join("health/callosum.sock");
+        let failing = SearchBadge::read(
+            &search,
+            generation,
+            Instant::now(),
+            move || {
+                let _use = owner.begin().ok()?;
+                Some(solstone_core_system_health::search_index_failing(
+                    &root,
+                    jiff::Timestamp::now(),
+                ))
+            },
+            move || {
+                let sender = solstone_core_callosum::CallosumOneShotSender::new(
+                    socket,
+                    Duration::from_millis(500),
+                );
+                if let Err(error) = sender.send_line_confirmed(concat!(
+                    r#"{"tract":"change","event":"changed","kind":"system","key":"search-health"}"#,
+                    "\n"
+                )) {
+                    log::debug!("search badge notification unavailable: {error}");
+                }
+            },
+        );
         Json(badges_payload_in(
             &journal.0,
             &backup_deps,
             import_route.as_deref(),
             locale,
+            failing,
         ))
         .into_response()
     })
@@ -78,8 +174,13 @@ pub(crate) fn badges_payload_in(
     backup_deps: &BackupWebDeps,
     import_route: Option<&ImportRouteSlot>,
     locale: &str,
+    search_failing: bool,
 ) -> Value {
-    let summary = solstone_core_home::health_glance::status_badge_summary(root);
+    let context = solstone_core_home::HomeContext::new(root, jiff::Timestamp::now());
+    let summary = solstone_core_home::health_glance::status_badge_summary_with_search(
+        &context,
+        search_failing,
+    );
     let mut issues = summary.issues;
     let mut severity = summary.severity;
     let mut uncertain = summary.uncertain;
@@ -146,6 +247,76 @@ mod tests {
     use serde_json::{Value, json};
     use solstone_core_convey_http::identity::AccessBasis;
     use tower::ServiceExt;
+
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn search_badge_keeps_the_last_completed_verdict_until_one_refresh_finishes() {
+        use super::{Duration, Instant, SearchBadge};
+        use std::sync::{Arc, Mutex, mpsc};
+
+        let cache = Arc::new(Mutex::new(SearchBadge::default()));
+        let mut now = Instant::now();
+        let unused = || panic!("another check started");
+        let unexpected = || panic!("unchanged verdict published");
+        for (round, (result, previous)) in [
+            (Some(true), false),
+            (None, true), // an interrupted check has no verdict
+            (Some(true), true),
+            (Some(false), true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            now += Duration::from_secs(61);
+            let (release, wait) = mpsc::channel();
+            let (sent, events) = mpsc::channel();
+            let notified = Arc::clone(&cache);
+            assert_eq!(
+                SearchBadge::read(
+                    &cache,
+                    0,
+                    now,
+                    move || {
+                        wait.recv().unwrap();
+                        result
+                    },
+                    move || {
+                        sent.send(notified.lock().unwrap().failing).unwrap();
+                    }
+                ),
+                previous
+            );
+            assert_eq!(
+                SearchBadge::read(
+                    &cache,
+                    0,
+                    now + Duration::from_secs(120),
+                    unused,
+                    unexpected
+                ),
+                previous
+            );
+            release.send(()).unwrap();
+            let worker = cache.lock().unwrap().worker.take().unwrap();
+            worker.await.unwrap();
+            if matches!(round, 0 | 3) {
+                assert_eq!(events.try_recv().unwrap(), result);
+            } else {
+                assert!(events.try_recv().is_err());
+            }
+            let checked = cache.lock().unwrap().checked.unwrap();
+            assert_eq!(
+                SearchBadge::read(
+                    &cache,
+                    0,
+                    checked + Duration::from_secs(59),
+                    unused,
+                    unexpected
+                ),
+                result.unwrap_or(previous)
+            );
+        }
+    }
 
     #[tokio::test]
     async fn shell_badges_returns_calm_zeroes_on_fresh_established_journal_and_counts_review_work()

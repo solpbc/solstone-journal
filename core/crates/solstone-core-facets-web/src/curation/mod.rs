@@ -27,7 +27,7 @@ use solstone_core_entity::{
 };
 use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_speaker_resolve::{
-    candidate_tracker::CandidateTracker, keep_separate::find_assertion,
+    candidate_tracker::CandidateTracker, keep_separate,
     speaker_candidate_pair_review_candidates as pair_store,
     speaker_review_candidates as speaker_store,
 };
@@ -248,11 +248,11 @@ pub fn to_review_count(root: &Path) -> usize {
             }
         }
     }
-    let speaker_count = speaker_store::load_candidates(root)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|row| include_speaker(root, row))
-        .count();
+    let speaker_count = visible_speakers(
+        root,
+        speaker_store::load_candidates(root).unwrap_or_default(),
+    )
+    .count();
     let pair_count = pair_store::load_candidates(root)
         .unwrap_or_default()
         .into_iter()
@@ -515,12 +515,12 @@ fn load_state(root: &Path, locale: &str, owner_view: bool) -> Result<Value, Stri
         }));
     }
 
-    let speaker_items = speaker_store::load_candidates(root)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter(|row| include_speaker(root, row))
-        .map(speaker_item)
-        .collect::<Vec<_>>();
+    let speaker_items = visible_speakers(
+        root,
+        speaker_store::load_candidates(root).map_err(|error| error.to_string())?,
+    )
+    .map(speaker_item)
+    .collect::<Vec<_>>();
     let pair_items = pair_store::load_candidates(root)
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -766,27 +766,29 @@ fn set_aside_ambiguity_item(row: Value) -> Value {
     amb
 }
 
-fn include_speaker(root: &Path, row: &Value) -> bool {
-    let status = row.get("status").and_then(Value::as_str);
-    if status != Some("open")
-        && !(status == Some("suppressed")
-            && row.get("suppressed_by_keep_separate") == Some(&Value::Bool(true)))
-    {
-        return false;
-    }
-    let evidence = object(row, "evidence");
-    let detection_count = solstone_core_entity::json_i64(evidence.get("detection_count")).max(1);
-    let source_id = string(row, "source_id");
-    let target_id = string(row, "target_id");
-    find_assertion(root, &source_id, &target_id)
-        .ok()
-        .flatten()
-        .is_none_or(|assertion| {
-            assertion
-                .sources
-                .iter()
-                .all(|source| detection_count > source.detection_count)
-        })
+fn visible_speakers(root: &Path, rows: Vec<Value>) -> impl Iterator<Item = Value> + '_ {
+    let assertions =
+        std::cell::LazyCell::new(move || keep_separate::fold_assertions(root).unwrap_or_default());
+    rows.into_iter().filter(move |row| {
+        let status = row.get("status").and_then(Value::as_str);
+        if status != Some("open")
+            && !(status == Some("suppressed")
+                && row.get("suppressed_by_keep_separate") == Some(&Value::Bool(true)))
+        {
+            return false;
+        }
+        let source = row["source_id"].as_str().unwrap_or_default();
+        let target = row["target_id"].as_str().unwrap_or_default();
+        let count = solstone_core_entity::json_i64(row["evidence"].get("detection_count")).max(1);
+        assertions
+            .get(&keep_separate::pair_key(source, target))
+            .is_none_or(|assertion| {
+                assertion
+                    .sources
+                    .iter()
+                    .all(|source| count > source.detection_count)
+            })
+    })
 }
 
 fn speaker_item(row: Value) -> Value {
@@ -2677,6 +2679,17 @@ mod tests {
             "populated fixture also carries entity merge items that to_review excludes"
         );
         assert_eq!(to_review_count(root), expected);
+
+        // A review uses one assertion snapshot; the next review sees a new decision.
+        let row = json!({"status":"open","source_id":"sample-a","target_id":"sample-b"});
+        let mut rows = visible_speakers(root, vec![row.clone(), row.clone()]);
+        assert!(rows.next().is_some());
+        keep_separate::record_keep_separate_assertion(
+            root, "sample-b", "sample-a", "owner", None, 1,
+        )
+        .expect("record owner's decision");
+        assert!(rows.next().is_some());
+        assert_eq!(visible_speakers(root, vec![row]).count(), 0);
     }
 
     #[test]

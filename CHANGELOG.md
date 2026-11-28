@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- dashboard badges now update faster in large journals. if search needs attention, the home badge updates when the check finishes.
 - Gmail sync now finds mail you sent from your Gmail address or aliases already seen in your sent mail even when Gmail does not mark it as sent, and reconnects automatically if the connection drops mid-run. if a scan or sync stops mid-way, opening email in sources shows the stopped scan as paused to resume and an interrupted sync no longer stays stuck. hourly checks with no new mail also finish faster.
 - your journal's thinking now includes email subjects, copied recipients, attachment names, forwarded messages and the message you replied to. short replies and forwards carry their context instead of being skipped as too brief.
 - synced email history now counts toward imports and older history on status and respects its pause button. email history arriving on older finished days no longer reruns their daily work.

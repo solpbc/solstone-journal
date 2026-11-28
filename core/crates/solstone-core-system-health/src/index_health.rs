@@ -228,6 +228,32 @@ fn measure(journal: &Path) -> Result<Arc<IndexStatus>, String> {
     Ok(status)
 }
 
+/// A fresh search verdict for the navigation badge. Only a failed publication
+/// on a still-outstanding path can add an issue beyond the measured status
+/// and work list. Healthy journals need no publication history for this check.
+pub fn search_index_failing(journal: &Path, now: Timestamp) -> bool {
+    let status = match inspect_index(journal) {
+        Ok(status) => status,
+        Err(error) => {
+            log::warn!("search index status unavailable: {error}");
+            return true;
+        }
+    };
+    let health = with_work_list(
+        journal,
+        index_health_from_outcomes(&status, &[], ENGLISH),
+        ENGLISH,
+    );
+    if health.state == IndexHealthState::Failing {
+        return true;
+    }
+    if status.missing.is_empty() && status.stale.is_empty() {
+        return false;
+    }
+    let observations = read_indexing_observations(journal, now);
+    index_health_from(&status, &observations, ENGLISH).state == IndexHealthState::Failing
+}
+
 /// As [`evaluate_index_health_with`] for a page that is read often. A journal
 /// whose measurement is cheap is measured every time. One that is expensive
 /// (hundreds of thousands of files) reuses its last measurement for up to a
@@ -344,11 +370,18 @@ fn index_health_from(
     observations: &IndexingObservations,
     locale: &str,
 ) -> IndexHealth {
+    index_health_from_outcomes(status, &observations.outcomes, locale)
+}
+
+fn index_health_from_outcomes(
+    status: &IndexStatus,
+    outcomes: &[crate::IndexingAttemptObservation],
+    locale: &str,
+) -> IndexHealth {
     let behind = |path: &String| {
         status.stale.contains(path) || status.missing.contains(path) || status.failed.contains(path)
     };
-    let failed = observations
-        .outcomes
+    let failed = outcomes
         .iter()
         .filter(|o| matches!(o.outcome.as_str(), "failed" | "declined" | "ambiguous"))
         .map(|o| &o.identity)

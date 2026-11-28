@@ -151,7 +151,8 @@ pub fn remove_operation_sources(
     Ok(removed)
 }
 
-fn fold_assertions(
+/// Current assertions by canonical pair key, folded once for a batch of candidates.
+pub fn fold_assertions(
     journal_root: &Path,
 ) -> Result<BTreeMap<String, KeepSeparateAssertion>, KeepSeparateError> {
     let path = keep_separate_path(journal_root);
