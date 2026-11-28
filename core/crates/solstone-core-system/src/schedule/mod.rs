@@ -28,8 +28,8 @@ pub use config::{
     add_missing_schedule_entries, configured_weekly_day_name, enabled_schedule_entry,
     initialize_schedule_config, maintenance_time, mutate_schedule_entries,
     read_enabled_schedule_entry, register_default_entries, register_default_entries_at,
-    remove_schedule_entry, set_maintenance_time, set_schedule_metadata, valid_maintenance_time,
-    validate_schedule_entry,
+    remove_schedule_entry, set_maintenance_time, set_maintenance_time_at, set_schedule_metadata,
+    valid_maintenance_time, validate_schedule_entry,
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};

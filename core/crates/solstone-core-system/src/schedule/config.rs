@@ -393,16 +393,57 @@ pub fn maintenance_time(journal: &Path) -> Result<String, ScheduleError> {
 }
 
 pub fn set_maintenance_time(journal: &Path, value: &str) -> Result<(), ScheduleError> {
+    set_maintenance_time_at(
+        journal,
+        value,
+        jiff::Timestamp::now().as_millisecond() as f64 / 1000.0,
+    )
+}
+
+/// Persist `maintenance_time` and immediately rebase `start_after` in
+/// `health/scheduler.json` for active daily schedules at `now_secs` when the
+/// effective maintenance time changes, so a stopped journal or immediate
+/// restart never treats the shifted window as a missed catch-up run.
+pub fn set_maintenance_time_at(
+    journal: &Path,
+    value: &str,
+    now_secs: f64,
+) -> Result<(), ScheduleError> {
     if !valid_maintenance_time(value) {
         return Err(ScheduleError::InvalidMaintenanceTime);
     }
     let root = solstone_core_journal_io::JournalRoot::open(journal).map_err(io_error)?;
-    super::mutate_schedule_entries_at_root_checked(std::sync::Arc::new(root), &|| Ok(()), |raw| {
-        let saved = Value::String(value.to_owned());
-        let changed = raw.get("maintenance_time") != Some(&saved);
-        raw.insert("maintenance_time".to_owned(), saved);
-        ScheduleMutation { changed, value: () }
-    })
+    let (time_changed, daily_names) = super::mutate_schedule_entries_at_root_checked(
+        std::sync::Arc::new(root),
+        &|| Ok(()),
+        |raw| {
+            let saved = Value::String(value.to_owned());
+            let time_changed = effective_maintenance_time(raw) != value;
+            let changed = raw.get("maintenance_time") != Some(&saved);
+            raw.insert("maintenance_time".to_owned(), saved);
+            let daily_names: std::collections::BTreeSet<String> = raw
+                .iter()
+                .filter(|(name, entry)| {
+                    !RESERVED_METADATA_KEYS.contains(&name.as_str())
+                        && entry.get("every").and_then(Value::as_str) == Some("daily")
+                        && entry.get("enabled").map(json_truthy).unwrap_or(true)
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+            ScheduleMutation {
+                changed,
+                value: (time_changed, daily_names),
+            }
+        },
+    )?;
+    if time_changed && !daily_names.is_empty() {
+        super::completion::rebase_cadence_for_edit(
+            &journal.join("health/scheduler.json"),
+            &daily_names,
+            now_secs,
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) fn parse_weekly_day(raw: &str) -> Option<u32> {

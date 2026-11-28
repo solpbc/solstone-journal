@@ -168,6 +168,16 @@ fn record_completion_inner(
     })
 }
 
+/// Rebase `start_after` in `health/scheduler.json` under the shared cross-process
+/// lock when an owner edits a schedule window outside the live engine tick.
+pub(crate) fn rebase_cadence_for_edit(
+    state_path: &Path,
+    names: &std::collections::BTreeSet<String>,
+    at: f64,
+) -> Result<(), ScheduleError> {
+    start_cadence(&MANUAL_COMPLETION_LOCK, state_path, names, at, true)
+}
+
 /// Registration starts the first period without recording a fictitious completed run.
 /// A single locked write covers all entries first adopted on this boot.
 pub(crate) fn start_cadence(

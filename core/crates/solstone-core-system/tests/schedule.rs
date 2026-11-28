@@ -1371,3 +1371,59 @@ fn changing_owner_zone_waits_for_the_new_zones_next_mark() {
     assert_eq!(reopened.collect_status(after)[0].next_run, next.unix_millis);
     assert_eq!(reopened.check(next, &sink).unwrap().submitted, ["job"]);
 }
+
+#[test]
+fn set_maintenance_time_rebases_daily_start_after_immediately_for_stopped_or_restarting_journal() {
+    let bed = Bed::new("maintenance-time-immediate-rebase");
+    // Prior daily run completed yesterday morning; maintenance time starts at 14:00.
+    let prior_run = now(2026, 4, 3, 14, 1);
+    bed.write_config(json!({
+        "maintenance_time": "14:00",
+        "daily_job": {"cmd": ["journal", "maintenance", "run", "daily"], "every": "daily"},
+        "hourly_job": {"cmd": ["journal", "maintenance", "run", "hourly"], "every": "hourly"}
+    }));
+    fs::write(
+        bed.state(),
+        serde_json::to_vec(&json!({
+            "daily_job": {"last_run": local_epoch(&prior_run), "last_status": "ok"}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    // At 10:00 on 2026-04-04, owner moves maintenance_time earlier to 06:00 while
+    // the scheduler is stopped (or before the next engine.check() tick).
+    let edit_time = now(2026, 4, 4, 10, 0);
+    solstone_core_system::schedule::set_maintenance_time_at(
+        &bed.root,
+        "06:00",
+        local_epoch(&edit_time),
+    )
+    .expect("set maintenance time");
+
+    // Reopening the engine immediately after the edit must NOT fire catch_up for
+    // `daily_job` (today's already-passed 06:00 mark waits for tomorrow), while
+    // leaving `hourly_job` untouched (still due because it has no prior run).
+    let (mut reopened, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), edit_time.clone()).unwrap();
+    let sink = Sink {
+        accepted: true,
+        ..Default::default()
+    };
+    let caught_up = reopened.catch_up(edit_time.clone(), &sink, &BTreeSet::new());
+    assert_eq!(
+        caught_up.submitted,
+        vec!["hourly_job".to_owned()],
+        "moving maintenance_time earlier must rebase daily_job without touching hourly_job"
+    );
+    let daily_status = reopened
+        .collect_status(edit_time)
+        .into_iter()
+        .find(|row| row.name == "daily_job")
+        .expect("daily_job status");
+    assert_eq!(
+        daily_status.next_run,
+        now(2026, 4, 5, 6, 0).unix_millis,
+        "daily_job must wait for the next 06:00 window instead of reporting now"
+    );
+}
