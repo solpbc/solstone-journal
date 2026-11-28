@@ -537,40 +537,126 @@ mod tests {
 
     #[test]
     fn generation_fixture_maps_the_daily_batch() {
-        assert_eq!(
-            generation_completion(
-                "You are generating the morning briefing coverage_preamble needs_attention"
-            )
-            .expect("morning response")
-            .0,
-            "morning_briefing"
-        );
         assert_eq!(generation_completion("unknown"), Err("unexpected-talent"));
-        let (sense_name, sense_text) =
-            generation_completion("# Segment Sense meeting_detected speculative_facet")
-                .expect("sense response");
-        assert_eq!(sense_name, "sense");
-        let sense_json: serde_json::Value =
-            serde_json::from_str(sense_text).expect("valid sense JSON");
-        assert_ne!(sense_json["density"], "idle");
-        assert_ne!(sense_json["content_type"], "idle");
-        let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../payload/solstone/talent/sense.schema.json");
-        let schema: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(schema_path).unwrap()).unwrap();
-        assert!(
-            schema["properties"]["content_type"]["enum"]
-                .as_array()
-                .unwrap()
-                .contains(&sense_json["content_type"])
-        );
-        assert!(
-            sense_json["facets"]
-                .as_array()
-                .is_some_and(|facets| facets.iter().any(|entry| entry["facet"] == "personal")),
-            "cleanroom Sense fixture must keep an active facet so daily entity_suggest runs"
-        );
-        assert!(sense_text.contains(r#""topics":[]"#));
-        assert!(sense_text.contains(r#""quotes":[]"#));
+        let payload_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
+
+        fn substitute_runtime_facets(value: &mut serde_json::Value, facets: &[&str]) {
+            match value {
+                serde_json::Value::Array(items) => {
+                    if items.iter().any(|item| item == "__RUNTIME_FACETS__") {
+                        let mut expanded = Vec::with_capacity(items.len() + facets.len());
+                        for item in items.drain(..) {
+                            if item == "__RUNTIME_FACETS__" {
+                                expanded.extend(
+                                    facets.iter().map(|facet| {
+                                        serde_json::Value::String((*facet).to_owned())
+                                    }),
+                                );
+                            } else {
+                                expanded.push(item);
+                            }
+                        }
+                        *items = expanded;
+                    } else {
+                        for item in items {
+                            substitute_runtime_facets(item, facets);
+                        }
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    for val in map.values_mut() {
+                        substitute_runtime_facets(val, facets);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Every cleanroom fake-model reply must stay routed from its real prompt
+        // template and valid against its committed JSON schema so prompt or schema
+        // drift breaks unit CI instead of surfacing only in Docker cleanroom runs.
+        for (talent, prompt_rel, extra_context, schema_rel) in [
+            (
+                "sense",
+                "talent/sense.md",
+                "",
+                Some("talent/sense.schema.json"),
+            ),
+            (
+                "morning_briefing",
+                "talent/morning_briefing.md",
+                r#"
+{"coverage_preamble":""}"#,
+                Some("talent/morning_briefing.schema.json"),
+            ),
+            (
+                "experiences_detect_facet",
+                "talent/experiences_detect_facet.md",
+                "",
+                Some("talent/experiences_detect_facet.schema.json"),
+            ),
+            (
+                "experiences_detect",
+                "talent/experiences_detect.md",
+                "",
+                Some("talent/experiences_detect.schema.json"),
+            ),
+            (
+                "experience_compose",
+                "talent/experience_compose.md",
+                "",
+                Some("talent/experience_compose.schema.json"),
+            ),
+            (
+                "entity_suggest",
+                "apps/entities/talent/entity_suggest.md",
+                "\nNo active entities found in today's content.",
+                Some("apps/entities/talent/entity_suggest.schema.json"),
+            ),
+        ] {
+            let prompt_path = payload_root.join(prompt_rel);
+            let mut prompt = fs::read_to_string(&prompt_path)
+                .unwrap_or_else(|err| panic!("read {}: {err}", prompt_path.display()));
+            prompt.push_str(extra_context);
+            let (mapped, reply_text) = generation_completion(&prompt)
+                .unwrap_or_else(|err| panic!("cleanroom route failed for {talent}: {err}"));
+            assert_eq!(mapped, talent, "prompt {prompt_rel} mapped to wrong talent");
+            let reply_json: serde_json::Value = serde_json::from_str(reply_text)
+                .unwrap_or_else(|err| panic!("invalid JSON for {talent}: {err}"));
+            if let Some(schema_rel) = schema_rel {
+                let schema_path = payload_root.join(schema_rel);
+                let mut schema: serde_json::Value = serde_json::from_str(
+                    &fs::read_to_string(&schema_path)
+                        .unwrap_or_else(|err| panic!("read {}: {err}", schema_path.display())),
+                )
+                .unwrap_or_else(|err| panic!("parse {}: {err}", schema_path.display()));
+                substitute_runtime_facets(&mut schema, &["personal"]);
+                let validator = jsonschema::validator_for(&schema)
+                    .unwrap_or_else(|err| panic!("compile {}: {err}", schema_path.display()));
+                if let Err(error) = validator.validate(&reply_json) {
+                    panic!(
+                        "cleanroom fixture for {talent} failed {}: {error}",
+                        schema_path.display()
+                    );
+                }
+            } else {
+                assert!(
+                    reply_json["entities"].is_array(),
+                    "entity_suggest cleanroom fixture must return an entities array"
+                );
+            }
+            if talent == "sense" {
+                assert_ne!(reply_json["density"], "idle");
+                assert_ne!(reply_json["content_type"], "idle");
+                assert!(
+                    reply_json["facets"].as_array().is_some_and(|facets| facets
+                        .iter()
+                        .any(|entry| entry["facet"] == "personal")),
+                    "cleanroom Sense fixture must keep an active facet so daily entity_suggest runs"
+                );
+                assert!(reply_text.contains(r#""topics":[]"#));
+                assert!(reply_text.contains(r#""quotes":[]"#));
+            }
+        }
     }
 }

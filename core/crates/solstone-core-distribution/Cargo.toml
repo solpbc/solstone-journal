@@ -53,6 +53,7 @@ toml_edit = { workspace = true, features = ["serde"] }
 windows-sys = { workspace = true, features = ["Win32_Security_Cryptography"] }
 
 [dev-dependencies]
+jsonschema.workspace = true
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 solstone-core-update.workspace = true
 

@@ -5227,6 +5227,7 @@ version = "2.0.93"
 dependencies = [
  "bzip2-rs",
  "flate2",
+ "jsonschema",
  "lzma-rs",
  "minisign",
  "quick-xml 0.41.0",
