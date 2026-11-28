@@ -6,9 +6,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
-#[cfg(not(windows))]
-use std::io::Read;
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -226,6 +224,265 @@ pub fn installed_pdf_worker(timeout: Duration) -> Result<Box<dyn PdfWorker>, Str
     };
     worker.prepare()?;
     Ok(Box::new(worker))
+}
+
+/// Default per-document cap on locally OCRed scanned pages.
+pub const LOCAL_PDF_OCR_DEFAULT_MAX_PAGES: usize = 32;
+/// Default render DPI for local OCR of scanned PDF pages.
+pub const LOCAL_PDF_OCR_DEFAULT_DPI: i32 = RENDER_DPI;
+/// Maximum rasterized page pixels eligible for local OCR.
+pub const LOCAL_PDF_OCR_MAX_PIXELS: f64 = 8_000_000.0;
+/// Maximum PNG byte size read from disk for a single rendered PDF page.
+pub const LOCAL_PDF_OCR_MAX_RASTER_BYTES: usize = 32 * 1024 * 1024;
+
+/// Why local OCR could not read a rendered PDF page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PdfPageOcrError {
+    /// Local OCR is not bundled or installed on this host.
+    NotInstalled,
+    /// An installed local OCR worker failed or timed out.
+    Failed(String),
+}
+
+/// Local OCR boundary for reading scanned or image-only PDF page rasters.
+pub trait PdfPageOcr {
+    fn recognize_png(&mut self, png: &[u8]) -> Result<String, PdfPageOcrError>;
+}
+
+/// Lazily launches the installed desktop local OCR worker once and reuses it across
+/// every scanned page in the document.
+#[derive(Default)]
+pub struct InstalledLocalPdfOcr {
+    #[cfg(feature = "local-attachment-ocr")]
+    worker: Option<Result<Option<Box<dyn solstone_core_describe::OcrWorker>>, String>>,
+}
+
+impl PdfPageOcr for InstalledLocalPdfOcr {
+    fn recognize_png(&mut self, png: &[u8]) -> Result<String, PdfPageOcrError> {
+        #[cfg(feature = "local-attachment-ocr")]
+        {
+            if self.worker.is_none() {
+                self.worker = Some(
+                    solstone_core_describe::installed_ocr_worker()
+                        .map_err(|err| format!("local OCR worker failed ({})", err.code())),
+                );
+            }
+            let result = match self.worker.as_mut() {
+                Some(Ok(Some(worker))) => {
+                    solstone_core_describe::read_still_ocr_text(worker.as_mut(), png)
+                        .map_err(|err| format!("local OCR failed ({})", err.code()))
+                }
+                Some(Ok(None)) => return Err(PdfPageOcrError::NotInstalled),
+                Some(Err(reason)) => return Err(PdfPageOcrError::Failed(reason.clone())),
+                None => return Err(PdfPageOcrError::NotInstalled),
+            };
+            match result {
+                Ok(text) => Ok(text),
+                Err(reason) => {
+                    self.worker = Some(Err(reason.clone()));
+                    Err(PdfPageOcrError::Failed(reason))
+                }
+            }
+        }
+        #[cfg(not(feature = "local-attachment-ocr"))]
+        {
+            let _ = png;
+            Err(PdfPageOcrError::NotInstalled)
+        }
+    }
+}
+
+/// Bounds applied when rendering and locally OCRing scanned PDF pages.
+#[derive(Clone, Copy, Debug)]
+pub struct LocalPdfOcrOptions {
+    pub max_ocr_pages: usize,
+    pub dpi: i32,
+    pub max_ocr_pixels: f64,
+    pub max_raster_bytes: usize,
+}
+
+impl Default for LocalPdfOcrOptions {
+    fn default() -> Self {
+        Self {
+            max_ocr_pages: LOCAL_PDF_OCR_DEFAULT_MAX_PAGES,
+            dpi: LOCAL_PDF_OCR_DEFAULT_DPI,
+            max_ocr_pixels: LOCAL_PDF_OCR_MAX_PIXELS,
+            max_raster_bytes: LOCAL_PDF_OCR_MAX_RASTER_BYTES,
+        }
+    }
+}
+
+/// Extracted PDF payload together with local OCR accounting for scanned pages.
+#[derive(Clone, Debug)]
+pub struct LocalPdfOcrResult {
+    pub payload: PdfPayload,
+    pub ocr_pages_read: usize,
+    pub ocr_pages_failed: usize,
+    pub ocr_not_installed: bool,
+}
+
+/// Extract a PDF from in-memory bytes and fill scanned or image-only pages with
+/// local OCR using the shared PDF worker and OCR helper.
+pub fn extract_pdf_bytes_with_local_ocr(
+    staging_parent: &Path,
+    bytes: &[u8],
+    worker: &dyn PdfWorker,
+    ocr: &mut dyn PdfPageOcr,
+    options: LocalPdfOcrOptions,
+) -> Result<LocalPdfOcrResult, WorkerFailure> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("solstone-pdf-");
+    #[cfg(unix)]
+    builder.permissions(fs::Permissions::from_mode(DIRECTORY_MODE));
+    let dir =
+        builder
+            .tempdir_in(staging_parent)
+            .map_err(|error| WorkerFailure::ProtocolViolation {
+                detail: format!("cannot create pdf staging dir: {error}"),
+            })?;
+    #[cfg(windows)]
+    let dir = std::sync::Arc::new(dir);
+    let file = dir.path().join("input.pdf");
+    let mut staged = tempfile::NamedTempFile::new_in(dir.path()).map_err(|error| {
+        WorkerFailure::ProtocolViolation {
+            detail: format!("cannot stage pdf: {error}"),
+        }
+    })?;
+    staged
+        .write_all(bytes)
+        .map_err(|error| WorkerFailure::ProtocolViolation {
+            detail: format!("cannot write staged pdf: {error}"),
+        })?;
+    staged
+        .persist(&file)
+        .map_err(|error| WorkerFailure::ProtocolViolation {
+            detail: format!("cannot persist staged pdf: {error}"),
+        })?;
+
+    let execute_staged = |render| {
+        let request = worker_request(PdfCommand::Extract, &file, None, render);
+        #[cfg(windows)]
+        let request = PdfWorkerRequest {
+            resources: PdfWorkerResources {
+                _directory: Some(dir.clone()),
+            },
+            ..request
+        };
+        worker.execute(&request)
+    };
+
+    let mut native = execute_staged(None)?;
+    if native.encrypted || native.page_count == 0 {
+        return Ok(LocalPdfOcrResult {
+            payload: native,
+            ocr_pages_read: 0,
+            ocr_pages_failed: 0,
+            ocr_not_installed: false,
+        });
+    }
+
+    let mut candidate_indices: Vec<usize> = native
+        .pages
+        .iter()
+        .filter(|page| page_needs_local_ocr(page, options.dpi, options.max_ocr_pixels))
+        .map(|page| page.index)
+        .collect();
+    candidate_indices.sort_unstable();
+    candidate_indices.dedup();
+    candidate_indices.truncate(options.max_ocr_pages);
+    let ocr_pages: BTreeSet<usize> = candidate_indices.into_iter().collect();
+
+    if ocr_pages.is_empty() {
+        return Ok(LocalPdfOcrResult {
+            payload: native,
+            ocr_pages_read: 0,
+            ocr_pages_failed: 0,
+            ocr_not_installed: false,
+        });
+    }
+
+    let rendered = match execute_staged(Some(PdfRenderOptions {
+        pages: ocr_pages.clone(),
+        render_dir: dir.path().to_owned(),
+        dpi: options.dpi,
+    })) {
+        Ok(payload) => payload,
+        Err(_) => {
+            return Ok(LocalPdfOcrResult {
+                payload: native,
+                ocr_pages_read: 0,
+                ocr_pages_failed: ocr_pages.len(),
+                ocr_not_installed: false,
+            });
+        }
+    };
+    let (rasters, _) = rendered_pages(&rendered, dir.path());
+
+    let mut ocr_pages_read = 0usize;
+    let mut ocr_pages_failed = 0usize;
+    let mut ocr_not_installed = false;
+    for page in &mut native.pages {
+        if !ocr_pages.contains(&page.index) {
+            continue;
+        }
+        let raster_path = rasters
+            .get(&page.index)
+            .cloned()
+            .unwrap_or_else(|| dir.path().join(format!("page-{:04}.png", page.index)));
+        let Some(png) = read_bounded_raster(&raster_path, options.max_raster_bytes) else {
+            ocr_pages_failed += 1;
+            continue;
+        };
+        match ocr.recognize_png(&png) {
+            Ok(raw) => {
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() {
+                    let existing = page.text.as_deref().unwrap_or_default().trim();
+                    if existing.is_empty() || trimmed.len() > existing.len() {
+                        page.text = Some(trimmed.to_owned());
+                        page.chars = trimmed.chars().count();
+                    }
+                    ocr_pages_read += 1;
+                }
+            }
+            Err(PdfPageOcrError::NotInstalled) => {
+                ocr_not_installed = true;
+                break;
+            }
+            Err(PdfPageOcrError::Failed(_)) => {
+                ocr_pages_failed += 1;
+            }
+        }
+    }
+
+    Ok(LocalPdfOcrResult {
+        payload: native,
+        ocr_pages_read,
+        ocr_pages_failed,
+        ocr_not_installed,
+    })
+}
+
+fn page_needs_local_ocr(page: &PdfPage, dpi: i32, max_ocr_pixels: f64) -> bool {
+    if page.error.is_some() {
+        return false;
+    }
+    let text_empty = page.text.as_deref().unwrap_or_default().trim().is_empty();
+    let sparse_scan =
+        page.chars < PAGE_TEXT_MIN_CHARS && page.image_area_fraction >= PAGE_IMAGE_DESCRIBE_MIN;
+    if !(text_empty || sparse_scan) {
+        return false;
+    }
+    page.width_pt > 0.0
+        && page.height_pt > 0.0
+        && page.width_pt * page.height_pt * (f64::from(dpi) / 72.0).powi(2) <= max_ocr_pixels
+}
+
+fn read_bounded_raster(path: &Path, max_bytes: usize) -> Option<Vec<u8>> {
+    let file = fs::File::open(path).ok()?;
+    let mut png = Vec::new();
+    file.take(max_bytes as u64 + 1).read_to_end(&mut png).ok()?;
+    (png.len() <= max_bytes).then_some(png)
 }
 
 impl PdfWorker for SystemPdfWorker {
@@ -1111,6 +1368,16 @@ pub fn prepare_document_import(
     worker: &dyn PdfWorker,
     model: &dyn DocumentModelClient,
 ) -> PreparedDocumentImport {
+    let mut ocr = InstalledLocalPdfOcr::default();
+    prepare_document_import_with_ocr(request, worker, model, &mut ocr)
+}
+
+pub fn prepare_document_import_with_ocr(
+    request: &DocumentImportRequest<'_>,
+    worker: &dyn PdfWorker,
+    model: &dyn DocumentModelClient,
+    ocr: &mut dyn PdfPageOcr,
+) -> PreparedDocumentImport {
     let zone = solstone_core_journal_config::owner_zone(request.journal_root);
     if let Err(error) = validate_owner_time(request.source, request.owner_timestamp, &zone) {
         return PreparedDocumentImport {
@@ -1312,6 +1579,7 @@ pub fn prepare_document_import(
                 warnings: &warnings,
             },
             model,
+            ocr,
         );
         errors.extend(
             prepared
@@ -2369,13 +2637,23 @@ struct RenderDocumentInput<'a> {
 fn render_document(
     input: RenderDocumentInput<'_>,
     model: &dyn DocumentModelClient,
+    ocr: &mut dyn PdfPageOcr,
 ) -> PreparedDocument {
     let mut stats = RenderStats::default();
     let mut pages = input.payload.pages.clone();
     pages.sort_by_key(|page| page.index);
     let rendered_pages = pages
         .iter()
-        .map(|page| render_page(page, input.rasters, input.render_errors, &mut stats, model))
+        .map(|page| {
+            render_page(
+                page,
+                input.rasters,
+                input.render_errors,
+                &mut stats,
+                model,
+                ocr,
+            )
+        })
         .collect::<Vec<_>>();
     let title = input
         .source
@@ -2409,6 +2687,7 @@ fn render_page(
     render_errors: &std::collections::BTreeMap<usize, String>,
     stats: &mut RenderStats,
     model: &dyn DocumentModelClient,
+    ocr: &mut dyn PdfPageOcr,
 ) -> RenderedPage {
     let raster = rasters.get(&page.index);
     if page.error.is_none()
@@ -2470,6 +2749,21 @@ fn render_page(
         && page.chars < PAGE_TEXT_MIN_CHARS
         && let Some(raster) = raster
     {
+        if let Some(png) = read_bounded_raster(raster, LOCAL_PDF_OCR_MAX_RASTER_BYTES)
+            && let Ok(text) = ocr.recognize_png(&png)
+        {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                stats.text_layer_pages += 1;
+                return RenderedPage {
+                    index: page.index,
+                    body: RenderedPageBody::TextLayer {
+                        text: trimmed.to_owned(),
+                        image: None,
+                    },
+                };
+            }
+        }
         return match generate_for_page(
             reading_prompt(),
             raster,

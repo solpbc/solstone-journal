@@ -15,7 +15,9 @@ pub use solstone_core_format::attachment::{
 };
 use solstone_core_import::triage::{self, Kind};
 
-use crate::document::{self, PdfCommand, PdfRenderOptions, PdfWorker, WorkerFailure};
+use crate::document::{
+    self, InstalledLocalPdfOcr, PdfCommand, PdfPageOcr, PdfRenderOptions, PdfWorker, WorkerFailure,
+};
 use crate::image::{self as images, WireClient};
 
 const MAX_FILE_BYTES: usize = 32 * 1024 * 1024;
@@ -51,26 +53,8 @@ pub fn prepare_installed(
     mime: &str,
     bytes: &[u8],
 ) -> Result<PreparedAttachment, Failure> {
-    #[cfg(feature = "local-attachment-ocr")]
-    let mut local = None;
-    #[cfg(feature = "local-attachment-ocr")]
-    let mut ocr = |png: &[u8]| {
-        if local.is_none() {
-            local = Some(
-                solstone_core_describe::installed_ocr_worker()
-                    .ok()
-                    .flatten(),
-            );
-        }
-        let worker = local
-            .as_mut()
-            .and_then(Option::as_mut)
-            .ok_or(Failure::Unavailable)?;
-        solstone_core_describe::read_still_ocr_text(worker.as_mut(), png)
-            .map_err(|_| Failure::Unavailable)
-    };
-    #[cfg(not(feature = "local-attachment-ocr"))]
-    let mut ocr = |_: &[u8]| Err(Failure::Unavailable);
+    let mut local = InstalledLocalPdfOcr::default();
+    let mut ocr = |png: &[u8]| local.recognize_png(png).map_err(|_| Failure::Unavailable);
     prepare(
         name,
         mime,

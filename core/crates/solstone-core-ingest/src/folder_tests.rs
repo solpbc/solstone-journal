@@ -1051,3 +1051,186 @@ async fn each_published_folder_golden_envelope_is_admitted_as_sent() {
         assert!(parsed.get("refused_files").is_none(), "{parsed}");
     }
 }
+
+#[tokio::test]
+async fn scanned_and_mixed_folder_pdfs_read_text_via_local_ocr_and_retry_on_ocr_failure() {
+    use solstone_core_import_sources::document::{
+        PdfPageOcr, PdfPageOcrError, PdfWorker, PdfWorkerRequest, WorkerFailure,
+    };
+
+    struct MixedScanWorker;
+    impl PdfWorker for MixedScanWorker {
+        fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
+            let bytes = fs::read(&request.source).unwrap();
+            let is_pure_scan = bytes.windows(9).any(|w| w == b"PURE_SCAN");
+            if let Some(render) = &request.render {
+                let mut pages = Vec::new();
+                for &idx in &render.pages {
+                    let name = format!("page-{idx:04}.png");
+                    fs::write(render.render_dir.join(&name), format!("png-{idx}")).unwrap();
+                    pages.push(PdfPage {
+                        index: idx,
+                        rendered: Some(name),
+                        ..PdfPage::default()
+                    });
+                }
+                return Ok(PdfPayload {
+                    schema: "sol-pdf/1".to_owned(),
+                    engine: "test".to_owned(),
+                    page_count: if is_pure_scan { 1 } else { 2 },
+                    pages,
+                    ..PdfPayload::default()
+                });
+            }
+            if is_pure_scan {
+                Ok(PdfPayload {
+                    schema: "sol-pdf/1".to_owned(),
+                    engine: "test".to_owned(),
+                    page_count: 1,
+                    pages: vec![PdfPage {
+                        index: 1,
+                        chars: 0,
+                        width_pt: 612.0,
+                        height_pt: 792.0,
+                        image_area_fraction: 1.0,
+                        text: Some(String::new()),
+                        ..PdfPage::default()
+                    }],
+                    ..PdfPayload::default()
+                })
+            } else {
+                Ok(PdfPayload {
+                    schema: "sol-pdf/1".to_owned(),
+                    engine: "test".to_owned(),
+                    page_count: 2,
+                    pages: vec![
+                        PdfPage {
+                            index: 1,
+                            chars: 28,
+                            width_pt: 612.0,
+                            height_pt: 792.0,
+                            image_area_fraction: 0.0,
+                            text: Some("Typed contract cover page.".to_owned()),
+                            ..PdfPage::default()
+                        },
+                        PdfPage {
+                            index: 2,
+                            chars: 0,
+                            width_pt: 612.0,
+                            height_pt: 792.0,
+                            image_area_fraction: 1.0,
+                            text: Some(String::new()),
+                            ..PdfPage::default()
+                        },
+                    ],
+                    ..PdfPayload::default()
+                })
+            }
+        }
+    }
+
+    struct StubOcr {
+        fail: bool,
+    }
+    impl PdfPageOcr for StubOcr {
+        fn recognize_png(&mut self, png: &[u8]) -> Result<String, PdfPageOcrError> {
+            if self.fail {
+                return Err(PdfPageOcrError::Failed("helper timeout".to_owned()));
+            }
+            Ok(format!("OCR text from {}", String::from_utf8_lossy(png)))
+        }
+    }
+
+    struct LocalOcrFolderReader {
+        fail_ocr: bool,
+    }
+    impl FolderPdfReader for LocalOcrFolderReader {
+        fn extract(&self, journal_root: &Path, bytes: &[u8]) -> Result<PdfPayload, PdfReadError> {
+            let mut ocr = StubOcr {
+                fail: self.fail_ocr,
+            };
+            crate::folder::extract_folder_pdf_with(journal_root, bytes, &MixedScanWorker, &mut ocr)
+        }
+    }
+
+    let dir = journal();
+    let notifier = Arc::new(RecordingNotifier::default());
+    let app = test_app(
+        dir.path(),
+        notifier,
+        Arc::new(LocalOcrFolderReader { fail_ocr: false }),
+    );
+
+    let mixed_pdf = b"%PDF-1.4 MIXED_DOC\n%%EOF\n";
+    let pure_scan_pdf = b"%PDF-1.4 PURE_SCAN\n%%EOF\n";
+    let (status, body) = post_folder(
+        &app,
+        "20261127",
+        "150000_300",
+        json!({ "v": 1, "id": "scans-1", "name": "Scans", "kinds": ["documents"] }),
+        &[
+            json!({
+                "v": 1,
+                "event": "added",
+                "path": "mixed.pdf",
+                "at": "2026-11-27T15:00:10-07:00",
+                "observed_at": "2026-11-27T15:00:11-07:00",
+                "content_hash": sha256(mixed_pdf),
+                "part": "c_01.pdf",
+                "kind_hint": "documents"
+            }),
+            json!({
+                "v": 1,
+                "event": "added",
+                "path": "receipt_scan.pdf",
+                "at": "2026-11-27T15:01:00-07:00",
+                "observed_at": "2026-11-27T15:01:01-07:00",
+                "content_hash": sha256(pure_scan_pdf),
+                "part": "c_02.pdf",
+                "kind_hint": "documents"
+            }),
+        ],
+        &[("c_01.pdf", mixed_pdf), ("c_02.pdf", pure_scan_pdf)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.get("refused_files").is_none(), "{body}");
+
+    let seg_dir = find_segment_dir(&dir.path().join("chronicle/20261127"), "150000_300");
+    let doc_md = fs::read_to_string(seg_dir.join("document_transcript.md")).unwrap();
+    assert!(doc_md.contains("Typed contract cover page."), "{doc_md}");
+    assert!(doc_md.contains("OCR text from png-2"), "{doc_md}");
+    assert!(doc_md.contains("OCR text from png-1"), "{doc_md}");
+    assert!(
+        !doc_md.contains("[No selectable text on this page]"),
+        "{doc_md}"
+    );
+
+    // An installed OCR worker that fails on a pure-scan PDF surfaces retryable 503.
+    let failing_app = test_app(
+        dir.path(),
+        Arc::new(RecordingNotifier::default()),
+        Arc::new(LocalOcrFolderReader { fail_ocr: true }),
+    );
+    let pure_scan_v2 = b"%PDF-1.4 PURE_SCAN_V2\n%%EOF\n";
+    let (fail_status, fail_body) = post_folder(
+        &failing_app,
+        "20261127",
+        "151000_300",
+        json!({ "v": 1, "id": "scans-1", "name": "Scans", "kinds": ["documents"] }),
+        &[json!({
+            "v": 1,
+            "event": "added",
+            "path": "scan_fail.pdf",
+            "at": "2026-11-27T15:10:10-07:00",
+            "observed_at": "2026-11-27T15:10:11-07:00",
+            "content_hash": sha256(pure_scan_v2),
+            "part": "c_01.pdf",
+            "kind_hint": "documents"
+        })],
+        &[("c_01.pdf", pure_scan_v2)],
+    )
+    .await;
+    assert_eq!(fail_status, StatusCode::SERVICE_UNAVAILABLE, "{fail_body}");
+    assert_eq!(fail_body["status"], "retryable", "{fail_body}");
+}

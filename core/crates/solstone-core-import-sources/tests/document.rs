@@ -25,9 +25,10 @@ use solstone_core_import::{CreatedSegment, PublicationOperations, observe_source
 #[cfg(unix)]
 use solstone_core_import_sources::document::SystemPdfWorker;
 use solstone_core_import_sources::document::{
-    DocumentImportRequest, DocumentModelClient, DocumentPreviewRequest, PdfCommand, PdfMetadata,
-    PdfPage, PdfPayload, PdfWorker, PdfWorkerRequest, WorkerFailure, import,
-    prepare_document_import, preview, preview_size,
+    DocumentImportRequest, DocumentModelClient, DocumentPreviewRequest, LocalPdfOcrOptions,
+    PdfCommand, PdfMetadata, PdfPage, PdfPageOcr, PdfPageOcrError, PdfPayload, PdfWorker,
+    PdfWorkerRequest, WorkerFailure, extract_pdf_bytes_with_local_ocr, import,
+    prepare_document_import, prepare_document_import_with_ocr, preview, preview_size,
 };
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError, advance_unbound_stream};
 
@@ -1942,4 +1943,188 @@ fn a_pdf_owner_time_in_a_dst_gap_is_refused_before_extraction_or_writes() {
     assert!(prepared.items.is_empty());
     assert!(!prepared.hard_failures.is_empty());
     assert!(!tree.journal().join("chronicle").exists());
+}
+
+struct FakePageOcr {
+    responses: VecDeque<Result<String, PdfPageOcrError>>,
+    calls: usize,
+}
+
+impl FakePageOcr {
+    fn new(responses: impl IntoIterator<Item = Result<String, PdfPageOcrError>>) -> Self {
+        Self {
+            responses: responses.into_iter().collect(),
+            calls: 0,
+        }
+    }
+}
+
+impl PdfPageOcr for FakePageOcr {
+    fn recognize_png(&mut self, _png: &[u8]) -> Result<String, PdfPageOcrError> {
+        self.calls += 1;
+        self.responses
+            .pop_front()
+            .unwrap_or(Err(PdfPageOcrError::NotInstalled))
+    }
+}
+
+#[test]
+fn scanned_pdf_import_defaults_to_local_ocr_with_zero_model_calls() {
+    let tree = TestTree::new();
+    let source = tree.pdf("scan.pdf", b"%PDF-1.4 scan");
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(1, 0, 1.0, Some(""))])),
+        Ok(payload(vec![rendered_page(1)])),
+    ]);
+    let model = FakeModel::generated([]);
+    let mut ocr = FakePageOcr::new([Ok("Invoice total $420.00".to_owned())]);
+
+    let prepared = prepare_document_import_with_ocr(
+        &DocumentImportRequest {
+            source: &source,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "scan-ocr",
+            revision: None,
+            password: None,
+            force: false,
+            now: SystemTime::now(),
+            owner_timestamp: None,
+        },
+        &worker,
+        &model,
+        &mut ocr,
+    );
+
+    assert_eq!(ocr.calls, 1);
+    assert!(
+        model.requests().is_empty(),
+        "local OCR handles scanned pages without model calls"
+    );
+    assert_eq!(prepared.items.len(), 1);
+    let item = &prepared.items[0];
+    assert!(item.prepared.extraction_complete());
+    assert_eq!(item.prepared.stats.text_layer_pages, 1);
+    assert_eq!(item.prepared.stats.model_calls, 0);
+    assert!(
+        item.prepared
+            .transcript
+            .contains("## Page 1\n\nInvoice total $420.00\n"),
+        "{}",
+        item.prepared.transcript
+    );
+}
+
+#[test]
+fn wordless_image_page_falls_back_to_model_when_local_ocr_is_empty() {
+    let tree = TestTree::new();
+    let source = tree.pdf("diagram.pdf", b"%PDF-1.4 diagram");
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(1, 0, 1.0, None)])),
+        Ok(payload(vec![rendered_page(1)])),
+    ]);
+    let model = FakeModel::generated(["Architecture flowchart"]);
+    let mut ocr = FakePageOcr::new([Ok(String::new())]);
+
+    let prepared = prepare_document_import_with_ocr(
+        &DocumentImportRequest {
+            source: &source,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "diagram-fallback",
+            revision: None,
+            password: None,
+            force: false,
+            now: SystemTime::now(),
+            owner_timestamp: None,
+        },
+        &worker,
+        &model,
+        &mut ocr,
+    );
+
+    assert_eq!(ocr.calls, 1);
+    assert_eq!(model.requests().len(), 1);
+    assert_eq!(prepared.items.len(), 1);
+    assert!(
+        prepared.items[0]
+            .prepared
+            .transcript
+            .contains("Architecture flowchart")
+    );
+}
+
+#[test]
+fn extract_pdf_bytes_with_local_ocr_reads_mixed_typed_and_scanned_pages() {
+    let staging = tempfile::tempdir().unwrap();
+    let native = PdfPayload {
+        schema: "sol-pdf/1".to_owned(),
+        engine: "test".to_owned(),
+        page_count: 3,
+        pages: vec![
+            PdfPage {
+                index: 1,
+                chars: 32,
+                width_pt: 612.0,
+                height_pt: 792.0,
+                image_area_fraction: 0.0,
+                text: Some("Native typed page one.".to_owned()),
+                ..PdfPage::default()
+            },
+            PdfPage {
+                index: 2,
+                chars: 0,
+                width_pt: 612.0,
+                height_pt: 792.0,
+                image_area_fraction: 1.0,
+                text: Some(String::new()),
+                ..PdfPage::default()
+            },
+            PdfPage {
+                index: 3,
+                chars: 6,
+                width_pt: 612.0,
+                height_pt: 792.0,
+                image_area_fraction: 0.95,
+                text: Some("Page 3".to_owned()),
+                ..PdfPage::default()
+            },
+        ],
+        ..PdfPayload::default()
+    };
+    let rendered = payload(vec![rendered_page(2), rendered_page(3)]);
+    let worker = FakeWorker::new(vec![Ok(native), Ok(rendered)]);
+    let mut ocr = FakePageOcr::new([
+        Ok("Scanned page two text.".to_owned()),
+        Ok("Page 3\nFull scanned receipt body.".to_owned()),
+    ]);
+
+    let result = extract_pdf_bytes_with_local_ocr(
+        staging.path(),
+        b"%PDF-1.4 mixed",
+        &worker,
+        &mut ocr,
+        LocalPdfOcrOptions::default(),
+    )
+    .unwrap();
+
+    let requests = worker.requests();
+    assert_eq!(requests.len(), 2);
+    let render_req = requests[1].render.as_ref().expect("sparse pages rendered");
+    assert_eq!(render_req.pages, std::collections::BTreeSet::from([2, 3]));
+    assert_eq!(result.ocr_pages_read, 2);
+    assert_eq!(result.ocr_pages_failed, 0);
+    assert!(!result.ocr_not_installed);
+    assert_eq!(
+        result.payload.pages[0].text.as_deref(),
+        Some("Native typed page one.")
+    );
+    assert_eq!(
+        result.payload.pages[1].text.as_deref(),
+        Some("Scanned page two text.")
+    );
+    assert_eq!(
+        result.payload.pages[2].text.as_deref(),
+        Some("Page 3\nFull scanned receipt body.")
+    );
 }

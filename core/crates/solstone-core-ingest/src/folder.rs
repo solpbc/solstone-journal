@@ -24,7 +24,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use axum::Json;
@@ -58,7 +57,8 @@ use solstone_core_format::screenshots::{SCREENSHOT_STEM, names_screenshot_file};
 use solstone_core_format::stored_markdown::{Document, Message};
 use solstone_core_import::triage::{self, Kind as TriageKind};
 use solstone_core_import_sources::document::{
-    PdfCommand, PdfPayload, PdfWorkerRequest, WorkerFailure,
+    InstalledLocalPdfOcr, LocalPdfOcrOptions, PdfPageOcr, PdfPayload, PdfWorker, WorkerFailure,
+    extract_pdf_bytes_with_local_ocr,
 };
 use solstone_core_ingest_resolve::IngestNotice;
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, create_directory_with_mode};
@@ -82,8 +82,6 @@ const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_ESTIMATE_ITEMS: usize = 50_000;
 const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 
-static PDF_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
-
 /// Why a PDF content part could not be extracted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PdfReadError {
@@ -100,7 +98,8 @@ pub(crate) trait FolderPdfReader: Send + Sync {
     fn extract(&self, journal_root: &Path, bytes: &[u8]) -> Result<PdfPayload, PdfReadError>;
 }
 
-/// Production PDF reader backed by the sibling `solstone-core-pdf` worker.
+/// Production PDF reader backed by the sibling `solstone-core-pdf` worker and
+/// local `solstone-screen-ocr-helper` for scanned or image-only pages.
 pub(crate) struct SystemFolderPdfReader;
 
 impl FolderPdfReader for SystemFolderPdfReader {
@@ -108,33 +107,44 @@ impl FolderPdfReader for SystemFolderPdfReader {
         let worker =
             solstone_core_import_sources::document::installed_pdf_worker(PDF_WORKER_TIMEOUT)
                 .map_err(PdfReadError::Unavailable)?;
-        let tmp_dir = journal_root.join(STATE_DIR).join(".tmp");
-        create_directory_with_mode(&tmp_dir, 0o700).map_err(|e| {
-            PdfReadError::Unavailable(format!("cannot create pdf staging dir: {e}"))
-        })?;
-        let seq = PDF_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
-        let tmp_path = tmp_dir.join(format!("pdf_{}_{}.pdf", std::process::id(), seq));
-        let _guard = TempFileGuard(tmp_path.clone());
-        atomic_replace(&tmp_path, bytes, PRIVATE)
-            .map_err(|e| PdfReadError::Unavailable(format!("cannot stage pdf: {e}")))?;
-        let request = PdfWorkerRequest {
-            command: PdfCommand::Extract,
-            source: tmp_path,
-            password: None,
-            render: None,
-            #[cfg(windows)]
-            resources: solstone_core_import_sources::document::PdfWorkerResources::default(),
-        };
-        worker.execute(&request).map_err(map_worker_failure)
+        let mut ocr = InstalledLocalPdfOcr::default();
+        extract_folder_pdf_with(journal_root, bytes, worker.as_ref(), &mut ocr)
     }
 }
 
-struct TempFileGuard(PathBuf);
-
-impl Drop for TempFileGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+pub(crate) fn extract_folder_pdf_with(
+    journal_root: &Path,
+    bytes: &[u8],
+    worker: &dyn PdfWorker,
+    ocr: &mut dyn PdfPageOcr,
+) -> Result<PdfPayload, PdfReadError> {
+    let tmp_dir = journal_root.join(STATE_DIR).join(".tmp");
+    create_directory_with_mode(&tmp_dir, 0o700)
+        .map_err(|e| PdfReadError::Unavailable(format!("cannot create pdf staging dir: {e}")))?;
+    let outcome = extract_pdf_bytes_with_local_ocr(
+        &tmp_dir,
+        bytes,
+        worker,
+        ocr,
+        LocalPdfOcrOptions::default(),
+    )
+    .map_err(map_worker_failure)?;
+    if outcome.ocr_not_installed {
+        log::warn!(
+            "local PDF OCR runtime is not installed; scanned PDF pages will keep placeholder text"
+        );
     }
+    let has_any_text = outcome
+        .payload
+        .pages
+        .iter()
+        .any(|p| p.text.as_deref().is_some_and(|t| !t.trim().is_empty()));
+    if outcome.ocr_pages_failed > 0 && !has_any_text {
+        return Err(PdfReadError::Unavailable(
+            "local PDF OCR failed on scanned pages; try again".to_owned(),
+        ));
+    }
+    Ok(outcome.payload)
 }
 
 fn map_worker_failure(failure: WorkerFailure) -> PdfReadError {
