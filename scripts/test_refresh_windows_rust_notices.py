@@ -1204,13 +1204,22 @@ class RegistryUpgrade(unittest.TestCase):
     def test_pairs_only_unambiguous_checksummed_crates_io_upgrades(self):
         old, new = self.row(), self.row("1.0.1")
         self.assertEqual(refresh.split_registry_upgrades([old], [new]), [(old, new)])
+        # An added crate name nothing removed is an addition, left unpaired,
+        # including a new version beside a surviving older one.
+        kept = {**self.row("0.5.0"), "name": "kept"}
+        beside = {**kept, "version": "0.6.0"}
+        self.assertEqual(refresh.split_registry_upgrades([old], [new, {**new, "name": "added"}]), [(old, new)])
+        self.assertEqual(refresh.split_registry_upgrades([old, kept], [new, kept, beside]), [(old, new)])
         for left, right in (
             ([old], [{**new, "checksum": "invalid"}]),
             ([old], [{**new, "source": "git+https://example.invalid/repo"}]),
             ([old], [{**new, "source": "registry+https://example.invalid/index"}]),
             ([old], [self.row("0.9.0")]),
             ([old], [self.row("1.0.1-rc.1")]),
-            ([old], [new, {**new, "name": "added"}]),
+            # An added version of an upgraded crate is ambiguous, not an addition.
+            ([old], [new, self.row("1.0.2")]),
+            # A removal still cannot ride with an upgrade, additions or not.
+            ([old, {**old, "name": "gone"}], [new, {**new, "name": "added"}]),
             ([old, self.row("0.5.0")], [new]),
             ([old, old], [new]),
         ):
@@ -1228,25 +1237,50 @@ class RegistryUpgrade(unittest.TestCase):
             with self.assertRaises(refresh.RefreshError):
                 refresh.require_explained_notice_closure(left, right, ["app"])
 
-    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False, old_header=None, old_extra=None):
+    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False, old_header=None, old_extra=None,
+                addition=None, addition_version="1.0.0", addition_licence="MIT", drop_outside=False):
+        """`addition` names a registry crate the new lock adds beside the
+        upgrade (vendored under `new-vendor/`); `inside` puts it in the closure
+        as a new dependency of the upgraded crate, the zip 9.9.0 shape."""
         data, files = self.crate(expression=new_expression or expression, text=new_text, extra=extra)
         old_data, old_files = self.crate("1.0.0", expression, extra={**({"src/lib.rs": old_header + b"fn old() {}\n"} if old_header else {}), **(old_extra or {})})
         old, new = self.row(checksum=refresh.sha256_bytes(old_data)), self.row("1.0.1", refresh.sha256_bytes(data))
         outside = {**package("outside", source=SOURCE), "checksum": "b" * 64}
         git_old = package("transport", source="git+https://example.invalid/transport#" + "a" * 40)
         git_new = {**git_old, "source": git_old["source"].replace("a" * 40, "b" * 40)}
+        added = None
+        if addition:
+            name = "digest" if addition == "colliding" else "extra"
+            added_files = {"Cargo.toml": f'[package]\nname="{name}"\nversion="{addition_version}"\nlicense="{addition_licence}"\n'.encode(),
+                           "LICENSE": b"added licence\n", "lib.rs": b"added source"}
+            directory = root / "new-vendor" / f"{name}-{addition_version}"
+            directory.mkdir(parents=True)
+            for member, content in added_files.items():
+                (directory / member).write_bytes(content)
+            checksum = refresh.sha256_bytes(b"added-archive")
+            (directory / ".cargo-checksum.json").write_text(json.dumps(
+                {"package": checksum, "files": {m: refresh.sha256_bytes(b) for m, b in added_files.items()}}))
+            added = {**package(name, addition_version, SOURCE), "checksum": checksum}
         def external(row):
-            return [row, outside] + ([git_old if row == old else git_new] if git_move else [])
+            rows = [row] + ([] if drop_outside and row == new else [outside])
+            rows += [git_old if row == old else git_new] if git_move else []
+            return rows + ([added] if added and row == new else [])
         def lock(row):
+            def edges(p):
+                return 'dependencies=["extra"]\n' if p is new and addition == "inside" else ""
             return ('version=4\n[[package]]\nname="app"\nversion="1.0.0"\ndependencies=["digest"]\n'
-                    + ''.join(f'[[package]]\nname="{p["name"]}"\nversion="{p["version"]}"\nsource="{p["source"]}"\nchecksum="{p["checksum"]}"\n' for p in external(row))).encode()
+                    + ''.join(f'[[package]]\nname="{p["name"]}"\nversion="{p["version"]}"\nsource="{p["source"]}"\nchecksum="{p["checksum"]}"\n{edges(p)}' for p in external(row))).encode()
         def metadata(row):
+            edge = lambda key: {"name": key, "pkg": key, "dep_kinds": [{"kind": None}]}
+            later = added is not None and row == new
             return {"packages": [{**package("app"), "id": "app", "source": None},
-                                 {**row, "id": "digest"}, {**outside, "id": "outside"}],
+                                 {**row, "id": "digest"}, {**outside, "id": "outside"}]
+                                + ([{**added, "id": "added"}] if later else []),
                     "resolve": {"nodes": [
-                        {"id": "app", "features": [], "deps": [{"name": "digest", "pkg": "digest", "dep_kinds": [{"kind": None}]}]},
-                        {"id": "digest", "features": [], "deps": []},
-                        {"id": "outside", "features": [], "deps": []}]}}
+                        {"id": "app", "features": [], "deps": [edge("digest")]},
+                        {"id": "digest", "features": [], "deps": [edge("added")] if later and addition == "inside" else []},
+                        {"id": "outside", "features": [], "deps": []}]
+                        + ([{"id": "added", "features": [], "deps": []}] if later else [])}}
         old_meta, new_meta = metadata(old), metadata(new)
         distribution = root / "core/distribution"
         distribution.mkdir(parents=True)
@@ -1301,7 +1335,7 @@ class RegistryUpgrade(unittest.TestCase):
         (root / refresh.INDEX_RELATIVE_PATH).write_text(json.dumps(index))
         return archive, new_meta, data, archive_members
 
-    def run_refresh(self, root, archive, metadata, data, **kwargs):
+    def run_refresh(self, root, archive, metadata, data, vendor=None, **kwargs):
         original = refresh.upgraded_package_rows
         fetches = []
         def fetch(url):
@@ -1310,7 +1344,7 @@ class RegistryUpgrade(unittest.TestCase):
         with patch.object(refresh, "query_cargo_metadata", return_value=metadata), \
              patch.object(refresh, "run_cargo_vendor", side_effect=AssertionError("full vendor forbidden")), \
              patch.object(refresh, "upgraded_package_rows", side_effect=lambda *args, **kw: original(*args, fetch=fetch, **kw)):
-            result = refresh.refresh(root, archive, None, root / "out", **kwargs)
+            result = refresh.refresh(root, archive, None, root / "out", vendor, **kwargs)
         self.assertEqual(len(fetches), 1)
         return result
 
@@ -1423,6 +1457,81 @@ class RegistryUpgrade(unittest.TestCase):
             archive, metadata, data, _ = self.fixture(root, git_move=True)
             with self.assertRaisesRegex(refresh.RefreshError, "cannot mix git moves"):
                 self.run_refresh(root, archive, metadata, data)
+
+    def test_upgrade_rides_with_an_addition_outside_the_closure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, data, prior = self.fixture(root, addition="outside")
+            before = (root / refresh.NOTICES_RELATIVE_PATH).read_bytes()
+            result = self.run_refresh(root, archive, metadata, data, root / "new-vendor")
+            index, report = result["new_index"], result["report"]
+            self.assertIsNone(result["new_notices"])
+            self.assertEqual(index["notices_sha256"], refresh.sha256_bytes(before))
+            population = {(row["name"], row["version"]): row["windows_notice_population"] for row in index["packages"]}
+            self.assertEqual(population, {("digest", "1.0.1"): True, ("extra", "1.0.0"): False, ("outside", "1.0.0"): False})
+            self.assertEqual(index["population"]["source_package_count"], 3)
+            self.assertEqual(index["population"]["windows_notice_package_count"], 1)
+            self.assertEqual([row["to"] for row in report["licence_identical_registry_upgrades"]], [f"digest@1.0.1 ({SOURCE})"])
+            self.assertEqual([row["identity"] for row in report["added_packages_outside_windows_notice_closure"]], [f"extra@1.0.0 ({SOURCE})"])
+            self.assertEqual(report["added_notice_texts"], [])
+            with tarfile.open(root / "out" / index["dependency_source_companion"]["filename"]) as tar:
+                observed = {m.name: tar.extractfile(m).read() for m in tar if m.isfile()}
+            self.assertEqual({n: observed[n] for n in prior if n.startswith("vendor/outside-")},
+                             {n: b for n, b in prior.items() if n.startswith("vendor/outside-")})
+            self.assertFalse(any(n.startswith("vendor/digest-1.0.0/") for n in observed))
+            self.assertIn("vendor/digest-1.0.1/.cargo-checksum.json", observed)
+            self.assertEqual(observed["vendor/extra-1.0.0/LICENSE"], b"added licence\n")
+
+    def test_upgrade_rides_with_a_named_addition_inside_the_closure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive, metadata, data, _ = self.fixture(root, addition="inside")
+            result = self.run_refresh(root, archive, metadata, data, root / "new-vendor",
+                                      admissions=frozenset({("extra", "1.0.0")}))
+            index, report = result["new_index"], result["report"]
+            same, added = b"same licence\n", b"added licence\n"
+            # Exactly what the addition path renders: the upgraded package's
+            # text unchanged, plus the named addition's, and nothing else.
+            expected, spans = refresh.render_notices({refresh.sha256_bytes(t): t for t in (same, added)})
+            self.assertEqual(result["new_notices"], expected)
+            self.assertEqual(index["notice_texts"], spans)
+            self.assertEqual(index["notices_sha256"], refresh.sha256_bytes(expected))
+            self.assertEqual(report["added_notice_texts"], [refresh.sha256_bytes(added)])
+            self.assertEqual(report["removed_notice_texts"], [])
+            population = {(row["name"], row["version"]): row["windows_notice_population"] for row in index["packages"]}
+            self.assertEqual(population, {("digest", "1.0.1"): True, ("extra", "1.0.0"): True, ("outside", "1.0.0"): False})
+            self.assertEqual(index["population"]["windows_notice_package_count"], 2)
+            digest = next(row for row in index["packages"] if row["name"] == "digest")
+            self.assertEqual([ref["sha256"] for ref in digest["notice_references"]], [refresh.sha256_bytes(same)])
+
+    def test_upgrade_with_additions_refusals(self):
+        named = frozenset({("extra", "1.0.0")})
+        cases = (
+            # An added version of the upgraded crate is ambiguous, not an addition.
+            ({"addition": "colliding", "addition_version": "1.0.2"}, {}, "ambiguous"),
+            ({"addition": "colliding", "addition_version": "0.9.0"}, {}, "ambiguous"),
+            # A removal still refuses beside an upgrade, named or not.
+            ({"drop_outside": True}, {}, "cannot mix removals"),
+            ({"addition": "outside", "drop_outside": True}, {}, "cannot mix removals"),
+            ({"addition": "inside", "drop_outside": True},
+             {"admissions": named, "removals": frozenset({("outside", "1.0.0")})}, "cannot mix removals"),
+            # The addition half keeps every addition check.
+            ({"addition": "inside"}, {}, "--admit-closure-addition"),
+            ({"addition": "outside"}, {"admissions": named}, "do not reach"),
+            ({"addition": "outside", "addition_licence": "GPL-3.0-only"}, {}, "permissive"),
+            ({"addition": "inside"}, {"admissions": named, "promotions": frozenset({("outside", "1.0.0")})}, "cannot mix"),
+            # And the upgrade half every upgrade check.
+            ({"addition": "outside", "new_text": b"changed\n"}, {}, "licence/notice texts changed"),
+        )
+        for fixture, kwargs, message in cases:
+            with self.subTest(fixture=fixture, kwargs=kwargs), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.fixture(root, **fixture)
+                paths = [root / refresh.INDEX_RELATIVE_PATH, root / refresh.NOTICES_RELATIVE_PATH]
+                before = [p.read_bytes() for p in paths]
+                with self.assertRaisesRegex(refresh.RefreshError, message):
+                    self.run_refresh(root, archive, metadata, data, root / "new-vendor", **kwargs)
+                self.assertEqual([p.read_bytes() for p in paths], before)
 
     def removal_fixture(self, root, **kwargs):
         return self.fixture(
