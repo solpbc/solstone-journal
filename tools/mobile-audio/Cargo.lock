@@ -2280,6 +2280,7 @@ name = "solstone-core-doc-extract"
 version = "2.0.93"
 dependencies = [
  "csv",
+ "encoding_rs",
  "html2text",
  "mail-parser",
  "office_oxide",

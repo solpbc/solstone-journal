@@ -2433,4 +2433,22 @@ fn structured_document_extensions_preserve_signatures_beat_dialogue_turns_and_ke
             v.reasons
         );
     }
+
+    // 5. Offset-0 RTF and whitespace-prefixed RTF classify as Documents via document_format
+    //    at ruleset_version 11, while JSON objects starting with '{' stay Notes.
+    for (name, bytes) in [
+        ("memo.rtf", b"{\\rtf1\\ansi Hello world}".as_slice()),
+        (
+            "leading-ws.rtf",
+            b"  \r\n{\\rtf1\\ansi Whitespace prefixed}".as_slice(),
+        ),
+        ("unnamed.txt", b"{\\rtf1\\ansi Misnamed RTF}".as_slice()),
+    ] {
+        let v = verdict(name, bytes);
+        assert_eq!(v.ruleset_version, 11, "{name}");
+        assert_eq!(v.kind, Kind::Documents, "{name}: {:?}", v.reasons);
+        assert_eq!(v.reasons, vec!["document_format"], "{name}");
+    }
+    let json_obj = verdict("data.txt", br#"{"k":"v"}"#);
+    assert_ne!(json_obj.kind, Kind::Documents);
 }

@@ -17,6 +17,7 @@ pub const HARD_LIMIT: usize = 32 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttachmentKind {
     Pdf,
+    Document,
     Text,
     Image,
 }
@@ -44,6 +45,7 @@ fn supported_kind(part: &Part) -> Option<AttachmentKind> {
     Some(
         match file_type(part.filename.as_deref().unwrap_or(""), &part.mime)? {
             FileType::Pdf => AttachmentKind::Pdf,
+            FileType::Document => AttachmentKind::Document,
             FileType::Text => AttachmentKind::Text,
             FileType::Jpeg | FileType::Png | FileType::WebP | FileType::Gif => {
                 AttachmentKind::Image
@@ -316,5 +318,78 @@ mod tests {
         );
         h.tree = calendar;
         assert_eq!(select(h)[0].reason.as_deref(), Some("calendar_part"));
+    }
+
+    #[test]
+    fn pure_rust_document_attachments_are_admitted_while_body_html_and_spoofed_names_stay_rejected()
+    {
+        let explicit_html = Part {
+            disposition: Some("attachment".into()),
+            ..part(6, "text/html", Some("clip.html"))
+        };
+        let header = Header {
+            tree: Part {
+                mime: "multipart/mixed".into(),
+                children: vec![
+                    // MIME body HTML is still skipped and never appears as a candidate.
+                    part(1, "text/html", None),
+                    part(
+                        2,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        Some("proposal.docx"),
+                    ),
+                    part(3, "application/epub+zip", Some("book.epub")),
+                    part(
+                        4,
+                        "application/vnd.oasis.opendocument.text",
+                        Some("draft.odt"),
+                    ),
+                    part(5, "application/rtf", Some("memo.rtf")),
+                    explicit_html,
+                    part(7, "text/csv", Some("metrics.csv")),
+                    part(8, "message/rfc822", None),
+                    part(
+                        9,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        None,
+                    ),
+                    // Spoofed/mismatched extensions stay Unsupported.
+                    part(10, "application/zip", Some("archive.pdf")),
+                    part(11, "text/html", Some("meeting.ics")),
+                    part(12, "text/csv", Some("script.js")),
+                ],
+                ..Part::default()
+            },
+            ..Header::default()
+        };
+        let found = candidates(&header, None);
+        assert_eq!(found.len(), 11);
+        for candidate in &found[..8] {
+            assert_eq!(
+                candidate.kind,
+                Some(AttachmentKind::Document),
+                "{}",
+                candidate.name
+            );
+            assert_eq!(
+                candidate.disposition,
+                CandidateDisposition::Eligible,
+                "{}",
+                candidate.name
+            );
+        }
+        assert_eq!(found[6].name, "message/rfc822");
+        assert_eq!(
+            found[7].name,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        for candidate in &found[8..] {
+            assert_eq!(
+                candidate.disposition,
+                CandidateDisposition::Unsupported,
+                "{}",
+                candidate.name
+            );
+        }
     }
 }

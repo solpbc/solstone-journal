@@ -2156,3 +2156,275 @@ fn attachment_choice_enriches_existing_exchanges_and_retries_one_occurrence() {
     );
     assert!(retrieved.join("document_transcript.md").is_file());
 }
+
+#[test]
+fn document_attachments_publish_on_mobile_without_pdf_and_upgrade_cleanly_from_v1_policy() {
+    use crate::attachment_prepare::{PrepareFailure, PreparedAttachment};
+    use crate::choice::AttachmentScope;
+    use crate::error::Result;
+    use crate::imap::{MailboxInfo, WireAudit};
+    use crate::model::{Addr, Header, Location, Part};
+
+    struct DocMail {
+        headers: Vec<Header>,
+        downloads: Vec<(String, Vec<u32>)>,
+    }
+    impl ImapSource for DocMail {
+        fn mailbox_info(&mut self) -> Result<MailboxInfo> {
+            Ok(MailboxInfo {
+                name: "All Mail".into(),
+                uid_validity: 1,
+                uid_next: self.headers.len() as u32 + 1,
+                exists: self.headers.len() as u32,
+            })
+        }
+        fn scan_page(&mut self, _: &MailboxInfo, lo: u32, hi: u32) -> Result<Vec<Header>> {
+            Ok(self
+                .headers
+                .iter()
+                .filter(|h| (lo..=hi).contains(&h.location.uid))
+                .cloned()
+                .collect())
+        }
+        fn fetch_texts(&mut self, reqs: &[(&Header, &Part)]) -> Result<Vec<Option<String>>> {
+            Ok(reqs
+                .iter()
+                .map(|_| Some("<p>Attached files.</p>".into()))
+                .collect())
+        }
+        fn fetch_attachment(
+            &mut self,
+            h: &Header,
+            p: &Part,
+            _: usize,
+            _: usize,
+        ) -> Result<Option<Vec<u8>>> {
+            self.downloads.push((h.key.clone(), p.path.clone()));
+            Ok(Some(
+                format!("payload for {} {:?}", h.key, p.filename).into_bytes(),
+            ))
+        }
+        fn wire_audit(&self) -> WireAudit {
+            WireAudit::default()
+        }
+        fn logout(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    let base = Timestamp::now();
+    let zone = TimeZone::UTC;
+    let part = |n, mime: &str, name: Option<&str>| Part {
+        path: vec![n],
+        mime: mime.into(),
+        size: 64,
+        filename: name.map(str::to_owned),
+        disposition: name.map(|_| "attachment".into()),
+        ..Default::default()
+    };
+    let docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    let sent = Header {
+        key: "gm:1".into(),
+        gm_msgid: Some("1".into()),
+        message_id: Some("m1@example.com".into()),
+        from: vec![Addr {
+            address: Some("maya@example.com".into()),
+            name: None,
+        }],
+        labels: vec!["\\Sent".into()],
+        date_ms: Some(base.as_millisecond()),
+        tree: Part {
+            mime: "multipart/mixed".into(),
+            children: vec![
+                part(1, "text/html", None),
+                part(2, "application/pdf", Some("scan.pdf")),
+                part(3, docx_mime, Some("brief.docx")),
+                part(4, "text/plain", Some("note.txt")),
+                part(5, "text/plain", Some("deleted.txt")),
+            ],
+            ..Default::default()
+        },
+        attachment_names_checked: true,
+        location: Location {
+            mailbox: "All Mail".into(),
+            uid_validity: 1,
+            uid: 1,
+        },
+        ..Default::default()
+    };
+
+    let mut mail = DocMail {
+        headers: vec![sent],
+        downloads: vec![],
+    };
+    let prepare = |name: &str,
+                   mime: &str,
+                   bytes: &[u8]|
+     -> std::result::Result<PreparedAttachment, PrepareFailure> {
+        if mime == "application/pdf" {
+            panic!("PDF reader must not be invoked when pdf_unavailable is true");
+        }
+        let kind = if name.ends_with(".txt") {
+            "notes"
+        } else {
+            "documents"
+        };
+        Ok(PreparedAttachment {
+            kind,
+            text: String::from_utf8(bytes.to_vec()).unwrap(),
+            partial: false,
+            thoughts: 0,
+            preview_jpeg: None,
+        })
+    };
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    sync::connect_and_verify(
+        root,
+        "maya@example.com",
+        "abcd1234efgh5678",
+        &mut mail,
+        base,
+    )
+    .unwrap();
+    sync::run_header_scan(root, &mut mail, base, &zone, false).unwrap();
+    sync::save_choice_with_files(
+        root,
+        RangePreset::All,
+        MessageType::ALL.to_vec(),
+        base,
+        &zone,
+        Some(AttachmentScope::Both),
+        Some(false),
+    )
+    .unwrap();
+
+    // 1. Preview with pdf_reader_available = false still counts brief.docx + text files
+    //    as remaining_files (3) while keeping pdfs = 1 and remaining_images = 0.
+    let preview = crate::attachment_sync::preview(
+        root,
+        &store::read_choice(root).unwrap().unwrap(),
+        &store::read_decisions(root).unwrap(),
+        false,
+    )
+    .unwrap();
+    assert_eq!(preview.sent.pdfs, 1);
+    assert_eq!(preview.sent.remaining_images, 0);
+    assert_eq!(preview.sent.remaining_files, 3);
+
+    // 2. Mobile sync (attachment_pdf_unavailable = true) skips scan.pdf as reader_unavailable
+    //    while publishing brief.docx as ready (kind == "documents", thoughts == 0).
+    let res = sync::run_sync_with_attachments(
+        root,
+        &mut mail,
+        base,
+        &zone,
+        SyncOptions {
+            attachment_pdf_unavailable: true,
+            ..Default::default()
+        },
+        None,
+        Some(&prepare),
+    )
+    .unwrap();
+    assert_eq!(res.landed_messages, 1);
+    assert!(
+        !mail.downloads.iter().any(|(_, p)| p == &[2]),
+        "PDF part must not be fetched when pdf_unavailable = true"
+    );
+    assert!(mail.downloads.iter().any(|(_, p)| p == &[3]));
+
+    let landed = store::read_landed(root).unwrap();
+    let rec = landed.iter().find(|r| r.key == "gm:1").unwrap();
+    let segment = root.join("chronicle").join(&rec.segment_rel);
+    let transcript_path = segment.join("conversation_transcript.jsonl");
+    let read_turn = || {
+        let raw = std::fs::read_to_string(&transcript_path).unwrap();
+        serde_json::from_str::<Value>(raw.lines().nth(1).unwrap()).unwrap()
+    };
+
+    let mobile_turn = read_turn();
+    let atts = mobile_turn["attachments"].as_array().unwrap();
+    assert_eq!(atts[0]["state"], "reader_unavailable");
+    assert_eq!(atts[1]["state"], "ready");
+    assert_eq!(atts[1]["kind"], "documents");
+    assert_eq!(atts[1]["thoughts"], 0);
+    assert_eq!(atts[2]["state"], "ready");
+    assert_eq!(atts[3]["state"], "ready");
+
+    // 3. Simulate a pre-upgrade v1 journal state:
+    //    - Erase deleted.txt on disk so it becomes a tombstoned "removed" item.
+    //    - Remove brief.docx from items table + disk and rewrite its turn row to real v1 shape
+    //      ("state": "unsupported", NO "attempted" key).
+    //    - Rewrite checked.policy from "v2-..." to "v1-...".
+    let docx_id = atts[1]["attachment_id"].as_str().unwrap().to_owned();
+    let deleted_id = atts[3]["attachment_id"].as_str().unwrap().to_owned();
+    std::fs::remove_dir_all(segment.join("items").join(&docx_id)).unwrap();
+    std::fs::remove_dir_all(segment.join("items").join(&deleted_id)).unwrap();
+    {
+        let raw = std::fs::read_to_string(&transcript_path).unwrap();
+        let mut lines: Vec<String> = raw.lines().map(str::to_owned).collect();
+        let mut turn: Value = serde_json::from_str(&lines[1]).unwrap();
+        let docx_row = turn["attachments"][1].as_object_mut().unwrap();
+        docx_row.insert("state".into(), Value::String("unsupported".into()));
+        docx_row.remove("attempted");
+        docx_row.remove("item_ref");
+        docx_row.remove("item_day");
+        docx_row.remove("item_segment");
+        docx_row.remove("kind");
+        docx_row.remove("partial");
+        docx_row.remove("thoughts");
+        lines[1] = turn.to_string();
+        std::fs::write(&transcript_path, format!("{}\n", lines.join("\n"))).unwrap();
+    }
+    {
+        let db =
+            rusqlite::Connection::open(store::config_dir(root).join("attachment-state.sqlite"))
+                .unwrap();
+        db.execute("DELETE FROM items WHERE id=?1", [&docx_id])
+            .unwrap();
+        db.execute(
+            "UPDATE checked SET policy = REPLACE(policy, 'v2-', 'v1-')",
+            [],
+        )
+        .unwrap();
+    }
+
+    // 4. Re-running sync upgrades under v2 policy:
+    //    - Extracts newly-supported brief.docx (single IMAP fetch for part [3]).
+    //    - Performs ZERO IMAP downloads for already-ready note.txt ([4]) or removed deleted.txt ([5]).
+    //    - Preserves deleted.txt as "removed" (never resurrects erased items).
+    mail.downloads.clear();
+    sync::run_sync_with_attachments(
+        root,
+        &mut mail,
+        base,
+        &zone,
+        SyncOptions {
+            attachment_pdf_unavailable: true,
+            ..Default::default()
+        },
+        None,
+        Some(&prepare),
+    )
+    .unwrap();
+    assert_eq!(mail.downloads, vec![("gm:1".to_owned(), vec![3])]);
+
+    let upgraded_turn = read_turn();
+    let upgraded_atts = upgraded_turn["attachments"].as_array().unwrap();
+    assert_eq!(upgraded_atts[0]["state"], "reader_unavailable");
+    assert_eq!(upgraded_atts[1]["state"], "ready");
+    assert_eq!(upgraded_atts[1]["kind"], "documents");
+    assert_eq!(upgraded_atts[1]["thoughts"], 0);
+    assert_eq!(upgraded_atts[2]["state"], "ready");
+    assert_eq!(upgraded_atts[3]["state"], "removed");
+    assert!(
+        segment
+            .join("items")
+            .join(&docx_id)
+            .join("document_transcript.md")
+            .is_file()
+    );
+    assert!(!segment.join("items").join(&deleted_id).exists());
+}

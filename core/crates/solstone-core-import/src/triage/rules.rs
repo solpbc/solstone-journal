@@ -124,7 +124,7 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             "document_format",
             Container,
             Documents,
-            "file-format and container markers: PDF, office, EPUB, and OpenDocument signatures",
+            "file-format and container markers: PDF, office, EPUB, OpenDocument, and RTF signatures",
             |e| is_document(e.format) || solstone_core_doc_extract::is_supported_container(e.bytes)
         ),
         rule!(
@@ -837,9 +837,13 @@ pub(super) static RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
 });
 
 fn is_document(format: FileFormat) -> bool {
-    matches!(format.kind(), FormatKind::Document | FormatKind::Spreadsheet | FormatKind::Presentation | FormatKind::Ebook)
-        // These are text and must pass through text rules if they are routed here.
-        && !matches!(format, FileFormat::RichTextFormat)
+    matches!(
+        format.kind(),
+        FormatKind::Document
+            | FormatKind::Spreadsheet
+            | FormatKind::Presentation
+            | FormatKind::Ebook
+    )
 }
 
 fn is_structured_document_extension(e: &Evidence<'_>) -> bool {

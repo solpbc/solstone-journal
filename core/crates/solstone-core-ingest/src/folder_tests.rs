@@ -1595,7 +1595,7 @@ async fn epub_odf_and_structured_text_land_in_folder_ingest_preserving_transcrip
         .filter_map(Value::as_str)
         .collect();
     for ext in [
-        "epub", "odt", "ods", "odp", "eml", "csv", "tsv", "html", "htm",
+        "epub", "odt", "ods", "odp", "rtf", "eml", "csv", "tsv", "html", "htm",
     ] {
         assert!(doc_exts.contains(&ext), "missing ext {ext} in {doc_exts:?}");
     }
@@ -1628,6 +1628,7 @@ async fn epub_odf_and_structured_text_land_in_folder_ingest_preserving_transcrip
     let fireflies_csv = b"Speaker,Start Time,End Time,Sentence\nMira,00:00:01,00:00:04,Fireflies transcript line.\nTheo,00:00:05,00:00:08,Confirmed.\n";
     let saved_htm = b"<html><head><title>Saved Web Note</title></head><body><p>HTML body text.</p></body></html>";
     let saved_eml = b"Received: from mx.example.org\r\nFrom: Alice <alice@example.org>\r\nSubject: Status\r\n\r\nAlice: Check in?\r\nBob: All green.\r\n";
+    let saved_rtf = br"{\rtf1\ansi\ansicpg1252{\info{\title RTF Memo}}RTF folder note \'e4\par}";
 
     let (status, body) = post_folder(
         &app,
@@ -1665,6 +1666,11 @@ async fn epub_odf_and_structured_text_land_in_folder_ingest_preserving_transcrip
                 "at": "2026-11-27T11:01:00-07:00", "observed_at": "2026-11-27T11:01:01-07:00",
                 "content_hash": sha256(saved_eml), "part": "c_06.eml"
             }),
+            json!({
+                "v": 1, "event": "added", "path": "notes/memo.rtf",
+                "at": "2026-11-27T11:01:10-07:00", "observed_at": "2026-11-27T11:01:11-07:00",
+                "content_hash": sha256(saved_rtf), "part": "c_07.rtf"
+            }),
         ],
         &[
             ("c_01.epub", epub.as_slice()),
@@ -1673,6 +1679,7 @@ async fn epub_odf_and_structured_text_land_in_folder_ingest_preserving_transcrip
             ("c_04.csv", fireflies_csv.as_slice()),
             ("c_05.htm", saved_htm.as_slice()),
             ("c_06.eml", saved_eml.as_slice()),
+            ("c_07.rtf", saved_rtf.as_slice()),
         ],
     )
     .await;
@@ -1690,6 +1697,7 @@ async fn epub_odf_and_structured_text_land_in_folder_ingest_preserving_transcrip
     assert!(doc_md.contains("| Server | 199 |"), "{doc_md}");
     assert!(doc_md.contains("HTML body text."), "{doc_md}");
     assert!(doc_md.contains("Alice: Check in?"), "{doc_md}");
+    assert!(doc_md.contains("RTF folder note ä"), "{doc_md}");
 
     let tr_jsonl = fs::read_to_string(seg_dir.join("folder_transcript.jsonl")).unwrap();
     assert!(

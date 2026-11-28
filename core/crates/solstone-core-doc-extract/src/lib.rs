@@ -9,6 +9,7 @@
 //!   `.xlsb`, `.pptx`, `.pptm`, `.ppsx`
 //! - Legacy binary Microsoft Office: `.doc`, `.xls`, `.ppt`
 //! - E-books and OpenDocument: `.epub`, `.odt`, `.ods`, `.odp`
+//! - Rich Text Format: `.rtf`
 //! - General structured text documents: `.eml`, `.csv`, `.tsv`, `.html`, `.htm`
 //!
 //! Extraction produces structured Markdown, plain text, optional document
@@ -19,6 +20,7 @@ mod epub;
 mod html_render;
 mod odf;
 mod office;
+mod rtf;
 mod sniff;
 mod structured;
 
@@ -35,13 +37,13 @@ use crate::sniff::SniffedContainer;
 /// importers (Strava, Fireflies, Whisper, Telegram). Safe for auto-detection.
 pub const UNAMBIGUOUS_DOCUMENT_EXTENSIONS: &[&str] = &[
     "docx", "docm", "xlsx", "xlsm", "xlsb", "pptx", "pptm", "ppsx", "doc", "xls", "ppt", "epub",
-    "odt", "ods", "odp", "eml",
+    "odt", "ods", "odp", "rtf", "eml",
 ];
 
 /// All lowercase file extensions (without leading dots) accepted by this crate.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "docx", "docm", "xlsx", "xlsm", "xlsb", "pptx", "pptm", "ppsx", "doc", "xls", "ppt", "epub",
-    "odt", "ods", "odp", "eml", "csv", "tsv", "html", "htm",
+    "odt", "ods", "odp", "rtf", "eml", "csv", "tsv", "html", "htm",
 ];
 
 /// Whether `ext` (with or without a leading dot, case-insensitive) is a
@@ -96,6 +98,8 @@ pub enum DocumentFormat {
     Ods,
     /// OpenDocument Presentation (`.odp`).
     Odp,
+    /// Rich Text Format document (`.rtf`).
+    Rtf,
     /// Saved RFC 5322 email message (`.eml`).
     Eml,
     /// Comma-separated tabular document (`.csv`).
@@ -122,6 +126,7 @@ impl DocumentFormat {
             Self::Odt => "odt",
             Self::Ods => "ods",
             Self::Odp => "odp",
+            Self::Rtf => "rtf",
             Self::Eml => "eml",
             Self::Csv => "csv",
             Self::Tsv => "tsv",
@@ -160,6 +165,7 @@ impl DocumentFormat {
             "odt" => Some(Self::Odt),
             "ods" => Some(Self::Ods),
             "odp" => Some(Self::Odp),
+            "rtf" => Some(Self::Rtf),
             "eml" => Some(Self::Eml),
             "csv" => Some(Self::Csv),
             "tsv" => Some(Self::Tsv),
@@ -370,6 +376,7 @@ impl FormatBackend for DefaultBackend {
             DocumentFormat::Odt | DocumentFormat::Ods | DocumentFormat::Odp => {
                 odf::extract_odf(bytes, format, limits)
             }
+            DocumentFormat::Rtf => rtf::extract_rtf(bytes, limits),
             DocumentFormat::Csv
             | DocumentFormat::Tsv
             | DocumentFormat::Html
@@ -420,6 +427,7 @@ pub(crate) fn extract_with_backend(
         | SniffedContainer::LegacyCfb(fmt)
         | SniffedContainer::Odf(fmt) => fmt,
         SniffedContainer::Epub => DocumentFormat::Epub,
+        SniffedContainer::Rtf => DocumentFormat::Rtf,
         SniffedContainer::NonDocumentZip => {
             return match hinted {
                 Some(_) => Err(ExtractError::Invalid(

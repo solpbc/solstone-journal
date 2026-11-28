@@ -118,7 +118,7 @@ const SOURCES: &[SourceMetadata] = &[
         input_type: "file",
         upload_prompt: "journal.window.import.source.document.upload.prompt",
         has_guide: false,
-        accept: ".pdf,.docx,.docm,.xlsx,.xlsm,.xlsb,.pptx,.pptm,.ppsx,.doc,.xls,.ppt,.epub,.odt,.ods,.odp,.eml,.csv,.tsv,.html,.htm",
+        accept: ".pdf,.docx,.docm,.xlsx,.xlsm,.xlsb,.pptx,.pptm,.ppsx,.doc,.xls,.ppt,.epub,.odt,.ods,.odp,.rtf,.eml,.csv,.tsv,.html,.htm",
     },
     SourceMetadata {
         name: "image",

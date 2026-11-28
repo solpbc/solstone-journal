@@ -2699,4 +2699,38 @@ fn epub_odf_eml_auto_detect_while_strava_and_ambiguous_structured_files_require_
             .unwrap()
             .contains("| Hosting | 420 |")
     );
+
+    // 4. RTF auto-detects and imports cleanly without PDFium or model calls.
+    let rtf_path = tree.pdf(
+        "memo.rtf",
+        br"{\rtf1\ansi{\info{\title RTF Note}}Manual RTF body\par}",
+    );
+    assert!(solstone_core_import_sources::document::detect(&rtf_path));
+    assert!(!solstone_core_import_sources::document::has_pdf(&rtf_path));
+    let rtf_tree = TestTree::new();
+    let rtf_res = import(
+        DocumentImportRequest {
+            source: &rtf_path,
+            journal_root: rtf_tree.journal(),
+            import_dir: rtf_tree.import_dir(),
+            import_id: "rtf-manual",
+            revision: None,
+            password: None,
+            force: false,
+            now,
+            owner_timestamp: Some("20260503_120000"),
+            fallback_timestamp: None,
+        },
+        &PanickingPdfWorker,
+        &PanickingModel,
+        &FakePublication::default(),
+    );
+    assert_eq!(rtf_res.entries_written, 1, "{:?}", rtf_res.errors);
+    let rtf_seg = segment_dir(&rtf_tree, &rtf_res);
+    assert!(
+        fs::read_to_string(rtf_seg.join("document_transcript.md"))
+            .unwrap()
+            .contains("Manual RTF body")
+    );
+    assert!(rtf_seg.join("original.rtf").is_file());
 }

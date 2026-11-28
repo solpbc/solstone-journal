@@ -2182,4 +2182,134 @@ fn extracts_structured_csv_tsv_html_eml_with_security_and_edge_cases() {
         extract_bytes(b"just plain text", Some("not-a-doc.odt"), &limits),
         Err(ExtractError::Invalid(_))
     ));
+    assert!(matches!(
+        extract_bytes(b"just plain text", Some("not-an-rtf.rtf"), &limits),
+        Err(ExtractError::Invalid(_))
+    ));
+}
+
+#[test]
+fn extracts_rtf_charsets_surrogates_tables_shapes_and_defeats_hostile_inputs() {
+    let limits = ExtractLimits::desktop();
+
+    // 1. Rich synthetic RTF exercising:
+    //    - \ansicpg1252 accented hex escapes (\'e4 \'eb \'f6 \'fc)
+    //    - \fonttbl \fcharset128 Shift_JIS multi-byte hex run (\'82\'6c -> Ｍ)
+    //    - bare \n inside \uc2 fallback (\u12293\n\'81\'58 -> 々)
+    //    - bare \n inside UTF-16 surrogate pair (\u-10240\n\'3f\u-8381\'3f -> 𐍃 U+10343)
+    //    - {\info{\title ...}{\author ...}} captures title, strips author
+    //    - {\*\shpinst ... {\shptxt ...}}{\shprslt ...} extracts text box ONCE
+    //    - {\stylesheet}, {\colortbl}, {\*\themedata} stripped
+    //    - tables across sibling groups with pipe/\par sanitization + nested \nestcell & {\nonesttables}
+    let rich_rtf = concat!(
+        "  \r\n{\\rtf1\\ansi\\ansicpg1252\\uc1",
+        "{\\fonttbl{\\f0\\fcharset0 Times New Roman;}{\\f11\\fcharset128 MS Mincho;}}",
+        "{\\colortbl;\\red0\\green0\\blue0;}",
+        "{\\stylesheet{\\s0 Normal;}}",
+        "{\\info{\\title Field Notes}{\\author Hidden Author}}",
+        "{\\*\\themedata 504b0304deadbeef}",
+        "{\\shp{\\*\\shpinst{\\sp{\\sn shapeType}{\\sv 202}}{\\shptxt Box text\\par}}",
+        "{\\shprslt{\\*\\do Box text\\par}}}",
+        "Accents: \\'e4 \\'eb \\'f6 \\'fc.\\par ",
+        "{\\f11 ShiftJIS: \\'82\\'6c}\\par ",
+        "{\\uc2 Kanji: \\u12293\n\\'81\\'58}\\par ",
+        "Gothic: \\u-10240\n\\'3f\\u-8381\\'3f\\par ",
+        "{\\trowd\\intbl A|B\\par cont\\cell Inner1\\nestcell Inner2\\nestcell ",
+        "{\\*\\nesttableprops\\trowd\\nestrow}{\\nonesttables fallback noise}\\cell \\row}",
+        "{\\trowd\\intbl R2C1\\cell R2C2\\cell \\row}",
+        "\\pard Closing note.\\par",
+        "}"
+    );
+    assert!(crate::is_supported_container(rich_rtf.as_bytes()));
+    assert!(!crate::is_supported_container(br#"{"json": true}"#));
+
+    let ExtractOutcome::Extracted(doc) =
+        extract_bytes(rich_rtf.as_bytes(), None, &limits).expect("rich rtf")
+    else {
+        panic!("expected extracted RTF");
+    };
+    assert_eq!(doc.format, DocumentFormat::Rtf);
+    assert_eq!(doc.title.as_deref(), Some("Field Notes"));
+    assert!(!doc.markdown.contains("Hidden Author"));
+    assert!(!doc.markdown.contains("Normal;"));
+    assert!(!doc.markdown.contains("504b0304"));
+    assert!(!doc.markdown.contains("shapeType"));
+    assert!(!doc.markdown.contains("fallback noise"));
+    assert_eq!(doc.plain_text.matches("Box text").count(), 1);
+    assert!(
+        doc.markdown.contains("Accents: ä ë ö ü."),
+        "{}",
+        doc.markdown
+    );
+    assert!(doc.markdown.contains("ShiftJIS: Ｍ"), "{}", doc.markdown);
+    assert!(doc.markdown.contains("Kanji: 々"), "{}", doc.markdown);
+    assert!(doc.markdown.contains("Gothic: 𐍃"), "{}", doc.markdown);
+    assert!(
+        doc.markdown.contains("| A\\|B cont | Inner1 \\| Inner2 |"),
+        "{}",
+        doc.markdown
+    );
+    assert!(doc.markdown.contains("| R2C1 | R2C2 |"), "{}", doc.markdown);
+    assert!(doc.markdown.contains("Closing note."), "{}", doc.markdown);
+
+    // 2. Skip mode is strictly absorbing: nested \shptxt inside \shprslt cannot leak.
+    let skip_escape =
+        br"{\rtf1\ansi{\shprslt{\shptxt leaked text}}{\shprslt{\*\shpinst{\shptxt also leaked}}}}";
+    assert_eq!(
+        extract_bytes(skip_escape, Some("skip.rtf"), &limits).unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Rtf
+        }
+    );
+
+    // 3. Large RTF exceeding max_output_chars truncates cleanly with truncated == true + warning.
+    let mut tight = limits.clone();
+    tight.max_output_chars = 120;
+    let big_rtf = format!(
+        "{{\\rtf1\\ansi {}}}",
+        "Long paragraph content for truncation test.\\par ".repeat(200)
+    );
+    let ExtractOutcome::Extracted(big_doc) =
+        extract_bytes(big_rtf.as_bytes(), Some("big.rtf"), &tight).unwrap()
+    else {
+        panic!("expected truncated RTF");
+    };
+    assert!(big_doc.truncated);
+    assert!(big_doc.markdown.chars().count() <= 120);
+    assert!(!big_doc.warnings.is_empty());
+
+    // 4. Hostile RTF negative twins:
+    //    - deep nesting bomb -> LimitExceeded
+    let deep_rtf = format!("{{\\rtf1{}x{}}}", "{".repeat(2000), "}".repeat(2000));
+    assert!(matches!(
+        extract_bytes(deep_rtf.as_bytes(), Some("deep.rtf"), &limits),
+        Err(ExtractError::LimitExceeded(_))
+    ));
+
+    //    - \binN inside Skip group containing raw '}' does not break group balance or leak binary
+    let bin_in_pict = b"{\\rtf1\\ansi{\\pict\\bin4 }a\\b}Body}";
+    let ExtractOutcome::Extracted(bin_doc) =
+        extract_bytes(bin_in_pict, Some("bin.rtf"), &limits).unwrap()
+    else {
+        panic!("expected extracted RTF after \\bin4 inside \\pict");
+    };
+    assert_eq!(bin_doc.plain_text, "Body");
+
+    //    - out-of-bounds \binN inside Skip group fails fast with Invalid
+    assert!(matches!(
+        extract_bytes(
+            b"{\\rtf1\\ansi{\\pict\\bin99999999 x}}",
+            Some("badbin.rtf"),
+            &limits
+        ),
+        Err(ExtractError::Invalid(_))
+    ));
+
+    //    - text-free valid RTF returns Empty
+    assert_eq!(
+        extract_bytes(b"{\\rtf1\\ansi\\par}", Some("empty.rtf"), &limits).unwrap(),
+        ExtractOutcome::Empty {
+            format: DocumentFormat::Rtf
+        }
+    );
 }

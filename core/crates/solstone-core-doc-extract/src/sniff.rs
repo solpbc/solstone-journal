@@ -34,6 +34,7 @@ pub(crate) enum SniffedContainer {
     Ooxml(DocumentFormat),
     Epub,
     Odf(DocumentFormat),
+    Rtf,
     EncryptedOoxml,
     LegacyCfb(DocumentFormat),
     NonDocumentZip,
@@ -180,6 +181,9 @@ pub(crate) fn sniff_container(
     if bytes.starts_with(CFB_MAGIC) {
         return sniff_cfb(bytes, limits);
     }
+    if is_rtf_magic(bytes) {
+        return Ok(SniffedContainer::Rtf);
+    }
     Ok(SniffedContainer::Unknown)
 }
 
@@ -243,7 +247,16 @@ pub(crate) fn is_supported_container(bytes: &[u8]) -> bool {
         );
     }
 
-    false
+    is_rtf_magic(bytes)
+}
+
+fn is_rtf_magic(bytes: &[u8]) -> bool {
+    let mut i = 0usize;
+    while i < bytes.len() && i < 64 && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let rest = &bytes[i..];
+    rest.len() >= 5 && rest[..5].eq_ignore_ascii_case(b"{\\rtf")
 }
 
 fn is_zip_magic(bytes: &[u8]) -> bool {

@@ -274,7 +274,7 @@ pub(crate) fn enrich(
     }
     let db = open_db(root)?;
     let policy = format!(
-        "v1-{:?}-{}-{pdf_unavailable}",
+        "v2-{:?}-{}-{pdf_unavailable}",
         choice.attachments, choice.keep_originals
     );
     let checked: HashSet<String> = db
