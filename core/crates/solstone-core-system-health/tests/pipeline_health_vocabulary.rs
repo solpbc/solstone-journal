@@ -17,7 +17,7 @@ fn vocabulary_constants_match_inlined_expectations() {
     );
     assert_eq!(
         SEGMENT_NO_PROCESSING_MODALITIES,
-        &["markdown", "browser", "transactions"],
+        &["markdown", "browser", "transactions", "folder_activity"],
         "no_processing"
     );
     assert_eq!(

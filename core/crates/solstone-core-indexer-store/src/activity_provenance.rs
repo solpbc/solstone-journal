@@ -622,7 +622,7 @@ mod tests {
             alias,
             "{\"title\":\"Alias\",\"summary\":\"aliaschangedneedle\"}\n",
         );
-        write(&root, named, "# Activity\n\nagentchangedneedle\n");
+        write(&root, named, "# Activity\n\nagentmodifiedneedle\n");
         File::options()
             .write(true)
             .open(&shaped_path)
